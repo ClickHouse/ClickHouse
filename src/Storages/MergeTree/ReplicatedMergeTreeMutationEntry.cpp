@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Backups/BackupEntryFromMemory.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     }
 
     out << "commands: ";
-    commands.writeText(out);
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     out << "alter version: ";
@@ -76,6 +77,35 @@ ReplicatedMergeTreeMutationEntry ReplicatedMergeTreeMutationEntry::parse(const S
     assertEOF(in);
 
     return res;
+}
+
+
+std::shared_ptr<const IBackupEntry> ReplicatedMergeTreeMutationEntry::backup() const
+{
+    WriteBufferFromOwnString out;
+    out << "block numbers count: " << block_numbers.size() << "\n";
+
+    for (const auto & kv : block_numbers)
+    {
+        const String & partition_id = kv.first;
+        Int64 number = kv.second;
+        out << partition_id << "\t" << number << "\n";
+    }
+
+    out << "commands: ";
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    out << "\n";
+
+    return std::make_shared<BackupEntryFromMemory>(out.str());
+}
+
+
+String ReplicatedMergeTreeMutationEntry::getBlockNumbersForLogs() const
+{
+    WriteBufferFromOwnString out;
+    for (const auto & kv : block_numbers)
+        out << kv.first << " = " << kv.second << "; ";
+    return out.str();
 }
 
 }

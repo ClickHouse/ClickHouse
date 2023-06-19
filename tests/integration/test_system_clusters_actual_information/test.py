@@ -7,7 +7,6 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -41,8 +40,8 @@ def test(started_cluster):
     cluster.pause_container("node_1")
 
     node.query("SYSTEM RELOAD CONFIG")
-    node.query_and_get_error(
-        "SELECT count() FROM distributed SETTINGS receive_timeout=1"
+    error = node.query_and_get_error(
+        "SELECT count() FROM distributed SETTINGS receive_timeout=1, handshake_timeout_ms=1"
     )
 
     result = node.query(

@@ -45,7 +45,7 @@ template <typename T>
 requires is_big_int_v<T>
 inline T roundDownToPowerOfTwo(T)
 {
-    throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "roundToExp2() for big integers is not implemented");
 }
 
 /** For integer data types:
@@ -63,8 +63,7 @@ template <typename T>
 struct RoundToExp2Impl
 {
     using ResultType = T;
-    static constexpr const bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr const bool allow_string_or_fixed_string = false;
 
     static inline T apply(T x)
     {
@@ -83,7 +82,7 @@ using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundTo
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
 
-void registerFunctionRoundToExp2(FunctionFactory & factory)
+REGISTER_FUNCTION(RoundToExp2)
 {
     factory.registerFunction<FunctionRoundToExp2>();
 }

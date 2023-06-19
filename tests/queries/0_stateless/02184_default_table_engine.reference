@@ -10,8 +10,8 @@ CREATE TABLE default.numbers2\n(\n    `number` UInt64\n)\nENGINE = MergeTree\nOR
 45
 CREATE TABLE default.numbers3\n(\n    `number` UInt64\n)\nENGINE = Log
 CREATE MATERIALIZED VIEW default.test_view_filtered\n(\n    `EventDate` Date,\n    `CounterID` UInt32\n)\nENGINE = Memory AS\nSELECT\n    CounterID,\n    EventDate\nFROM default.test_table\nWHERE EventDate < \'2013-01-01\'
-2014-01-02	0	0	1970-01-01 03:00:00	2014-01-02 03:04:06
-1	2014-01-02 07:04:06
+2014-01-02	0	0	1969-12-31 16:00:00	2014-01-02 03:04:06
+1	2014-01-01 19:04:06
 CREATE TABLE default.t1\n(\n    `Rows` UInt64,\n    `MaxHitTime` DateTime(\'UTC\')\n)\nENGINE = MergeTree\nORDER BY Rows\nSETTINGS index_granularity = 8192
 CREATE TABLE default.t2\n(\n    `Rows` UInt64,\n    `MaxHitTime` DateTime(\'UTC\')\n)\nENGINE = Memory
 CREATE TABLE default.mt\n(\n    `a` UInt64,\n    `b` Nullable(String),\n    INDEX b_index b TYPE set(123) GRANULARITY 1\n)\nENGINE = MergeTree\nPRIMARY KEY (a, coalesce(b, \'test\'))\nORDER BY (a, coalesce(b, \'test\'))\nSETTINGS index_granularity = 8192

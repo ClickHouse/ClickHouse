@@ -31,7 +31,13 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
+    MultiRead = 22,
     Auth = 100,
+
+    // CH Keeper specific operations
+    FilteredList = 500,
+    CheckNotExists = 501,
+
     SessionID = 997, /// Special internal request
 };
 
@@ -52,5 +58,6 @@ static constexpr int32_t DEFAULT_SESSION_TIMEOUT_MS = 30000;
 static constexpr int32_t DEFAULT_MIN_SESSION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_MAX_SESSION_TIMEOUT_MS = 100000;
 static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
+static constexpr int32_t DEFAULT_CONNECTION_TIMEOUT_MS = 1000;
 
 }

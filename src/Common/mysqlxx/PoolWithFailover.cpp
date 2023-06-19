@@ -42,8 +42,8 @@ PoolWithFailover::PoolWithFailover(
         /// which triggers massive re-constructing of connection pools.
         /// The state of PRNGs like std::mt19937 is considered to be quite heavy
         /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
+        static thread_local std::mt19937 rnd_generator(static_cast<uint_fast32_t>(
+                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock()));
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)
@@ -123,7 +123,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
 PoolWithFailover::Entry PoolWithFailover::get()
 {
     Poco::Util::Application & app = Poco::Util::Application::instance();
-    std::lock_guard<std::mutex> locker(mutex);
+    std::lock_guard locker(mutex);
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
@@ -168,6 +168,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     }
 
                     app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
+
                     replica_name_to_error_detail.insert_or_assign(pool->getDescription(), ErrorDetail{e.code(), e.displayText()});
 
                     continue;
@@ -177,7 +178,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
             }
         }
 
-        app.logger().error("Connection to all replicas failed " + std::to_string(try_no + 1) + " times");
+        if (replicas_by_priority.size() > 1)
+            app.logger().error("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
+        else
+            app.logger().error("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
 
     if (full_pool)
@@ -187,7 +191,11 @@ PoolWithFailover::Entry PoolWithFailover::get()
     }
 
     DB::WriteBufferFromOwnString message;
-    message << "Connections to all replicas failed: ";
+    if (replicas_by_priority.size() > 1)
+        message << "Connections to all mysql replicas failed: ";
+    else
+        message << "Connections to mysql failed: ";
+
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
     {
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)

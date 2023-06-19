@@ -1,5 +1,14 @@
 #include <atomic>
 #include <Coordination/KeeperConnectionStats.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event KeeperPacketsSent;
+    extern const Event KeeperPacketsReceived;
+    extern const Event KeeperRequestTotal;
+    extern const Event KeeperLatency;
+}
 
 namespace DB
 {
@@ -40,18 +49,22 @@ uint64_t KeeperConnectionStats::getPacketsSent() const
 void KeeperConnectionStats::incrementPacketsReceived()
 {
     packets_received.fetch_add(1, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperPacketsReceived, 1);
 }
 
 void KeeperConnectionStats::incrementPacketsSent()
 {
     packets_sent.fetch_add(1, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperPacketsSent, 1);
 }
 
 void KeeperConnectionStats::updateLatency(uint64_t latency_ms)
 {
     last_latency.store(latency_ms, std::memory_order_relaxed);
     total_latency.fetch_add(latency_ms, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperLatency, latency_ms);
     count.fetch_add(1, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperRequestTotal, 1);
 
     uint64_t prev_val = min_latency.load(std::memory_order_relaxed);
     while (prev_val > latency_ms && !min_latency.compare_exchange_weak(prev_val, latency_ms, std::memory_order_relaxed)) {}

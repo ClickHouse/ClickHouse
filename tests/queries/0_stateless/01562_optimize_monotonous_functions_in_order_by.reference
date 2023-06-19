@@ -4,24 +4,22 @@ SELECT
 FROM test_order_by
 ORDER BY timestamp ASC
 LIMIT 10
-Expression (Projection)
+Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key
 FROM test_order_by
 ORDER BY toDate(timestamp) ASC
 LIMIT 10
-Expression (Projection)
+Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting
-      Expression (Before ORDER BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key
@@ -30,12 +28,11 @@ ORDER BY
     toDate(timestamp) ASC,
     timestamp ASC
 LIMIT 10
-Expression (Projection)
+Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting
-      Expression (Before ORDER BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key

@@ -27,6 +27,16 @@ echo -e '{"x" : true}
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
 
+echo -e '{"x" : [true, false]}
+{"x" : [0.42]}'  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+
+echo -e '{"x" : [[1, 2, 3], [true, false], [1, true, false]]}
+{"x" : [[1, 2, 3]]}'  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+
 
 echo -e '[true]
 [false]'  > $DATA_FILE
@@ -43,5 +53,14 @@ echo -e '[true]
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
 
+echo -e '[[true, false]]
+[[0.42]]'  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
+
+echo -e '[[[1, 2, 3], [true, false], [1, true, false]]]
+[[[1, 2, 3]]]'  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
 
 rm $DATA_FILE

@@ -1,17 +1,16 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
 #include <memory>
 #include <optional>
 
-#include <base/shared_ptr_helper.h>
-
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/StorageS3.h>
 
 namespace DB
@@ -19,40 +18,35 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public shared_ptr_helper<StorageS3Cluster>, public IStorage
+class StorageS3Cluster : public IStorageCluster
 {
-    friend struct shared_ptr_helper<StorageS3Cluster>;
 public:
-    std::string getName() const override { return "S3Cluster"; }
-
-    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
-
-    NamesAndTypesList getVirtuals() const override;
-
-protected:
     StorageS3Cluster(
-        const String & filename_,
-        const String & access_key_id_,
-        const String & secret_access_key_,
+        const String & cluster_name_,
+        const StorageS3::Configuration & configuration_,
         const StorageID & table_id_,
-        String cluster_name_,
-        const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
-        const String & compression_method_);
+        bool structure_argument_was_provided_);
+
+    std::string getName() const override { return "S3Cluster"; }
+
+    NamesAndTypesList getVirtuals() const override;
+
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
+
+protected:
+    void updateConfigurationIfChanged(ContextPtr local_context);
 
 private:
-    StorageS3::S3Configuration s3_configuration;
+    void updateBeforeRead(const ContextPtr & context) override { updateConfigurationIfChanged(context); }
 
-    String filename;
-    String cluster_name;
-    String format_name;
-    String compression_method;
+    void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
+
+    StorageS3::Configuration s3_configuration;
+    NamesAndTypesList virtual_columns;
+    Block virtual_block;
 };
 
 

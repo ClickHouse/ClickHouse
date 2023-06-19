@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Disks/WriteMode.h>
+#include <IO/WriteSettings.h>
 #include <memory>
 #include <optional>
 
@@ -8,7 +10,11 @@
 namespace DB
 {
 class IBackupEntry;
-using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
+using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
+struct BackupFileInfo;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class SeekableReadBuffer;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
@@ -19,7 +25,8 @@ public:
     virtual ~IBackup() = default;
 
     /// Name of the backup.
-    virtual const String & getName() const = 0;
+    //virtual const String & getName() const = 0;
+    virtual const String & getNameForLogging() const = 0;
 
     enum class OpenMode
     {
@@ -36,18 +43,54 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns names of entries stored in the backup.
-    /// If `prefix` isn't empty the function will return only the names starting with
-    /// the prefix (but without the prefix itself).
-    /// If the `terminator` isn't empty the function will returns only parts of the names
-    /// before the terminator. For example, list("", "") returns names of all the entries
-    /// in the backup; and list("data/", "/") return kind of a list of folders and
-    /// files stored in the "data/" directory inside the backup.
-    virtual Strings listFiles(const String & prefix = "", const String & terminator = "/") const = 0; /// NOLINT
+    /// Returns the base backup (can be null).
+    virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
+
+    /// Returns the number of files stored in the backup. Compare with getNumEntries().
+    virtual size_t getNumFiles() const = 0;
+
+    /// Returns the total size of files stored in the backup. Compare with getTotalSizeOfEntries().
+    virtual UInt64 getTotalSize() const  = 0;
+
+    /// Returns the number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder or
+    /// the number of files inside the archive if the backup is stored as an archive.
+    /// It's not the same as getNumFiles() if it's an incremental backups or if it contains empty files or duplicates.
+    /// The following is always true: `getNumEntries() <= getNumFiles()`.
+    virtual size_t getNumEntries() const = 0;
+
+    /// Returns the size of entries in the backup, i.e. the total size of files inside the folder if the backup is stored as a folder or
+    /// the total size of files inside the archive if the backup is stored as an archive.
+    /// It's not the same as getTotalSize() because it doesn't include the size of duplicates and the size of files from the base backup.
+    /// The following is always true: `getSizeOfEntries() <= getTotalSize()`.
+    virtual UInt64 getSizeOfEntries() const = 0;
+
+    /// Returns the uncompressed size of the backup. It equals to `getSizeOfEntries() + size_of_backup_metadata (.backup)`
+    virtual UInt64 getUncompressedSize() const = 0;
+
+    /// Returns the compressed size of the backup. If the backup is not stored as an archive it's the same as getUncompressedSize().
+    virtual UInt64 getCompressedSize() const = 0;
+
+    /// Returns the number of files read during RESTORE from this backup.
+    /// The following is always true: `getNumFilesRead() <= getNumFiles()`.
+    virtual size_t getNumReadFiles() const  = 0;
+
+    // Returns the total size of files read during RESTORE from this backup.
+    /// The following is always true: `getNumReadBytes() <= getTotalSize()`.
+    virtual UInt64 getNumReadBytes() const = 0;
+
+    /// Returns names of entries stored in a specified directory in the backup.
+    /// If `directory` is empty or '/' the functions returns entries in the backup's root.
+    virtual Strings listFiles(const String & directory, bool recursive = false) const = 0;
+
+    /// Checks if a specified directory contains any files.
+    /// The function returns the same as `!listFiles(directory).empty()`.
+    virtual bool hasFiles(const String & directory) const = 0;
+
+    using SizeAndChecksum = std::pair<UInt64, UInt128>;
 
     /// Checks if an entry with a specified name exists.
     virtual bool fileExists(const String & file_name) const = 0;
-    virtual bool fileExists(const std::pair<UInt64, UInt128> & size_and_checksum) const = 0;
+    virtual bool fileExists(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Returns the size of the entry's data.
     /// This function does the same as `read(file_name)->getSize()` but faster.
@@ -57,17 +100,22 @@ public:
     /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
-
     /// Returns both the size and checksum in one call.
     virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Reads an entry from the backup.
-    virtual BackupEntryPtr readFile(const String & file_name) const = 0;
-    virtual BackupEntryPtr readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+
+    /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
+    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
+                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
+
+    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
+                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
 
     /// Puts a new entry to the backup.
-    virtual void writeFile(const String & file_name, BackupEntryPtr entry) = 0;
+    virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;

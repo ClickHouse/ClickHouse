@@ -1,13 +1,14 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/collapsingmergetree
 sidebar_position: 70
 sidebar_label: CollapsingMergeTree
 ---
 
-# CollapsingMergeTree {#table_engine-collapsingmergetree}
+# CollapsingMergeTree
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
-`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a sorting key (`ORDER BY`) are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
+`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a sorting key (`ORDER BY`) are equivalent except the particular field `Sign`, which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
 The engine may significantly reduce the volume of storage and increase the efficiency of `SELECT` query as a consequence.
 
@@ -28,13 +29,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see [query description](../../../sql-reference/statements/create/table.md).
 
-**CollapsingMergeTree Parameters**
+## CollapsingMergeTree Parameters
 
--   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+### sign
+
+`sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
     Column data type — `Int8`.
 
-**Query clauses**
+## Query clauses
 
 When creating a `CollapsingMergeTree` table, the same [query clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
@@ -42,7 +45,7 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning    
+:::note
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
@@ -57,7 +60,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 
--   `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
+- `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
 
     Column Data Type — `Int8`.
 
@@ -303,5 +306,3 @@ select * FROM UAct
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

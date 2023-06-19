@@ -3,7 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
 #include <Access/Common/AllowedClientHosts.h>
 
 
@@ -13,13 +13,15 @@ class ASTUserNamesWithHost;
 class ASTRolesOrUsersSet;
 class ASTDatabaseOrNone;
 class ASTSettingsProfileElements;
+class ASTAuthenticationData;
+
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
   *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
   *     [DEFAULT DATABASE database | NONE]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   *
   * ALTER USER [IF EXISTS] name
@@ -28,7 +30,7 @@ class ASTSettingsProfileElements;
   *     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *     [DEFAULT DATABASE database | NONE]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   */
 class ASTCreateUserQuery : public IAST, public ASTQueryWithOnCluster
@@ -42,10 +44,9 @@ public:
     bool or_replace = false;
 
     std::shared_ptr<ASTUserNamesWithHost> names;
-    String new_name;
+    std::optional<String> new_name;
 
-    std::optional<AuthenticationData> auth_data;
-    bool show_password = true; /// formatImpl() will show the password or hash.
+    std::shared_ptr<ASTAuthenticationData> auth_data;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -61,5 +62,7 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

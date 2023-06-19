@@ -1,22 +1,23 @@
 ---
+slug: /en/sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 
-# GROUP BY Clause {#select-group-by-clause}
+# GROUP BY Clause
 
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
--   `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a “grouping key”, while each individual expression will be referred to as a “key expression”.
--   All the expressions in the [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having), and [ORDER BY](../../../sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
--   Result of aggregating `SELECT` query will contain as many rows as there were unique values of “grouping key” in source table. Usually this signficantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all “grouping key” values were distinct.
+- `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a “grouping key”, while each individual expression will be referred to as a “key expression”.
+- All the expressions in the [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md), and [ORDER BY](../../../sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
+- Result of aggregating `SELECT` query will contain as many rows as there were unique values of “grouping key” in source table. Usually, this significantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all “grouping key” values were distinct.
 
 When you want to group data in the table by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
 
-:::note    
+:::note
 There’s an additional way to run aggregation over a table. If a query contains table columns only inside aggregate functions, the `GROUP BY clause` can be omitted, and aggregation by an empty set of keys is assumed. Such queries always return exactly one row.
 :::
 
-## NULL Processing {#null-processing}
+## NULL Processing
 
 For grouping, ClickHouse interprets [NULL](../../../sql-reference/syntax.md#null-literal) as a value, and `NULL==NULL`. It differs from `NULL` processing in most other contexts.
 
@@ -48,16 +49,16 @@ You can see that `GROUP BY` for `y = NULL` summed up `x`, as if `NULL` is this v
 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
-## WITH ROLLUP Modifier {#with-rollup-modifier}
+## ROLLUP Modifier
 
-`WITH ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
+`ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
 
 The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression.
 
 In the subtotals rows the values of already "grouped" key expressions are set to `0` or empty line.
 
-:::note    
-Mind that [HAVING](../../../sql-reference/statements/select/having) clause can affect the subtotals results.
+:::note
+Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 :::
 
 **Example**
@@ -78,7 +79,7 @@ Consider the table t:
 Query:
 
 ```sql
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
 
@@ -109,15 +110,23 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
+The same query also can be written using `WITH` keyword.
+```sql
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+```
 
-## WITH CUBE Modifier {#with-cube-modifier}
+**See also**
 
-`WITH CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
+- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+
+## CUBE Modifier
+
+`CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
 
 In the subtotals rows the values of all "grouped" key expressions are set to `0` or empty line.
 
-:::note    
-Mind that [HAVING](../../../sql-reference/statements/select/having) clause can affect the subtotals results.
+:::note
+Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 :::
 
 **Example**
@@ -138,7 +147,7 @@ Consider the table t:
 Query:
 
 ```sql
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
+SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
 ```
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
@@ -196,26 +205,34 @@ Columns, excluded from `GROUP BY`, are filled with zeros.
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
+The same query also can be written using `WITH` keyword.
+```sql
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
+```
 
+**See also**
 
-## WITH TOTALS Modifier {#with-totals-modifier}
+- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+
+## WITH TOTALS Modifier
 
 If the `WITH TOTALS` modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the “total” values).
 
 This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separately from the other rows:
 
--   In `JSON*` formats, this row is output as a separate ‘totals’ field.
--   In `TabSeparated*` formats, the row comes after the main result, preceded by an empty row (after the other data).
--   In `Pretty*` formats, the row is output as a separate table after the main result.
--   In the other formats it is not available.
+- In `XML` and `JSON*` formats, this row is output as a separate ‘totals’ field.
+- In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, preceded by an empty row (after the other data).
+- In `Pretty*` formats, the row is output as a separate table after the main result.
+- In `Template` format, the row is output according to specified template.
+- In the other formats it is not available.
 
-:::note    
-totals is output in the results of `SELECT` queries, and is not output in `INSERT INTO ... SELECT`. 
+:::note
+totals is output in the results of `SELECT` queries, and is not output in `INSERT INTO ... SELECT`.
 :::
 
-`WITH TOTALS` can be run in different ways when [HAVING](../../../sql-reference/statements/select/having) is present. The behavior depends on the `totals_mode` setting.
+`WITH TOTALS` can be run in different ways when [HAVING](../../../sql-reference/statements/select/having.md) is present. The behavior depends on the `totals_mode` setting.
 
-### Configuring Totals Processing {#configuring-totals-processing}
+### Configuring Totals Processing
 
 By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that do not pass through HAVING and `max_rows_to_group_by`.
 
@@ -233,7 +250,55 @@ If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all
 
 You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](../../../sql-reference/statements/select/join.md) clause (in this case, the respective total values are combined).
 
-## Examples {#examples}
+## GROUP BY ALL
+
+`GROUP BY ALL` is equivalent to listing all the SELECT-ed expressions that are not aggregate functions.
+
+For example:
+
+``` sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY ALL
+```
+
+is the same as
+
+``` sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY a * 2, b
+```
+
+For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `GROUP BY` keys will contain the maximum non-aggregate fields we can extract from it.
+
+For example:
+
+``` sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY ALL
+```
+
+is the same as
+
+``` sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY substring(a, 4, 2), substring(a, 1, 2)
+```
+
+## Examples
 
 Example:
 
@@ -260,22 +325,59 @@ GROUP BY domain
 
 For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
 
-## Implementation Details {#implementation-details}
+## GROUPING SETS modifier
+
+This is the most general modifier.
+This modifier allows manually specifying several aggregation key sets (grouping sets).
+Aggregation is performed separately for each grouping set, and after that, all results are combined.
+If a column is not presented in a grouping set, it's filled with a default value.
+
+In other words, modifiers described above can be represented via `GROUPING SETS`.
+Despite the fact that queries with `ROLLUP`, `CUBE` and `GROUPING SETS` modifiers are syntactically equal, they may perform differently.
+When `GROUPING SETS` try to execute everything in parallel, `ROLLUP` and `CUBE` are executing the final merging of the aggregates in a single thread.
+
+In the situation when source columns contain default values, it might be hard to distinguish if a row is a part of the aggregation which uses those columns as keys or not.
+To solve this problem `GROUPING` function must be used.
+
+**Example**
+
+The following two queries are equivalent.
+
+```sql
+-- Query 1
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+
+-- Query 2
+SELECT year, month, day, count(*) FROM t GROUP BY
+GROUPING SETS
+(
+    (year, month, day),
+    (year, month),
+    (year),
+    ()
+);
+```
+
+**See also**
+
+- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+
+## Implementation Details
 
 Aggregation is one of the most important features of a column-oriented DBMS, and thus it’s implementation is one of the most heavily optimized parts of ClickHouse. By default, aggregation is done in memory using a hash-table. It has 40+ specializations that are chosen automatically depending on “grouping key” data types.
 
-### GROUP BY Optimization Depending on Table Sorting Key {#aggregation-in-order}
+### GROUP BY Optimization Depending on Table Sorting Key
 
 The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution.
 
-### GROUP BY in External Memory {#select-group-by-in-external-memory}
+### GROUP BY in External Memory
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
-The [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
+The [max_bytes_before_external_group_by](../../../operations/settings/query-complexity.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high. This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn’t dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
-For example, if [max_memory_usage](../../../operations/settings/settings.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
+For example, if [max_memory_usage](../../../operations/settings/query-complexity.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
 
 With distributed query processing, external aggregation is performed on remote servers. In order for the requester server to use only a small amount of RAM, set `distributed_aggregation_memory_efficient` to 1.
 

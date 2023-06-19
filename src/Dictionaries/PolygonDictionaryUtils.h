@@ -203,7 +203,7 @@ public:
     static constexpr size_t kMultiProcessingDepth = 2;
 
     /** A constant used to avoid errors with points falling on the boundaries of cells. */
-    static constexpr Coord kEps = 1e-4;
+    static constexpr Coord kEps = 1e-4f;
 
 private:
     std::unique_ptr<ICell<ReturnCell>> root = nullptr;

@@ -7,8 +7,11 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -23,6 +26,7 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "table", std::make_shared<DataTypeString>() },
             { "name", std::make_shared<DataTypeString>() },
             { "type", std::make_shared<DataTypeString>() },
+            { "type_full", std::make_shared<DataTypeString>() },
             { "expr", std::make_shared<DataTypeString>() },
             { "granularity", std::make_shared<DataTypeUInt64>() },
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
@@ -32,7 +36,7 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
     setInMemoryMetadata(storage_metadata);
 }
 
-class DataSkippingIndicesSource : public SourceWithProgress
+class DataSkippingIndicesSource : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -41,7 +45,7 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
-        : SourceWithProgress(header)
+        : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -120,6 +124,14 @@ protected:
                     // 'type' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.type);
+                    // 'type_full' column
+                    if (column_mask[src_index++])
+                    {
+                        if (auto * expression = index.definition_ast->as<ASTIndexDeclaration>(); expression && expression->type)
+                            res_columns[res_index++]->insert(queryToString(*expression->type));
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                     // 'expr' column
                     if (column_mask[src_index++])
                     {
@@ -170,7 +182,7 @@ Pipe StorageSystemDataSkippingIndices::read(
     ContextPtr context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
-    unsigned int /* num_streams */)
+    size_t /* num_streams */)
 {
     storage_snapshot->check(column_names);
 

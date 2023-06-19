@@ -7,4 +7,5 @@ ALL LEFT JOIN
 (
     SELECT * FROM system.numbers LIMIT 10
 ) t2
-USING number;
+USING number
+SETTINGS max_threads=16;

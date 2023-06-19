@@ -219,7 +219,7 @@ protected:
         /// Get internal immutable ptr. Does not change internal use counter.
         immutable_ptr<T> detach() && { return std::move(value); }
 
-        operator bool() const { return value != nullptr; } /// NOLINT
+        explicit operator bool() const { return value != nullptr; }
         bool operator! () const { return value == nullptr; }
 
         bool operator== (const chameleon_ptr & rhs) const { return value == rhs.value; }

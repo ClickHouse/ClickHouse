@@ -4,12 +4,14 @@
 
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include "validateODBCConnectionString.h"
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 #include <sql.h>
 #include <sqlext.h>
 
@@ -40,19 +42,47 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         LOG_WARNING(log, fmt::runtime(message));
     };
 
+    size_t version;
+
+    if (!params.has("version"))
+        version = 0; /// assumed version for too old servers which do not send a version
+    else
+    {
+        String version_str = params.get("version");
+        if (!tryParse(version, version_str))
+        {
+            process_error("Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+    }
+
+    if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
+    {
+        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
+        process_error("Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+        return;
+    }
+
+
     if (!params.has("connection_string"))
     {
         process_error("No 'connection_string' in request URL");
         return;
     }
 
+     bool use_connection_pooling = params.getParsed<bool>("use_connection_pooling", true);
+
     try
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        nanodbc::ConnectionHolderPtr connection;
+
+        if (use_connection_pooling)
+            connection = ODBCPooledConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        else
+            connection = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         bool result = isSchemaAllowed(std::move(connection));
 

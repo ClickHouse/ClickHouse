@@ -25,7 +25,6 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentThread.h>
-#include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadStatus.h>
 #include <Client/Connection.h>
@@ -119,7 +118,7 @@ struct TaskStateWithOwner
         rb >> state >> "\n" >> escape >> res.owner;
 
         if (state >= static_cast<int>(TaskState::Unknown))
-            throw Exception("Unknown state " + data, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state {}", data);
 
         res.state = static_cast<TaskState>(state);
         return res;
@@ -161,7 +160,7 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-Block getBlockWithAllStreamData(QueryPipeline pipeline);
+Block getBlockWithAllStreamData(QueryPipelineBuilder builder);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 

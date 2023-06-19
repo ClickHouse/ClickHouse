@@ -4,11 +4,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-function random_str()
-{
-    local n=$1 && shift
-    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
-}
 function test_query_duration_ms()
 {
     local query_id

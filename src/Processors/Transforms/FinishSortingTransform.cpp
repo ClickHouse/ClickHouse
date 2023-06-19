@@ -25,19 +25,20 @@ FinishSortingTransform::FinishSortingTransform(
     const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_,
-    UInt64 limit_)
-    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
+    UInt64 limit_,
+    bool increase_sort_description_compile_attempts)
+    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
-        throw Exception("Can't finish sorting. SortDescription of already sorted stream is not prefix of "
-            "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't finish sorting. SortDescription "
+                        "of already sorted stream is not prefix of SortDescription needed to sort");
 
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
-    size_t prefix_size = description_sorted_.size();
-    for (size_t i = 0; i < prefix_size; ++i)
-        description_with_positions.emplace_back(description[i], header_without_constants.getPositionByName(description[i].column_name));
+    for (const auto & column_sort_desc : description_sorted_)
+        description_with_positions.emplace_back(column_sort_desc, header_without_constants.getPositionByName(column_sort_desc.column_name));
 }
 
 void FinishSortingTransform::consume(Chunk chunk)
@@ -108,6 +109,7 @@ void FinishSortingTransform::generate()
         generated_prefix = true;
     }
 
+    // TODO: Here we should also consider LIMIT optimization.
     generated_chunk = merge_sorter->read();
 
     if (!generated_chunk)

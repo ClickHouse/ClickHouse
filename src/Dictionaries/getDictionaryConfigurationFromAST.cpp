@@ -44,15 +44,6 @@ struct AttributeConfiguration
 
 using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
 
-/// Get value from field and convert it to string.
-/// Also remove quotes from strings.
-String getFieldAsString(const Field & field)
-{
-    if (field.getType() == Field::Types::Which::String)
-        return field.get<String>();
-    return applyVisitor(FieldVisitorToString(), field);
-}
-
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
     if (!dict_attr->expression)
@@ -61,7 +52,7 @@ String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_att
     /// EXPRESSION PROPERTY should be expression or string
     String expression_str;
     if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-        expression_str = getFieldAsString(literal->value);
+        expression_str = convertFieldToString(literal->value);
     else
         expression_str = queryToString(dict_attr->expression);
 
@@ -119,6 +110,7 @@ void buildLifetimeConfiguration(
 void buildLayoutConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
+    const ASTDictionarySettings * settings,
     const ASTDictionaryLayout * layout)
 {
     AutoPtr<Element> layout_element(doc->createElement("layout"));
@@ -128,6 +120,19 @@ void buildLayoutConfiguration(
 
     if (!layout->parameters)
         return;
+
+    if (settings != nullptr)
+    {
+        AutoPtr<Element> settings_element(doc->createElement("settings"));
+        root->appendChild(settings_element);
+        for (const auto & [name, value] : settings->changes)
+        {
+            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            settings_element->appendChild(setting_change_element);
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            setting_change_element->appendChild(setting_value);
+        }
+    }
 
     for (const auto & param : layout->parameters->children)
     {
@@ -151,11 +156,11 @@ void buildLayoutConfiguration(
 
         const auto value_field = value_literal->value;
 
-        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::String)
+        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
                 value_field.getTypeName());
         }
 
@@ -244,7 +249,7 @@ void buildAttributeExpressionIfNeeded(
     root->appendChild(expression_element);
 }
 
-/** Transofrms single dictionary attribute to configuration
+/** Transforms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -275,7 +280,7 @@ void buildSingleAttribute(
     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
     String null_value_str;
     if (dict_attr->default_value)
-        null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
+        null_value_str = convertFieldToString(dict_attr->default_value->as<ASTLiteral>()->value);
     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
     null_value_element->appendChild(null_value);
     attribute_element->appendChild(null_value_element);
@@ -288,6 +293,14 @@ void buildSingleAttribute(
         AutoPtr<Text> hierarchical(doc->createTextNode("true"));
         hierarchical_element->appendChild(hierarchical);
         attribute_element->appendChild(hierarchical_element);
+    }
+
+    if (dict_attr->bidirectional)
+    {
+        AutoPtr<Element> bidirectional_element(doc->createElement("bidirectional"));
+        AutoPtr<Text> bidirectional(doc->createTextNode("true"));
+        bidirectional_element->appendChild(bidirectional);
+        attribute_element->appendChild(bidirectional_element);
     }
 
     if (dict_attr->injective)
@@ -345,11 +358,14 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
-        {
-            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
-            return dict_attr->name == identifier_name;
-        });
+        const auto * it = std::find_if(
+            children.begin(),
+            children.end(),
+            [&](const ASTPtr & node)
+            {
+                const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+                return dict_attr->name == identifier_name;
+            });
 
         if (it == children.end())
         {
@@ -444,7 +460,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
-            AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
+            AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (const auto * list = pair->second->as<const ASTExpressionList>())
@@ -453,6 +469,12 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * func = pair->second->as<ASTFunction>())
         {
+            /// This branch exists only for compatibility.
+            /// It's not possible to have a function in a dictionary definition since 22.10,
+            /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
+            /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
+            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
+                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -465,7 +487,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             Field value;
             result->get(0, value);
 
-            AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
+            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString(value)));
             current_xml_element->appendChild(text_value);
         }
         else
@@ -511,7 +533,7 @@ void buildSourceConfiguration(
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -594,7 +616,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
-    buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
+    buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
@@ -619,20 +641,23 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 {
     ClickHouseDictionarySourceInfo info;
 
-    String host = config->getString("dictionary.source.clickhouse.host", "");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
+    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
+    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+
+    String host = config->getString("dictionary.source.clickhouse.host", "localhost");
+    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
-    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
 
-    if (host.empty() || port == 0 || table.empty())
+    info.query = config->getString("dictionary.source.clickhouse.query", "");
+
+    if (!table.empty())
+        info.table_name = {database, table};
+    else if (info.query.empty())
         return {};
-
-    info.table_name = {database, table};
 
     try
     {
-        UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
         if (isLocalAddress({host, port}, default_port))
             info.is_local = true;
     }

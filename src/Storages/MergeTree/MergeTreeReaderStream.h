@@ -1,4 +1,5 @@
 #pragma once
+#include <tuple>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -8,6 +9,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -18,14 +20,20 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DiskPtr disk_,
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+        const String & path_prefix_,
+        const String & data_file_extension_,
+        size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
-        MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
-        size_t file_size_, const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-        bool is_low_cardinality_dictionary_);
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        size_t file_size_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback,
+        clockid_t clock_type,
+        bool is_low_cardinality_dictionary_,
+        ThreadPool * load_marks_cache_threadpool_);
 
     void seekToMark(size_t index);
 
@@ -37,23 +45,34 @@ public:
      */
     void adjustRightMark(size_t right_mark);
 
-    ReadBuffer * data_buffer;
-    CompressedReadBufferBase * compressed_data_buffer;
+    ReadBuffer * getDataBuffer();
+    CompressedReadBufferBase * getCompressedDataBuffer();
 
 private:
-    size_t getRightOffset(size_t right_mark_non_included);
+    void init();
+    size_t getRightOffset(size_t right_mark);
 
-    DiskPtr disk;
+    const MergeTreeReaderSettings settings;
+    const ReadBufferFromFileBase::ProfileCallback profile_callback;
+    clockid_t clock_type;
+    const MarkRanges all_mark_ranges;
+    size_t file_size;
+    UncompressedCache * uncompressed_cache;
+
+    DataPartStoragePtr data_part_storage;
     std::string path_prefix;
     std::string data_file_extension;
 
     bool is_low_cardinality_dictionary = false;
 
     size_t marks_count;
-    size_t file_size;
 
+
+    ReadBuffer * data_buffer;
+    CompressedReadBufferBase * compressed_data_buffer;
     MarkCache * mark_cache;
     bool save_marks_in_cache;
+    bool initialized = false;
 
     std::optional<size_t> last_right_offset;
 
@@ -64,4 +83,5 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 };
+
 }

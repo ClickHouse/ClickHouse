@@ -10,7 +10,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Interpreters/asof.h>
+#include <Core/Joins.h>
 #include <base/sort.h>
 #include <Common/Arena.h>
 
@@ -29,7 +29,10 @@ struct RowRef
     SizeT row_num = 0;
 
     RowRef() = default;
-    RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
+    RowRef(const Block * block_, size_t row_num_)
+        : block(block_)
+        , row_num(static_cast<SizeT>(row_num_))
+    {}
 };
 
 /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
@@ -60,7 +63,8 @@ struct RowRefList : RowRef
                 return batch;
             }
 
-            row_refs[size++] = std::move(row_ref);
+            row_refs[size] = std::move(row_ref);
+            ++size;
             return this;
         }
     };
@@ -161,5 +165,5 @@ struct SortedLookupVectorBase
 // It only contains a std::unique_ptr which is memmovable.
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
 using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
-AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality);
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality);
 }

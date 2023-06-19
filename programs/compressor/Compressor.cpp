@@ -46,7 +46,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
         UInt32 size_compressed = unalignedLoad<UInt32>(&header[1]);
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
-            throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
         UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
@@ -66,6 +66,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     using namespace DB;
     namespace po = boost::program_options;
 
+    bool print_stacktrace = false;
     try
     {
         po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
@@ -79,10 +80,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
             ("hc", "use LZ4HC instead of LZ4")
             ("zstd", "use ZSTD instead of LZ4")
+            ("deflate_qpl", "use deflate_qpl instead of LZ4")
             ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
             ("level", po::value<int>(), "compression level for codecs specified via flags")
             ("none", "use no compression instead of LZ4")
             ("stat", "print block statistics of compressed data")
+            ("stacktrace", "print stacktrace of exception")
         ;
 
         po::positional_options_description positional_desc;
@@ -103,18 +106,20 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool decompress = options.count("decompress");
         bool use_lz4hc = options.count("hc");
         bool use_zstd = options.count("zstd");
+        bool use_deflate_qpl = options.count("deflate_qpl");
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
+        print_stacktrace = options.count("stacktrace");
         unsigned block_size = options["block-size"].as<unsigned>();
         std::vector<std::string> codecs;
         if (options.count("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
 
-        if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
-            throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
+        if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, codec flags like --zstd and --codec options are mutually exclusive");
 
         if (!codecs.empty() && options.count("level"))
-            throw Exception("Wrong options, --level is not compatible with --codec list", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, --level is not compatible with --codec list");
 
         std::string method_family = "LZ4";
 
@@ -122,6 +127,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             method_family = "LZ4HC";
         else if (use_zstd)
             method_family = "ZSTD";
+        else if (use_deflate_qpl)
+            method_family = "DEFLATE_QPL";
         else if (use_none)
             method_family = "NONE";
 
@@ -184,11 +191,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             /// Compression
             CompressedWriteBuffer to(*wb, codec, block_size);
             copyData(*rb, to);
+            to.finalize();
         }
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(true) << '\n';
+        std::cerr << getCurrentExceptionMessage(print_stacktrace) << '\n';
         return getCurrentExceptionCode();
     }
 

@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---
@@ -12,7 +13,7 @@ sidebar_label: VIEW
 语法:
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
 ```
 
 普通视图不存储任何数据。 他们只是在每次访问时从另一个表执行读取。换句话说，普通视图只不过是一个保存的查询。 从视图中读取时，此保存的查询用作[FROM](../../../sql-reference/statements/select/from.md)子句中的子查询.
@@ -60,9 +61,9 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 请注意，物化视图受[optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert)设置的影响。 在插入视图之前合并数据。
 
-视图看起来与普通表相同。 例如，它们列在1SHOW TABLES1查询的结果中。
+视图看起来与普通表相同。 例如，它们列在`SHOW TABLES`查询的结果中。
 
-删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop#drop-view). `DROP TABLE`也适用于视图。
+删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). `DROP TABLE`也适用于视图。
 
 ## Live View (实验性) {#live-view}
 
@@ -163,23 +164,6 @@ SELECT * FROM [db.]live_view WHERE ...
 
 您可以使用`ALTER LIVE VIEW [db.]table_name REFRESH`语法.
 
-### WITH TIMEOUT条件 {#live-view-with-timeout}
-
-当使用`WITH TIMEOUT`子句创建实时视图时，[WATCH](../../../sql-reference/statements/watch.md)观察实时视图的查询。
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
-```
-
-如果未指定超时值，则由指定的值[temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout)决定.
-
-**示例:**
-
-```sql
-CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
-CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
-```
-
 ### WITH REFRESH条件 {#live-view-with-refresh}
 
 当使用`WITH REFRESH`子句创建实时视图时，它将在自上次刷新或触发后经过指定的秒数后自动刷新。
@@ -209,20 +193,6 @@ WATCH lv
 └─────────────────────┴──────────┘
 ```
 
-您可以使用`AND`子句组合`WITH TIMEOUT`和`WITH REFRESH`子句。
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
-```
-
-**示例:**
-
-```sql
-CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
-```
-
-15 秒后，如果没有活动的`WATCH`查询，实时视图将自动删除。
-
 ```sql
 WATCH lv
 ```
@@ -240,7 +210,7 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - 监视表更改并触发后续选择查询。
 - 使用定期刷新从系统表中查看指标。
 
-[原始文章](https://clickhouse.com/docs/en/sql-reference/statements/create/view/) <!--hide-->
+
 
 ## Window View [Experimental] {#window-view}
 
@@ -250,12 +220,14 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
     `set allow_experimental_window_view = 1`。
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ... GROUP BY time_window_function
 ```
 
 Window view可以通过时间窗口聚合数据，并在满足窗口触发条件时自动触发对应窗口计算。其通过将计算状态保存降低处理延迟，支持将处理结果输出至目标表或通过`WATCH`语句输出至终端。
 
-创建window view的方式和创建物化视图类似。Window view使用默认为`AggregatingMergeTree`的内部存储引擎存储计算中间状态。
+创建window view的方式和创建物化视图类似。Window view通过`INNER ENGINE`指定内部存储引擎以存储窗口计算中间状态，默认使用`AggregatingMergeTree`作为内部中间状态存储引擎。
+
+创建不带`TO [db].[table]`的window view时，必须指定`ENGINE` – 用于存储数据的表引擎。
 
 ### 时间窗口函数 {#window-view-shi-jian-chuang-kou-han-shu}
 
@@ -295,6 +267,10 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 需要注意的是，迟到消息需要更新之前的处理结果。与在窗口结束时触发不同，迟到消息到达时window view会立即触发计算。因此，会导致同一个窗口输出多次计算结果。用户需要注意这种情况，并消除重复结果。
 
+### 查询语句修改 {#window-view-cha-xun-yu-ju-xiu-gai}
+
+用户可以通过`ALTER TABLE ... MODIFY QUERY`语句修改window view的`SELECT`查询语句。无论是否使用`TO [db.]name`语句，新`SELECT`语句的数据结构均需和旧语句相同。需要注意的是，由于窗口计算中间状态无法复用，修改查询语句时会丢失当前窗口数据。
+
 ### 新窗口监控 {#window-view-xin-chuang-kou-jian-kong}
 
 Window view可以通过`WATCH`语句将处理结果推送至终端，或通过`TO`语句将结果推送至数据表。
@@ -309,6 +285,7 @@ WATCH [db.]name [LIMIT n]
 
 - `window_view_clean_interval`: window view清除过期数据间隔(单位为秒)。系统会定期清除过期数据，尚未触发的窗口数据不会被清除。
 - `window_view_heartbeat_interval`: 用于判断watch查询活跃的心跳时间间隔。
+- `wait_for_window_view_fire_signal_timeout`: Event time 处理模式下，窗口触发信号等待超时时间。
 
 ### 示例 {#window-view-shi-li}
 

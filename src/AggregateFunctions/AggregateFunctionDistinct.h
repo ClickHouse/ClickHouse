@@ -9,6 +9,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <IO/ReadHelpersArena.h>
 
 
 namespace DB
@@ -152,8 +153,8 @@ template <typename Data>
 class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
-    static constexpr auto prefix_size = sizeof(Data);
     AggregateFunctionPtr nested_func;
+    size_t prefix_size;
     size_t arguments_num;
 
     AggregateDataPtr getNestedPlace(AggregateDataPtr __restrict place) const noexcept
@@ -168,9 +169,13 @@ private:
 
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
-    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_)
+    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
     , nested_func(nested_func_)
-    , arguments_num(arguments.size()) {}
+    , arguments_num(arguments.size())
+    {
+        size_t nested_size = nested_func->alignOfData();
+        prefix_size = (sizeof(Data) + nested_size - 1) / nested_size * nested_size;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -192,7 +197,8 @@ public:
         this->data(place).deserialize(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool MergeResult>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto arguments = this->data(place).getArguments(this->argument_types);
         ColumnRawPtrs arguments_raw(arguments.size());
@@ -201,7 +207,20 @@ public:
 
         assert(!arguments.empty());
         nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
-        nested_func->insertResultInto(getNestedPlace(place), to, arena);
+        if constexpr (MergeResult)
+            nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
+        else
+            nested_func->insertResultInto(getNestedPlace(place), to, arena);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     size_t sizeOfData() const override
@@ -221,14 +240,20 @@ public:
         nested_func->destroy(getNestedPlace(place));
     }
 
+    bool hasTrivialDestructor() const override
+    {
+        return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        this->data(place).~Data();
+        nested_func->destroyUpToState(getNestedPlace(place));
+    }
+
     String getName() const override
     {
         return nested_func->getName() + "Distinct";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return nested_func->getReturnType();
     }
 
     bool allocatesMemoryInArena() const override
@@ -239,6 +264,21 @@ public:
     bool isState() const override
     {
         return nested_func->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

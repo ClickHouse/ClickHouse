@@ -8,7 +8,6 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from kazoo.client import KazooClient, KazooState
 
@@ -30,6 +29,8 @@ def get_fake_zk(nodename, timeout=30.0):
 
 
 def test_smoke():
+    node1_zk = None
+
     try:
         cluster.start()
 
@@ -38,3 +39,7 @@ def test_smoke():
 
     finally:
         cluster.shutdown()
+
+        if node1_zk:
+            node1_zk.stop()
+            node1_zk.close()

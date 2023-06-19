@@ -49,12 +49,15 @@ struct SpaceSavingArena
 template <>
 struct SpaceSavingArena<StringRef>
 {
-    StringRef emplace(const StringRef & key)
+    StringRef emplace(StringRef key)
     {
+        if (!key.data)
+            return key;
+
         return copyStringInArena(arena, key);
     }
 
-    void free(const StringRef & key)
+    void free(StringRef key)
     {
         if (key.data)
             arena.free(const_cast<char *>(key.data), key.size);
@@ -78,7 +81,7 @@ private:
     constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t alpha_map_elements_per_counter = 6;
-        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * alpha_map_elements_per_counter));
+        return 1ULL << (sizeof(uint64_t) * 8 - std::countl_zero(x * alpha_map_elements_per_counter));
     }
 
 public:
@@ -86,7 +89,7 @@ public:
 
     struct Counter
     {
-        Counter() = default; //-V730
+        Counter() = default;
 
         explicit Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
           : key(k), slot(0), hash(h), count(c), error(e) {}
@@ -160,12 +163,11 @@ public:
         // Key doesn't exist, but can fit in the top K
         if (unlikely(size() < capacity()))
         {
-            auto * c = new Counter(arena.emplace(key), increment, error, hash);
-            push(c);
+            push(std::make_unique<Counter>(arena.emplace(key), increment, error, hash));
             return;
         }
 
-        auto * min = counter_list.back();
+        auto & min = counter_list.back();
         // The key doesn't exist and cannot fit in the current top K, but
         // the new key has a bigger weight and is virtually more present
         // compared to the element who is less present on the set. This part
@@ -173,7 +175,7 @@ public:
         if (increment > min->count)
         {
             destroyLastElement();
-            push(new Counter(arena.emplace(key), increment, error, hash));
+            push(std::make_unique<Counter>(arena.emplace(key), increment, error, hash));
             return;
         }
 
@@ -189,7 +191,7 @@ public:
         alpha_map[min->hash & alpha_mask] = min->count;
         destroyLastElement();
 
-        push(new Counter(arena.emplace(key), alpha + increment, alpha + error, hash));
+        push(std::make_unique<Counter>(arena.emplace(key), alpha + increment, alpha + error, hash));
     }
 
     /*
@@ -219,7 +221,7 @@ public:
          */
         if (m2 > 0)
         {
-            for (auto * counter : counter_list)
+            for (auto & counter : counter_list)
             {
                 counter->count += m2;
                 counter->error += m2;
@@ -227,7 +229,7 @@ public:
         }
 
         // The list is sorted in descending order, we have to scan in reverse
-        for (auto * counter : boost::adaptors::reverse(rhs.counter_list))
+        for (auto & counter : boost::adaptors::reverse(rhs.counter_list))
         {
             size_t hash = counter_map.hash(counter->key);
             if (auto * current = findCounter(counter->key, hash))
@@ -239,19 +241,16 @@ public:
             else
             {
                 // Counters not monitored in S1
-                counter_list.push_back(new Counter(arena.emplace(counter->key), counter->count + m1, counter->error + m1, hash));
+                counter_list.push_back(std::make_unique<Counter>(arena.emplace(counter->key), counter->count + m1, counter->error + m1, hash));
             }
         }
 
-        ::sort(counter_list.begin(), counter_list.end(), [](Counter * l, Counter * r) { return *l > *r; });
+        ::sort(counter_list.begin(), counter_list.end(), [](const auto & l, const auto & r) { return *l > *r; });
 
         if (counter_list.size() > m_capacity)
         {
             for (size_t i = m_capacity; i < counter_list.size(); ++i)
-            {
                 arena.free(counter_list[i]->key);
-                delete counter_list[i];
-            }
             counter_list.resize(m_capacity);
         }
 
@@ -263,7 +262,7 @@ public:
     std::vector<Counter> topK(size_t k) const
     {
         std::vector<Counter> res;
-        for (auto * counter : counter_list)
+        for (auto & counter : counter_list)
         {
             res.push_back(*counter);
             if (res.size() == k)
@@ -275,7 +274,7 @@ public:
     void write(WriteBuffer & wb) const
     {
         writeVarUInt(size(), wb);
-        for (auto * counter : counter_list)
+        for (auto & counter : counter_list)
             counter->write(wb);
 
         writeVarUInt(alpha_map.size(), wb);
@@ -291,10 +290,10 @@ public:
 
         for (size_t i = 0; i < count; ++i)
         {
-            auto * counter = new Counter();
+            std::unique_ptr counter = std::make_unique<Counter>();
             counter->read(rb);
             counter->hash = counter_map.hash(counter->key);
-            push(counter);
+            push(std::move(counter));
         }
 
         readAlphaMap(rb);
@@ -313,12 +312,13 @@ public:
     }
 
 protected:
-    void push(Counter * counter)
+    void push(std::unique_ptr<Counter> counter)
     {
         counter->slot = counter_list.size();
-        counter_list.push_back(counter);
-        counter_map[counter->key] = counter;
-        percolate(counter);
+        auto * ptr = counter.get();
+        counter_list.push_back(std::move(counter));
+        counter_map[ptr->key] = ptr;
+        percolate(ptr);
     }
 
     // This is equivallent to one step of bubble sort
@@ -326,7 +326,7 @@ protected:
     {
         while (counter->slot > 0)
         {
-            auto * next = counter_list[counter->slot - 1];
+            auto & next = counter_list[counter->slot - 1];
             if (*counter > *next)
             {
                 std::swap(next->slot, counter->slot);
@@ -340,11 +340,8 @@ protected:
 private:
     void destroyElements()
     {
-        for (auto * counter : counter_list)
-        {
+        for (auto & counter : counter_list)
             arena.free(counter->key);
-            delete counter;
-        }
 
         counter_map.clear();
         counter_list.clear();
@@ -353,10 +350,9 @@ private:
 
     void destroyLastElement()
     {
-        auto last_element = counter_list.back();
+        auto & last_element = counter_list.back();
         counter_map.erase(last_element->key);
         arena.free(last_element->key);
-        delete last_element;
         counter_list.pop_back();
 
         ++removed_keys;
@@ -377,14 +373,14 @@ private:
     {
         removed_keys = 0;
         counter_map.clear();
-        for (auto * counter : counter_list)
-            counter_map[counter->key] = counter;
+        for (auto & counter : counter_list)
+            counter_map[counter->key] = counter.get();
     }
 
     using CounterMap = HashMapWithStackMemory<TKey, Counter *, Hash, 4>;
 
     CounterMap counter_map;
-    std::vector<Counter *, AllocatorWithMemoryTracking<Counter *>> counter_list;
+    std::vector<std::unique_ptr<Counter>, AllocatorWithMemoryTracking<std::unique_ptr<Counter>>> counter_list;
     std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map;
     SpaceSavingArena<TKey> arena;
     size_t m_capacity;

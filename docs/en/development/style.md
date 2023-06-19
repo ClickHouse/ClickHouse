@@ -1,10 +1,11 @@
 ---
-sidebar_position: 69
+slug: /en/development/style
+sidebar_position: 70
 sidebar_label: C++ Guide
 description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# How to Write C++ Code 
+# How to Write C++ Code
 
 ## General Recommendations {#general-recommendations}
 
@@ -196,7 +197,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For template classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -285,7 +286,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// WHAT THE FAIL???
 ```
 
-**14.** Do not use comments to make delimeters.
+**14.** Do not use comments to make delimiters.
 
 ``` cpp
 ///******************************************************
@@ -369,8 +370,8 @@ If the file contains a single function, name the file the same way as the functi
 
 **11.** If the name contains an abbreviation, then:
 
--   For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
--   For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
+- For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
+- For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
 
 **12.** Constructor arguments that are used just to initialize the class members should be named the same way as the class members, but with an underscore at the end.
 
@@ -433,9 +434,9 @@ In application code, memory must be freed by the object that owns it.
 
 Examples:
 
--   The easiest way is to place an object on the stack, or make it a member of another class.
--   For a large number of small objects, use containers.
--   For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
+- The easiest way is to place an object on the stack, or make it a member of another class.
+- For a large number of small objects, use containers.
+- For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
 
 **2.** Resource management.
 
@@ -491,7 +492,7 @@ if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-You can use assert to check invariants in code.
+You can use assert to check invariant in code.
 
 **4.** Exception types.
 
@@ -503,10 +504,10 @@ This is not recommended, but it is allowed.
 
 Use the following options:
 
--   Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
--   Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
--   If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
--   In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
+- Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
+- Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
+- If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
+- In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
 
 **6.** Anonymous code blocks.
 
@@ -528,11 +529,11 @@ ready_any.set();
 
 In offline data processing programs:
 
--   Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
+- Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
 
 In server applications:
 
--   Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
+- Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
 
 Fork is not used for parallelization.
 
@@ -552,9 +553,9 @@ Do not try to implement lock-free data structures unless it is your primary area
 
 In most cases, prefer references.
 
-**10.** const.
+**10.** `const`.
 
-Use constant references, pointers to constants, `const_iterator`, and const methods.
+Use constant references, pointers to constants, `const_iterator`, and `const` methods.
 
 Consider `const` to be default and use non-`const` only when necessary.
 
@@ -596,7 +597,7 @@ public:
     AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 ```
 
-**15.** namespace.
+**15.** `namespace`.
 
 There is no need to use a separate `namespace` for application code.
 
@@ -606,7 +607,7 @@ For medium to large libraries, put everything in a `namespace`.
 
 In the library’s `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
 
-In a `.cpp` file, you can use a `static` or anonymous namespace to hide symbols.
+In a `.cpp` file, you can use a `static` or anonymous `namespace` to hide symbols.
 
 Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it’s better to use an `enum class`).
 
@@ -692,7 +693,48 @@ auto s = std::string{"Hello"};
 
 **1.** Virtual inheritance is not used.
 
-**2.** Exception specifiers from C++03 are not used.
+**2.** Constructs which have convenient syntactic sugar in modern C++, e.g.
+
+```
+// Traditional way without syntactic sugar
+template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
+std::pair<int, int> func(const E<G> & e) // explicitly specified return type
+{
+    if (elements.count(e)) // .count() membership test
+    {
+        // ...
+    }
+
+    elements.erase(
+        std::remove_if(
+            elements.begin(), elements.end(),
+            [&](const auto x){
+                return x == 1;
+            }),
+        elements.end()); // remove-erase idiom
+
+    return std::make_pair(1, 2); // create pair via make_pair()
+}
+
+// With syntactic sugar (C++14/17/20)
+template <typename G>
+requires std::same_v<G, F> // SFINAE via C++20 concept, usage of C++14 template alias
+auto func(const E<G> & e) // auto return type (C++14)
+{
+    if (elements.contains(e)) // C++20 .contains membership test
+    {
+        // ...
+    }
+
+    elements.erase_if(
+        elements,
+        [&](const auto x){
+            return x == 1;
+        }); // C++20 std::erase_if
+
+    return {1, 2}; // or: return std::pair(1, 2); // create pair via initialization list or value initialization (C++17)
+}
+```
 
 ## Platform {#platform}
 
@@ -702,7 +744,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `clang`. At this time (April 2021), the code is compiled using clang version 11. (It can also be compiled using `gcc` version 10, but it's untested and not suitable for production usage).
+**3.** Compiler: `clang`. At the time of writing (July 2022), the code is compiled using clang version >= 12. (It can also be compiled using `gcc`, but it's untested and not suitable for production usage).
 
 The standard library is used (`libc++`).
 
@@ -712,7 +754,7 @@ The standard library is used (`libc++`).
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags. Also `-Weverything` is used with few exceptions.
+**6.** Use `-Wall -Wextra -Werror -Weverything` compilation flags with a few exception.
 
 **7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
 
@@ -828,5 +870,3 @@ function(
       const & RangesInDataParts ranges,
       size_t limit)
 ```
-
-[Original article](https://clickhouse.com/docs/en/development/style/) <!--hide-->

@@ -9,8 +9,11 @@
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <base/StringRef.h>
 #include <base/unaligned.h>
+
+#ifdef __SSE4_1__
+    #include <smmintrin.h>
+#endif
 
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
@@ -194,8 +197,8 @@ namespace VolnitskyTraits
                         chars.c1 = seq_l[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
-                        chars.c0 = seq_r[seq_ngram_offset]; //-V519
-                        chars.c1 = seq_r[seq_ngram_offset + 1]; //-V519
+                        chars.c0 = seq_r[seq_ngram_offset];
+                        chars.c1 = seq_r[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
                     }
@@ -318,7 +321,7 @@ namespace VolnitskyTraits
                     {
                         /// ngram for Ul
                         chars.c0 = c0u;
-                        chars.c1 = c1l; //-V1048
+                        chars.c1 = c1l;
                         putNGramBase(n, offset);
                     }
 
@@ -383,8 +386,6 @@ protected:
     FallbackSearcher fallback_searcher;
 
 public:
-    using Searcher = FallbackSearcher;
-
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
@@ -405,7 +406,8 @@ public:
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
+            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
+                needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
 
             /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
               * are represented by different number of bytes or code points.
@@ -428,6 +430,10 @@ public:
             return haystack;
 
         const auto * haystack_end = haystack + haystack_size;
+
+#ifdef __SSE4_1__
+        return fallback_searcher.search(haystack, haystack_end);
+#endif
 
         if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
             return fallback_searcher.search(haystack, haystack_end);
@@ -476,7 +482,7 @@ class MultiVolnitskyBase
 {
 private:
     /// needles and their offsets
-    const std::vector<StringRef> & needles;
+    const std::vector<std::string_view> & needles;
 
 
     /// fallback searchers
@@ -498,11 +504,11 @@ private:
     /// last index of offsets that was not processed
     size_t last;
 
-    /// limit for adding to hashtable. In worst case with case insentive search, the table will be filled at most as half
+    /// limit for adding to hashtable. In worst case with case insensitive search, the table will be filled at most as half
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:
-    explicit MultiVolnitskyBase(const std::vector<StringRef> & needles_) : needles{needles_}, step{0}, last{0}
+    explicit MultiVolnitskyBase(const std::vector<std::string_view> & needles_) : needles{needles_}, step{0}, last{0}
     {
         fallback_searchers.reserve(needles.size());
         hash = std::unique_ptr<OffsetId[]>(new OffsetId[VolnitskyTraits::hash_size]);   /// No zero initialization, it will be done later.
@@ -535,8 +541,8 @@ public:
 
         for (; last < size; ++last)
         {
-            const char * cur_needle_data = needles[last].data;
-            const size_t cur_needle_size = needles[last].size;
+            const char * cur_needle_data = needles[last].data();
+            const size_t cur_needle_size = needles[last].size();
 
             /// save the indices of fallback searchers
             if (VolnitskyTraits::isFallbackNeedle(cur_needle_size))
@@ -593,7 +599,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             return true;
                     }
                 }
@@ -625,7 +631,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             answer = std::min(answer, ind);
                     }
                 }
@@ -663,7 +669,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             answer = std::min<UInt64>(answer, res - haystack);
                     }
                 }
@@ -699,7 +705,7 @@ public:
                         const auto * res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
                         if (answer[ind] == 0
-                            && res + needles[ind].size <= haystack_end
+                            && res + needles[ind].size() <= haystack_end
                             && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             answer[ind] = count_chars(haystack, res);
                     }
@@ -721,7 +727,7 @@ public:
 
 
 using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using VolnitskyUTF8 = VolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>; /// exactly same as Volnitsky
+using VolnitskyUTF8 = VolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 
@@ -729,7 +735,7 @@ using VolnitskyCaseSensitiveToken = VolnitskyBase<true, true, ASCIICaseSensitive
 using VolnitskyCaseInsensitiveToken = VolnitskyBase<false, true, ASCIICaseInsensitiveTokenSearcher>;
 
 using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>;
+using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitive = MultiVolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitiveUTF8 = MultiVolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 

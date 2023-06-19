@@ -2,6 +2,7 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
+#include <base/range.h>
 #include <utility>
 
 
@@ -15,27 +16,51 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        DiskPtr disk_,
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
-        const MarkRanges & all_mark_ranges,
-        const MergeTreeReaderSettings & settings,
+        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+        const String & path_prefix_,
+        const String & data_file_extension_,
+        size_t marks_count_,
+        const MarkRanges & all_mark_ranges_,
+        const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache_,
-        UncompressedCache * uncompressed_cache, size_t file_size_,
+        UncompressedCache * uncompressed_cache_,
+        size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-        bool is_low_cardinality_dictionary_)
-    : disk(std::move(disk_))
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+        clockid_t clock_type_,
+        bool is_low_cardinality_dictionary_,
+        ThreadPool * load_marks_cache_threadpool_)
+    : settings(settings_)
+    , profile_callback(profile_callback_)
+    , clock_type(clock_type_)
+    , all_mark_ranges(all_mark_ranges_)
+    , file_size(file_size_)
+    , uncompressed_cache(uncompressed_cache_)
+    , data_part_storage(data_part_reader_->getDataPartStorage())
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
     , marks_count(marks_count_)
-    , file_size(file_size_)
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
-    , marks_loader(disk, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
-        marks_count, *index_granularity_info, save_marks_in_cache)
+    , marks_loader(
+        data_part_reader_,
+        mark_cache,
+        index_granularity_info->getMarksFilePath(path_prefix),
+        marks_count,
+        *index_granularity_info,
+        save_marks_in_cache,
+        settings.read_settings,
+        load_marks_cache_threadpool_)
 {
+}
+
+void MergeTreeReaderStream::init()
+{
+    if (initialized)
+        return;
+    initialized = true;
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
@@ -58,7 +83,6 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     ReadSettings read_settings = settings.read_settings;
-    read_settings.must_read_until_position = true;
     if (max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
@@ -70,13 +94,13 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(disk, path_prefix + data_file_extension),
+            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
             {
-                return disk->readFile(
+                return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes, std::nullopt);
             },
             uncompressed_cache);
 
@@ -93,10 +117,11 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            disk->readFile(
+            data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes));
+                estimated_sum_mark_range_bytes,
+                std::nullopt));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -111,7 +136,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 }
 
 
-size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
+size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
@@ -120,79 +145,88 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
     if (marks_count == 0)
         return 0;
 
-    assert(right_mark_non_included <= marks_count);
+    assert(right_mark <= marks_count);
 
-    size_t result_right_offset;
-    if (0 < right_mark_non_included && right_mark_non_included < marks_count)
+    if (0 < right_mark && right_mark < marks_count)
     {
-        auto right_mark = marks_loader.getMark(right_mark_non_included);
-        result_right_offset = right_mark.offset_in_compressed_file;
+        /// Find the right border of the last mark we need to read.
+        /// To do that let's find the upper bound of the offset of the last
+        /// included mark.
 
-        bool need_to_check_marks_from_the_right = false;
-
-        /// If the end of range is inside the block, we will need to read it too.
-        if (right_mark.offset_in_decompressed_block > 0)
+        if (is_low_cardinality_dictionary)
         {
-            need_to_check_marks_from_the_right = true;
-        }
-        else if (is_low_cardinality_dictionary)
-        {
-            /// Also, in LowCardinality dictionary several consecutive marks can point to
-            /// the same offset. So to get true bytes offset we have to get first
-            /// non-equal mark.
-            /// Example:
-            ///  Mark 186, points to [2003111, 0]
-            ///  Mark 187, points to [2003111, 0]
-            ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
-            ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
-            ///  Mark 190, points to [2003111, 0]
-            ///  Mark 191, points to [2003111, 0]
-            ///  Mark 192, points to [2081424, 0] <--- what we are looking for
-            ///  Mark 193, points to [2081424, 0]
-            ///  Mark 194, points to [2081424, 0]
 
+            /// In LowCardinality dictionary several consecutive marks can point to the same offset.
+            ///
             /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
             /// one granule may require reading of two dictionaries which starts from different marks.
             /// The only correct way is to take offset from at least next different granule from the right one.
+            /// So, that's why we have to read one extra granule to the right,
+            /// while reading dictionary of LowCardinality.
+            ///
+            /// Example:
+            /// Mark 0, points to [0, 8]
+            /// Mark 1, points to [0, 8]
+            /// Mark 2, points to [0, 8]
+            /// Mark 3, points to [0, 8]
+            /// Mark 4, points to [42336, 2255]
+            /// Mark 5, points to [42336, 2255]  <--- for example need to read until 5
+            /// Mark 6, points to [42336, 2255]  <--- not suitable, because have same offset
+            /// Mark 7, points to [84995, 7738]  <--- next different mark
+            /// Mark 8, points to [84995, 7738]
+            /// Mark 9, points to [126531, 8637] <--- what we are looking for
 
-            /// Check test_s3_low_cardinality_right_border.
+            auto indices = collections::range(right_mark, marks_count);
+            auto next_different_mark = [&](auto lhs, auto rhs)
+            {
+                return marks_loader.getMark(lhs).asTuple() < marks_loader.getMark(rhs).asTuple();
+            };
+            auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_mark));
 
-            need_to_check_marks_from_the_right = true;
+            if (it == indices.end())
+                return file_size;
+
+            right_mark = *it;
         }
 
+        /// This is a good scenario. The compressed block is finished within the right mark,
+        /// and previous mark was different.
+        if (marks_loader.getMark(right_mark).offset_in_decompressed_block == 0
+            && marks_loader.getMark(right_mark) != marks_loader.getMark(right_mark - 1))
+            return marks_loader.getMark(right_mark).offset_in_compressed_file;
 
-        /// Let's go to the right and find mark with bigger offset in compressed file
-        if (need_to_check_marks_from_the_right)
+        /// If right_mark has non-zero offset in decompressed block, we have to
+        /// read its compressed block in a whole, because it may consist of data from previous granule.
+        ///
+        /// For example:
+        /// Mark 6, points to [42336, 2255]
+        /// Mark 7, points to [84995, 7738]  <--- right_mark
+        /// Mark 8, points to [84995, 7738]
+        /// Mark 9, points to [126531, 8637] <--- what we are looking for
+        ///
+        /// Since mark 7 starts from offset in decompressed block 7738,
+        /// it has some data from mark 6 and we have to read
+        /// compressed block  [84995; 126531 in a whole.
+
+        auto indices = collections::range(right_mark, marks_count);
+        auto next_different_compressed_offset = [&](auto lhs, auto rhs)
         {
-            bool found_bigger_mark = false;
-            for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
-            {
-                const auto & candidate_mark =  marks_loader.getMark(i);
-                if (result_right_offset < candidate_mark.offset_in_compressed_file)
-                {
-                    result_right_offset = candidate_mark.offset_in_compressed_file;
-                    found_bigger_mark = true;
-                    break;
-                }
-            }
+            return marks_loader.getMark(lhs).offset_in_compressed_file < marks_loader.getMark(rhs).offset_in_compressed_file;
+        };
+        auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_compressed_offset));
 
-            if (!found_bigger_mark)
-            {
-                /// If there are no marks after the end of range, just use file size
-                result_right_offset = file_size;
-            }
-        }
+        if (it != indices.end())
+            return marks_loader.getMark(*it).offset_in_compressed_file;
     }
-    else if (right_mark_non_included == 0)
-        result_right_offset = marks_loader.getMark(right_mark_non_included).offset_in_compressed_file;
-    else
-        result_right_offset = file_size;
+    else if (right_mark == 0)
+        return marks_loader.getMark(right_mark).offset_in_compressed_file;
 
-    return result_right_offset;
+    return file_size;
 }
 
 void MergeTreeReaderStream::seekToMark(size_t index)
 {
+    init();
     MarkInCompressedFile mark = marks_loader.getMark(index);
 
     try
@@ -215,6 +249,7 @@ void MergeTreeReaderStream::seekToMark(size_t index)
 
 void MergeTreeReaderStream::seekToStart()
 {
+    init();
     try
     {
         compressed_data_buffer->seek(0, 0);
@@ -237,6 +272,7 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
      * read from stream, but we must update last_right_offset only if it is bigger than
      * the last one to avoid redundantly cancelling prefetches.
      */
+    init();
     auto right_offset = getRightOffset(right_mark);
     if (!right_offset)
     {
@@ -254,6 +290,18 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
         last_right_offset = right_offset;
         data_buffer->setReadUntilPosition(right_offset);
     }
+}
+
+ReadBuffer * MergeTreeReaderStream::getDataBuffer()
+{
+    init();
+    return data_buffer;
+}
+
+CompressedReadBufferBase * MergeTreeReaderStream::getCompressedDataBuffer()
+{
+    init();
+    return compressed_data_buffer;
 }
 
 }

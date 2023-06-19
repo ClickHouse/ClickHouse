@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-import time
-import logging
+from typing import List
 import json
+import logging
+import time
 
 import requests  # type: ignore
+
 from get_robot_token import get_parameter_from_ssm
+from pr_info import PRInfo
+from report import TestResults
+
+
+class InsertException(Exception):
+    pass
 
 
 class ClickHouseHelper:
@@ -22,15 +30,20 @@ class ClickHouseHelper:
     def _insert_json_str_info_impl(url, auth, db, table, json_str):
         params = {
             "database": db,
-            "query": "INSERT INTO {table} FORMAT JSONEachRow".format(table=table),
+            "query": f"INSERT INTO {table} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
 
         for i in range(5):
-            response = requests.post(
-                url, params=params, data=json_str, headers=auth, verify=False
-            )
+            try:
+                response = requests.post(
+                    url, params=params, data=json_str, headers=auth
+                )
+            except Exception as e:
+                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
+                logging.warning(error)
+                continue
 
             logging.info("Response content '%s'", response.content)
 
@@ -58,23 +71,37 @@ class ClickHouseHelper:
                 response.request.body,
             )
 
-            raise Exception(error)
+            raise InsertException(error)
         else:
-            raise Exception(error)
+            raise InsertException(error)
 
     def _insert_json_str_info(self, db, table, json_str):
         self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
 
-    def insert_event_into(self, db, table, event):
+    def insert_event_into(self, db, table, event, safe=True):
         event_str = json.dumps(event)
-        self._insert_json_str_info(db, table, event_str)
+        try:
+            self._insert_json_str_info(db, table, event_str)
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
 
-    def insert_events_into(self, db, table, events):
+    def insert_events_into(self, db, table, events, safe=True):
         jsons = []
         for event in events:
             jsons.append(json.dumps(event))
 
-        self._insert_json_str_info(db, table, ",".join(jsons))
+        try:
+            self._insert_json_str_info(db, table, ",".join(jsons))
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
 
     def _select_and_get_json_each_row(self, db, query):
         params = {
@@ -85,9 +112,7 @@ class ClickHouseHelper:
         for i in range(5):
             response = None
             try:
-                response = requests.get(
-                    self.url, params=params, headers=self.auth, verify=False
-                )
+                response = requests.get(self.url, params=params, headers=self.auth)
                 response.raise_for_status()
                 return response.text
             except Exception as ex:
@@ -96,7 +121,7 @@ class ClickHouseHelper:
                     logging.warning("Reponse text %s", response.text)
                 time.sleep(0.1 * i)
 
-        raise Exception("Cannot insert data into clickhouse")
+        raise Exception("Cannot fetch data from clickhouse")
 
     def select_json_each_row(self, db, query):
         text = self._select_and_get_json_each_row(db, query)
@@ -108,15 +133,14 @@ class ClickHouseHelper:
 
 
 def prepare_tests_results_for_clickhouse(
-    pr_info,
-    test_results,
-    check_status,
-    check_duration,
-    check_start_time,
-    report_url,
-    check_name,
-):
-
+    pr_info: PRInfo,
+    test_results: TestResults,
+    check_status: str,
+    check_duration: float,
+    check_start_time: str,
+    report_url: str,
+    check_name: str,
+) -> List[dict]:
     pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     base_ref = "master"
     head_ref = "master"
@@ -151,40 +175,42 @@ def prepare_tests_results_for_clickhouse(
     result = [common_properties]
     for test_result in test_results:
         current_row = common_properties.copy()
-        test_name = test_result[0]
-        test_status = test_result[1]
+        test_name = test_result.name
+        test_status = test_result.status
 
-        test_time = 0
-        if len(test_result) > 2 and test_result[2]:
-            test_time = test_result[2]
-        current_row["test_duration_ms"] = int(float(test_time) * 1000)
+        test_time = test_result.time or 0
+        current_row["test_duration_ms"] = int(test_time * 1000)
         current_row["test_name"] = test_name
         current_row["test_status"] = test_status
+        if test_result.raw_logs:
+            # Protect from too big blobs that contain garbage
+            current_row["test_context_raw"] = test_result.raw_logs[: 32 * 1024]
+        else:
+            current_row["test_context_raw"] = ""
         result.append(current_row)
 
     return result
 
 
-def mark_flaky_tests(clickhouse_helper, check_name, test_results):
+def mark_flaky_tests(
+    clickhouse_helper: ClickHouseHelper, check_name: str, test_results: TestResults
+) -> None:
     try:
-        query = """
-        SELECT DISTINCT test_name
-        FROM checks
-        WHERE
-            check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
-            AND check_name = '{check_name}'
-            AND (test_status = 'FAIL' OR test_status = 'FLAKY')
-            AND pull_request_number = 0
-        """.format(
-            check_name=check_name
-        )
+        query = f"""SELECT DISTINCT test_name
+FROM checks
+WHERE
+    check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
+    AND check_name = '{check_name}'
+    AND (test_status = 'FAIL' OR test_status = 'FLAKY')
+    AND pull_request_number = 0
+"""
 
         tests_data = clickhouse_helper.select_json_each_row("default", query)
         master_failed_tests = {row["test_name"] for row in tests_data}
         logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
 
         for test_result in test_results:
-            if test_result[1] == "FAIL" and test_result[0] in master_failed_tests:
-                test_result[1] = "FLAKY"
+            if test_result.status == "FAIL" and test_result.name in master_failed_tests:
+                test_result.status = "FLAKY"
     except Exception as ex:
-        logging.info("Exception happened during flaky tests fetch %s", ex)
+        logging.error("Exception happened during flaky tests fetch %s", ex)

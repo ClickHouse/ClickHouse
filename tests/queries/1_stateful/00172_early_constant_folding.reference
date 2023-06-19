@@ -1,8 +1,9 @@
 (Expression)
-ExpressionTransform
-  (SettingQuotaAndLimits)
-    (ReadFromStorage)
+ExpressionTransform × 10
+  (Aggregating)
+  Resize 1 → 10
     AggregatingTransform
-      StrictResize
-        ExpressionTransform
-          SourceFromSingleChunk 0 → 1
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        SourceFromSingleChunk 0 → 1

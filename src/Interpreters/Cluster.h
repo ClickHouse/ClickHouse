@@ -2,6 +2,9 @@
 
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/Macros.h>
+#include <Common/MultiVersion.h>
+#include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -27,6 +30,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct DatabaseReplicaInfo
+{
+    String hostname;
+    String shard_name;
+    String replica_name;
+};
+
+struct ClusterConnectionParameters
+{
+    const String & username;
+    const String & password;
+    UInt16 clickhouse_port;
+    bool treat_local_as_remote;
+    bool treat_local_port_as_remote;
+    bool secure = false;
+    Priority priority{1};
+    String cluster_name;
+    String cluster_secret;
+};
+
 /// Cluster contains connection pools to each node
 /// With the local nodes, the connection is not established, but the request is executed directly.
 /// Therefore we store only the number of local nodes
@@ -49,15 +72,13 @@ public:
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<String>> & names,
-        const String & username,
-        const String & password,
-        UInt16 clickhouse_port,
-        bool treat_local_as_remote,
-        bool treat_local_port_as_remote,
-        bool secure = false,
-        Int64 priority = 1,
-        String cluster_name = "",
-        String cluster_secret = "");
+        const ClusterConnectionParameters & params);
+
+
+    Cluster(
+        const Settings & settings,
+        const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
+        const ClusterConnectionParameters & params);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -88,9 +109,12 @@ public:
         */
 
         String host_name;
+        String database_shard_name;
+        String database_replica_name;
         UInt16 port{0};
         String user;
         String password;
+        String quota_key;
 
         /// For inter-server authorization
         String cluster;
@@ -108,7 +132,7 @@ public:
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
-        Int64 priority = 1;
+        Priority priority{1};
 
         Address() = default;
 
@@ -122,16 +146,15 @@ public:
 
         Address(
             const String & host_port_,
-            const String & user_,
-            const String & password_,
-            UInt16 clickhouse_port,
-            bool treat_local_port_as_remote,
-            bool secure_ = false,
-            Int64 priority_ = 1,
-            UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0,
-            String cluster_name = "",
-            String cluster_secret_ = "");
+            const ClusterConnectionParameters & params,
+            UInt32 shard_index_,
+            UInt32 replica_index_);
+
+        Address(
+            const DatabaseReplicaInfo & info,
+            const ClusterConnectionParameters & params,
+            UInt32 shard_index_,
+            UInt32 replica_index_);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -200,6 +223,7 @@ public:
         UInt32 shard_num = 0;
         UInt32 weight = 1;
         Addresses local_addresses;
+        Addresses all_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
@@ -212,10 +236,15 @@ public:
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
+    /// Returns addresses of some replicas according to specified `only_shard_num` and `only_replica_num`.
+    /// `only_shard_num` is 1-based index of a shard, 0 means all shards.
+    /// `only_replica_num` is 1-based index of a replica, 0 means all replicas.
+    std::vector<const Address *> filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const;
+
     const ShardInfo & getAnyShardInfo() const
     {
         if (shards_info.empty())
-            throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
         return shards_info.front();
     }
 
@@ -229,6 +258,9 @@ public:
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
+    /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
+    std::vector<Strings> getHostIDs() const;
+
     const String & getSecret() const { return secret; }
 
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
@@ -238,11 +270,14 @@ public:
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
-    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
+
+    /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
+    bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
 private:
     SlotToShard slot_to_shard;
@@ -259,7 +294,10 @@ private:
 
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
-    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
+    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+
+    void addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
+                  ShardInfoInsertPathForInternalReplication && insert_paths = {}, UInt32 weight = 1, bool internal_replication = false);
 
     /// Inter-server secret
     String secret;
@@ -275,6 +313,8 @@ private:
     /// An array of shards. For each shard, an array of replica addresses (servers that are considered identical).
     AddressesWithFailover addresses_with_failover;
 
+    bool allow_distributed_ddl_queries = true;
+
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;
 
@@ -287,7 +327,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -305,6 +345,8 @@ protected:
 
     /// setup outside of this class, stored to prevent deleting from impl on config update
     std::unordered_set<std::string> automatic_clusters;
+
+    MultiVersion<Macros>::Version macros_;
 
     Impl impl;
     mutable std::mutex mutex;

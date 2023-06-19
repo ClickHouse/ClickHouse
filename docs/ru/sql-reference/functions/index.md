@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/
 sidebar_label: "Функции"
 sidebar_position: 32
 ---
@@ -174,22 +175,24 @@ SELECT test_function_sum(2, 2);
 Создание `test_function_sum_json` с именноваными аргументами и форматом [JSONEachRow](../../interfaces/formats.md#jsoneachrow) с использованием конфигурации XML.
 Файл test_function.xml.
 ```xml
-<function>
-    <type>executable</type>
-    <name>test_function_sum_json</name>
-    <return_type>UInt64</return_type>
-    <return_name>result_name</return_name>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_1</name>
-    </argument>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_2</name>
-    </argument>
-    <format>JSONEachRow</format>
-    <command>test_function_sum_json.py</command>
-</function>
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>test_function_sum_json.py</command>
+    </function>
+</functions>
 ```
 
 Файл скрипта внутри папки `user_scripts` `test_function_sum_json.py`.
@@ -224,6 +227,50 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
+Исполняемые пользовательские функции могут принимать константные параметры, их конфигурация является частью настройки `command` (работает только для пользовательских функций с типом `executable`).
+Файл test_function_parameter_python.xml.
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+    </function>
+</functions>
+```
+
+Файл скрипта внутри папки `user_scripts` `test_function_parameter_python.py`.
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+Query:
+
+``` sql
+SELECT test_function_parameter_python(1)(2);
+```
+
+Result:
+
+``` text
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
 ## Обработка ошибок {#obrabotka-oshibok}
 
 Некоторые функции могут кидать исключения в случае ошибочных данных. В этом случае, выполнение запроса прерывается, и текст ошибки выводится клиенту. При распределённой обработке запроса, при возникновении исключения на одном из серверов, на другие серверы пытается отправиться просьба тоже прервать выполнение запроса.
@@ -247,4 +294,3 @@ SELECT test_function_sum_json(2, 2);
 Другой пример - функция `hostName` вернёт имя сервера, на котором она выполняется, и это можно использовать для служебных целей - чтобы в запросе `SELECT` сделать `GROUP BY` по серверам.
 
 Если функция в запросе выполняется на сервере-инициаторе запроса, а вам нужно, чтобы она выполнялась на удалённых серверах, вы можете обернуть её в агрегатную функцию any или добавить в ключ в `GROUP BY`.
-

@@ -1,12 +1,14 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 
+#include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/JIT/CHJIT.h>
+
 
 namespace DB
 {
@@ -24,7 +26,7 @@ struct ColumnData
 /** Returns ColumnData for column.
   * If constant column is passed, LOGICAL_ERROR will be thrown.
   */
-ColumnData getColumnData(const IColumn * column);
+ColumnData getColumnData(const IColumn * column, size_t skip_rows = 0);
 
 using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;
@@ -82,6 +84,21 @@ struct CompiledAggregateFunctions
   * JITInsertAggregateStatesIntoColumnsFunction will insert aggregate states for aggregate functions into result columns.
   */
 CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
+
+
+using JITSortDescriptionFunc = int8_t (*)(size_t, size_t, ColumnData *, ColumnData *);
+
+struct CompiledSortDescriptionFunction
+{
+    JITSortDescriptionFunc comparator_function;
+    CHJIT::CompiledModule compiled_module;
+};
+
+CompiledSortDescriptionFunction compileSortDescription(
+    CHJIT & jit,
+    SortDescription & description,
+    const DataTypes & sort_description_types,
+    const std::string & sort_description_dump);
 
 }
 

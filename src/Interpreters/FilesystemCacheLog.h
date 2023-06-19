@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -24,11 +23,12 @@ namespace DB
 ///
 struct FilesystemCacheLogElement
 {
-    enum class ReadType
+    enum class CacheType
     {
         READ_FROM_CACHE,
         READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
         READ_FROM_FS_BYPASSING_CACHE,
+        WRITE_THROUGH_CACHE,
     };
 
     time_t event_time{};
@@ -37,8 +37,12 @@ struct FilesystemCacheLogElement
     String source_file_path;
 
     std::pair<size_t, size_t> file_segment_range{};
-    ReadType read_type{};
+    std::pair<size_t, size_t> requested_range{};
+    CacheType cache_type{};
     size_t file_segment_size;
+    bool read_from_cache_attempted;
+    String read_buffer_id;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
     static std::string name() { return "FilesystemCacheLog"; }
 
@@ -54,4 +58,4 @@ class FilesystemCacheLog : public SystemLog<FilesystemCacheLogElement>
     using SystemLog<FilesystemCacheLogElement>::SystemLog;
 };
 
-};
+}

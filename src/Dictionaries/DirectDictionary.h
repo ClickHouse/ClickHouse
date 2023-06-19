@@ -95,12 +95,16 @@ public:
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
+    void applySettings(const Settings & settings);
+
 private:
-    Pipe getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourcePipe(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+
+    bool use_async_executor = false;
 
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};

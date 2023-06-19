@@ -26,18 +26,19 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     StorageXDBC(
         const StorageID & table_id_,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const ColumnsDescription & columns_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::string getName() const override;
 private:
@@ -67,7 +68,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 };
 
 }

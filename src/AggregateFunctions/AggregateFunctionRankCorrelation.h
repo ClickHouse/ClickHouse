@@ -14,8 +14,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 
-#include <Common/ArenaAllocator.h>
-
 namespace DB
 {
 struct Settings;
@@ -31,8 +29,8 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
         RanksArray ranks_y;
         std::tie(ranks_y, std::ignore) = computeRanksAndTieCorrection(this->y);
 
-        /// In our case sizes of both samples are equal.
-        const auto size = this->size_x;
+        /// Sizes can be non-equal due to skipped NaNs.
+        const Float64 size = static_cast<Float64>(std::min(this->size_x, this->size_y));
 
         /// Count d^2 sum
         Float64 answer = 0;
@@ -51,7 +49,7 @@ class AggregateFunctionRankCorrelation :
 {
 public:
     explicit AggregateFunctionRankCorrelation(const DataTypes & arguments)
-        :IAggregateFunctionDataHelper<RankCorrelationData, AggregateFunctionRankCorrelation> ({arguments}, {})
+        :IAggregateFunctionDataHelper<RankCorrelationData, AggregateFunctionRankCorrelation> ({arguments}, {}, std::make_shared<DataTypeNumber<Float64>>())
     {}
 
     String getName() const override
@@ -60,11 +58,6 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return true; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeNumber<Float64>>();
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -102,4 +95,4 @@ public:
 
 };
 
-};
+}

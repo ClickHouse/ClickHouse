@@ -176,6 +176,258 @@ void __explicit_bzero_chk(void * buf, size_t len, size_t unused)
 }
 
 
+#include <unistd.h>
+#include "syscall.h"
+
+ssize_t copy_file_range(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, unsigned flags)
+{
+	return syscall(SYS_copy_file_range, fd_in, off_in, fd_out, off_out, len, flags);
+}
+
+
+long splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, unsigned flags)
+{
+	return syscall(SYS_splice, fd_in, off_in, fd_out, off_out, len, flags);
+}
+
+
+#define _BSD_SOURCE
+#include <sys/stat.h>
+#include <stdint.h>
+
+struct statx {
+	uint32_t stx_mask;
+	uint32_t stx_blksize;
+	uint64_t stx_attributes;
+	uint32_t stx_nlink;
+	uint32_t stx_uid;
+	uint32_t stx_gid;
+	uint16_t stx_mode;
+	uint16_t pad1;
+	uint64_t stx_ino;
+	uint64_t stx_size;
+	uint64_t stx_blocks;
+	uint64_t stx_attributes_mask;
+	struct {
+		int64_t tv_sec;
+		uint32_t tv_nsec;
+		int32_t pad;
+	} stx_atime, stx_btime, stx_ctime, stx_mtime;
+	uint32_t stx_rdev_major;
+	uint32_t stx_rdev_minor;
+	uint32_t stx_dev_major;
+	uint32_t stx_dev_minor;
+	uint64_t spare[14];
+};
+
+int statx(int fd, const char *restrict path, int flag,
+                 unsigned int mask, struct statx *restrict statxbuf)
+{
+	return syscall(SYS_statx, fd, path, flag, mask, statxbuf);
+}
+
+
+#include <syscall.h>
+
+ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
+{
+    /// There was cancellable syscall (syscall_cp), but I don't care too.
+    return syscall(SYS_getrandom, buf, buflen, flags);
+}
+
+/* Structure for scatter/gather I/O.  */
+struct iovec
+{
+    void *iov_base;    /* Pointer to data.  */
+    size_t iov_len;    /* Length of data.  */
+};
+
+ssize_t preadv(int __fd, const struct iovec *__iovec, int __count, __off_t __offset)
+{
+    return syscall(SYS_preadv, __fd, __iovec, __count, (long)(__offset), (long)(__offset>>32));
+}
+
+#include <errno.h>
+#include <limits.h>
+
+#define ALIGN (sizeof(size_t))
+#define ONES ((size_t)-1/UCHAR_MAX)
+#define HIGHS (ONES * (UCHAR_MAX/2+1))
+#define HASZERO(x) ((x)-ONES & ~(x) & HIGHS)
+
+char *__strchrnul(const char *s, int c)
+{
+	c = (unsigned char)c;
+	if (!c) return (char *)s + strlen(s);
+
+#ifdef __GNUC__
+	typedef size_t __attribute__((__may_alias__)) word;
+	const word *w;
+	for (; (uintptr_t)s % ALIGN; s++)
+		if (!*s || *(unsigned char *)s == c) return (char *)s;
+	size_t k = ONES * c;
+	for (w = (void *)s; !HASZERO(*w) && !HASZERO(*w^k); w++);
+	s = (void *)w;
+#endif
+	for (; *s && *(unsigned char *)s != c; s++);
+	return (char *)s;
+}
+
+int __execvpe(const char *file, char *const argv[], char *const envp[])
+{
+	const char *p, *z, *path = getenv("PATH");
+	size_t l, k;
+	int seen_eacces = 0;
+
+	errno = ENOENT;
+	if (!*file) return -1;
+
+	if (strchr(file, '/'))
+		return execve(file, argv, envp);
+
+	if (!path) path = "/usr/local/bin:/bin:/usr/bin";
+	k = strnlen(file, NAME_MAX+1);
+	if (k > NAME_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+	l = strnlen(path, PATH_MAX-1)+1;
+
+	for(p=path; ; p=z) {
+		char b[l+k+1];
+		z = __strchrnul(p, ':');
+		if (z-p >= l) {
+			if (!*z++) break;
+			continue;
+		}
+		memcpy(b, p, z-p);
+		b[z-p] = '/';
+		memcpy(b+(z-p)+(z>p), file, k+1);
+		execve(b, argv, envp);
+		switch (errno) {
+		case EACCES:
+			seen_eacces = 1;
+		case ENOENT:
+		case ENOTDIR:
+			break;
+		default:
+			return -1;
+		}
+		if (!*z++) break;
+	}
+	if (seen_eacces) errno = EACCES;
+	return -1;
+}
+
+
+#include "spawn.h"
+
+int posix_spawnp(pid_t *restrict res, const char *restrict file,
+	const posix_spawn_file_actions_t *fa,
+	const posix_spawnattr_t *restrict attr,
+	char *const argv[restrict], char *const envp[restrict])
+{
+	posix_spawnattr_t spawnp_attr = { 0 };
+	if (attr) spawnp_attr = *attr;
+	spawnp_attr.__fn = (void *)__execvpe;
+	return posix_spawn(res, file, fa, &spawnp_attr, argv, envp);
+}
+
+#define FDOP_CLOSE 1
+#define FDOP_DUP2 2
+#define FDOP_OPEN 3
+#define FDOP_CHDIR 4
+#define FDOP_FCHDIR 5
+
+#define ENOMEM 12
+#define EBADF 9
+
+struct fdop {
+	struct fdop *next, *prev;
+	int cmd, fd, srcfd, oflag;
+	mode_t mode;
+	char path[];
+};
+
+int posix_spawn_file_actions_init(posix_spawn_file_actions_t *fa) {
+	fa->__actions = 0;
+	return 0;
+}
+
+int posix_spawn_file_actions_addchdir_np(posix_spawn_file_actions_t *restrict fa, const char *restrict path) {
+	struct fdop *op = malloc(sizeof *op + strlen(path) + 1);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_CHDIR;
+	op->fd = -1;
+	strcpy(op->path, path);
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_addclose(posix_spawn_file_actions_t *fa, int fd) {
+	if (fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_CLOSE;
+	op->fd = fd;
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_adddup2(posix_spawn_file_actions_t *fa, int srcfd, int fd) {
+	if (srcfd < 0 || fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_DUP2;
+	op->srcfd = srcfd;
+	op->fd = fd;
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_addfchdir_np(posix_spawn_file_actions_t *fa, int fd) {
+	if (fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_FCHDIR;
+	op->fd = fd;
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_addopen(posix_spawn_file_actions_t *restrict fa, int fd, const char *restrict path, int flags, mode_t mode) {
+	if (fd < 0) return EBADF;
+	struct fdop *op = malloc(sizeof *op + strlen(path) + 1);
+	if (!op) return ENOMEM;
+	op->cmd = FDOP_OPEN;
+	op->fd = fd;
+	op->oflag = flags;
+	op->mode = mode;
+	strcpy(op->path, path);
+	if ((op->next = fa->__actions)) op->next->prev = op;
+	op->prev = 0;
+	fa->__actions = op;
+	return 0;
+}
+
+int posix_spawn_file_actions_destroy(posix_spawn_file_actions_t *fa) {
+	struct fdop *op = fa->__actions, *next;
+	while (op) {
+		next = op->next;
+		free(op);
+		op = next;
+	}
+	return 0;
+}
+
 #if defined (__cplusplus)
 }
 #endif

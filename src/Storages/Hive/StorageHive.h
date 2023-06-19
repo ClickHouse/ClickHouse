@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Common/logger_useful.h>
-#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -23,13 +21,29 @@ class HiveSettings;
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage, WithContext
+class StorageHive final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageHive>;
 public:
+    friend class StorageHiveSource;
+
+    StorageHive(
+        const String & hive_metastore_url_,
+        const String & hive_database_,
+        const String & hive_table_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_,
+        const ASTPtr & partition_by_ast_,
+        std::unique_ptr<HiveSettings> storage_settings_,
+        ContextPtr context_);
+
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }
+
+    bool supportsSubcolumns() const override { return true; }
+
     bool mayBenefitFromIndexForIn(
         const ASTPtr & /* left_in_operand */,
         ContextPtr /* query_context */,
@@ -45,30 +59,17 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool async_insert) override;
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
-
-protected:
-    friend class StorageHiveSource;
-    StorageHive(
-        const String & hive_metastore_url_,
-        const String & hive_database_,
-        const String & hive_table_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment_,
-        const ASTPtr & partition_by_ast_,
-        std::unique_ptr<HiveSettings> storage_settings_,
-        ContextPtr context_);
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
 private:
     using FileFormat = IHiveFile::FileFormat;
@@ -96,7 +97,7 @@ private:
     void initMinMaxIndexExpression();
 
     HiveFiles collectHiveFiles(
-        unsigned max_threads,
+        size_t max_threads,
         const SelectQueryInfo & query_info,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
@@ -118,8 +119,6 @@ private:
         const HiveTableMetadataPtr & hive_table_metadata,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
-
-    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
     void lazyInitialize();
 

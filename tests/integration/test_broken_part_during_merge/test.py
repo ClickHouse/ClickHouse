@@ -2,7 +2,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 import time
 
@@ -25,7 +24,8 @@ def test_merge_and_part_corruption(started_cluster):
     node1.query(
         """
         CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') ORDER BY id;
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') ORDER BY id 
+        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1;
             """.format(
             replica=node1.name
         )

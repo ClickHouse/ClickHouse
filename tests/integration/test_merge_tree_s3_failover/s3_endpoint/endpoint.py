@@ -42,7 +42,6 @@ def delete(_bucket):
 
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "DELETE"])
 def server(_bucket, _path):
-
     # It's delete query for failed part
     if _path.endswith("delete"):
         response.set_header("Location", "http://minio1:9001/" + _bucket + "/" + _path)

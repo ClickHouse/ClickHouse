@@ -2,7 +2,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/VariableContext.h>
-#include <Interpreters/TraceCollector.h>
+#include <Common/TraceSender.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -10,17 +10,25 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+
+#include "config.h"
+
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+
+#endif
 
 #include <atomic>
 #include <cmath>
 #include <random>
 #include <cstdlib>
+#include <string>
 
-
-#ifdef MEMORY_TRACKER_DEBUG_CHECKS
-thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
-#endif
 
 namespace
 {
@@ -52,23 +60,57 @@ namespace DB
     }
 }
 
+namespace
+{
+
+inline std::string_view toDescription(OvercommitResult result)
+{
+    switch (result)
+    {
+    case OvercommitResult::NONE:
+        return "";
+    case OvercommitResult::DISABLED:
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero.";
+    case OvercommitResult::MEMORY_FREED:
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
+    case OvercommitResult::SELECTED:
+        return "Query was selected to stop by OvercommitTracker.";
+    case OvercommitResult::TIMEOUTED:
+        return "Waiting timeout for memory to be freed is reached.";
+    case OvercommitResult::NOT_ENOUGH_FREED:
+        return "Memory overcommit has freed not enough memory.";
+    }
+}
+
+}
+
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
+    extern const Event MemoryAllocatorPurge;
+    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
+
+using namespace std::chrono_literals;
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
+MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
 
+std::atomic<Int64> MemoryTracker::free_memory_in_allocator_arenas;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
-
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_)
+    : parent(parent_)
+    , log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_)
+    , level(level_)
+{}
 
 MemoryTracker::~MemoryTracker()
 {
-    if ((level == VariableContext::Process || level == VariableContext::User) && peak)
+    if ((level == VariableContext::Process || level == VariableContext::User) && peak && log_peak_memory_usage_in_destructor)
     {
         try
         {
@@ -81,9 +123,9 @@ MemoryTracker::~MemoryTracker()
     }
 }
 
-
-void MemoryTracker::logPeakMemoryUsage() const
+void MemoryTracker::logPeakMemoryUsage()
 {
+    log_peak_memory_usage_in_destructor = false;
     const auto * description = description_ptr.load(std::memory_order_relaxed);
     LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
         "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
@@ -96,6 +138,47 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
         "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
+void MemoryTracker::injectFault() const
+{
+    if (!memoryTrackerCanThrow(level, true))
+    {
+        LOG_WARNING(&Poco::Logger::get("MemoryTracker"),
+                    "Cannot inject fault at specific point. Uncaught exceptions: {}, stack trace:\n{}",
+                    std::uncaught_exceptions(), StackTrace().toString());
+        return;
+    }
+
+    /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+
+    ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
+    throw DB::Exception(
+        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+        "Memory tracker{}{}: fault injected (at specific point)",
+        description ? " " : "",
+        description ? description : "");
+}
+
+void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
+{
+    /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
+    /// Let's find them.
+#ifdef ABORT_ON_LOGICAL_ERROR
+    if (size < 0)
+        return;
+
+    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
+    if (size < threshold)
+        return;
+
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
+                                                   "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
+#else
+    return;     /// Avoid trash logging in release builds
+#endif
+}
 
 void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker)
 {
@@ -104,6 +187,16 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
+        if (level == VariableContext::Global)
+        {
+            /// For global memory tracker always update memory usage.
+            amount.fetch_add(size, std::memory_order_relaxed);
+
+            auto metric_loaded = metric.load(std::memory_order_relaxed);
+            if (metric_loaded != CurrentMetrics::end())
+                CurrentMetrics::add(metric_loaded, size);
+        }
+
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             loaded_next->allocImpl(size, throw_if_memory_exceeded,
@@ -124,85 +217,41 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
-    /// Cap the limit to the total_memory_tracker, since it may include some drift
-    /// for user-level memory tracker.
-    ///
-    /// And since total_memory_tracker is reset to the process resident
-    /// memory peridically (in AsynchronousMetrics::update()), any limit can be
-    /// capped to it, to avoid possible drift.
-    if (unlikely(current_hard_limit
-        && will_be > current_hard_limit
-        && level == VariableContext::User))
-    {
-        Int64 total_amount = total_memory_tracker.get();
-        if (amount > total_amount)
-        {
-            set(total_amount);
-            will_be = size + total_amount;
-        }
-    }
-
-#ifdef MEMORY_TRACKER_DEBUG_CHECKS
-    if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
-    {
-        memory_tracker_always_throw_logical_error_on_allocation = false;
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
-    }
-#endif
-
-    std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
-    {
-        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-
-        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
-        const auto * description = description_ptr.load(std::memory_order_relaxed);
-        amount.fetch_sub(size, std::memory_order_relaxed);
-        throw DB::Exception(
-            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-            "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-            description ? " " : "",
-            description ? description : "",
-            formatReadableSizeWithBinarySuffix(will_be),
-            size,
-            formatReadableSizeWithBinarySuffix(current_hard_limit));
-    }
-
+    bool memory_limit_exceeded_ignored = false;
 
     bool allocation_traced = false;
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
+        DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {.size = size});
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
         allocation_traced = true;
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
+    if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
+        DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = size});
         allocation_traced = true;
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+    std::bernoulli_distribution fault(fault_probability);
+    if (unlikely(fault_probability > 0.0 && fault(thread_local_rng)))
     {
-        bool need_to_throw = true;
-        bool try_to_free_memory = overcommit_tracker != nullptr && query_tracker != nullptr;
-        if (try_to_free_memory)
-            need_to_throw = overcommit_tracker->needToStopQuery(query_tracker);
-
-        if (need_to_throw)
+        if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
         {
+            /// Revert
+            amount.fetch_sub(size, std::memory_order_relaxed);
+
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+
             ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
                 description ? " " : "",
                 description ? description : "",
                 formatReadableSizeWithBinarySuffix(will_be),
@@ -211,28 +260,107 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         }
         else
         {
-            will_be = amount.load(std::memory_order_relaxed);
+            memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
         }
     }
 
-    bool peak_updated;
-    if (throw_if_memory_exceeded)
+    Int64 limit_to_check = current_hard_limit;
+
+#if USE_JEMALLOC
+    if (level == VariableContext::Global && allow_use_jemalloc_memory.load(std::memory_order_relaxed))
     {
-        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        bool log_memory_usage = true;
-        peak_updated = updatePeak(will_be, log_memory_usage);
+        /// Jemalloc arenas may keep some extra memory.
+        /// This memory was substucted from RSS to decrease memory drift.
+        /// In case memory is close to limit, try to pugre the arenas.
+        /// This is needed to avoid OOM, because some allocations are directly done with mmap.
+        Int64 current_free_memory_in_allocator_arenas = free_memory_in_allocator_arenas.load(std::memory_order_relaxed);
+
+        if (current_free_memory_in_allocator_arenas > 0 && current_hard_limit && current_free_memory_in_allocator_arenas + will_be > current_hard_limit)
+        {
+            if (free_memory_in_allocator_arenas.exchange(-current_free_memory_in_allocator_arenas) > 0)
+            {
+                Stopwatch watch;
+                mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+                ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+                ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
+            }
+        }
+
+        limit_to_check += abs(current_free_memory_in_allocator_arenas);
     }
-    else
+#endif
+
+    if (unlikely(current_hard_limit && will_be > limit_to_check))
     {
-        bool log_memory_usage = false;
-        peak_updated = updatePeak(will_be, log_memory_usage);
+        if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+        {
+            OvercommitResult overcommit_result = OvercommitResult::NONE;
+            if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
+                overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
+
+            if (overcommit_result != OvercommitResult::MEMORY_FREED)
+            {
+                /// Revert
+                amount.fetch_sub(size, std::memory_order_relaxed);
+
+                /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+                MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+                ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+                const auto * description = description_ptr.load(std::memory_order_relaxed);
+                throw DB::Exception(
+                                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                                    "Memory limit{}{} exceeded: "
+                                    "would use {} (attempt to allocate chunk of {} bytes), maximum: {}."
+                                    "{}{}",
+                                    description ? " " : "",
+                                    description ? description : "",
+                                    formatReadableSizeWithBinarySuffix(will_be),
+                                    size,
+                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
+                                    toDescription(overcommit_result));
+            }
+            else
+            {
+                // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
+                // This memory is already counted in variable `amount` in the moment of `will_be` initialization.
+                // Now we just need to update value stored in `will_be`, because it should have changed.
+                will_be = amount.load(std::memory_order_relaxed);
+            }
+        }
+        else
+        {
+            memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
+        }
+    }
+
+    bool peak_updated = false;
+    /// In case of MEMORY_LIMIT_EXCEEDED was ignored, will_be may include
+    /// memory of other allocations, that may fail but not reverted yet, and so
+    /// updating peak will be inaccurate.
+    if (!memory_limit_exceeded_ignored)
+    {
+        if (throw_if_memory_exceeded)
+        {
+            /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+            MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+            bool log_memory_usage = true;
+            peak_updated = updatePeak(will_be, log_memory_usage);
+        }
+        else
+        {
+            bool log_memory_usage = false;
+            peak_updated = updatePeak(will_be, log_memory_usage);
+            debugLogBigAllocationWithoutCheck(size);
+        }
     }
 
     if (peak_updated && allocation_traced)
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemoryPeak, StackTrace(), will_be);
+        DB::TraceSender::send(DB::TraceType::MemoryPeak, StackTrace(), {.size = will_be});
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
@@ -240,16 +368,12 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             level == VariableContext::Process ? this : query_tracker);
 }
 
-void MemoryTracker::alloc(Int64 size)
+void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 {
-    bool throw_if_memory_exceeded = true;
-    allocImpl(size, throw_if_memory_exceeded);
-}
-
-void MemoryTracker::allocNoThrow(Int64 size)
-{
-    bool throw_if_memory_exceeded = false;
-    allocImpl(size, throw_if_memory_exceeded);
+    if (untracked_memory > 0)
+        allocImpl(untracked_memory, /*throw_if_memory_exceeded*/ false);
+    else
+        free(-untracked_memory);
 }
 
 bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
@@ -273,6 +397,15 @@ void MemoryTracker::free(Int64 size)
 {
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
+        if (level == VariableContext::Global)
+        {
+            /// For global memory tracker always update memory usage.
+            amount.fetch_sub(size, std::memory_order_relaxed);
+            auto metric_loaded = metric.load(std::memory_order_relaxed);
+            if (metric_loaded != CurrentMetrics::end())
+                CurrentMetrics::sub(metric_loaded, size);
+        }
+
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             loaded_next->free(size);
@@ -280,14 +413,14 @@ void MemoryTracker::free(Int64 size)
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
+    if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
+        DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = -size});
     }
 
     Int64 accounted_size = size;
-    if (level == VariableContext::Thread)
+    if (level == VariableContext::Thread || level == VariableContext::Global)
     {
         /// Could become negative if memory allocated in this thread is freed in another one
         amount.fetch_sub(accounted_size, std::memory_order_relaxed);
@@ -308,6 +441,8 @@ void MemoryTracker::free(Int64 size)
             accounted_size += new_amount;
         }
     }
+    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
+        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
@@ -327,6 +462,12 @@ OvercommitRatio MemoryTracker::getOvercommitRatio()
 OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 {
     return { amount.load(std::memory_order_relaxed), limit };
+}
+
+
+void MemoryTracker::setOvercommitWaitingTime(UInt64 wait_time)
+{
+    max_wait_time.store(wait_time * 1us, std::memory_order_relaxed);
 }
 
 
@@ -350,12 +491,18 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::set(Int64 to)
+void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
 {
-    amount.store(to, std::memory_order_relaxed);
+    Int64 new_amount = rss_;
+    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
+    free_memory_in_allocator_arenas.store(free_memory_in_allocator_arenas_, std::memory_order_relaxed);
+
+    auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::set(metric_loaded, new_amount);
 
     bool log_memory_usage = true;
-    updatePeak(to, log_memory_usage);
+    total_memory_tracker.updatePeak(rss_, log_memory_usage);
 }
 
 
@@ -385,4 +532,11 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
     while ((value == 0 || old_value < value) && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
+}
+
+bool canEnqueueBackgroundTask()
+{
+    auto limit = background_memory_tracker.getSoftLimit();
+    auto amount = background_memory_tracker.get();
+    return limit == 0 || amount < limit;
 }

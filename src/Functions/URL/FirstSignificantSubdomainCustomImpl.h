@@ -25,9 +25,9 @@ struct FirstSignificantSubdomainCustomLookup
     {
     }
 
-    bool operator()(const char *pos, size_t len) const
+    TLDType operator()(StringRef host) const
     {
-        return tld_list.has(StringRef{pos, len});
+        return tld_list.lookup(host);
     }
 };
 
@@ -76,9 +76,8 @@ public:
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     static void vector(FirstSignificantSubdomainCustomLookup & tld_lookup,

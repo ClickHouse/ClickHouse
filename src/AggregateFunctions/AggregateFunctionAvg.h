@@ -10,8 +10,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/IResolvedFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -83,10 +84,20 @@ public:
     using Fraction = AvgFraction<Numerator, Denominator>;
 
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_,
-        UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
-        : Base(argument_types_, {}), num_scale(num_scale_), denom_scale(denom_scale_) {}
+                                      UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, createResultType())
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    AggregateFunctionAvgBase(const DataTypes & argument_types_, const DataTypePtr & result_type_,
+                             UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, result_type_)
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
+
+    DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -135,7 +146,7 @@ public:
         for (const auto & argument : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument);
 
-        auto return_type = getReturnType();
+        auto return_type = this->getResultType();
         can_be_compiled &= canBeNativeType(*return_type);
 
         return can_be_compiled;
@@ -153,10 +164,10 @@ public:
 
         auto * numerator_type = toNativeType<Numerator>(b);
 
-        auto * numerator_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, numerator_type->getPointerTo());
+        auto * numerator_dst_ptr = aggregate_data_dst_ptr;
         auto * numerator_dst_value = b.CreateLoad(numerator_type, numerator_dst_ptr);
 
-        auto * numerator_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, numerator_type->getPointerTo());
+        auto * numerator_src_ptr = aggregate_data_src_ptr;
         auto * numerator_src_value = b.CreateLoad(numerator_type, numerator_src_ptr);
 
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_dst_value, numerator_src_value) : b.CreateFAdd(numerator_dst_value, numerator_src_value);
@@ -164,8 +175,8 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_dst_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_dst_ptr, denominator_offset), denominator_type->getPointerTo());
-        auto * denominator_src_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_src_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_dst_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_dst_ptr, denominator_offset);
+        auto * denominator_src_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_src_ptr, denominator_offset);
 
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
@@ -179,12 +190,12 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * numerator_type = toNativeType<Numerator>(b);
-        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
 
         auto * double_numerator = nativeCast<Numerator>(b, numerator_value, b.getDoubleTy());
@@ -224,11 +235,19 @@ public:
         ++this->data(place).denominator;
     }
 
-    void
-    addBatchSinglePlace(
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** /*columns*/,
+        size_t length,
+        Arena * /*arena*/) const override
+    {
+        this->data(place).denominator += length;
+    }
+
+    void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena *,
         ssize_t if_argument_pos) const final
@@ -252,7 +271,7 @@ public:
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
@@ -295,7 +314,7 @@ public:
 
         auto * numerator_type = toNativeType<Numerator>(b);
 
-        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
         auto * value_cast_to_numerator = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
@@ -303,7 +322,7 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value_updated = b.CreateAdd(b.CreateLoad(denominator_type, denominator_ptr), llvm::ConstantInt::get(denominator_type, 1));
         b.CreateStore(denominator_value_updated, denominator_ptr);
     }

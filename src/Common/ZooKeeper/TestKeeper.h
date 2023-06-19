@@ -8,6 +8,7 @@
 
 #include <Poco/Timespan.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -33,11 +34,12 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 class TestKeeper final : public IKeeper
 {
 public:
-    TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
+    explicit TestKeeper(const zkutil::ZooKeeperArgs & args_);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
     int64_t getSessionID() const override { return 0; }
+    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
 
     void create(
@@ -71,6 +73,7 @@ public:
 
     void list(
             const String & path,
+            ListRequestType list_request_type,
             ListCallback callback,
             WatchCallback watch) override;
 
@@ -79,11 +82,20 @@ public:
             int32_t version,
             CheckCallback callback) override;
 
+    void sync(
+            const String & path,
+            SyncCallback callback) override;
+
     void multi(
             const Requests & requests,
             MultiCallback callback) override;
 
     void finalize(const String & reason) override;
+
+    DB::KeeperApiVersion getApiVersion() const override
+    {
+        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
+    }
 
     struct Node
     {
@@ -113,10 +125,9 @@ private:
 
     Container container;
 
-    String root_path;
-    ACLs default_acls;
+    zkutil::ZooKeeperArgs args;
 
-    Poco::Timespan operation_timeout;
+    Poco::Net::SocketAddress connected_zk_address;
 
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};
@@ -138,4 +149,3 @@ private:
 };
 
 }
-

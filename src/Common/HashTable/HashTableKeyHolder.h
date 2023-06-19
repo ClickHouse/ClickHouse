@@ -14,7 +14,7 @@
   * make a persistent copy of the key in each of the following cases:
   * 1) the aggregation method doesn't use temporary keys, so they're persistent
   *    from the start;
-  * 1) the key is already present in the hash table;
+  * 2) the key is already present in the hash table;
   * 3) that particular key is stored by value, e.g. a short StringRef key in
   *    StringHashMap.
   *
@@ -88,8 +88,12 @@ inline StringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & holder)
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
 {
-    // Hash table shouldn't ask us to persist a zero key
-    assert(holder.key.size > 0);
+    // Normally, our hash table shouldn't ask to persist a zero key,
+    // but it can happened in the case of clearable hash table (ClearableHashSet, for example).
+    // The clearable hash table doesn't use zero storage and
+    // distinguishes empty keys by using cell version, not the value itself.
+    // So, when an empty StringRef is inserted in ClearableHashSet we'll get here key of zero size.
+    // assert(holder.key.size > 0);
     holder.key.data = holder.pool.insert(holder.key.data, holder.key.size);
 }
 

@@ -14,15 +14,7 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
-
-    MergeTreeDataPartInMemory(
-        MergeTreeData & storage_,
-        const String & name_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeReaderPtr getReader(
@@ -31,6 +23,7 @@ public:
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
@@ -41,17 +34,17 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const override;
+        const MergeTreeIndexGranularity & computed_index_granularity) override;
 
     bool isStoredOnDisk() const override { return false; }
     bool isStoredOnRemoteDisk() const override { return false; }
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override { return false; }
     bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
-    void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) override;
+    DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void flushToDisk(const String & base_path, const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
+    MutableDataPartStoragePtr flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Returns hash of parts's block
     Checksum calculateBlockChecksum() const;
@@ -66,6 +59,8 @@ private:
 };
 
 using DataPartInMemoryPtr = std::shared_ptr<const MergeTreeDataPartInMemory>;
+using MutableDataPartInMemoryPtr = std::shared_ptr<MergeTreeDataPartInMemory>;
+
 DataPartInMemoryPtr asInMemoryPart(const MergeTreeDataPartPtr & part);
 
 }

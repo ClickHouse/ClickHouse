@@ -12,6 +12,7 @@
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -152,7 +153,7 @@ void StorageDictionary::checkTableCanBeDropped() const
             dictionary_name);
     if (location == Location::DictionaryDatabase)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
-            "Cannot drop/detach table from a database with DICTIONARY engine, use DROP DICTIONARY or DETACH DICTIONARY query instead",
+            "Cannot drop/detach table '{}' from a database with DICTIONARY engine, use DROP DICTIONARY or DETACH DICTIONARY query instead",
             dictionary_name);
 }
 
@@ -168,11 +169,17 @@ Pipe StorageDictionary::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned threads)
+    const size_t threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
     return dictionary->read(column_names, max_block_size, threads);
+}
+
+std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
+{
+    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
 void StorageDictionary::shutdown()
@@ -201,13 +208,13 @@ void StorageDictionary::removeDictionaryConfigurationFromRepository()
 
 Poco::Timestamp StorageDictionary::getUpdateTime() const
 {
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    std::lock_guard lock(dictionary_config_mutex);
     return update_time;
 }
 
 LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    std::lock_guard lock(dictionary_config_mutex);
     return configuration;
 }
 
@@ -227,7 +234,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     {
-        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+        std::lock_guard lock(dictionary_config_mutex);
 
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
@@ -294,7 +301,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
         dictionary_non_const->setDictionaryComment(new_comment);
     }
 
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    std::lock_guard lock(dictionary_config_mutex);
     configuration->setString("dictionary.comment", new_comment);
 }
 
@@ -318,7 +325,7 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
-            auto result_storage = StorageDictionary::create(dictionary_id, abstract_dictionary_configuration, local_context);
+            auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
             if (!args.attach && !lazy_load)
@@ -335,11 +342,10 @@ void registerStorageDictionary(StorageFactory & factory)
             /// Create dictionary storage that is view of underlying dictionary
 
             if (args.engine_args.size() != 1)
-                throw Exception("Storage Dictionary requires single parameter: name of dictionary",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
 
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
 
             if (!args.attach)
             {
@@ -348,7 +354,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
             }
 
-            return StorageDictionary::create(
+            return std::make_shared<StorageDictionary>(
                 args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
         }
     });

@@ -14,7 +14,9 @@ class RowInputFormatWithDiagnosticInfo : public IRowInputFormat
 public:
     RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_);
 
+    std::pair<String, String> getDiagnosticAndRawDataImpl(bool is_errors_record);
     String getDiagnosticInfo() override;
+    std::pair<String, String> getDiagnosticAndRawData() override;
 
     void resetParser() override;
 

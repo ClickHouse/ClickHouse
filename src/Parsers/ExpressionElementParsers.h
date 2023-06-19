@@ -9,26 +9,6 @@ namespace DB
 {
 
 
-class ParserArray : public IParserBase
-{
-protected:
-    const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** If in parenthesis an expression from one element - returns this element in `node`;
-  *  or if there is a SELECT subquery in parenthesis, then this subquery returned in `node`;
-  *  otherwise returns `tuple` function from the contents of brackets.
-  */
-class ParserParenthesisExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "parenthesized expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 /** The SELECT subquery is in parenthesis.
   */
 class ParserSubquery : public IParserBase
@@ -124,7 +104,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** COLUMNS('<regular expression>')
+/** COLUMNS(columns_names) or COLUMNS('<regular expression>')
   */
 class ParserColumnsMatcher : public IParserBase
 {
@@ -141,34 +121,21 @@ protected:
     ColumnTransformers allowed_transformers;
 };
 
-/** A function, for example, f(x, y + 1, g(z)).
-  * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
-  * Or a parametric aggregate function: quantile(0.9)(x + y).
-  *  Syntax - two pairs of parentheses instead of one. The first is for parameters, the second for arguments.
-  * For functions, the DISTINCT modifier can be specified, for example, count(DISTINCT x, y).
+/** Qualified columns matcher identifier.COLUMNS(columns_names) or identifier.COLUMNS('<regular expression>')
   */
-class ParserFunction : public IParserBase
+class ParserQualifiedColumnsMatcher : public IParserBase
 {
 public:
-    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
-        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
-    {
-    }
+    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
+    explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+        : allowed_transformers(allowed_transformers_)
+    {}
 
 protected:
-    const char * getName() const override { return "function"; }
+    const char * getName() const override { return "qualified COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool allow_function_parameters;
-    bool is_table_function;
-};
 
-// A special function parser for view table function.
-// It parses an SELECT query as its argument and doesn't support getColumnName().
-class ParserTableFunctionView : public IParserBase
-{
-protected:
-    const char * getName() const override { return "function"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    ColumnTransformers allowed_transformers;
 };
 
 // Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
@@ -215,6 +182,18 @@ class ParserCodec : public IParserBase
 protected:
     const char * getName() const override { return "codec"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** Parse collation
+  * COLLATE utf8_unicode_ci NOT NULL
+  */
+class ParserCollation : public IParserBase
+{
+protected:
+    const char * getName() const override { return "collation"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    static const char * valid_collations[];
 };
 
 /// Fast path of cast operator "::".
@@ -322,6 +301,22 @@ protected:
     }
 };
 
+/** Parses all collections of literals and their various combinations
+  * Used in parsing parameters for SET query
+  */
+class ParserAllCollectionsOfLiterals : public IParserBase
+{
+public:
+    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
+
+protected:
+    const char * getName() const override { return "combination of maps, arrays, tuples"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool allow_map;
+};
+
 
 /** The literal is one of: NULL, UInt64, Int64, Float64, String.
   */
@@ -378,16 +373,6 @@ class ParserMySQLGlobalVariable : public IParserBase
 {
 protected:
     const char * getName() const override { return "MySQL-style global variable"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
-  */
-class ParserExpressionElement : public IParserBase
-{
-protected:
-    const char * getName() const override { return "element of expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

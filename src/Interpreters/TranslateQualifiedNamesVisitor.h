@@ -28,17 +28,22 @@ public:
         const TablesWithColumns & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
+        NameToNameMap parameter_values;
+        NameToNameMap parameter_types;
 
-        Data(const NameSet & source_columns_, const TablesWithColumns & tables_, bool has_columns_ = true)
+        Data(const NameSet & source_columns_, const TablesWithColumns & tables_, bool has_columns_ = true, const NameToNameMap & parameter_values_ = {}, const NameToNameMap & parameter_types_ = {})
             : source_columns(source_columns_)
             , tables(tables_)
             , has_columns(has_columns_)
+            , parameter_values(parameter_values_)
+            , parameter_types(parameter_types_)
         {}
 
         bool hasColumn(const String & name) const { return source_columns.count(name); }
         bool hasTable() const { return !tables.empty(); }
         bool processAsterisks() const { return hasTable() && has_columns; }
         bool unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const;
+        static bool matchColumnName(std::string_view name, const String & column_name, DataTypePtr column_type);
     };
 
     static void visit(ASTPtr & ast, Data & data);
@@ -53,6 +58,7 @@ private:
     static void visit(ASTFunction &, const ASTPtr &, Data &);
 
     static void extractJoinUsingColumns(ASTPtr ast, Data & data);
+
 };
 
 /// Visits AST for names qualification.

@@ -3,7 +3,10 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
-#include <Common/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Common/Throttler_fwd.h>
+#include <Common/Priority.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {
@@ -29,6 +32,13 @@ enum class LocalFSReadMethod
      * Can use prefetch by asking OS to perform readahead.
      */
     mmap,
+
+    /**
+     * Use the io_uring Linux subsystem for asynchronous reads.
+     * Can use direct IO after specified size.
+     * Can do prefetch with double buffering.
+     */
+    io_uring,
 
     /**
      * Checks if data is in page cache with 'preadv2' on modern Linux kernels.
@@ -57,10 +67,13 @@ struct ReadSettings
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.
-    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::read;
+    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::threadpool;
 
-    size_t local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    /// https://eklitzke.org/efficient-file-copying-on-linux
+    size_t local_fs_buffer_size = 128 * 1024;
+
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    size_t prefetch_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
     bool local_fs_prefetch = false;
     bool remote_fs_prefetch = false;
@@ -72,35 +85,51 @@ struct ReadSettings
     size_t mmap_threshold = 0;
     MMappedFileCache * mmap_cache = nullptr;
 
-    /// For 'pread_threadpool' method. Lower is more priority.
-    size_t priority = 0;
+    /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
+    Priority priority;
+
+    bool load_marks_asynchronously = true;
 
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
+
+    bool enable_filesystem_read_prefetches_log = false;
+
     bool enable_filesystem_cache = true;
-    size_t filesystem_cache_max_wait_sec = 1;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+    bool enable_filesystem_cache_log = false;
+    bool is_file_cache_persistent = false; /// Some files can be made non-evictable.
+    /// Don't populate cache when the read is not part of query execution (e.g. background thread).
+    bool avoid_readthrough_cache_outside_query_context = true;
+
+    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
+    bool skip_download_if_exceeds_query_cache = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
     FileCachePtr remote_fs_cache;
+
+    /// Bandwidth throttler to use during reading
+    ThrottlerPtr remote_throttler;
+    ThrottlerPtr local_throttler;
+
+    // Resource to be used during reading
+    ResourceLink resource_link;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
 
-    /// Set to true for MergeTree tables to make sure
-    /// that last position (offset in compressed file) is always passed.
-    /// (Otherwise asynchronous reading from remote fs is not efficient).
-    /// If reading is done without final position set, throw logical_error.
-    bool must_read_until_position = false;
+    /// Monitoring
+    bool for_object_storage = false; // to choose which profile events should be incremented
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {
         ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(file_size, local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(file_size, remote_fs_buffer_size);
+        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
+        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
+        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
         return res;
     }
 };

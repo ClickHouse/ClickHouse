@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 #include <Core/PostgreSQL/ConnectionHolder.h>

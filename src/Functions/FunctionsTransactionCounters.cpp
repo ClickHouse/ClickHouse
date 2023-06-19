@@ -61,7 +61,7 @@ public:
 
 }
 
-void registerFunctionsTransactionCounters(FunctionFactory & factory)
+REGISTER_FUNCTION(TransactionCounters)
 {
     factory.registerFunction<FunctionTransactionID>();
     factory.registerFunction<FunctionTransactionLatestSnapshot>();

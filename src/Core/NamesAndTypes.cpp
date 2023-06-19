@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <Core/NamesAndTypes.h>
 
 #include <base/sort.h>
@@ -158,6 +159,18 @@ DataTypes NamesAndTypesList::getTypes() const
     return res;
 }
 
+void NamesAndTypesList::filterColumns(const NameSet & names)
+{
+    for (auto it = begin(); it != end();)
+    {
+        const auto & column = *it;
+        if (names.contains(column.name))
+            ++it;
+        else
+            it = erase(it);
+    }
+}
+
 NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
 {
     NamesAndTypesList res;
@@ -214,4 +227,17 @@ std::optional<NameAndTypePair> NamesAndTypesList::tryGetByName(const std::string
     }
     return {};
 }
+
+size_t NamesAndTypesList::getPosByName(const std::string &name) const noexcept
+{
+    size_t pos = 0;
+    for (const NameAndTypePair & column : *this)
+    {
+        if (column.name == name)
+            break;
+        ++pos;
+    }
+    return pos;
+}
+
 }

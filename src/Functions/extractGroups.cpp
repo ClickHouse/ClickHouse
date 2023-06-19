@@ -61,18 +61,18 @@ public:
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
         if (needle.empty())
-            throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
-        auto regexp = Regexps::get<false, false>(needle);
-        const auto & re2 = regexp->getRE2();
+        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(needle);
+        const auto & re2 = regexp.getRE2();
 
         if (!re2)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         const size_t groups_count = re2->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);
@@ -87,10 +87,11 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef current_row = column_haystack->getDataAt(i);
+            std::string_view current_row = column_haystack->getDataAt(i).toView();
 
-            if (re2->Match(re2_st::StringPiece(current_row.data, current_row.size),
-                0, current_row.size, re2_st::RE2::UNANCHORED, matched_groups.data(), matched_groups.size()))
+            if (re2->Match(re2_st::StringPiece(current_row.data(), current_row.size()),
+                0, current_row.size(), re2_st::RE2::UNANCHORED, matched_groups.data(),
+                static_cast<int>(matched_groups.size())))
             {
                 // 1 is to exclude group #0 which is whole re match.
                 for (size_t group = 1; group <= groups_count; ++group)
@@ -108,7 +109,7 @@ public:
 
 }
 
-void registerFunctionExtractGroups(FunctionFactory & factory)
+REGISTER_FUNCTION(ExtractGroups)
 {
     factory.registerFunction<FunctionExtractGroups>();
 }

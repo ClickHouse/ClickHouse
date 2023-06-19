@@ -1,8 +1,9 @@
 #include "StorageSystemRemoteDataPaths.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/FileCache.h>
-#include <Common/FileCacheFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>
@@ -23,6 +24,8 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"local_path", std::make_shared<DataTypeString>()},
         {"remote_path", std::make_shared<DataTypeString>()},
+        {"size", std::make_shared<DataTypeUInt64>()},
+        {"common_prefix_for_blobs", std::make_shared<DataTypeString>()},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     }));
     setInMemoryMetadata(storage_metadata);
@@ -35,7 +38,7 @@ Pipe StorageSystemRemoteDataPaths::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -44,6 +47,8 @@ Pipe StorageSystemRemoteDataPaths::read(
     MutableColumnPtr col_cache_base_path = ColumnString::create();
     MutableColumnPtr col_local_path = ColumnString::create();
     MutableColumnPtr col_remote_path = ColumnString::create();
+    MutableColumnPtr col_size = ColumnUInt64::create();
+    MutableColumnPtr col_namespace = ColumnString::create();
     MutableColumnPtr col_cache_paths = ColumnArray::create(ColumnString::create());
 
     auto disks = context->getDisksMap();
@@ -51,28 +56,33 @@ Pipe StorageSystemRemoteDataPaths::read(
     {
         if (disk->isRemote())
         {
-            std::vector<IDisk::LocalPathWithRemotePaths> remote_paths_by_local_path;
+            std::vector<IDisk::LocalPathWithObjectStoragePaths> remote_paths_by_local_path;
             disk->getRemotePathsRecursive("store", remote_paths_by_local_path);
             disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
 
             FileCachePtr cache;
-            auto cache_base_path = disk->getCacheBasePath();
-            if (!cache_base_path.empty())
-                cache = FileCacheFactory::instance().get(cache_base_path);
 
-            for (const auto & [local_path, remote_paths] : remote_paths_by_local_path)
+            if (disk->supportsCache())
+                cache = FileCacheFactory::instance().getByName(disk->getCacheName()).cache;
+
+            for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
             {
-                for (const auto & remote_path : remote_paths)
+                for (const auto & object : storage_objects)
                 {
                     col_disk_name->insert(disk_name);
                     col_base_path->insert(disk->getPath());
-                    col_cache_base_path->insert(cache_base_path);
+                    if (cache)
+                        col_cache_base_path->insert(cache->getBasePath());
+                    else
+                        col_cache_base_path->insertDefault();
                     col_local_path->insert(local_path);
-                    col_remote_path->insert(remote_path);
+                    col_remote_path->insert(object.remote_path);
+                    col_size->insert(object.bytes_size);
+                    col_namespace->insert(common_prefox_for_objects);
 
                     if (cache)
                     {
-                        auto cache_paths = cache->tryGetCachePaths(cache->hash(remote_path));
+                        auto cache_paths = cache->tryGetCachePaths(cache->createKeyForPath(object.remote_path));
                         col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
                     }
                     else
@@ -90,6 +100,8 @@ Pipe StorageSystemRemoteDataPaths::read(
     res_columns.emplace_back(std::move(col_cache_base_path));
     res_columns.emplace_back(std::move(col_local_path));
     res_columns.emplace_back(std::move(col_remote_path));
+    res_columns.emplace_back(std::move(col_size));
+    res_columns.emplace_back(std::move(col_namespace));
     res_columns.emplace_back(std::move(col_cache_paths));
 
     UInt64 num_rows = res_columns.at(0)->size();

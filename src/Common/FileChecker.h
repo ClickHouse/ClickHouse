@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <Storages/CheckResults.h>
+#include <map>
+#include <base/types.h>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -36,6 +38,9 @@ public:
     /// Returns stored file size.
     size_t getFileSize(const String & full_file_path) const;
 
+    /// Returns total size of all files.
+    size_t getTotalSize() const;
+
 private:
     void load();
 
@@ -43,7 +48,7 @@ private:
     size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
-    const Poco::Logger * log = &Poco::Logger::get("FileChecker");
+    const Poco::Logger * log;
 
     String files_info_path;
     std::map<String, size_t> map;

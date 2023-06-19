@@ -23,6 +23,7 @@ public:
         const std::string host;
         const std::string user;
         const std::string password;
+        const std::string quota_key;
         const std::string db;
         const std::string table;
         const std::string query;
@@ -45,15 +46,13 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    Pipe loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
+    QueryPipeline loadAll() override;
 
-    Pipe loadAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    Pipe loadUpdatedAll() override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
-
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -71,7 +70,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    Pipe createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
+    QueryPipeline createStreamForQuery(const String & query);
 
     std::string doInvalidateQuery(const std::string & request) const;
 
@@ -79,12 +78,16 @@ private:
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     mutable std::string invalidate_query_response;
-    ExternalQueryBuilder query_builder;
+    ExternalQueryBuilderPtr query_builder;
     Block sample_block;
     ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
-    const std::string load_all_query;
+    std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
+
+    /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.
+    /// For now we need to modify sample_block in the ctor of RegExpTreeDictionary.
+    friend class RegExpTreeDictionary;
 };
 
 }

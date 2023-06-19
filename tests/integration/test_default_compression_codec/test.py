@@ -262,6 +262,8 @@ def test_default_codec_multiple(start_cluster):
         )
     )
 
+    node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
+
     # Same codec for all
     assert (
         get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_0")
@@ -329,6 +331,8 @@ def test_default_codec_multiple(start_cluster):
     node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
     node1.query("OPTIMIZE TABLE compression_table_multiple FINAL")
+
+    node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
     assert (
         get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_1")
@@ -421,7 +425,7 @@ def test_default_codec_version_update(start_cluster):
     )
 
     old_version = node3.query("SELECT version()")
-    node3.restart_with_latest_version()
+    node3.restart_with_latest_version(fix_metadata=True)
     new_version = node3.query("SELECT version()")
     logging.debug(f"Updated from {old_version} to {new_version}")
     assert (

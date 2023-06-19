@@ -15,7 +15,7 @@ namespace DB
   * Doesn't do any heavy calculations.
   * Preserves an order of data.
   */
-class ForkProcessor : public IProcessor
+class ForkProcessor final : public IProcessor
 {
 public:
     ForkProcessor(const Block & header, size_t num_outputs)

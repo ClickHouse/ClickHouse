@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace ProfileEvents
@@ -23,8 +24,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_, bool is_function_compiled_)
-        : elements_size(size), function(function_), is_short_circuit_argument(is_short_circuit_argument_), is_function_compiled(is_function_compiled_)
+ColumnFunction::ColumnFunction(
+    size_t size,
+    FunctionBasePtr function_,
+    const ColumnsWithTypeAndName & columns_to_capture,
+    bool is_short_circuit_argument_,
+    bool is_function_compiled_,
+    bool recursively_convert_result_to_full_column_if_low_cardinality_)
+    : elements_size(size)
+    , function(function_)
+    , is_short_circuit_argument(is_short_circuit_argument_)
+    , recursively_convert_result_to_full_column_if_low_cardinality(recursively_convert_result_to_full_column_if_low_cardinality_)
+    , is_function_compiled(is_function_compiled_)
 {
     appendArguments(columns_to_capture);
 }
@@ -41,8 +52,8 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 {
     if (elements_size != offsets.size())
-        throw Exception("Size of offsets (" + toString(offsets.size()) + ") doesn't match size of column ("
-                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
+                        offsets.size(), elements_size);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -98,8 +109,8 @@ void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t l
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (elements_size != filt.size())
-        throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
-                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+                        filt.size(), elements_size);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -113,7 +124,13 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
     else
         filtered_size = capture.front().column->size();
 
-    return ColumnFunction::create(filtered_size, function, capture, is_short_circuit_argument, is_function_compiled);
+    return ColumnFunction::create(
+        filtered_size,
+        function,
+        capture,
+        is_short_circuit_argument,
+        is_function_compiled,
+        recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
 void ColumnFunction::expand(const Filter & mask, bool inverted)
@@ -135,7 +152,13 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->permute(perm, limit);
 
-    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument, is_function_compiled);
+    return ColumnFunction::create(
+        limit,
+        function,
+        capture,
+        is_short_circuit_argument,
+        is_function_compiled,
+        recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -144,15 +167,21 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->index(indexes, limit);
 
-    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument, is_function_compiled);
+    return ColumnFunction::create(
+        limit,
+        function,
+        capture,
+        is_short_circuit_argument,
+        is_function_compiled,
+        recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
-        throw Exception("Size of selector (" + toString(selector.size()) + ") doesn't match size of column ("
-                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
+                        selector.size(), elements_size);
 
     std::vector<size_t> counts;
     if (captured_columns.empty())
@@ -173,7 +202,13 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
     {
         auto & capture = captures[part];
         size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
-        columns.emplace_back(ColumnFunction::create(capture_size, function, std::move(capture), is_short_circuit_argument));
+        columns.emplace_back(ColumnFunction::create(
+            capture_size,
+            function,
+            std::move(capture),
+            is_short_circuit_argument,
+            is_function_compiled,
+            recursively_convert_result_to_full_column_if_low_cardinality));
     }
 
     return columns;
@@ -213,10 +248,9 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
     auto wanna_capture = columns.size();
 
     if (were_captured + wanna_capture > args)
-        throw Exception("Cannot capture " + toString(wanna_capture) + " columns because function " + function->getName()
-                        + " has " + toString(args) + " arguments" +
-                        (were_captured ? " and " + toString(were_captured) + " columns have already been captured" : "")
-                        + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture {} columns because function {} has {} arguments{}.",
+                        wanna_capture, function->getName(), args,
+                        (were_captured ? " and " + toString(were_captured) + " columns have already been captured" : ""));
 
     for (const auto & column : columns)
         appendArgument(column);
@@ -224,19 +258,22 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
 
 void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 {
-    const auto & argumnet_types = function->getArgumentTypes();
-
+    const auto & argument_types = function->getArgumentTypes();
     auto index = captured_columns.size();
-    if (!is_short_circuit_argument && !column.type->equals(*argumnet_types[index]))
-        throw Exception("Cannot capture column " + std::to_string(argumnet_types.size()) +
-                        " because it has incompatible type: got " + column.type->getName() +
-                        ", but " + argumnet_types[index]->getName() + " is expected.", ErrorCodes::LOGICAL_ERROR);
+    if (!is_short_circuit_argument && !column.type->equals(*argument_types[index]))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
+                        "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
-    captured_columns.push_back(column);
+    auto captured_column = column;
+    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
+    captured_columns.push_back(std::move(captured_column));
 }
 
 DataTypePtr ColumnFunction::getResultType() const
 {
+    if (recursively_convert_result_to_full_column_if_low_cardinality)
+        return recursiveRemoveLowCardinality(function->getResultType());
+
     return function->getResultType();
 }
 
@@ -246,13 +283,17 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     auto captured = captured_columns.size();
 
     if (args != captured)
-        throw Exception("Cannot call function " + function->getName() + " because is has " + toString(args) +
-                        "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call function {} because is has {} "
+                        "arguments but {} columns were captured.",
+                        function->getName(), toString(args), toString(captured));
 
     ColumnsWithTypeAndName columns = captured_columns;
-    if (is_short_circuit_argument)
+    IFunction::ShortCircuitSettings settings;
+    /// Arguments of lazy executed function can also be lazy executed.
+    /// But we shouldn't execute arguments if this function is short circuit,
+    /// because it will handle lazy executed arguments by itself.
+    if (is_short_circuit_argument && !function->isShortCircuit(settings, args))
     {
-        /// Arguments of lazy executed function can also be lazy executed.
         for (auto & col : columns)
         {
             if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
@@ -267,7 +308,17 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size);
+    if (recursively_convert_result_to_full_column_if_low_cardinality)
+    {
+        res.column = recursiveRemoveLowCardinality(res.column);
+        res.type = recursiveRemoveLowCardinality(res.type);
+    }
     return res;
+}
+
+ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality() const
+{
+    return ColumnFunction::create(elements_size, function, captured_columns, is_short_circuit_argument, is_function_compiled, true);
 }
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)

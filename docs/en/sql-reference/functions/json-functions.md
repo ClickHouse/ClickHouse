@@ -1,11 +1,16 @@
 ---
-sidebar_position: 56
+slug: /en/sql-reference/functions/json-functions
+sidebar_position: 105
 sidebar_label: JSON
 ---
 
-# Functions for Working with JSON {#functions-for-working-with-json}
+There are two sets of functions to parse JSON. 
+   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
+   - `JSONExtract*` is made to parse normal JSON.
 
-ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+# visitParam functions
+
+ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
 The following assumptions are made:
 
@@ -14,37 +19,37 @@ The following assumptions are made:
 3.  Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
 4.  The JSON does not have space characters outside of string literals.
 
-## visitParamHas(params, name) {#visitparamhasparams-name}
+## visitParamHas(params, name)
 
 Checks whether there is a field with the `name` name.
 
 Alias: `simpleJSONHas`.
 
-## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
+## visitParamExtractUInt(params, name)
 
 Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns 0.
 
 Alias: `simpleJSONExtractUInt`.
 
-## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
+## visitParamExtractInt(params, name)
 
 The same as for Int64.
 
 Alias: `simpleJSONExtractInt`.
 
-## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
+## visitParamExtractFloat(params, name)
 
 The same as for Float64.
 
 Alias: `simpleJSONExtractFloat`.
 
-## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
+## visitParamExtractBool(params, name)
 
 Parses a true/false value. The result is UInt8.
 
 Alias: `simpleJSONExtractBool`.
 
-## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
+## visitParamExtractRaw(params, name)
 
 Returns the value of a field, including separators.
 
@@ -57,7 +62,7 @@ visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 ```
 
-## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
+## visitParamExtractString(params, name)
 
 Parses the string in double quotes. The value is unescaped. If unescaping failed, it returns an empty string.
 
@@ -74,9 +79,11 @@ visitParamExtractString('{"abc":"hello}', 'abc') = '';
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+# JSONExtract functions
 
-## isValidJSON(json) {#isvalidjsonjson}
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements.
+
+## isValidJSON(json)
 
 Checks that passed string is a valid json.
 
@@ -87,7 +94,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices_or_keys\]…) {#jsonhasjson-indices-or-keys}
+## JSONHas(json\[, indices_or_keys\]…)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -102,9 +109,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 
 `indices_or_keys` is a list of zero or more arguments each of them can be either string or integer.
 
--   String = access object member by key.
--   Positive integer = access the n-th member/key from the beginning.
--   Negative integer = access the n-th member/key from the end.
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
 
 Minimum index of the element is 1. Thus the element 0 does not exist.
 
@@ -120,7 +127,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices_or_keys\]…) {#jsonlengthjson-indices-or-keys}
+## JSONLength(json\[, indices_or_keys\]…)
 
 Return the length of a JSON array or a JSON object.
 
@@ -133,7 +140,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices_or_keys\]…) {#jsontypejson-indices-or-keys}
+## JSONType(json\[, indices_or_keys\]…)
 
 Return the type of a JSON value.
 
@@ -147,13 +154,13 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices_or_keys\]…) {#jsonextractuintjson-indices-or-keys}
+## JSONExtractUInt(json\[, indices_or_keys\]…)
 
-## JSONExtractInt(json\[, indices_or_keys\]…) {#jsonextractintjson-indices-or-keys}
+## JSONExtractInt(json\[, indices_or_keys\]…)
 
-## JSONExtractFloat(json\[, indices_or_keys\]…) {#jsonextractfloatjson-indices-or-keys}
+## JSONExtractFloat(json\[, indices_or_keys\]…)
 
-## JSONExtractBool(json\[, indices_or_keys\]…) {#jsonextractbooljson-indices-or-keys}
+## JSONExtractBool(json\[, indices_or_keys\]…)
 
 Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
 
@@ -167,7 +174,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
-## JSONExtractString(json\[, indices_or_keys\]…) {#jsonextractstringjson-indices-or-keys}
+## JSONExtractString(json\[, indices_or_keys\]…)
 
 Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
 
@@ -185,7 +192,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices_or_keys…\], Return_type) {#jsonextractjson-indices-or-keys-return-type}
+## JSONExtract(json\[, indices_or_keys…\], Return_type)
 
 Parses a JSON and extract a value of the given ClickHouse data type.
 
@@ -199,6 +206,7 @@ Examples:
 ``` sql
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
+SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(String, String)') = map('a',  'hello', 'b', 'world');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(Int64)') = NULL
 SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
@@ -206,7 +214,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
+## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type)
 
 Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
 
@@ -216,7 +224,7 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractKeys {#jsonextractkeysjson-indices-or-keys}
+## JSONExtractKeys
 
 Parses a JSON string and extracts the keys.
 
@@ -228,8 +236,8 @@ JSONExtractKeys(json[, a, b, c...])
 
 **Arguments**
 
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
--   `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+- `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned value**
 
@@ -254,7 +262,7 @@ text
 └────────────────────────────────────────────────────────────┘
 ```
 
-## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
+## JSONExtractRaw(json\[, indices_or_keys\]…)
 
 Returns a part of JSON as unparsed string.
 
@@ -266,7 +274,7 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw(json\[, indices_or_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
+## JSONExtractArrayRaw(json\[, indices_or_keys…\])
 
 Returns an array with elements of JSON array, each represented as unparsed string.
 
@@ -278,7 +286,7 @@ Example:
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"'];
 ```
 
-## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}
+## JSONExtractKeysAndValuesRaw
 
 Extracts raw data from a JSON object.
 
@@ -290,13 +298,13 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Arguments**
 
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
--   `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+- `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned values**
 
--   Array with `('key', 'value')` tuples. Both tuple members are strings.
--   Empty array if the requested object does not exist, or input JSON is invalid.
+- Array with `('key', 'value')` tuples. Both tuple members are strings.
+- Empty array if the requested object does not exist, or input JSON is invalid.
 
 Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
 
@@ -344,7 +352,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## JSON_EXISTS(json, path) {#json-exists}
+## JSON_EXISTS(json, path)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -363,7 +371,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
 :::
 
-## JSON_QUERY(json, path) {#json-query}
+## JSON_QUERY(json, path)
 
 Parses a JSON and extract a value as JSON array or JSON object.
 
@@ -390,11 +398,11 @@ String
 Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
 :::
 
-## JSON_VALUE(json, path) {#json-value}
+## JSON_VALUE(json, path)
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned.
+If the value does not exist, an empty string will be returned by default, and by SET `function_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
 
 Example:
 
@@ -403,6 +411,8 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
+select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
+select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
 Result:
@@ -418,7 +428,7 @@ String
 Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
 :::
 
-## toJSONString {#tojsonstring}
+## toJSONString
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
 64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
@@ -433,11 +443,11 @@ toJSONString(value)
 
 **Arguments**
 
--   `value` — Value to serialize. Value may be of any data type.
+- `value` — Value to serialize. Value may be of any data type.
 
 **Returned value**
 
--   JSON representation of the value.
+- JSON representation of the value.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -462,5 +472,40 @@ Result:
 
 **See Also**
 
--   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
--   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+- [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
+- [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+
+
+## JSONArrayLength
+
+Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
+
+**Syntax**
+
+``` sql
+JSONArrayLength(json)
+```
+
+Alias: `JSON_ARRAY_LENGTH(json)`.
+
+**Arguments**
+
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+
+**Returned value**
+
+- If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
+
+Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT
+    JSONArrayLength(''),
+    JSONArrayLength('[1,2,3]')
+
+┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
+│                ᴺᵁᴸᴸ │                          3 │
+└─────────────────────┴────────────────────────────┘
+```

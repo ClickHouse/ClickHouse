@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/database-engines/replicated
 sidebar_position: 30
 sidebar_label: Replicated
 ---
 
-# [experimental] Replicated {#replicated}
+# [experimental] Replicated
 
 The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
@@ -11,18 +12,16 @@ One ClickHouse server can have multiple replicated databases running and updatin
 
 ## Creating a Database {#creating-a-database}
 ``` sql
-    CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
+CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```
 
 **Engine Parameters**
 
--   `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
--   `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
--   `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
+- `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
+- `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
+- `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
-:::warning    
 For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
-:::
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
@@ -81,13 +80,13 @@ Creating a distributed table and inserting the data:
 
 ``` sql
 node2 :) CREATE TABLE r.d (n UInt64) ENGINE=Distributed('r','r','rmt', n % 2);
-node3 :) INSERT INTO r SELECT * FROM numbers(10);
+node3 :) INSERT INTO r.d SELECT * FROM numbers(10);
 node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
 ```
 
 ``` text
 ┌─hosts─┬─groupArray(n)─┐
-│ node1 │  [1,3,5,7,9]  │
+│ node3 │  [1,3,5,7,9]  │
 │ node2 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```

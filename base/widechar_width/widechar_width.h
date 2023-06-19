@@ -16,6 +16,8 @@
 #include <cstddef>
 #include <cstdint>
 
+// NOLINTBEGIN(*)
+
 /* Special width values */
 enum {
   widechar_nonprint = -1,     // The character is not printable.
@@ -517,5 +519,7 @@ inline int widechar_wcwidth(wchar_t c) {
         return widechar_widened_in_9;
     return 1;
 }
+
+// NOLINTEND(*)
 
 #endif // WIDECHAR_WIDTH_H

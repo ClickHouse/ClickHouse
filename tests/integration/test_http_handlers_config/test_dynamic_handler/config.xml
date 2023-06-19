@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 
 <clickhouse>
     <http_handlers>
@@ -9,6 +8,16 @@
             <handler>
                 <type>dynamic_query_handler</type>
                 <query_param_name>get_dynamic_handler_query</query_param_name>
+            </handler>
+        </rule>
+        <rule>
+            <headers><XXX>xxx</XXX></headers>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_get_custom_content_type</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>get_dynamic_handler_query</query_param_name>
+                <content_type>application/whatever; charset=cp1337</content_type>
             </handler>
         </rule>
     </http_handlers>

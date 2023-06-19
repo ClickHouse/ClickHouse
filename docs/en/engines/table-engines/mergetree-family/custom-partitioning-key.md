@@ -1,12 +1,13 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 30
 sidebar_label: Custom Partitioning Key
 ---
 
-# Custom Partitioning Key {#custom-partitioning-key}
+# Custom Partitioning Key
 
-:::warning   
-In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). 
+:::note
+In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months.
 
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
@@ -43,7 +44,7 @@ By default, the floating-point partition key is not supported. To use it enable 
 
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
-:::info    
+:::info
 A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn’t make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 :::
 
@@ -76,11 +77,11 @@ The `name` column contains the names of the partition data parts. You can use th
 
 Let’s break down the name of the part: `201901_1_9_2_11`:
 
--   `201901` is the partition name.
--   `1` is the minimum number of the data block.
--   `9` is the maximum number of the data block.
--   `2` is the chunk level (the depth of the merge tree it is formed from).
--   `11` is the mutation version (if a part mutated)
+- `201901` is the partition name.
+- `1` is the minimum number of the data block.
+- `9` is the maximum number of the data block.
+- `2` is the chunk level (the depth of the merge tree it is formed from).
+- `11` is the mutation version (if a part mutated)
 
 :::info
 The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
@@ -133,4 +134,47 @@ Note that on the operating server, you cannot manually change the set of parts o
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+## Group By optimisation using partition key
+
+For some combinations of table's partition key and query's group by key it might be possible to execute aggregation for each partition independently.
+Then we'll not have to merge partially aggregated data from all execution threads at the end,
+because we provided with the guarantee that each group by key value cannot appear in working sets of two different threads.
+
+The typical example is:
+
+``` sql
+CREATE TABLE session_log
+(
+    UserID UInt64,
+    SessionID UUID
+)
+ENGINE = MergeTree
+PARTITION BY sipHash64(UserID) % 16
+ORDER BY tuple();
+
+SELECT
+    UserID,
+    COUNT()
+FROM session_log
+GROUP BY UserID;
+```
+
+:::note
+Performance of such a query heavily depends on the table layout. Because of that the optimisation is not enabled by default.
+:::
+
+The key factors for a good performance:
+
+- number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will under-utilize the machine
+- partitions shouldn't be too small, so batch processing won't degenerate into row-by-row processing
+- partitions should be comparable in size, so all threads will do roughly the same amount of work
+
+:::info
+It's recommended to apply some hash function to columns in `partition by` clause in order to distribute data evenly between partitions.
+:::
+
+Relevant settings are:
+
+- `allow_aggregate_partitions_independently` - controls if the use of optimisation is enabled
+- `force_aggregate_partitions_independently` - forces its use when it's applicable from the correctness standpoint, but getting disabled by internal logic that estimates its expediency
+- `max_number_of_partitions_for_independent_aggregation` - hard limit on the maximal number of partitions table could have

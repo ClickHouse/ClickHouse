@@ -44,7 +44,7 @@ def test_random_inserts(started_cluster):
     node1.query(
         """
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, i UInt32, s String)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}', date, i, 8192)"""
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY i"""
     )
 
     with PartitionManager() as pm_random_drops:

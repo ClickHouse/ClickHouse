@@ -26,7 +26,7 @@ class HyperLogLogWithSmallSetOptimization : private boost::noncopyable
 {
 private:
     using Small = SmallSet<Key, small_set_size>;
-    using Large = HyperLogLogCounter<K, Hash, UInt32, DenominatorType>;
+    using Large = HyperLogLogCounter<K, Key, Hash, UInt32, DenominatorType>;
     using LargeValueType = typename Large::value_type;
 
     Small small;

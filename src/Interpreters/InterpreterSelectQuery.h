@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
+#include <Access/EnabledRowPolicies.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -12,6 +14,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <Columns/FilterDescription.h>
 
@@ -22,13 +25,20 @@ class Logger;
 
 namespace DB
 {
-struct SubqueryForSet;
+
+class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
 
+struct GroupingSetsParams;
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+struct RowPolicy;
+using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -48,33 +58,38 @@ public:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names_ = Names{});
+
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const ContextMutablePtr & context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         Pipe input_pipe_,
         const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
 
-    /// Reuse existing subqueries_for_sets and prepared_sets for another pass of analysis. It's used for projection.
+    /// Reuse existing prepared_sets for another pass of analysis. It's used for projection.
     /// TODO: Find a general way of sharing sets among different interpreters, such as subqueries.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const SelectQueryOptions &,
-        SubqueriesForSets subquery_for_sets_,
-        PreparedSets prepared_sets_);
+        PreparedSetsPtr prepared_sets_);
 
     ~InterpreterSelectQuery() override;
 
@@ -82,12 +97,12 @@ public:
     BlockIO execute() override;
 
     /// Builds QueryPlan for current query.
-    virtual void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlan(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    virtual void ignoreWithTotals() override;
+    void ignoreWithTotals() override;
 
     ASTPtr getQuery() const { return query_ptr; }
 
@@ -102,33 +117,43 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
 
     Names getRequiredColumns() { return required_columns; }
 
     bool supportsTransactions() const override { return true; }
 
-    /// This is tiny crutch to support reading from localhost replica during distributed query
-    /// Replica need to talk to the initiator through a connection to ask for a next task
-    /// but there will be no connection if we create Interpreter explicitly.
-    /// The other problem is that context is copied inside Interpreter's constructor
-    /// And with this method we can change the internals of cloned one
-    void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
+    FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
-    /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo();
+    RowPolicyFilterPtr getRowPolicyFilter() const;
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
+
+    static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
+    static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
+
+    static bool isQueryWithFinal(const SelectQueryInfo & info);
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
-        SubqueriesForSets subquery_for_sets_ = {},
-        PreparedSets prepared_sets_ = {});
+        PreparedSetsPtr prepared_sets_ = nullptr);
+
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const ContextMutablePtr & context_,
+        std::optional<Pipe> input_pipe,
+        const StoragePtr & storage_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {},
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        PreparedSetsPtr prepared_sets_ = nullptr);
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
@@ -140,12 +165,11 @@ private:
     void executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
-
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
         QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);
@@ -162,16 +186,14 @@ private:
     static void executeProjection(QueryPlan & query_plan, const ActionsDAGPtr & expression);
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
-    void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void
-    executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
-
-    String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
+    void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
+    bool autoFinalOnQuery(ASTSelectQuery & select_query);
+    std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
 
     enum class Modificator
     {
         ROLLUP = 0,
-        CUBE = 1
+        CUBE = 1,
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
@@ -191,8 +213,14 @@ private:
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
-    ASTPtr row_policy_filter;
+    RowPolicyFilterPtr row_policy_filter;
     FilterDAGInfoPtr filter_info;
+
+    /// For additional_filter setting.
+    FilterDAGInfoPtr additional_filter_info;
+
+    /// For "per replica" filter when multiple replicas are used
+    FilterDAGInfoPtr parallel_replicas_custom_filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
@@ -220,8 +248,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
-    SubqueriesForSets subquery_for_sets;
-    PreparedSets prepared_sets;
+    PreparedSetsPtr prepared_sets;
 };
 
 }

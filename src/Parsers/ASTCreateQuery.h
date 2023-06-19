@@ -25,12 +25,24 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
-
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    bool isExtendedStorageDefinition() const;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&engine));
+        f(reinterpret_cast<void **>(&partition_by));
+        f(reinterpret_cast<void **>(&primary_key));
+        f(reinterpret_cast<void **>(&order_by));
+        f(reinterpret_cast<void **>(&sample_by));
+        f(reinterpret_cast<void **>(&ttl_table));
+        f(reinterpret_cast<void **>(&settings));
+    }
 };
 
 
@@ -56,6 +68,16 @@ public:
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
     }
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&columns));
+        f(reinterpret_cast<void **>(&indices));
+        f(reinterpret_cast<void **>(&primary_key));
+        f(reinterpret_cast<void **>(&constraints));
+        f(reinterpret_cast<void **>(&projections));
+        f(reinterpret_cast<void **>(&primary_key));
+    }
 };
 
 
@@ -70,18 +92,20 @@ public:
     bool is_live_view{false};
     bool is_window_view{false};
     bool is_populate{false};
+    bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
 
     ASTColumns * columns_list = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
+    ASTStorage * inner_storage = nullptr;      /// For window view with inner table
     ASTStorage * storage = nullptr;
     ASTPtr watermark_function;
     ASTPtr lateness_function;
     String as_database;
     String as_table;
-    ASTPtr as_table_function;
+    IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
 
@@ -91,7 +115,6 @@ public:
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
-    std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -118,10 +141,25 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
+    bool isParameterizedView() const;
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&columns_list));
+        f(reinterpret_cast<void **>(&inner_storage));
+        f(reinterpret_cast<void **>(&storage));
+        f(reinterpret_cast<void **>(&as_table_function));
+        f(reinterpret_cast<void **>(&select));
+        f(reinterpret_cast<void **>(&comment));
+        f(reinterpret_cast<void **>(&table_overrides));
+        f(reinterpret_cast<void **>(&dictionary_attributes_list));
+        f(reinterpret_cast<void **>(&dictionary));
+    }
 };
 
 }

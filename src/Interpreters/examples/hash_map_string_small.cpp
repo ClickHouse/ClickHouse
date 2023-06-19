@@ -23,7 +23,7 @@
 
 struct SmallStringRef
 {
-    UInt32 size = 0;
+    size_t size = 0;
 
     union
     {

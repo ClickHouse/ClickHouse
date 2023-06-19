@@ -1,17 +1,17 @@
 ---
-sidebar_label: Playground
+sidebar_label: ClickHouse Playground
 sidebar_position: 2
 keywords: [clickhouse, playground, getting, started, docs]
 description: The ClickHouse Playground allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
 slug: /en/getting-started/playground
 ---
 
-# ClickHouse Playground {#clickhouse-playground}
+# ClickHouse Playground
 
 [ClickHouse Playground](https://play.clickhouse.com/play?user=play) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
 Several example datasets are available in Playground.
 
-You can make queries to Playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers. More information about software products that support ClickHouse is available [here](../interfaces).
+You can make queries to Playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers. More information about software products that support ClickHouse is available [here](../integrations/index.mdx).
 
 ## Credentials {#credentials}
 
@@ -26,8 +26,8 @@ You can make queries to Playground using any HTTP client, for example [curl](htt
 
 The queries are executed as a read-only user. It implies some limitations:
 
--   DDL queries are not allowed
--   INSERT queries are not allowed
+- DDL queries are not allowed
+- INSERT queries are not allowed
 
 The service also have quotas on its usage.
 

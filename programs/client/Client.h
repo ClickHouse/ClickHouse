@@ -17,6 +17,7 @@ public:
 
 protected:
     bool processWithFuzzing(const String & full_query) override;
+    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
     void connect() override;
 
@@ -36,8 +37,17 @@ protected:
 
     void processConfig() override;
 
+    void readArguments(
+        int argc,
+        char ** argv,
+        Arguments & common_arguments,
+        std::vector<Arguments> & external_tables_arguments,
+        std::vector<Arguments> & hosts_and_ports_arguments) override;
+
 private:
     void printChangedSettings() const;
+    void showWarnings();
+    void parseConnectionsCredentials();
     std::vector<String> loadWarningMessages();
 };
 }

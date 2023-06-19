@@ -1,9 +1,9 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
 #include <array>
-#include <math.h>
+#include <cmath>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -118,7 +118,7 @@ public:
             if (res > MAX_H3_RES)
                 throw Exception(
                         ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
+                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                         toString(res),
                         getName(),
                         MAX_H3_RES);
@@ -141,7 +141,7 @@ public:
 
 }
 
-void registerFunctionGeoToH3(FunctionFactory & factory)
+REGISTER_FUNCTION(GeoToH3)
 {
     factory.registerFunction<FunctionGeoToH3>();
 }

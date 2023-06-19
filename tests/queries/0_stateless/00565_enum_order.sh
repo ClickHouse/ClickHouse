@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT <<"EOF"
 DROP TABLE IF EXISTS `test_log`
 EOF
 
-$CLICKHOUSE_CLIENT <<"EOF"
+$CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 <<"EOF"
 CREATE TABLE `test_log` (
     date Date,
     datetime DateTime,

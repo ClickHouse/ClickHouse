@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
 
@@ -36,26 +39,31 @@ Array createEmptyArrayField(size_t num_dimensions);
 DataTypePtr getDataTypeByColumn(const IColumn & column);
 
 /// Converts Object types and columns to Tuples in @columns_list and @block
-/// and checks that types are consistent with types in @extended_storage_columns.
-void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns);
+/// and checks that types are consistent with types in @storage_snapshot.
+void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & storage_snapshot);
 
 /// Checks that each path is not the prefix of any other path.
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths);
 
 /// Receives several Tuple types and deduces the least common type among them.
-DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths = false);
+DataTypePtr getLeastCommonTypeForDynamicColumns(
+    const DataTypePtr & type_in_storage, const DataTypes & types, bool check_ambiguos_paths = false);
+
+DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage);
 
 /// Converts types of object columns to tuples in @columns_list
 /// according to @object_columns and adds all tuple's subcolumns if needed.
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns);
 
-NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
-bool hasObjectColumns(const ColumnsDescription & columns);
-void finalizeObjectColumns(MutableColumns & columns);
+/// Checks whether @columns contain any column with dynamic subcolumns.
+bool hasDynamicSubcolumns(const ColumnsDescription & columns);
 
 /// Updates types of objects in @object_columns inplace
 /// according to types in new_columns.
-void updateObjectColumns(ColumnsDescription & object_columns, const NamesAndTypesList & new_columns);
+void updateObjectColumns(
+    ColumnsDescription & object_columns,
+    const ColumnsDescription & storage_columns,
+    const NamesAndTypesList & new_columns);
 
 using DataTypeTuplePtr = std::shared_ptr<DataTypeTuple>;
 
@@ -73,10 +81,13 @@ DataTypePtr unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types);
 
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column);
+
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns);
+
 
 /// For all columns which exist in @expected_columns and
 /// don't exist in @available_columns adds to WITH clause
@@ -111,11 +122,47 @@ private:
 class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
 {
 public:
-    size_t operator()(const Array & x) const;
+    size_t operator()(const Array & x);
 
     template <typename T>
     size_t operator()(const T &) const { return 0; }
+
+    bool need_fold_dimension = false;
 };
+
+/// Fold field (except Null) to the higher dimension, e.g. `1` -- fold 2 --> `[[1]]`
+/// used to normalize dimension of element in an array. e.g [1, [2]] --> [[1], [2]]
+class FieldVisitorFoldDimension : public StaticVisitor<Field>
+{
+public:
+    explicit FieldVisitorFoldDimension(size_t num_dimensions_to_fold_) : num_dimensions_to_fold(num_dimensions_to_fold_) { }
+
+    Field operator()(const Array & x) const;
+
+    Field operator()(const Null & x) const { return x; }
+
+    template <typename T>
+    Field operator()(const T & x) const
+    {
+        if (num_dimensions_to_fold == 0)
+            return x;
+
+        Array res(1, x);
+        for (size_t i = 1; i < num_dimensions_to_fold; ++i)
+        {
+            Array new_res;
+            new_res.push_back(std::move(res));
+            res = std::move(new_res);
+        }
+
+        return res;
+    }
+
+private:
+    size_t num_dimensions_to_fold;
+};
+
+void setAllObjectsToDummyTupleType(NamesAndTypesList & columns);
 
 /// Receives range of objects, which contains collections
 /// of columns-like objects (e.g. ColumnsDescription or NamesAndTypesList)
@@ -124,31 +171,22 @@ public:
 /// columns-like objects from entry to which Iterator points.
 /// columns-like object should have fields "name" and "type".
 template <typename Iterator, typename EntryColumnsGetter>
-ColumnsDescription getObjectColumns(
+ColumnsDescription getConcreteObjectColumns(
     Iterator begin, Iterator end,
     const ColumnsDescription & storage_columns,
     EntryColumnsGetter && entry_columns_getter)
 {
-    ColumnsDescription res;
-
-    if (begin == end)
-    {
-        for (const auto & column : storage_columns)
-        {
-            if (isObject(column.type))
-            {
-                auto tuple_type = std::make_shared<DataTypeTuple>(
-                    DataTypes{std::make_shared<DataTypeUInt8>()},
-                    Names{ColumnObject::COLUMN_NAME_DUMMY});
-
-                res.add({column.name, std::move(tuple_type)});
-            }
-        }
-
-        return res;
-    }
-
     std::unordered_map<String, DataTypes> types_in_entries;
+
+    /// Add dummy column for all Object columns
+    /// to not lose any column if it's missing
+    /// in all entries. If it exists in any entry
+    /// dummy column will be removed.
+    for (const auto & column : storage_columns)
+    {
+        if (column.type->hasDynamicSubcolumns())
+            types_in_entries[column.name].push_back(createConcreteEmptyDynamicColumn(column.type));
+    }
 
     for (auto it = begin; it != end; ++it)
     {
@@ -156,13 +194,17 @@ ColumnsDescription getObjectColumns(
         for (const auto & column : entry_columns)
         {
             auto storage_column = storage_columns.tryGetPhysical(column.name);
-            if (storage_column && isObject(storage_column->type))
+            if (storage_column && storage_column->type->hasDynamicSubcolumns())
                 types_in_entries[column.name].push_back(column.type);
         }
     }
 
+    ColumnsDescription res;
     for (const auto & [name, types] : types_in_entries)
-        res.add({name, getLeastCommonTypeForObject(types)});
+    {
+        auto storage_column = storage_columns.getPhysical(name);
+        res.add({name, getLeastCommonTypeForDynamicColumns(storage_column.type, types)});
+    }
 
     return res;
 }

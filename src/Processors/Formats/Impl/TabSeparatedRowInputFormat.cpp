@@ -25,11 +25,10 @@ namespace ErrorCodes
 static void checkForCarriageReturn(ReadBuffer & in)
 {
     if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
-        throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
+        throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
-            ErrorCodes::INCORRECT_DATA);
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.");
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
@@ -40,47 +39,90 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
+    : TabSeparatedRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, with_names_, with_types_, is_raw_, format_settings_)
 {
 }
 
-TabSeparatedFormatReader::TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool is_raw_)
-    : FormatWithNamesAndTypesReader(in_, format_settings_), is_raw(is_raw_)
+TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
+    const Block & header_,
+    std::unique_ptr<PeekableReadBuffer> in_,
+    const Params & params_,
+    bool with_names_,
+    bool with_types_,
+    bool is_raw,
+    const FormatSettings & format_settings_)
+    : RowInputFormatWithNamesAndTypes(
+        header_,
+        *in_,
+        params_,
+        false,
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::make_unique<TabSeparatedFormatReader>(*in_, format_settings_, is_raw),
+        format_settings_.tsv.try_detect_header)
+    , buf(std::move(in_))
+{
+}
+
+void TabSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf->setSubBuffer(in_);
+}
+
+void TabSeparatedRowInputFormat::resetParser()
+{
+    RowInputFormatWithNamesAndTypes::resetParser();
+    buf->reset();
+}
+
+TabSeparatedFormatReader::TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings_, bool is_raw_)
+    : FormatWithNamesAndTypesReader(in_, format_settings_), buf(&in_), is_raw(is_raw_)
 {
 }
 
 void TabSeparatedFormatReader::skipFieldDelimiter()
 {
-    assertChar('\t', *in);
+    assertChar('\t', *buf);
 }
 
 void TabSeparatedFormatReader::skipRowEndDelimiter()
 {
-    if (in->eof())
+    if (buf->eof())
         return;
 
     if (unlikely(first_row))
     {
-        checkForCarriageReturn(*in);
+        checkForCarriageReturn(*buf);
         first_row = false;
     }
 
-    assertChar('\n', *in);
+    assertChar('\n', *buf);
 }
 
+template <bool read_string>
 String TabSeparatedFormatReader::readFieldIntoString()
 {
     String field;
     if (is_raw)
-        readString(field, *in);
+        readString(field, *buf);
     else
-        readEscapedString(field, *in);
+    {
+        if constexpr (read_string)
+            readEscapedString(field, *buf);
+        else
+            readTSVField(field, *buf);
+    }
     return field;
 }
 
 void TabSeparatedFormatReader::skipField()
 {
-    readFieldIntoString();
+    NullOutput out;
+    if (is_raw)
+        readStringInto(out, *buf);
+    else
+        readEscapedStringInto(out, *buf);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -89,19 +131,20 @@ void TabSeparatedFormatReader::skipHeaderRow()
     {
         skipField();
     }
-    while (checkChar('\t', *in));
+    while (checkChar('\t', *buf));
 
     skipRowEndDelimiter();
 }
 
-std::vector<String> TabSeparatedFormatReader::readRow()
+template <bool is_header_row>
+std::vector<String> TabSeparatedFormatReader::readRowImpl()
 {
     std::vector<String> fields;
     do
     {
-        fields.push_back(readFieldIntoString());
+        fields.push_back(readFieldIntoString<is_header_row>());
     }
-    while (checkChar('\t', *in));
+    while (checkChar('\t', *buf));
 
     skipRowEndDelimiter();
     return fields;
@@ -110,8 +153,8 @@ std::vector<String> TabSeparatedFormatReader::readRow()
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
-    const bool at_delimiter = !is_last_file_column && !in->eof() && *in->position() == '\t';
-    const bool at_last_column_line_end = is_last_file_column && (in->eof() || *in->position() == '\n');
+    const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
+    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n');
 
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
@@ -119,22 +162,22 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
         return false;
     }
 
-    bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
+    bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
 
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeTextRawImpl(column, *in, format_settings, serialization);
+            return SerializationNullable::deserializeTextRawImpl(column, *buf, format_settings, serialization);
 
-        serialization->deserializeTextRaw(column, *in, format_settings);
+        serialization->deserializeTextRaw(column, *buf, format_settings);
         return true;
     }
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeTextEscapedImpl(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeTextEscapedImpl(column, *buf, format_settings, serialization);
 
-    serialization->deserializeTextEscaped(column, *in, format_settings);
+    serialization->deserializeTextEscaped(column, *buf, format_settings);
     return true;
 }
 
@@ -142,25 +185,25 @@ bool TabSeparatedFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer
 {
     try
     {
-        assertChar('\t', *in);
+        assertChar('\t', *buf);
     }
     catch (const DB::Exception &)
     {
-        if (*in->position() == '\n')
+        if (*buf->position() == '\n')
         {
             out << "ERROR: Line feed found where tab is expected."
                    " It's like your file has less columns than expected.\n"
                    "And if your file has the right number of columns, "
                    "maybe it has an unescaped backslash in value before tab, which causes the tab to be escaped.\n";
         }
-        else if (*in->position() == '\r')
+        else if (*buf->position() == '\r')
         {
             out << "ERROR: Carriage return found where tab is expected.\n";
         }
         else
         {
             out << "ERROR: There is no tab. ";
-            verbosePrintString(in->position(), in->position() + 1, out);
+            verbosePrintString(buf->position(), buf->position() + 1, out);
             out << " found instead.\n";
         }
         return false;
@@ -171,22 +214,22 @@ bool TabSeparatedFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer
 
 bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 {
-    if (in->eof())
+    if (buf->eof())
         return true;
 
     try
     {
-        assertChar('\n', *in);
+        assertChar('\n', *buf);
     }
     catch (const DB::Exception &)
     {
-        if (*in->position() == '\t')
+        if (*buf->position() == '\t')
         {
             out << "ERROR: Tab found where line feed is expected."
                    " It's like your file has more columns than expected.\n"
                    "And if your file has the right number of columns, maybe it has an unescaped tab in a value.\n";
         }
-        else if (*in->position() == '\r')
+        else if (*buf->position() == '\r')
         {
             out << "ERROR: Carriage return found where line feed is expected."
                    " It's like your file has DOS/Windows style line separators, that is illegal in TabSeparated format.\n";
@@ -194,7 +237,7 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
         else
         {
             out << "ERROR: There is no line feed. ";
-            verbosePrintString(in->position(), in->position() + 1, out);
+            verbosePrintString(buf->position(), buf->position() + 1, out);
             out << " found instead.\n";
         }
         return false;
@@ -205,52 +248,86 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
 void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 {
-    bool can_be_parsed_as_null = type->isNullable() || type->isLowCardinalityNullable() || format_settings.null_as_default;
+    bool can_be_parsed_as_null = isNullableOrLowCardinalityNullable(type) || format_settings.null_as_default;
 
     // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
-    if (!can_be_parsed_as_null && !in->eof())
+    if (!can_be_parsed_as_null && !buf->eof())
     {
-        if (*in->position() == '\\' && in->available() >= 2)
+        if (*buf->position() == '\\' && buf->available() >= 2)
         {
-            ++in->position();
-            if (*in->position() == 'N')
+            ++buf->position();
+            if (*buf->position() == 'N')
             {
-                ++in->position();
+                ++buf->position();
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
             }
             else
             {
-                --in->position();
+                --buf->position();
             }
         }
     }
 }
 
+void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+        readRow();
+}
+
 void TabSeparatedRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(*in);
+    skipToUnescapedNextLineOrEOF(*buf);
+}
+
+void TabSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
+{
+    buf = assert_cast<PeekableReadBuffer *>(&in_);
+    FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+}
+
+bool TabSeparatedFormatReader::checkForSuffix()
+{
+    if (!format_settings.tsv.skip_trailing_empty_lines)
+        return buf->eof();
+
+    PeekableReadBufferCheckpoint checkpoint(*buf);
+    while (checkChar('\n', *buf) || checkChar('\r', *buf));
+    if (buf->eof())
+        return true;
+
+    buf->rollbackToCheckpoint();
+    return false;
 }
 
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
     ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(
-        in_,
+        buf,
         format_settings_,
         with_names_,
         with_types_,
         &reader,
-        getDefaultDataTypeForEscapingRule(is_raw_ ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped))
-    , reader(in_, format_settings_, is_raw_)
+        getDefaultDataTypeForEscapingRule(is_raw_ ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped),
+        format_settings_.tsv.try_detect_header)
+    , buf(in_)
+    , reader(buf, format_settings_, is_raw_)
 {
 }
 
-DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypes()
+std::pair<std::vector<String>, DataTypes> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
-    if (in.eof())
+    if (buf.eof())
         return {};
 
     auto fields = reader.readRow();
-    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return {fields, data_types};
+}
+
+DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
+{
+    return readRowAndGetFieldsAndDataTypes().second;
 }
 
 void registerInputFormatTabSeparated(FormatFactory & factory)
@@ -284,6 +361,20 @@ void registerTSVSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
+            if (!with_types)
+            {
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
+                {
+                    String result = getAdditionalFormatInfoByEscapingRule(
+                        settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
+                    if (!with_names)
+                        result += fmt::format(
+                            ", column_names_for_schema_inference={}, try_detect_header={}",
+                            settings.column_names_for_schema_inference,
+                            settings.tsv.try_detect_header);
+                    return result;
+                });
+            }
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
@@ -291,11 +382,14 @@ void registerTSVSchemaReader(FormatFactory & factory)
     }
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, bool is_raw, size_t min_rows)
+static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, bool is_raw, size_t min_bytes, size_t min_rows, size_t max_rows)
 {
     bool need_more_data = true;
     char * pos = in.position();
     size_t number_of_rows = 0;
+
+    if (max_rows && (max_rows < min_rows))
+        max_rows = min_rows;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -305,9 +399,8 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
 
         if (pos > in.buffer().end())
-            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
-
-        if (pos == in.buffer().end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+        else if (pos == in.buffer().end())
             continue;
 
         if (!is_raw && *pos == '\\')
@@ -315,15 +408,25 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             ++pos;
             if (loadAtPosition(in, memory, pos))
                 ++pos;
+            continue;
         }
-        else if (*pos == '\n' || *pos == '\r')
-        {
-            if (*pos == '\n')
-                ++number_of_rows;
 
-            if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size) && number_of_rows >= min_rows)
-                need_more_data = false;
+        ++number_of_rows;
+        if ((number_of_rows >= min_rows)
+            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+            need_more_data = false;
+
+        if (*pos == '\n')
+        {
             ++pos;
+            if (loadAtPosition(in, memory, pos) && *pos == '\r')
+                ++pos;
+        }
+        else if (*pos == '\r')
+        {
+            ++pos;
+            if (loadAtPosition(in, memory, pos) && *pos == '\n')
+                ++pos;
         }
     }
 
@@ -336,26 +439,25 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
     {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        auto register_func = [&](const String & format_name, bool, bool)
         {
-            size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
-            factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+            static constexpr size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
+            factory.registerFileSegmentationEngine(format_name, [is_raw](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
             {
-                return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
+                return fileSegmentationEngineTabSeparatedImpl(in, memory, is_raw, min_bytes, min_rows, max_rows);
             });
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
     }
 
     // We can use the same segmentation engine for TSKV.
-    factory.registerFileSegmentationEngine("TSKV", [](
-        ReadBuffer & in,
-        DB::Memory<> & memory,
-        size_t min_chunk_size)
+    factory.registerFileSegmentationEngine("TSKV", [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
     {
-        return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, false, 1);
+        return fileSegmentationEngineTabSeparatedImpl(in, memory, false, min_bytes, 1, max_rows);
     });
 }
 

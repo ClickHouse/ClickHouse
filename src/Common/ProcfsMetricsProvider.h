@@ -4,7 +4,7 @@
 #include <boost/noncopyable.hpp>
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 struct taskstats;
 
 namespace DB
@@ -19,7 +19,7 @@ public:
     /// Updates only a part of taskstats struct's fields:
     ///  - cpu_run_virtual_total, cpu_delay_total (when /proc/thread-self/schedstat is available)
     ///  - blkio_delay_total                      (when /proc/thread-self/stat is available)
-    ///  - rchar, wchar, read_bytes, write_bytes  (when /prod/thread-self/io is available)
+    ///  - rchar, wchar, read_bytes, write_bytes  (when /proc/thread-self/io is available)
     /// See: man procfs
     void getTaskStats(::taskstats & out_stats) const;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -54,6 +55,9 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
+    std::atomic_bool allow_use_jemalloc_memory {true};
+
+    static std::atomic<Int64> free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
 
@@ -73,48 +77,54 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    OvercommitTracker * overcommit_tracker = nullptr;
+    std::atomic<std::chrono::microseconds> max_wait_time;
+
+    std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
+
+    bool log_peak_memory_usage_in_destructor = true;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    /// allocImpl(...) and free(...) should not be used directly
+    friend struct CurrentMemoryTracker;
+    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+    void free(Int64 size);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_);
 
     ~MemoryTracker();
 
     VariableContext level;
 
-    /** Call the following functions before calling of corresponding operations with memory allocators.
-      */
-    void alloc(Int64 size);
-
-    void allocNoThrow(Int64 size);
-
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-
-    void realloc(Int64 old_size, Int64 new_size)
-    {
-        Int64 addition = new_size - old_size;
-        if (addition > 0)
-            alloc(addition);
-        else
-            free(-addition);
-    }
-
-    /** This function should be called after memory deallocation.
-      */
-    void free(Int64 size);
+    void adjustWithUntrackedMemory(Int64 untracked_memory);
 
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);
+    }
+
+    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
+    // MemoryTracker for background task may have a non-zero counter.
+    // This method is intended to fix the counter inside of background_memory_tracker.
+    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
+    // of total_memory_tracker.
+    void adjustOnBackgroundTaskEnd(const MemoryTracker * child)
+    {
+        auto background_memory_consumption = child->amount.load(std::memory_order_relaxed);
+        amount.fetch_sub(background_memory_consumption, std::memory_order_relaxed);
+
+        // Also fix CurrentMetrics::MergesMutationsMemoryTracking
+        auto metric_loaded = metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, background_memory_consumption);
     }
 
     Int64 getPeak() const
@@ -133,6 +143,10 @@ public:
     {
         return soft_limit.load(std::memory_order_relaxed);
     }
+    void setAllowUseJemallocMemory(bool value)
+    {
+        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
+    }
 
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
@@ -143,6 +157,8 @@ public:
     {
         fault_probability = value;
     }
+
+    void injectFault() const;
 
     void setSampleProbability(double value)
     {
@@ -186,22 +202,41 @@ public:
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
+    std::chrono::microseconds getOvercommitWaitingTime()
+    {
+        return max_wait_time.load(std::memory_order_relaxed);
+    }
+
+    void setOvercommitWaitingTime(UInt64 wait_time);
+
     void setOvercommitTracker(OvercommitTracker * tracker) noexcept
     {
-        overcommit_tracker = tracker;
+        overcommit_tracker.store(tracker, std::memory_order_relaxed);
+    }
+
+    void resetOvercommitTracker() noexcept
+    {
+        overcommit_tracker.store(nullptr, std::memory_order_relaxed);
     }
 
     /// Reset the accumulated data
     void resetCounters();
 
-    /// Reset the accumulated data and the parent.
+    /// Reset the accumulated data.
     void reset();
 
-    /// Reset current counter to a new value.
-    void set(Int64 to);
+    /// Reset current counter to an RSS value.
+    /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
+    /// We can free this arenas in case of exception to avoid OOM.
+    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
 
     /// Prints info about peak memory consumption into log.
-    void logPeakMemoryUsage() const;
+    void logPeakMemoryUsage();
+
+    void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
 };
 
 extern MemoryTracker total_memory_tracker;
+extern MemoryTracker background_memory_tracker;
+
+bool canEnqueueBackgroundTask();

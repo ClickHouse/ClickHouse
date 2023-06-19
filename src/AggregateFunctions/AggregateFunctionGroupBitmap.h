@@ -19,33 +19,40 @@ class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, 
 {
 public:
     explicit AggregateFunctionBitmap(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {}, createResultType())
     {
     }
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).rbs.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        this->data(place).roaring_bitmap_with_small_set.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).rbs.merge(this->data(rhs).rbs);
+        this->data(place).roaring_bitmap_with_small_set.merge(this->data(rhs).roaring_bitmap_with_small_set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).rbs.write(buf); }
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).roaring_bitmap_with_small_set.write(buf);
+    }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).rbs.read(buf); }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        this->data(place).roaring_bitmap_with_small_set.read(buf);
+    }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(
+            static_cast<T>(this->data(place).roaring_bitmap_with_small_set.size()));
     }
 };
 
@@ -58,13 +65,13 @@ private:
     static constexpr size_t STATE_VERSION_1_MIN_REVISION = 54455;
 public:
     explicit AggregateFunctionBitmapL2(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {}, createResultType())
     {
     }
 
     String getName() const override { return Policy::name; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -80,7 +87,7 @@ public:
         if (!data_lhs.init)
         {
             data_lhs.init = true;
-            data_lhs.rbs.merge(data_rhs.rbs);
+            data_lhs.roaring_bitmap_with_small_set.merge(data_rhs.roaring_bitmap_with_small_set);
         }
         else
         {
@@ -99,7 +106,7 @@ public:
         if (!data_lhs.init)
         {
             data_lhs.init = true;
-            data_lhs.rbs.merge(data_rhs.rbs);
+            data_lhs.roaring_bitmap_with_small_set.merge(data_rhs.roaring_bitmap_with_small_set);
         }
         else
         {
@@ -127,7 +134,7 @@ public:
         if (*version >= 1)
             DB::writeBoolText(this->data(place).init, buf);
 
-        this->data(place).rbs.write(buf);
+        this->data(place).roaring_bitmap_with_small_set.write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
@@ -137,12 +144,13 @@ public:
 
         if (*version >= 1)
             DB::readBoolText(this->data(place).init, buf);
-        this->data(place).rbs.read(buf);
+        this->data(place).roaring_bitmap_with_small_set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(
+            static_cast<T>(this->data(place).roaring_bitmap_with_small_set.size()));
     }
 };
 
@@ -152,7 +160,7 @@ class BitmapAndPolicy
 {
 public:
     static constexpr auto name = "groupBitmapAnd";
-    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_and(rhs.rbs); }
+    static void apply(Data & lhs, const Data & rhs) { lhs.roaring_bitmap_with_small_set.rb_and(rhs.roaring_bitmap_with_small_set); }
 };
 
 template <typename Data>
@@ -160,7 +168,7 @@ class BitmapOrPolicy
 {
 public:
     static constexpr auto name = "groupBitmapOr";
-    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_or(rhs.rbs); }
+    static void apply(Data & lhs, const Data & rhs) { lhs.roaring_bitmap_with_small_set.rb_or(rhs.roaring_bitmap_with_small_set); }
 };
 
 template <typename Data>
@@ -168,7 +176,7 @@ class BitmapXorPolicy
 {
 public:
     static constexpr auto name = "groupBitmapXor";
-    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_xor(rhs.rbs); }
+    static void apply(Data & lhs, const Data & rhs) { lhs.roaring_bitmap_with_small_set.rb_xor(rhs.roaring_bitmap_with_small_set); }
 };
 
 template <typename T, typename Data>

@@ -15,18 +15,67 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
             </unstable_s3>
+            <no_delete_objects_s3>
+                <type>s3</type>
+                <endpoint>http://resolver:8082/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_max_single_read_retries>10</s3_max_single_read_retries>
+            </no_delete_objects_s3>
+            <broken_s3>
+                <type>s3</type>
+                <endpoint>http://resolver:8083/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+                <retry_attempts>0</retry_attempts>
+                <connect_timeout_ms>20000</connect_timeout_ms>
+                <request_timeout_ms>20000</request_timeout_ms>
+                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+            </broken_s3>
+            <broken_s3_always_multi_part>
+                <type>s3</type>
+                <endpoint>http://resolver:8083/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+                <retry_attempts>0</retry_attempts>
+                <connect_timeout_ms>20000</connect_timeout_ms>
+                <request_timeout_ms>20000</request_timeout_ms>
+                <s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>
+                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+            </broken_s3_always_multi_part>
             <hdd>
                 <type>local</type>
                 <path>/</path>
             </hdd>
             <s3_with_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_with_cache/</path>
+                <max_size>1000000000</max_size>
+            </s3_with_cache>
+            <s3_with_cache_and_jbod>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/jbod1/</path>
+                <max_size>1000000000</max_size>
+                <max_file_segment_size>1Gi</max_file_segment_size>
+            </s3_with_cache_and_jbod>
+            <s3_r>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
-                <data_cache_enabled>1</data_cache_enabled>
-            </s3_with_cache>
+            </s3_r>
+            <s3_cache_r>
+                <type>cache</type>
+                <disk>s3_r</disk>
+                <path>/s3_cache_r/</path>
+                <max_size>1000000000</max_size>
+                <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
+            </s3_cache_r>
         </disks>
         <policies>
             <s3>
@@ -46,6 +95,13 @@
                     </main>
                 </volumes>
             </unstable_s3>
+            <no_delete_objects_s3>
+                <volumes>
+                    <main>
+                        <disk>no_delete_objects_s3</disk>
+                    </main>
+                </volumes>
+            </no_delete_objects_s3>
             <s3_cache>
                 <volumes>
                     <main>
@@ -53,10 +109,52 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <s3_with_cache_and_jbod>
+                <volumes>
+                    <main>
+                        <disk>s3_with_cache_and_jbod</disk>
+                    </main>
+                </volumes>
+            </s3_with_cache_and_jbod>
+            <s3_cache_r>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_r</disk>
+                    </main>
+                </volumes>
+            </s3_cache_r>
+            <external_broken_s3>
+                 <volumes>
+                    <main>
+                        <disk>hdd</disk>
+                    </main>
+                    <external>
+                        <disk>broken_s3</disk>
+                    </external>
+                </volumes>
+            </external_broken_s3>
+            <broken_s3>
+                 <volumes>
+                    <main>
+                        <disk>broken_s3</disk>
+                    </main>
+                </volumes>
+            </broken_s3>
+            <broken_s3_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>broken_s3_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </broken_s3_always_multi_part>
         </policies>
     </storage_configuration>
 
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>
+
+    <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>
+    <database_catalog_unused_dir_rm_timeout_sec>60</database_catalog_unused_dir_rm_timeout_sec>
+    <database_catalog_unused_dir_cleanup_period_sec>1</database_catalog_unused_dir_cleanup_period_sec>
 </clickhouse>

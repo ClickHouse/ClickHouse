@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -19,13 +19,14 @@
 /** This file was edited for ClickHouse.
   */
 
-#include <string.h>
+#include <cstring>
 
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/Exception.h>
 
 #define DW_CHILDREN_no 0
+
 #define DW_FORM_addr 1
 #define DW_FORM_block1 0x0a
 #define DW_FORM_block2 3
@@ -51,6 +52,25 @@
 #define DW_FORM_string 0x08
 #define DW_FORM_strp 0x0e
 #define DW_FORM_indirect 0x16
+#define DW_FORM_strx 0x1a
+#define DW_FORM_addrx 0x1b
+#define DW_FORM_ref_sup4 0x1c
+#define DW_FORM_strp_sup 0x1d
+#define DW_FORM_data16 0x1e
+#define DW_FORM_line_strp 0x1f
+#define DW_FORM_implicit_const 0x21
+#define DW_FORM_rnglistx 0x23
+#define DW_FORM_loclistx 0x22
+#define DW_FORM_ref_sup8 0x24
+#define DW_FORM_strx1 0x25
+#define DW_FORM_strx2 0x26
+#define DW_FORM_strx3 0x27
+#define DW_FORM_strx4 0x28
+#define DW_FORM_addrx1 0x29
+#define DW_FORM_addrx2 0x2a
+#define DW_FORM_addrx3 0x2b
+#define DW_FORM_addrx4 0x2c
+
 #define DW_TAG_compile_unit 0x11
 #define DW_TAG_subprogram 0x2e
 #define DW_TAG_try_block 0x32
@@ -58,6 +78,7 @@
 #define DW_TAG_entry_point 0x03
 #define DW_TAG_common_block 0x1a
 #define DW_TAG_lexical_block 0x0b
+
 #define DW_AT_stmt_list 0x10
 #define DW_AT_comp_dir 0x1b
 #define DW_AT_name 0x03
@@ -70,6 +91,13 @@
 #define DW_AT_call_file 0x58
 #define DW_AT_linkage_name 0x6e
 #define DW_AT_specification 0x47
+#define DW_AT_str_offsets_base 0x72
+#define DW_AT_addr_base 0x73
+#define DW_AT_rnglists_base 0x74
+#define DW_AT_loclists_base 0x8c
+#define DW_AT_GNU_ranges_base 0x2132
+#define DW_AT_GNU_addr_base 0x2133
+
 #define DW_LNE_define_file 0x03
 #define DW_LNS_copy 0x01
 #define DW_LNS_advance_pc 0x02
@@ -87,6 +115,21 @@
 #define DW_LNE_set_address 0x02
 #define DW_LNE_set_discriminator 0x04
 
+#define DW_LNCT_path 0x1
+#define DW_LNCT_directory_index 0x2
+#define DW_LNCT_timestamp 0x3
+#define DW_LNCT_size 0x4
+#define DW_LNCT_MD5 0x5
+
+#define DW_RLE_end_of_list 0x0
+#define DW_RLE_base_addressx 0x1
+#define DW_RLE_startx_endx 0x2
+#define DW_RLE_startx_length 0x3
+#define DW_RLE_offset_pair 0x4
+#define DW_RLE_base_address 0x5
+#define DW_RLE_start_end 0x6
+#define DW_RLE_start_length 0x7
+
 
 namespace DB
 {
@@ -97,9 +140,31 @@ namespace ErrorCodes
 }
 
 
-Dwarf::Dwarf(const std::shared_ptr<Elf> & elf) : elf_(elf)
+Dwarf::Dwarf(const std::shared_ptr<Elf> & elf)
+    : elf_(elf)
+    , abbrev_(getSection(".debug_abbrev"))
+    , addr_(getSection(".debug_addr"))
+    , aranges_(getSection(".debug_aranges"))
+    , info_(getSection(".debug_info"))
+    , line_(getSection(".debug_line"))
+    , line_str_(getSection(".debug_line_str"))
+    , loclists_(getSection(".debug_loclists"))
+    , ranges_(getSection(".debug_ranges"))
+    , rnglists_(getSection(".debug_rnglists"))
+    , str_(getSection(".debug_str"))
+    , str_offsets_(getSection(".debug_str_offsets"))
 {
-    init();
+    // Optional sections:
+    //  - debugAranges_: for fast address range lookup.
+    //     If missing .debug_info can be used - but it's much slower (linear
+    //     scan).
+    //  - debugRanges_ (DWARF 4) / debugRnglists_ (DWARF 5): non-contiguous
+    //    address ranges of debugging information entries.
+    //    Used for inline function address lookup.
+    if (info_.empty() || abbrev_.empty() || line_.empty() || str_.empty())
+    {
+        elf_ = nullptr;
+    }
 }
 
 Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
@@ -107,7 +172,7 @@ Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
 }
 
 
-#define SAFE_CHECK(cond, message) do { if (!(cond)) throw Exception(message, ErrorCodes::CANNOT_PARSE_DWARF); } while (false)
+#define SAFE_CHECK(cond, ...) do { if (!(cond)) throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, __VA_ARGS__); } while (false)
 
 
 namespace
@@ -124,10 +189,21 @@ template <typename T>
 requires std::is_trivial_v<T> && std::is_standard_layout_v<T>
 T read(std::string_view & sp)
 {
-    SAFE_CHECK(sp.size() >= sizeof(T), fmt::format("underflow: expected bytes {}, got bytes {}", sizeof(T), sp.size()));
+    SAFE_CHECK(sp.size() >= sizeof(T), "underflow: expected bytes {}, got bytes {}", sizeof(T), sp.size());
     T x;
     memcpy(&x, sp.data(), sizeof(T));
     sp.remove_prefix(sizeof(T));
+    return x;
+}
+
+// Read (bitwise) an unsigned number of N bytes (N in 1, 2, 3, 4).
+template <size_t N>
+uint64_t readU64(std::string_view & sp)
+{
+    SAFE_CHECK(sp.size() >= N, "underflow");
+    uint64_t x = 0;
+    memcpy(&x, sp.data(), N);
+    sp.remove_prefix(N);
     return x;
 }
 
@@ -168,15 +244,15 @@ int64_t readSLEB(std::string_view & sp)
 }
 
 // Read a value of "section offset" type, which may be 4 or 8 bytes
-uint64_t readOffset(std::string_view & sp, bool is64Bit)
+uint64_t readOffset(std::string_view & sp, bool is64_bit)
 {
-    return is64Bit ? read<uint64_t>(sp) : read<uint32_t>(sp);
+    return is64_bit ? read<uint64_t>(sp) : read<uint32_t>(sp);
 }
 
 // Read "len" bytes
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
-    SAFE_CHECK(len <= sp.size(), "invalid string length: " + std::to_string(len) + " vs. " + std::to_string(sp.size()));
+    SAFE_CHECK(len <= sp.size(), "invalid string length: {} vs. {}", len, sp.size());
     std::string_view ret(sp.data(), len);
     sp.remove_prefix(len);
     return ret;
@@ -190,6 +266,15 @@ std::string_view readNullTerminated(std::string_view & sp)
     std::string_view ret(sp.data(), p - sp.data());
     sp = std::string_view(p + 1, sp.size());
     return ret;
+}
+
+// Get a string from the section
+std::string_view getStringFromStringSection(std::string_view section, uint64_t offset)
+{
+    SAFE_CHECK(offset < section.size(), "invalid section offset");
+    std::string_view sp(section);
+    sp.remove_prefix(offset);
+    return readNullTerminated(sp);
 }
 
 // Skip over padding until sp.data() - start is a multiple of alignment
@@ -359,38 +444,18 @@ bool Dwarf::Section::next(std::string_view & chunk)
     return true;
 }
 
-bool Dwarf::getSection(const char * name, std::string_view * section) const
+std::string_view Dwarf::getSection(const char * name) const
 {
     std::optional<Elf::Section> elf_section = elf_->findSectionByName(name);
     if (!elf_section)
-        return false;
+        return {};
 
 #ifdef SHF_COMPRESSED
     if (elf_section->header.sh_flags & SHF_COMPRESSED)
-        return false;
+        return {};
 #endif
 
-    *section = { elf_section->begin(), elf_section->size()};
-    return true;
-}
-
-void Dwarf::init()
-{
-    // Make sure that all .debug_* sections exist
-    if (!getSection(".debug_info", &info_)
-        || !getSection(".debug_abbrev", &abbrev_)
-        || !getSection(".debug_line", &line_)
-        || !getSection(".debug_str", &strings_))
-    {
-        elf_.reset();
-        return;
-    }
-
-    // Optional: fast address range lookup. If missing .debug_info can
-    // be used - but it's much slower (linear scan).
-    getSection(".debug_aranges", &aranges_);
-
-    getSection(".debug_ranges", &ranges_);
+    return { elf_section->begin(), elf_section->size()};
 }
 
 // static
@@ -473,7 +538,7 @@ size_t Dwarf::forEachAttribute(const CompilationUnit & cu, const Die & die, std:
     auto values = std::string_view{info_.data() + die.offset + die.attr_offset, cu.offset + cu.size - die.offset - die.attr_offset};
     while (auto spec = readAttributeSpec(attrs))
     {
-        auto attr = readAttribute(die, spec, values);
+        auto attr = readAttribute(cu, die, spec, values);
         if (!f(attr))
         {
             return static_cast<size_t>(-1);
@@ -482,8 +547,49 @@ size_t Dwarf::forEachAttribute(const CompilationUnit & cu, const Die & die, std:
     return values.data() - info_.data();
 }
 
-Dwarf::Attribute Dwarf::readAttribute(const Die & die, AttributeSpec spec, std::string_view & info) const
+Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
+    const Die & die,
+    AttributeSpec spec,
+    std::string_view & info) const
 {
+    // DWARF 5 introduces new FORMs whose values are relative to some base attrs:
+    // DW_AT_str_offsets_base, DW_AT_rnglists_base, DW_AT_addr_base.
+    // Debug Fission DWARF 4 uses GNU DW_AT_GNU_ranges_base & DW_AT_GNU_addr_base.
+    //
+    // The order in which attributes appear in a CU is not defined.
+    // The DW_AT_*_base attrs may appear after attributes that need them.
+    // The DW_AT_*_base attrs are CU specific; so we read them just after
+    // reading the CU header. During this first pass return empty values
+    // when encountering a FORM that depends on DW_AT_*_base.
+    auto get_string_using_offset_table = [&](uint64_t index)
+    {
+        if (!cu.str_offsets_base.has_value())
+        {
+            return std::string_view();
+        }
+        // DWARF 5: 7.26 String Offsets Table
+        // The DW_AT_str_offsets_base attribute points to the first entry following
+        // the header. The entries are indexed sequentially from this base entry,
+        // starting from 0.
+        auto sp = str_offsets_.substr(*cu.str_offsets_base + index * (cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t)));
+        uint64_t str_offset = readOffset(sp, cu.is64Bit);
+        return getStringFromStringSection(str_, str_offset);
+    };
+
+    auto read_debug_addr = [&](uint64_t index)
+    {
+        if (!cu.addr_base.has_value())
+        {
+            return uint64_t(0);
+        }
+        // DWARF 5: 7.27 Address Table
+        // The DW_AT_addr_base attribute points to the first entry following the
+        // header. The entries are indexed sequentially from this base entry,
+        // starting from 0.
+        auto sp = addr_.substr(*cu.addr_base + index * sizeof(uint64_t));
+        return read<uint64_t>(sp);
+    };
+
     switch (spec.form)
     {
         case DW_FORM_addr:
@@ -517,7 +623,7 @@ Dwarf::Attribute Dwarf::readAttribute(const Die & die, AttributeSpec spec, std::
         case DW_FORM_ref_sig8:
             return {spec, die, read<uint64_t>(info)};
         case DW_FORM_sdata:
-            return {spec, die, uint64_t(readSLEB(info))};
+            return {spec, die, static_cast<uint64_t>(readSLEB(info))};
         case DW_FORM_udata:
             [[fallthrough]];
         case DW_FORM_ref_udata:
@@ -525,7 +631,7 @@ Dwarf::Attribute Dwarf::readAttribute(const Die & die, AttributeSpec spec, std::
         case DW_FORM_flag:
             return {spec, die, read<uint8_t>(info)};
         case DW_FORM_flag_present:
-            return {spec, die, 1u};
+            return {spec, die, 1ULL};
         case DW_FORM_sec_offset:
             [[fallthrough]];
         case DW_FORM_ref_addr:
@@ -533,48 +639,214 @@ Dwarf::Attribute Dwarf::readAttribute(const Die & die, AttributeSpec spec, std::
         case DW_FORM_string:
             return {spec, die, readNullTerminated(info)};
         case DW_FORM_strp:
-            return {spec, die, getStringFromStringSection(readOffset(info, die.is64Bit))};
+            return {spec, die, getStringFromStringSection(str_, readOffset(info, die.is64Bit))};
         case DW_FORM_indirect: // form is explicitly specified
             // Update spec with the actual FORM.
             spec.form = readULEB(info);
-            return readAttribute(die, spec, info);
+            return readAttribute(cu, die, spec, info);
+
+        // DWARF 5:
+        case DW_FORM_implicit_const: // form is explicitly specified
+            // For attributes with this form, the attribute specification contains a
+            // third part, which is a signed LEB128 number. The value of this number
+            // is used as the value of the attribute, and no value is stored in the
+            // .debug_info section.
+            return {spec, die, static_cast<uint64_t>(spec.implicitConst)};
+
+        case DW_FORM_addrx:
+            return {spec, die, read_debug_addr(readULEB(info))};
+        case DW_FORM_addrx1:
+            return {spec, die, read_debug_addr(readU64<1>(info))};
+        case DW_FORM_addrx2:
+            return {spec, die, read_debug_addr(readU64<2>(info))};
+        case DW_FORM_addrx3:
+            return {spec, die, read_debug_addr(readU64<3>(info))};
+        case DW_FORM_addrx4:
+            return {spec, die, read_debug_addr(readU64<4>(info))};
+
+        case DW_FORM_line_strp:
+            return {spec, die, getStringFromStringSection(line_str_, readOffset(info, die.is64Bit))};
+
+        case DW_FORM_strx:
+            return {spec, die, get_string_using_offset_table(readULEB(info))};
+        case DW_FORM_strx1:
+            return {spec, die, get_string_using_offset_table(readU64<1>(info))};
+        case DW_FORM_strx2:
+            return {spec, die, get_string_using_offset_table(readU64<2>(info))};
+        case DW_FORM_strx3:
+            return {spec, die, get_string_using_offset_table(readU64<3>(info))};
+        case DW_FORM_strx4:
+            return {spec, die, get_string_using_offset_table(readU64<4>(info))};
+
+        case DW_FORM_rnglistx: {
+            auto index = readULEB(info);
+            if (!cu.rnglists_base.has_value())
+            {
+                return {spec, die, 0ULL};
+            }
+            const uint64_t offset_size = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
+            auto sp = rnglists_.substr(*cu.rnglists_base + index * offset_size);
+            auto offset = readOffset(sp, cu.is64Bit);
+            return {spec, die, *cu.rnglists_base + offset};
+        }
+
+        case DW_FORM_loclistx: {
+            auto index = readULEB(info);
+            if (!cu.loclists_base.has_value())
+            {
+                return {spec, die, 0ULL};
+            }
+            const uint64_t offset_size = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
+            auto sp = loclists_.substr(*cu.loclists_base + index * offset_size);
+            auto offset = readOffset(sp, cu.is64Bit);
+            return {spec, die, *cu.loclists_base + offset};
+        }
+
+        case DW_FORM_data16:
+            return {spec, die, readBytes(info, 16)};
+
+        case DW_FORM_ref_sup4:
+        case DW_FORM_ref_sup8:
+        case DW_FORM_strp_sup:
+            SAFE_CHECK(false, "Unexpected DWARF5 supplimentary object files");
+
         default:
             SAFE_CHECK(false, "invalid attribute form");
     }
-
-    return {spec, die, 0u};
+    return {spec, die, 0ULL};
 }
 
 // static
 Dwarf::AttributeSpec Dwarf::readAttributeSpec(std::string_view & sp)
 {
-    return {readULEB(sp), readULEB(sp)};
+    Dwarf::AttributeSpec spec;
+    spec.name = readULEB(sp);
+    spec.form = readULEB(sp);
+    if (spec.form == DW_FORM_implicit_const)
+    {
+        spec.implicitConst = readSLEB(sp);
+    }
+    return spec;
 }
 
-// static
-Dwarf::CompilationUnit Dwarf::getCompilationUnit(std::string_view info, uint64_t offset)
+Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
 {
-    SAFE_CHECK(offset < info.size(), "unexpected offset");
+    // SAFE_CHECK(offset < info_.size(), "unexpected offset");
     CompilationUnit cu;
-    std::string_view chunk(info);
+    std::string_view chunk(info_);
     cu.offset = offset;
     chunk.remove_prefix(offset);
 
+    // 1) unit_length
     auto initial_length = read<uint32_t>(chunk);
     cu.is64Bit = (initial_length == uint32_t(-1));
     cu.size = cu.is64Bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(cu.size <= chunk.size(), "invalid chunk size");
     cu.size += cu.is64Bit ? 12 : 4;
 
+    // 2) version
     cu.version = read<uint16_t>(chunk);
-    SAFE_CHECK(cu.version >= 2 && cu.version <= 4, "invalid info version");
-    cu.abbrev_offset = readOffset(chunk, cu.is64Bit);
-    cu.addr_size = read<uint8_t>(chunk);
-    SAFE_CHECK(cu.addr_size == sizeof(uintptr_t), "invalid address size");
+    SAFE_CHECK(cu.version >= 2 && cu.version <= 5, "invalid info version");
 
-    cu.first_die = chunk.data() - info.data();
+    if (cu.version == 5)
+    {
+        // DWARF5: 7.5.1.1 Full and Partial Compilation Unit Headers
+        // 3) unit_type (new DWARF 5)
+        cu.unit_type = read<uint8_t>(chunk);
+        if (cu.unit_type != DW_UT_compile && cu.unit_type != DW_UT_skeleton)
+        {
+            return cu;
+        }
+        // 4) address_size
+        cu.addr_size = read<uint8_t>(chunk);
+        SAFE_CHECK(cu.addr_size == sizeof(uintptr_t), "invalid address size");
+
+        // 5) debug_abbrev_offset
+        cu.abbrev_offset = readOffset(chunk, cu.is64Bit);
+
+        if (cu.unit_type == DW_UT_skeleton)
+        {
+            // 6) dwo_id
+            read<uint64_t>(chunk);
+        }
+    }
+    else
+    {
+        // DWARF4 has a single type of unit in .debug_info
+        cu.unit_type = DW_UT_compile;
+        // 3) debug_abbrev_offset
+        cu.abbrev_offset = readOffset(chunk, cu.is64Bit);
+        // 4) address_size
+        cu.addr_size = read<uint8_t>(chunk);
+        SAFE_CHECK(cu.addr_size == sizeof(uintptr_t), "invalid address size");
+    }
+    cu.first_die = chunk.data() - info_.data();
+    if (cu.version < 5)
+    {
+        return cu;
+    }
+
+    Die die = getDieAtOffset(cu, cu.first_die);
+    if (die.abbr.tag != DW_TAG_compile_unit)
+    {
+        return cu;
+    }
+
+    // Read the DW_AT_*_base attributes.
+    // Attributes which use FORMs relative to these base attrs
+    // will not have valid values during this first pass!
+    forEachAttribute(
+        cu,
+        die,
+        [&](const Attribute & attr)
+        {
+            switch (attr.spec.name)
+            {
+                case DW_AT_addr_base:
+                case DW_AT_GNU_addr_base:
+                    cu.addr_base = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_loclists_base:
+                    cu.loclists_base = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_rnglists_base:
+                case DW_AT_GNU_ranges_base:
+                    cu.rnglists_base = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_str_offsets_base:
+                    cu.str_offsets_base = std::get<uint64_t>(attr.attr_value);
+                    break;
+            }
+            return true; // continue forEachAttribute
+        });
     return cu;
 }
+
+// Finds the Compilation Unit starting at offset.
+Dwarf::CompilationUnit Dwarf::findCompilationUnit(uint64_t targetOffset) const
+{
+    // SAFE_CHECK(targetOffset < info_.size(), "unexpected target address");
+    uint64_t offset = 0;
+    while (offset < info_.size())
+    {
+        std::string_view chunk(info_);
+        chunk.remove_prefix(offset);
+
+        auto initial_length = read<uint32_t>(chunk);
+        auto is64_bit = (initial_length == static_cast<uint32_t>(-1));
+        auto size = is64_bit ? read<uint64_t>(chunk) : initial_length;
+        SAFE_CHECK(size <= chunk.size(), "invalid chunk size");
+        size += is64_bit ? 12 : 4;
+
+        if (offset + size > targetOffset)
+        {
+            break;
+        }
+        offset += size;
+    }
+    return getCompilationUnit(offset);
+}
+
 
 Dwarf::DIEAbbreviation Dwarf::getAbbreviation(uint64_t code, uint64_t offset) const
 {
@@ -590,7 +862,7 @@ Dwarf::DIEAbbreviation Dwarf::getAbbreviation(uint64_t code, uint64_t offset) co
     SAFE_CHECK(false, "could not find abbreviation code");
 }
 
-Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t form, bool is64Bit) const
+Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t form, bool is64_bit) const
 {
     switch (form)
     {
@@ -628,24 +900,16 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
             return uint64_t(1);
         case DW_FORM_sec_offset: [[fallthrough]];
         case DW_FORM_ref_addr:
-            return readOffset(sp, is64Bit);
+            return readOffset(sp, is64_bit);
         case DW_FORM_string:
             return readNullTerminated(sp);
         case DW_FORM_strp:
-            return getStringFromStringSection(readOffset(sp, is64Bit));
+            return getStringFromStringSection(str_, readOffset(sp, is64_bit));
         case DW_FORM_indirect: // form is explicitly specified
-            return readAttributeValue(sp, readULEB(sp), is64Bit);
+            return readAttributeValue(sp, readULEB(sp), is64_bit);
         default:
             SAFE_CHECK(false, "invalid attribute form");
     }
-}
-
-std::string_view Dwarf::getStringFromStringSection(uint64_t offset) const
-{
-    SAFE_CHECK(offset < strings_.size(), "invalid strp offset");
-    std::string_view sp(strings_);
-    sp.remove_prefix(offset);
-    return readNullTerminated(sp);
 }
 
 /**
@@ -689,7 +953,7 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
 
 Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const
 {
-    SAFE_CHECK(offset < info_.size(), fmt::format("unexpected offset {}, info size {}", offset, info_.size()));
+    SAFE_CHECK(offset < info_.size(), "unexpected offset {}, info size {}", offset, info_.size());
     Die die;
     std::string_view sp{info_.data() + offset, cu.offset + cu.size - offset};
     die.offset = offset;
@@ -724,7 +988,7 @@ bool Dwarf::findLocation(
     // Partial compilation unit (DW_TAG_partial_unit) is not supported.
     SAFE_CHECK(die.abbr.tag == DW_TAG_compile_unit, "expecting compile unit entry");
 
-    // Read attributes, extracting the few we care about
+    // Offset in .debug_line for the line number VM program for this CU
     std::optional<uint64_t> line_offset = 0;
     std::string_view compilation_directory;
     std::optional<std::string_view> main_file_name;
@@ -772,7 +1036,7 @@ bool Dwarf::findLocation(
 
     std::string_view line_section(line_);
     line_section.remove_prefix(*line_offset);
-    LineNumberVM line_vm(line_section, compilation_directory);
+    LineNumberVM line_vm(line_section, compilation_directory, str_, line_str_);
 
     // Execute line number VM program to find file and line
     info.has_file_and_line = line_vm.findAddress(address, info.file, info.line);
@@ -819,7 +1083,7 @@ bool Dwarf::findLocation(
                 // file+line of the non-inlined outer function making the call.
                 // locationInfo.name is already set by the caller by looking up the
                 // non-inlined function @address belongs to.
-                info.has_file_and_line = true; //-V1048
+                info.has_file_and_line = true;
                 info.file = call_locations[0].file;
                 info.line = call_locations[0].line;
 
@@ -863,8 +1127,11 @@ bool Dwarf::findLocation(
     return info.has_file_and_line;
 }
 
-void Dwarf::findSubProgramDieForAddress(
-    const CompilationUnit & cu, const Die & die, uint64_t address, std::optional<uint64_t> base_addr_cu, Die & subprogram) const
+void Dwarf::findSubProgramDieForAddress(const CompilationUnit & cu,
+    const Die & die,
+    uint64_t address,
+    std::optional<uint64_t> base_addr_cu,
+    Die & subprogram) const
 {
     forEachChild(cu, die, [&](const Die & child_die)
     {
@@ -885,9 +1152,14 @@ void Dwarf::findSubProgramDieForAddress(
                         low_pc = std::get<uint64_t>(attr.attr_value);
                         break;
                     case DW_AT_high_pc:
-                        // Value of DW_AT_high_pc attribute can be an address
-                        // (DW_FORM_addr) or an offset (DW_FORM_data).
-                        is_high_pc_addr = (attr.spec.form == DW_FORM_addr);
+                        // The value of the DW_AT_high_pc attribute can be
+                        // an address (DW_FORM_addr*) or an offset (DW_FORM_data*).
+                        is_high_pc_addr = attr.spec.form == DW_FORM_addr || //
+                            attr.spec.form == DW_FORM_addrx || //
+                            attr.spec.form == DW_FORM_addrx1 || //
+                            attr.spec.form == DW_FORM_addrx2 || //
+                            attr.spec.form == DW_FORM_addrx3 || //
+                            attr.spec.form == DW_FORM_addrx4;
                         high_pc = std::get<uint64_t>(attr.attr_value);
                         break;
                 }
@@ -896,7 +1168,7 @@ void Dwarf::findSubProgramDieForAddress(
             });
             bool pc_match = low_pc && high_pc && is_high_pc_addr && address >= *low_pc
                 && (address < (*is_high_pc_addr ? *high_pc : *low_pc + *high_pc));
-            bool range_match = range_offset && isAddrInRangeList(address, base_addr_cu, range_offset.value(), cu.addr_size);
+            bool range_match = range_offset && isAddrInRangeList(cu, address, base_addr_cu, range_offset.value(), cu.addr_size);
             if (pc_match || range_match)
             {
                 subprogram = child_die;
@@ -971,9 +1243,14 @@ void Dwarf::findInlinedSubroutineDieForAddress(
                     low_pc = std::get<uint64_t>(attr.attr_value);
                     break;
                 case DW_AT_high_pc:
-                    // Value of DW_AT_high_pc attribute can be an address
-                    // (DW_FORM_addr) or an offset (DW_FORM_data).
-                    is_high_pc_addr = (attr.spec.form == DW_FORM_addr);
+                    // The value of the DW_AT_high_pc attribute can be
+                    // an address (DW_FORM_addr*) or an offset (DW_FORM_data*).
+                    is_high_pc_addr = attr.spec.form == DW_FORM_addr || //
+                        attr.spec.form == DW_FORM_addrx || //
+                        attr.spec.form == DW_FORM_addrx1 || //
+                        attr.spec.form == DW_FORM_addrx2 || //
+                        attr.spec.form == DW_FORM_addrx3 || //
+                        attr.spec.form == DW_FORM_addrx4;
                     high_pc = std::get<uint64_t>(attr.attr_value);
                     break;
                 case DW_AT_abstract_origin:
@@ -1005,7 +1282,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         // TODO: Support relocated address which requires lookup in relocation map.
         bool pc_match
             = low_pc && high_pc && is_high_pc_addr && address >= *low_pc && (address < (*is_high_pc_addr ? *high_pc : *low_pc + *high_pc));
-        bool range_match = range_offset && isAddrInRangeList(address, base_addr_cu, range_offset.value(), cu.addr_size);
+        bool range_match = range_offset && isAddrInRangeList(cu, address, base_addr_cu, range_offset.value(), cu.addr_size);
         if (!pc_match && !range_match)
         {
             // Address doesn't match. Keep searching other children.
@@ -1107,7 +1384,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         //   Not applicable for DW_AT_abstract_origin.
         location.name = (*abstract_origin_ref_type != DW_FORM_ref_addr)
             ? get_function_name(cu, cu.offset + *abstract_origin)
-            : get_function_name(findCompilationUnit(info_, *abstract_origin), *abstract_origin);
+            : get_function_name(findCompilationUnit(*abstract_origin), *abstract_origin);
 
         /// FIXME: see comment above
         if (die_for_inline_broken)
@@ -1144,7 +1421,11 @@ bool Dwarf::findAddress(
         if (findDebugInfoOffset(address, aranges_, offset))
         {
             // Read compilation unit header from .debug_info
-            auto unit = getCompilationUnit(info_, offset);
+            auto unit = getCompilationUnit(offset);
+            if (unit.unit_type != DW_UT_compile && unit.unit_type != DW_UT_skeleton)
+            {
+                return false;
+            }
             findLocation(address, mode, unit, locationInfo, inline_frames);
             return locationInfo.has_file_and_line;
         }
@@ -1168,84 +1449,160 @@ bool Dwarf::findAddress(
     uint64_t offset = 0;
     while (offset < info_.size() && !locationInfo.has_file_and_line)
     {
-        auto unit = getCompilationUnit(info_, offset);
+        auto unit = getCompilationUnit(offset);
         offset += unit.size;
+        if (unit.unit_type != DW_UT_compile && unit.unit_type != DW_UT_skeleton)
+        {
+            continue;
+        }
         findLocation(address, mode, unit, locationInfo, inline_frames);
     }
 
     return locationInfo.has_file_and_line;
 }
 
-bool Dwarf::isAddrInRangeList(uint64_t address, std::optional<uint64_t> base_addr, size_t offset, uint8_t addr_size) const
+bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
+    uint64_t address,
+    std::optional<uint64_t> base_addr,
+    size_t offset,
+    uint8_t addr_size) const
 {
     SAFE_CHECK(addr_size == 4 || addr_size == 8, "wrong address size");
-    if (ranges_.empty())
+    if (cu.version <= 4 && !ranges_.empty())
     {
-        return false;
+        const bool is64_bit_addr = addr_size == 8;
+        std::string_view sp = ranges_;
+        sp.remove_prefix(offset);
+        const uint64_t max_addr = is64_bit_addr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
+        while (!sp.empty())
+        {
+            uint64_t begin = readOffset(sp, is64_bit_addr);
+            uint64_t end = readOffset(sp, is64_bit_addr);
+            // The range list entry is a base address selection entry.
+            if (begin == max_addr)
+            {
+                base_addr = end;
+                continue;
+            }
+            // The range list entry is an end of list entry.
+            if (begin == 0 && end == 0)
+            {
+                break;
+            }
+
+            // Check if the given address falls in the range list entry.
+            // 2.17.3 Non-Contiguous Address Ranges
+            // The applicable base address of a range list entry is determined by the
+            // closest preceding base address selection entry (see below) in the same
+            // range list. If there is no such selection entry, then the applicable
+            // base address defaults to the base address of the compilation unit.
+            if (base_addr && address >= begin + *base_addr && address < end + *base_addr)
+            {
+                return true;
+            }
+        }
     }
 
-    const bool is_64bit_addr = addr_size == 8;
-    std::string_view sp = ranges_;
-    sp.remove_prefix(offset);
-    const uint64_t max_addr = is_64bit_addr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
-    while (!sp.empty())
+    if (cu.version == 5 && !rnglists_.empty() && cu.addr_base.has_value())
     {
-        uint64_t begin = readOffset(sp, is_64bit_addr);
-        uint64_t end = readOffset(sp, is_64bit_addr);
-        // The range list entry is a base address selection entry.
-        if (begin == max_addr)
+        auto rnglists = rnglists_;
+        rnglists.remove_prefix(offset);
+
+        while (!rnglists.empty())
         {
-            base_addr = end;
-            continue;
-        }
-        // The range list entry is an end of list entry.
-        if (begin == 0 && end == 0)
-        {
-            break;
-        }
-        // Check if the given address falls in the range list entry.
-        // 2.17.3 Non-Contiguous Address Ranges
-        // The applicable base address of a range list entry is determined by the
-        // closest preceding base address selection entry (see below) in the same
-        // range list. If there is no such selection entry, then the applicable base
-        // address defaults to the base address of the compilation unit.
-        if (base_addr && address >= begin + *base_addr && address < end + *base_addr)
-        {
-            return true;
+            auto kind = read<uint8_t>(rnglists);
+            switch (kind)
+            {
+                case DW_RLE_end_of_list:
+                    return false;
+                case DW_RLE_base_addressx: {
+                    auto index = readULEB(rnglists);
+                    auto sp = addr_.substr(*cu.addr_base + index * sizeof(uint64_t));
+                    base_addr = read<uint64_t>(sp);
+                }
+                break;
+
+                case DW_RLE_startx_endx: {
+                    auto index_start = readULEB(rnglists);
+                    auto index_end = readULEB(rnglists);
+                    auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
+                    auto start = read<uint64_t>(sp_start);
+
+                    auto sp_end = addr_.substr(*cu.addr_base + index_end * sizeof(uint64_t));
+                    auto end = read<uint64_t>(sp_end);
+                    if (address >= start && address < end)
+                    {
+                        return true;
+                    }
+                }
+                break;
+
+                case DW_RLE_startx_length: {
+                    auto index_start = readULEB(rnglists);
+                    auto length = readULEB(rnglists);
+                    auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
+                    auto start = read<uint64_t>(sp_start);
+
+                    auto sp_end = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t) + length);
+                    auto end = read<uint64_t>(sp_end);
+                    if (start != end && address >= start && address < end)
+                    {
+                        return true;
+                    }
+                }
+                break;
+
+                case DW_RLE_offset_pair: {
+                    auto offset_start = readULEB(rnglists);
+                    auto offset_end = readULEB(rnglists);
+                    if (base_addr && address >= (*base_addr + offset_start) && address < (*base_addr + offset_end))
+                    {
+                        return true;
+                    }
+                }
+                break;
+
+                case DW_RLE_base_address:
+                    base_addr = read<uint64_t>(rnglists);
+                    break;
+
+                case DW_RLE_start_end: {
+                    uint64_t start = read<uint64_t>(rnglists);
+                    uint64_t end = read<uint64_t>(rnglists);
+                    if (address >= start && address < end)
+                    {
+                        return true;
+                    }
+                }
+                break;
+
+                case DW_RLE_start_length: {
+                    uint64_t start = read<uint64_t>(rnglists);
+                    uint64_t end = start + readULEB(rnglists);
+                    if (address >= start && address < end)
+                    {
+                        return true;
+                    }
+                }
+                break;
+
+                default:
+                    SAFE_CHECK(false, "Unexpected debug_rnglists entry kind");
+            }
         }
     }
-
     return false;
 }
 
-// static
-Dwarf::CompilationUnit Dwarf::findCompilationUnit(std::string_view info, uint64_t targetOffset)
-{
-    SAFE_CHECK(targetOffset < info.size(), "unexpected target address");
-    uint64_t offset = 0;
-    while (offset < info.size())
-    {
-        std::string_view chunk(info);
-        chunk.remove_prefix(offset);
 
-        auto initial_length = read<uint32_t>(chunk);
-        auto is_64bit = (initial_length == uint32_t(-1));
-        auto size = is_64bit ? read<uint64_t>(chunk) : initial_length;
-        SAFE_CHECK(size <= chunk.size(), "invalid chunk size");
-        size += is_64bit ? 12 : 4;
-
-        if (offset + size > targetOffset)
-        {
-            break;
-        }
-        offset += size;
-    }
-    return getCompilationUnit(info, offset);
-}
-
-
-Dwarf::LineNumberVM::LineNumberVM(std::string_view data, std::string_view compilationDirectory)
+Dwarf::LineNumberVM::LineNumberVM(
+    std::string_view data,
+    std::string_view compilationDirectory,
+    std::string_view debugStr,
+    std::string_view debugLineStr)
     : compilationDirectory_(compilationDirectory)
+    , debugStr_(debugStr)
+    , debugLineStr_(debugLineStr)
 {
     Section section(data);
     SAFE_CHECK(section.next(data_), "invalid line number VM");
@@ -1269,17 +1626,154 @@ void Dwarf::LineNumberVM::reset()
     discriminator_ = 0;
 }
 
+struct LineNumberAttribute
+{
+    uint64_t content_type_code;
+    uint64_t form_code;
+    std::variant<uint64_t, std::string_view> attr_value;
+};
+
+LineNumberAttribute readLineNumberAttribute(
+    bool is64_bit, std::string_view & format, std::string_view & entries, std::string_view debugStr, std::string_view debugLineStr)
+{
+    uint64_t content_type_code = readULEB(format);
+    uint64_t form_code = readULEB(format);
+    std::variant<uint64_t, std::string_view> attr_value;
+
+    switch (content_type_code)
+    {
+        case DW_LNCT_path: {
+            switch (form_code)
+            {
+                case DW_FORM_string:
+                    attr_value = readNullTerminated(entries);
+                    break;
+                case DW_FORM_line_strp: {
+                    auto off = readOffset(entries, is64_bit);
+                    attr_value = getStringFromStringSection(debugLineStr, off);
+                }
+                break;
+                case DW_FORM_strp:
+                    attr_value = getStringFromStringSection(debugStr, readOffset(entries, is64_bit));
+                    break;
+                case DW_FORM_strp_sup:
+                    SAFE_CHECK(false, "Unexpected DW_FORM_strp_sup");
+                    break;
+                default:
+                    SAFE_CHECK(false, "Unexpected form for DW_LNCT_path");
+                    break;
+            }
+        }
+        break;
+
+        case DW_LNCT_directory_index: {
+            switch (form_code)
+            {
+                case DW_FORM_data1:
+                    attr_value = read<uint8_t>(entries);
+                    break;
+                case DW_FORM_data2:
+                    attr_value = read<uint16_t>(entries);
+                    break;
+                case DW_FORM_udata:
+                    attr_value = readULEB(entries);
+                    break;
+                default:
+                    SAFE_CHECK(false, "Unexpected form for DW_LNCT_directory_index");
+                    break;
+            }
+        }
+        break;
+
+        case DW_LNCT_timestamp: {
+            switch (form_code)
+            {
+                case DW_FORM_udata:
+                    attr_value = readULEB(entries);
+                    break;
+                case DW_FORM_data4:
+                    attr_value = read<uint32_t>(entries);
+                    break;
+                case DW_FORM_data8:
+                    attr_value = read<uint64_t>(entries);
+                    break;
+                case DW_FORM_block:
+                    attr_value = readBytes(entries, readULEB(entries));
+                    break;
+                default:
+                    SAFE_CHECK(false, "Unexpected form for DW_LNCT_timestamp");
+            }
+        }
+        break;
+
+        case DW_LNCT_size: {
+            switch (form_code)
+            {
+                case DW_FORM_udata:
+                    attr_value = readULEB(entries);
+                    break;
+                case DW_FORM_data1:
+                    attr_value = read<uint8_t>(entries);
+                    break;
+                case DW_FORM_data2:
+                    attr_value = read<uint16_t>(entries);
+                    break;
+                case DW_FORM_data4:
+                    attr_value = read<uint32_t>(entries);
+                    break;
+                case DW_FORM_data8:
+                    attr_value = read<uint64_t>(entries);
+                    break;
+                default:
+                    SAFE_CHECK(false, "Unexpected form for DW_LNCT_size");
+                    break;
+            }
+        }
+        break;
+
+        case DW_LNCT_MD5: {
+            switch (form_code)
+            {
+                case DW_FORM_data16:
+                    attr_value = readBytes(entries, 16);
+                    break;
+                default:
+                    SAFE_CHECK(false, "Unexpected form for DW_LNCT_MD5");
+                    break;
+            }
+        }
+        break;
+
+        default:
+            // TODO: skip over vendor data as specified by the form instead.
+            SAFE_CHECK(false, "Unexpected vendor content type code");
+            break;
+    }
+    return {
+        .content_type_code = content_type_code,
+        .form_code = form_code,
+        .attr_value = attr_value,
+    };
+}
+
 void Dwarf::LineNumberVM::init()
 {
     version_ = read<uint16_t>(data_);
-    SAFE_CHECK(version_ >= 2 && version_ <= 4, "invalid version in line number VM");
+    SAFE_CHECK(version_ >= 2 && version_ <= 5, "invalid version in line number VM: {}", version_);
+    if (version_ == 5)
+    {
+        auto address_size = read<uint8_t>(data_);
+        SAFE_CHECK(address_size == sizeof(uintptr_t), "Unexpected Line Number Table address_size");
+        auto segment_selector_size = read<uint8_t>(data_);
+        SAFE_CHECK(segment_selector_size == 0, "Segments not supported");
+    }
     uint64_t header_length = readOffset(data_, is64Bit_);
     SAFE_CHECK(header_length <= data_.size(), "invalid line number VM header length");
     std::string_view header(data_.data(), header_length);
     data_ = std::string_view(header.end(), data_.end() - header.end());
 
     minLength_ = read<uint8_t>(header);
-    if (version_ == 4)
+    if (version_ >= 4)
     { // Version 2 and 3 records don't have this
         uint8_t max_ops_per_instruction = read<uint8_t>(header);
         SAFE_CHECK(max_ops_per_instruction == 1, "VLIW not supported");
@@ -1289,29 +1783,78 @@ void Dwarf::LineNumberVM::init()
     lineRange_ = read<uint8_t>(header);
     opcodeBase_ = read<uint8_t>(header);
     SAFE_CHECK(opcodeBase_ != 0, "invalid opcode base");
-    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data()); //-V506
+    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data());
     header.remove_prefix(opcodeBase_ - 1);
 
-    // We don't want to use heap, so we don't keep an unbounded amount of state.
-    // We'll just skip over include directories and file names here, and
-    // we'll loop again when we actually need to retrieve one.
-    std::string_view sp;
-    const char * tmp = header.data();
-    includeDirectoryCount_ = 0;
-    while (!(sp = readNullTerminated(header)).empty())
+    if (version_ <= 4)
     {
-        ++includeDirectoryCount_;
-    }
-    includeDirectories_ = std::string_view(tmp, header.data() - tmp);
+        // We don't want to use heap, so we don't keep an unbounded amount of state.
+        // We'll just skip over include directories and file names here, and
+        // we'll loop again when we actually need to retrieve one.
+        std::string_view sp;
+        const char * tmp = header.data();
+        v4_.includeDirectoryCount = 0;
+        while (!(sp = readNullTerminated(header)).empty())
+        {
+            ++v4_.includeDirectoryCount;
+        }
+        v4_.includeDirectories = {tmp, header.data()};
 
-    tmp = header.data();
-    FileName fn;
-    fileNameCount_ = 0;
-    while (readFileName(header, fn))
-    {
-        ++fileNameCount_;
+        tmp = header.data();
+        FileName fn;
+        v4_.fileNameCount = 0;
+        while (readFileName(header, fn))
+        {
+            ++v4_.fileNameCount;
+        }
+        v4_.fileNames = {tmp, header.data()};
     }
-    fileNames_ = std::string_view(tmp, header.data() - tmp);
+    else if (version_ == 5)
+    {
+        v5_.directoryEntryFormatCount = read<uint8_t>(header);
+        const char * tmp = header.data();
+        for (uint8_t i = 0; i < v5_.directoryEntryFormatCount; i++)
+        {
+            // A sequence of directory entry format descriptions. Each description
+            // consists of a pair of ULEB128 values:
+            readULEB(header); // A content type code
+            readULEB(header); // A form code using the attribute form codes
+        }
+        v5_.directoryEntryFormat = {tmp, header.data()};
+        v5_.directoriesCount = readULEB(header);
+        tmp = header.data();
+        for (uint64_t i = 0; i < v5_.directoriesCount; i++)
+        {
+            std::string_view format = v5_.directoryEntryFormat;
+            for (uint8_t f = 0; f < v5_.directoryEntryFormatCount; f++)
+            {
+                readLineNumberAttribute(is64Bit_, format, header, debugStr_, debugLineStr_);
+            }
+        }
+        v5_.directories = {tmp, header.data()};
+
+        v5_.fileNameEntryFormatCount = read<uint8_t>(header);
+        tmp = header.data();
+        for (uint8_t i = 0; i < v5_.fileNameEntryFormatCount; i++)
+        {
+            // A sequence of file entry format descriptions. Each description
+            // consists of a pair of ULEB128 values:
+            readULEB(header); // A content type code
+            readULEB(header); // A form code using the attribute form codes
+        }
+        v5_.fileNameEntryFormat = {tmp, header.data()};
+        v5_.fileNamesCount = readULEB(header);
+        tmp = header.data();
+        for (uint64_t i = 0; i < v5_.fileNamesCount; i++)
+        {
+            std::string_view format = v5_.fileNameEntryFormat;
+            for (uint8_t f = 0; f < v5_.fileNameEntryFormatCount; f++)
+            {
+                readLineNumberAttribute(is64Bit_, format, header, debugStr_, debugLineStr_);
+            }
+        }
+        v5_.fileNames = {tmp, header.data()};
+    }
 }
 
 bool Dwarf::LineNumberVM::next(std::string_view & program)
@@ -1327,54 +1870,110 @@ bool Dwarf::LineNumberVM::next(std::string_view & program)
 
 Dwarf::LineNumberVM::FileName Dwarf::LineNumberVM::getFileName(uint64_t index) const
 {
-    SAFE_CHECK(index != 0, "invalid file index 0");
-
-    FileName fn;
-    if (index <= fileNameCount_)
+    if (version_ <= 4)
     {
-        std::string_view file_names = fileNames_;
+        SAFE_CHECK(index != 0, "invalid file index 0");
+        FileName fn;
+        if (index <= v4_.fileNameCount)
+        {
+            std::string_view file_names = v4_.fileNames;
+            for (; index; --index)
+            {
+                if (!readFileName(file_names, fn))
+                {
+                    abort();
+                }
+            }
+            return fn;
+        }
+
+        index -= v4_.fileNameCount;
+
+        std::string_view program = data_;
         for (; index; --index)
         {
-            if (!readFileName(file_names, fn))
+            SAFE_CHECK(nextDefineFile(program, fn), "invalid file index");
+        }
+
+        return fn;
+    }
+    else
+    {
+        FileName fn;
+        SAFE_CHECK(index < v5_.fileNamesCount, "invalid file index");
+        std::string_view file_names = v5_.fileNames;
+        for (uint64_t i = 0; i < v5_.fileNamesCount; i++)
+        {
+            std::string_view format = v5_.fileNameEntryFormat;
+            for (uint8_t f = 0; f < v5_.fileNameEntryFormatCount; f++)
             {
-                abort();
+                auto attr = readLineNumberAttribute(is64Bit_, format, file_names, debugStr_, debugLineStr_);
+                if (i == index)
+                {
+                    switch (attr.content_type_code)
+                    {
+                        case DW_LNCT_path:
+                            fn.relativeName = std::get<std::string_view>(attr.attr_value);
+                            break;
+                        case DW_LNCT_directory_index:
+                            fn.directoryIndex = std::get<uint64_t>(attr.attr_value);
+                            break;
+                    }
+                }
             }
         }
         return fn;
     }
-
-    index -= fileNameCount_;
-
-    std::string_view program = data_;
-    for (; index; --index)
-    {
-        SAFE_CHECK(nextDefineFile(program, fn), "invalid file index");
-    }
-
-    return fn;
 }
 
 std::string_view Dwarf::LineNumberVM::getIncludeDirectory(uint64_t index) const
 {
-    if (index == 0)
+    if (version_ <= 4)
     {
-        return std::string_view();
-    }
-
-    SAFE_CHECK(index <= includeDirectoryCount_, "invalid include directory");
-
-    std::string_view include_directories = includeDirectories_;
-    std::string_view dir;
-    for (; index; --index)
-    {
-        dir = readNullTerminated(include_directories);
-        if (dir.empty())
+        if (index == 0)
         {
-            abort(); // BUG
+            // In DWARF <= 4 the current directory is not represented in the
+            // directories field and a directory index of 0 implicitly referred to
+            // that directory as found in the DW_AT_comp_dir attribute of the
+            // compilation unit debugging information entry.
+            return {};
         }
-    }
 
-    return dir;
+        SAFE_CHECK(index <= v4_.includeDirectoryCount, "invalid include directory");
+
+        std::string_view include_directories = v4_.includeDirectories;
+        std::string_view dir;
+        for (; index; --index)
+        {
+            dir = readNullTerminated(include_directories);
+            if (dir.empty())
+            {
+                abort(); // BUG
+            }
+        }
+
+        return dir;
+    }
+    else
+    {
+        SAFE_CHECK(index < v5_.directoriesCount, "invalid file index");
+        std::string_view directories = v5_.directories;
+        for (uint64_t i = 0; i < v5_.directoriesCount; i++)
+        {
+            std::string_view format = v5_.directoryEntryFormat;
+            for (uint8_t f = 0; f < v5_.directoryEntryFormatCount; f++)
+            {
+                auto attr = readLineNumberAttribute(is64Bit_, format, directories, debugStr_, debugLineStr_);
+                if (i == index && attr.content_type_code == DW_LNCT_path)
+                {
+                    return std::get<std::string_view>(attr.attr_value);
+                }
+            }
+        }
+        // This could only happen if DWARF5's directory_entry_format doesn't contain
+        // a DW_LNCT_path. Highly unlikely, but we shouldn't crash.
+        return std::string_view("<directory not found>");
+    }
 }
 
 bool Dwarf::LineNumberVM::readFileName(std::string_view & program, FileName & fn)
@@ -1422,6 +2021,7 @@ bool Dwarf::LineNumberVM::nextDefineFile(std::string_view & program, FileName & 
 
         if (opcode == DW_LNE_define_file)
         {
+            SAFE_CHECK(version_ < 5, "DW_LNE_define_file deprecated in DWARF5");
             SAFE_CHECK(readFileName(program, fn), "invalid empty file in DW_LNE_define_file");
             return true;
         }
@@ -1535,6 +2135,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
             address_ = read<uintptr_t>(program);
             return CONTINUE;
         case DW_LNE_define_file:
+            SAFE_CHECK(version_ < 5, "DW_LNE_define_file deprecated in DWARF5");
             // We can't process DW_LNE_define_file here, as it would require us to
             // use unbounded amounts of state (ie. use the heap).  We'll do a second
             // pass (using nextDefineFile()) if necessary.
@@ -1547,6 +2148,16 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     // Unrecognized extended opcode
     program.remove_prefix(length);
     return CONTINUE;
+}
+
+Dwarf::Path Dwarf::LineNumberVM::getFullFileName(uint64_t index) const
+{
+    auto fn = getFileName(index);
+    // DWARF <= 4: the current dir is not represented in the CU's Line Number
+    // Program Header and relies on the CU's DW_AT_comp_dir.
+    // DWARF 5: the current directory is explicitly present.
+    const std::string_view base_dir = version_ == 5 ? "" : compilationDirectory_;
+    return Path(base_dir, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
 }
 
 bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line)
@@ -1588,12 +2199,18 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
                 // Found it!  Note that ">" is indeed correct (not ">="), as each
                 // sequence is guaranteed to have one entry past-the-end (emitted by
                 // DW_LNE_end_sequence)
-                if (prev_file == 0)
+                //
+                // NOTE: In DWARF <= 4 the file register is non-zero.
+                //   See DWARF 4: 6.2.4 The Line Number Program Header
+                //   "The line number program assigns numbers to each of the file
+                //   entries in order, beginning with 1, and uses those numbers instead
+                //   of file names in the file register."
+                // DWARF 5 has a different include directory/file header and 0 is valid.
+                if (version_ <= 4 && prev_file == 0)
                 {
                     return false;
                 }
-                auto fn = getFileName(prev_file);
-                file = Path(compilationDirectory_, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
+                file = getFullFileName(prev_file);
                 line = prev_line;
                 return true;
             }

@@ -33,6 +33,7 @@ Lone:
 
 .align	5
 _ChaCha20_ctr32:
+	AARCH64_VALID_CALL_TARGET
 	cbz	x2,Labort
 #if __has_feature(hwaddress_sanitizer) && __clang_major__ >= 10
 	adrp	x5,:pg_hi21_nc:_OPENSSL_armcap_P
@@ -46,6 +47,7 @@ _ChaCha20_ctr32:
 	b.ne	ChaCha20_neon
 
 Lshort:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 
@@ -258,6 +260,7 @@ Loop:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 Labort:
 	ret
 
@@ -314,12 +317,14 @@ Loop_tail:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 
 
 .align	5
 ChaCha20_neon:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 
@@ -700,6 +705,7 @@ Loop_neon:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 Ltail_neon:
@@ -809,11 +815,13 @@ Ldone_neon:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 
 .align	5
 ChaCha20_512_neon:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 
@@ -1977,6 +1985,7 @@ Ldone_512_neon:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 #endif  // !OPENSSL_NO_ASM

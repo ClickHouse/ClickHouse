@@ -31,7 +31,7 @@ namespace
             DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
             auto comment = load_result.config->config->getString("dictionary.comment", "");
 
-            return StorageDictionary::create(
+            return std::make_shared<StorageDictionary>(
                 StorageID(database_name, load_result.name),
                 load_result.name,
                 dictionary_structure,
@@ -41,10 +41,9 @@ namespace
         }
         catch (Exception & e)
         {
-            throw Exception(
-                fmt::format("Error while loading dictionary '{}.{}': {}",
-                    database_name, load_result.name, e.displayText()),
-                e.code());
+            throw Exception(e.code(),
+                "Error while loading dictionary '{}.{}': {}",
+                    database_name, load_result.name, e.displayText());
         }
     }
 }
@@ -100,7 +99,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
         if (!load_result.config)
         {
             if (throw_on_error)
-                throw Exception{"Dictionary " + backQuote(table_name) + " doesn't exist", ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY};
+                throw Exception(ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY, "Dictionary {} doesn't exist", backQuote(table_name));
             return {};
         }
 
@@ -118,7 +117,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
             /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
-        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+        throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
 
     return ast;
 }

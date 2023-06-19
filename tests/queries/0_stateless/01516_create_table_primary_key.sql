@@ -1,6 +1,7 @@
 -- Tags: no-parallel
 
 DROP DATABASE IF EXISTS test_01516;
+set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test_01516 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
 USE test_01516;
 
@@ -34,7 +35,7 @@ ATTACH TABLE primary_key_test(v1 Int32, v2 Int32) ENGINE=ReplacingMergeTree ORDE
 SELECT * FROM primary_key_test FINAL;
 DROP TABLE primary_key_test;
 
-CREATE TABLE primary_key_test(v1 Int64, v2 Int32, v3 String, PRIMARY KEY(v1, gcd(v1, v2))) ENGINE=ReplacingMergeTree ORDER BY v1; -- { serverError 36; }
+CREATE TABLE primary_key_test(v1 Int64, v2 Int32, v3 String, PRIMARY KEY(v1, gcd(v1, v2))) ENGINE=ReplacingMergeTree ORDER BY v1; -- { serverError 36 }
 
 CREATE TABLE primary_key_test(v1 Int64, v2 Int32, v3 String, PRIMARY KEY(v1, gcd(v1, v2))) ENGINE=ReplacingMergeTree ORDER BY (v1, gcd(v1, v2));
 

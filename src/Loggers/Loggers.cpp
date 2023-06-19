@@ -10,7 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
 #endif
 
@@ -32,9 +32,9 @@ static std::string createDirectory(const std::string & file)
         return "";
     fs::create_directories(path);
     return path;
-};
+}
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
 void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     text_log = log;
@@ -44,14 +44,14 @@ void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     if (split)
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);
 #endif
 
     auto current_logger = config.getString("logger", "");
-    if (config_logger == current_logger) //-V1051
+    if (config_logger.has_value() && *config_logger == current_logger)
         return;
 
     config_logger = current_logger;
@@ -97,7 +97,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
         log_file->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf;
+
+        if (config.getString("logger.formatting.type", "") == "json")
+            pf = new OwnJSONPatternFormatter(config);
+        else
+            pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
         log->setLevel(log_level);
@@ -133,7 +138,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf;
+
+        if (config.getString("logger.formatting.type", "") == "json")
+            pf = new OwnJSONPatternFormatter(config);
+        else
+            pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
         errorlog->setLevel(errorlog_level);
@@ -172,7 +182,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
         syslog_channel->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf;
+
+        if (config.getString("logger.formatting.type", "") == "json")
+            pf = new OwnJSONPatternFormatter(config);
+        else
+            pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
         log->setLevel(syslog_level);
@@ -195,7 +210,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             max_log_level = console_log_level;
         }
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(color_enabled);
+        Poco::AutoPtr<OwnPatternFormatter> pf;
+        if (config.getString("logger.formatting.type", "") == "json")
+            pf = new OwnJSONPatternFormatter(config);
+        else
+            pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
         log->setLevel(console_log_level);
         split->addChannel(log, "console");

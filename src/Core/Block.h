@@ -7,9 +7,9 @@
 
 #include <initializer_list>
 #include <list>
-#include <map>
 #include <set>
 #include <vector>
+#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -89,9 +89,16 @@ public:
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
+    NamesAndTypes getNamesAndTypes() const;
     Names getNames() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
+
+    /// Hash table match `column name -> position in the block`.
+    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
+    NameMap getNamesToIndexesMap() const;
+
+    Serializations getSerializations() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -107,7 +114,7 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !!columns(); } /// NOLINT
+    explicit operator bool() const { return !!columns(); }
     bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */

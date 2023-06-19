@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/statements/alter/row-policy
 sidebar_position: 47
 sidebar_label: ROW POLICY
 ---
 
-# ALTER ROW POLICY {#alter-row-policy-statement}
+# ALTER ROW POLICY
 
 Changes row policy.
 

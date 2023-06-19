@@ -9,8 +9,6 @@ if (WITH_COVERAGE)
   # disable coverage for contib files and build with optimisations
   if (COMPILER_CLANG)
       add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
-  else()
-      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
   endif()
 endif()
 
@@ -37,6 +35,8 @@ function(add_contrib cmake_folder)
 
         file(GLOB contrib_files "${base_folder}/*")
         if (NOT contrib_files)
+            # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
+            # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
             message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
             message(STATUS "    git submodule update --init")
             return()
@@ -46,9 +46,14 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_contrib (openssl-cmake openssl)
+else ()
+    add_contrib (boringssl-cmake boringssl)
+endif ()
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (magic-enum-cmake magic_enum)
@@ -56,10 +61,10 @@ add_contrib (boost-cmake boost)
 add_contrib (cctz-cmake cctz)
 add_contrib (consistent-hashing)
 add_contrib (dragonbox-cmake dragonbox)
-add_contrib (hyperscan-cmake hyperscan)
+add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
-add_contrib (libdivide)
+add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
@@ -72,8 +77,6 @@ add_contrib (re2-cmake re2)
 add_contrib (xz-cmake xz)
 add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
-add_contrib (boringssl-cmake boringssl)
-add_contrib (poco-cmake poco)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
 add_contrib (zlib-ng-cmake zlib-ng)
@@ -85,53 +88,75 @@ add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
-add_contrib (protobuf-cmake protobuf)
+add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
+
+add_contrib (corrosion-cmake corrosion)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
 
+add_contrib (wyhash-cmake wyhash)
 add_contrib (cityhash102)
 add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
 add_contrib (h3-cmake h3)
 add_contrib (mariadb-connector-c-cmake mariadb-connector-c)
+add_contrib (libfiu-cmake libfiu)
 
 if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
 endif()
 
-add_contrib (llvm-cmake llvm)
+add_contrib (llvm-project-cmake llvm-project)
+add_contrib (libfuzzer-cmake llvm-project)
+add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
-add_contrib (aws-s3-cmake
+
+add_contrib (aws-cmake
     aws
+    aws-c-auth
+    aws-c-cal
     aws-c-common
+    aws-c-compression
     aws-c-event-stream
+    aws-c-http
+    aws-c-io
+    aws-c-mqtt
+    aws-c-s3
+    aws-c-sdkutils
+    aws-s2n-tls
     aws-checksums
+    aws-crt-cpp
+    aws-cmake
 )
+
 add_contrib (base64-cmake base64)
+if (NOT ARCH_S390X)
 add_contrib (simdjson-cmake simdjson)
+endif()
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
+add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-
-if (ENABLE_CURL_BUILD)
+if (NOT OS_DARWIN)
     add_contrib (curl-cmake curl)
     add_contrib (azure-cmake azure)
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
-
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
 add_contrib (libgsasl-cmake libgsasl) # requires krb5
 add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
-add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
+add_contrib (nats-io-cmake nats-io)
+add_contrib (isa-l-cmake isa-l)
+add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
@@ -139,6 +164,7 @@ add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
+add_contrib (hashidsxx-cmake hashidsxx)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
@@ -151,6 +177,31 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
+add_contrib (c-ares-cmake c-ares)
+
+if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QPL)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with SSE 4.2 or higher")
+endif()
+if (ENABLE_QPL)
+    add_contrib (idxd-config-cmake idxd-config)
+    add_contrib (qpl-cmake qpl) # requires: idxd-config
+else()
+    message(STATUS "Not using QPL")
+endif ()
+
+add_contrib (morton-nd-cmake morton-nd)
+if (ARCH_S390X)
+    add_contrib(crc32-s390x-cmake crc32-s390x)
+endif()
+add_contrib (annoy-cmake annoy)
+add_contrib (xxHash-cmake xxHash)
+
+add_contrib (libbcrypt-cmake libbcrypt)
+
+add_contrib (google-benchmark-cmake google-benchmark)
+add_contrib (ulid-c-cmake ulid-c)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

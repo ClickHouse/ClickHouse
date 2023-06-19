@@ -1,5 +1,7 @@
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorCodes.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -25,7 +27,9 @@ FileChecker::FileChecker(const String & file_info_path_) : FileChecker(nullptr, 
 {
 }
 
-FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
+FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_)
+    : disk(std::move(disk_))
+    , log(&Poco::Logger::get("FileChecker"))
 {
     setPath(file_info_path_);
     try
@@ -68,6 +72,15 @@ size_t FileChecker::getFileSize(const String & full_file_path) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not added to the file checker", full_file_path);
     return it->second;
 }
+
+size_t FileChecker::getTotalSize() const
+{
+    size_t total_size = 0;
+    for (auto size : map | boost::adaptors::map_values)
+        total_size += size;
+    return total_size;
+}
+
 
 CheckResults FileChecker::check() const
 {
@@ -125,7 +138,7 @@ void FileChecker::save() const
     std::string tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 
     {
-        std::unique_ptr<WriteBuffer> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
+        std::unique_ptr<WriteBufferFromFileBase> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
 
         /// So complex JSON structure - for compatibility with the old format.
         writeCString("{\"clickhouse\":{", *out);
@@ -144,7 +157,9 @@ void FileChecker::save() const
         }
 
         writeCString("}}", *out);
-        out->next();
+
+        out->sync();
+        out->finalize();
     }
 
     if (disk)

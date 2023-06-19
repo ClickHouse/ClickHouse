@@ -1,14 +1,14 @@
 ---
+slug: /en/sql-reference/statements/check-table
 sidebar_position: 41
-sidebar_label: CHECK
+sidebar_label: CHECK TABLE
+title: "CHECK TABLE Statement"
 ---
-
-# CHECK TABLE Statement {#check-table}
 
 Checks if the data in the table is corrupted.
 
 ``` sql
-CHECK TABLE [db.]name
+CHECK TABLE [db.]name [PARTITION partition_expr]
 ```
 
 The `CHECK TABLE` query compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
@@ -16,21 +16,21 @@ The `CHECK TABLE` query compares actual file sizes with the expected values whic
 The query response contains the `result` column with a single row. The row has a value of
 [Boolean](../../sql-reference/data-types/boolean.md) type:
 
--   0 - The data in the table is corrupted.
--   1 - The data maintains integrity.
+- 0 - The data in the table is corrupted.
+- 1 - The data maintains integrity.
 
 The `CHECK TABLE` query supports the following table engines:
 
--   [Log](../../engines/table-engines/log-family/log.md)
--   [TinyLog](../../engines/table-engines/log-family/tinylog.md)
--   [StripeLog](../../engines/table-engines/log-family/stripelog.md)
--   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+- [Log](../../engines/table-engines/log-family/log.md)
+- [TinyLog](../../engines/table-engines/log-family/tinylog.md)
+- [StripeLog](../../engines/table-engines/log-family/stripelog.md)
+- [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
 Performed over the tables with another table engines causes an exception.
 
 Engines from the `*Log` family do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
-## Checking the MergeTree Family Tables {#checking-mergetree-tables}
+## Checking the MergeTree Family Tables
 
 For `MergeTree` family engines, if [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
 
@@ -59,7 +59,7 @@ CHECK TABLE test_table;
 └────────┘
 ```
 
-## If the Data Is Corrupted {#if-data-is-corrupted}
+## If the Data Is Corrupted
 
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
 

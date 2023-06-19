@@ -17,33 +17,21 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-void finalizeChunk(Chunk & chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
-    for (auto & column : columns)
-        if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
-
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-void finalizeBlock(Block & block)
+static void finalizeBlock(Block & block, const ColumnsMask & aggregates_mask)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        ColumnWithTypeAndName & current = block.getByPosition(i);
-        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
+        if (!aggregates_mask[i])
+            continue;
 
-        if (unfinalized_type)
+        ColumnWithTypeAndName & current = block.getByPosition(i);
+        const DataTypeAggregateFunction & unfinalized_type = typeid_cast<const DataTypeAggregateFunction &>(*current.type);
+
+        current.type = unfinalized_type.getReturnType();
+        if (current.column)
         {
-            current.type = unfinalized_type->getReturnType();
-            if (current.column)
-            {
-                auto mut_column = IColumn::mutate(std::move(current.column));
-                current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
-            }
+            auto mut_column = IColumn::mutate(std::move(current.column));
+            current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
         }
     }
 }
@@ -53,10 +41,11 @@ Block TotalsHavingTransform::transformHeader(
     const ActionsDAG * expression,
     const std::string & filter_column_name,
     bool remove_filter,
-    bool final)
+    bool final,
+    const ColumnsMask & aggregates_mask)
 {
     if (final)
-        finalizeBlock(block);
+        finalizeBlock(block, aggregates_mask);
 
     if (expression)
     {
@@ -70,6 +59,7 @@ Block TotalsHavingTransform::transformHeader(
 
 TotalsHavingTransform::TotalsHavingTransform(
     const Block & header,
+    const ColumnsMask & aggregates_mask_,
     bool overflow_row_,
     const ExpressionActionsPtr & expression_,
     const std::string & filter_column_,
@@ -77,7 +67,8 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_, aggregates_mask_), true)
+    , aggregates_mask(aggregates_mask_)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -87,7 +78,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     , final(final_)
 {
     finalized_header = getInputPort().getHeader();
-    finalizeBlock(finalized_header);
+    finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
     if (expression)
@@ -161,11 +152,11 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     {
         const auto & info = chunk.getChunkInfo();
         if (!info)
-            throw Exception("Chunk info was not set for chunk in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in TotalsHavingTransform.");
 
         const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
-            throw Exception("Chunk should have AggregatedChunkInfo in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in TotalsHavingTransform.");
 
         if (agg_info->is_overflows)
         {
@@ -179,7 +170,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
     auto finalized = chunk.clone();
     if (final)
-        finalizeChunk(finalized);
+        finalizeChunk(finalized, aggregates_mask);
 
     total_keys += finalized.getNumRows();
 
@@ -198,7 +189,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         for (const auto & action : expression->getActions())
         {
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception("Having clause cannot contain arrayJoin", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Having clause cannot contain arrayJoin");
         }
 
         expression->execute(finalized_block, num_rows);
@@ -269,7 +260,7 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             size_t size = vec.size();
 
             if (filter && filter->size() != size)
-                throw Exception("Filter has size which differs from column size", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter has size which differs from column size");
 
             if (filter)
             {
@@ -300,7 +291,7 @@ void TotalsHavingTransform::prepareTotals()
     }
 
     totals = Chunk(std::move(current_totals), 1);
-    finalizeChunk(totals);
+    finalizeChunk(totals, aggregates_mask);
 
     if (expression)
     {

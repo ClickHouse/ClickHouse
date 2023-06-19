@@ -1,6 +1,8 @@
 #pragma once
 #include <Core/Block.h>
-#include <Common/logger_useful.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -18,20 +20,75 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+struct PrewhereExprStep
+{
+    enum Type
+    {
+        Filter,
+        Expression,
+    };
+
+    Type type = Type::Filter;
+    ExpressionActionsPtr actions;
+    String filter_column_name;
+
+    bool remove_filter_column = false;
+    bool need_filter = false;
+
+    /// Some PREWHERE steps should be executed without conversions.
+    /// A step without alter conversion cannot be executed after step with alter conversions.
+    bool perform_alter_conversions = false;
+};
+
+using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
+using PrewhereExprSteps = std::vector<PrewhereExprStepPtr>;
+
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
-    /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ExpressionActionsPtr alias_actions;
-    /// Actions for row level security filter. Applied separately before prewhere_actions.
-    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    ExpressionActionsPtr row_level_filter;
-    /// Actions which are executed on block in order to get filter column for prewhere step.
-    ExpressionActionsPtr prewhere_actions;
-    String row_level_column_name;
-    String prewhere_column_name;
-    bool remove_prewhere_column = false;
-    bool need_filter = false;
+    PrewhereExprSteps steps;
+
+    std::string dump() const;
+    std::string dumpConditions() const;
+};
+
+class FilterWithCachedCount
+{
+    ConstantFilterDescription const_description;  /// TODO: ConstantFilterDescription only checks always true/false for const columns
+                                                  /// think how to handle when the column in not const but has all 0s or all 1s
+    ColumnPtr column = nullptr;
+    const IColumn::Filter * data = nullptr;
+    mutable size_t cached_count_bytes = -1;
+
+public:
+    explicit FilterWithCachedCount() = default;
+
+    explicit FilterWithCachedCount(const ColumnPtr & column_)
+        : const_description(*column_)
+    {
+        ColumnPtr col = column_->convertToFullIfNeeded();
+        FilterDescription desc(*col);
+        column = desc.data_holder ? desc.data_holder : col;
+        data = desc.data;
+    }
+
+    bool present() const { return !!column; }
+
+    bool alwaysTrue() const { return const_description.always_true; }
+    bool alwaysFalse() const { return const_description.always_false; }
+
+    ColumnPtr getColumn() const { return column; }
+
+    const IColumn::Filter & getData() const { return *data; }
+
+    size_t size() const { return column->size(); }
+
+    size_t countBytesInFilter() const
+    {
+        if (cached_count_bytes == size_t(-1))
+            cached_count_bytes = DB::countBytesInFilter(*data);
+        return cached_count_bytes;
+    }
 };
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
@@ -43,7 +100,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereExprInfo * prewhere_info_,
+        const PrewhereExprStep * prewhere_info_,
         bool last_reader_in_chain_,
         const Names & non_const_virtual_column_names);
 
@@ -59,6 +116,7 @@ public:
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
 
+private:
     /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
     class DelayedStream
     {
@@ -146,10 +204,23 @@ public:
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
 
+public:
     /// Statistics after next reading step.
     class ReadResult
     {
     public:
+        Columns columns;
+        size_t num_rows = 0;
+
+        /// The number of rows were added to block as a result of reading chain.
+        size_t numReadRows() const { return num_read_rows; }
+        /// The number of bytes read from disk.
+        size_t numBytesRead() const { return num_bytes_read; }
+
+    private:
+        /// Only MergeTreeRangeReader is supposed to access ReadResult internals.
+        friend class MergeTreeRangeReader;
+
         using NumRows = std::vector<size_t>;
 
         struct RangeInfo
@@ -160,56 +231,46 @@ public:
 
         using RangesInfo = std::vector<RangeInfo>;
 
-        const RangesInfo & startedRanges() const { return started_ranges; }
-        const NumRows & rowsPerGranule() const { return rows_per_granule; }
+        explicit ReadResult(Poco::Logger * log_) : log(log_) {}
 
-        /// The number of rows were read at LAST iteration in chain. <= num_added_rows + num_filtered_rows.
-        size_t totalRowsPerGranule() const { return total_rows_per_granule; }
-        /// The number of rows were added to block as a result of reading chain.
-        size_t numReadRows() const { return num_read_rows; }
-        size_t numRowsToSkipInLastGranule() const { return num_rows_to_skip_in_last_granule; }
-        /// The number of bytes read from disk.
-        size_t numBytesRead() const { return num_bytes_read; }
-        /// Filter you need to apply to newly-read columns in order to add them to block.
-        const ColumnUInt8 * getFilterOriginal() const { return filter_original ? filter_original : filter; }
-        const ColumnUInt8 * getFilter() const { return filter; }
-        ColumnPtr & getFilterHolder() { return filter_holder; }
+        static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
         void addGranule(size_t num_rows_);
         void adjustLastGranule();
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
-        /// Set filter or replace old one. Filter must have more zeroes than previous.
-        void setFilter(const ColumnPtr & new_filter);
-        /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize(bool can_read_incomplete_granules, bool allow_filter_columns);
+        /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
+        /// Remove them and update filter.
+        /// Apply the filter to the columns and update num_rows if required
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules);
         /// Remove all rows from granules.
         void clear();
 
-        void clearFilter() { filter = nullptr; }
         void setFilterConstTrue();
-        void setFilterConstFalse();
 
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
-        void shrink(Columns & old_columns);
+        /// Shrinks columns according to the diff between current and previous rows_per_granule.
+        void shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const;
 
-        size_t countBytesInResultFilter(const IColumn::Filter & filter);
+        /// Applies the filter to the columns and updates num_rows.
+        void applyFilter(const FilterWithCachedCount & filter);
 
-        Columns columns;
-        size_t num_rows = 0;
-        bool need_filter = false;
+        /// Verifies that columns and filter sizes match.
+        /// The checks might be non-trivial so it make sense to have the only in debug builds.
+        void checkInternalConsistency() const;
 
-        Block block_before_prewhere;
+        std::string dumpInfo() const;
 
-    private:
+        /// Contains columns that are not included into result but might be needed for default values calculation.
+        Block additional_columns;
+
         RangesInfo started_ranges;
         /// The number of rows read from each granule.
         /// Granule here is not number of rows between two marks
         /// It's amount of rows per single reading act
         NumRows rows_per_granule;
-        NumRows rows_per_granule_original;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
@@ -218,42 +279,53 @@ public:
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
-        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_per_granule.
-        ColumnPtr filter_holder;
-        ColumnPtr filter_holder_original;
-        const ColumnUInt8 * filter = nullptr;
-        const ColumnUInt8 * filter_original = nullptr;
 
-        void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter);
+        /// This filter has the size of total_rows_per_granule. This means that it can be applied to newly read columns.
+        /// The result of applying this filter is that only rows that pass all previous filtering steps will remain.
+        FilterWithCachedCount final_filter;
+
+        /// This flag is true when prewhere column can be returned without filtering.
+        /// It's true when it contains 0s from all filtering steps (not just the step when it was calculated).
+        /// NOTE: If we accumulated the final_filter for several steps without applying it then prewhere column calculated at the last step
+        /// will not contain 0s from all previous steps.
+        bool can_return_prewhere_column_without_filtering = true;
+
+        /// Checks if result columns have current final_filter applied.
+        bool filterWasApplied() const { return !final_filter.present() || final_filter.countBytesInFilter() == num_rows; }
+
+        /// Builds updated filter by cutting zeros in granules tails
+        void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
-        std::map<const IColumn::Filter *, size_t> filter_bytes_map;
+        Poco::Logger * log;
     };
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
 
-    const Block & getSampleBlock() const { return sample_block; }
+    const Block & getSampleBlock() const { return result_sample_block; }
 
 private:
-
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
-    Columns continueReadingChain(ReadResult & result, size_t & num_rows);
-    void executePrewhereActionsAndFilterColumns(ReadResult & result);
+    Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
+    void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
     void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    const PrewhereExprInfo * prewhere_info;
+    const PrewhereExprStep * prewhere_info;
 
     Stream stream;
 
-    Block sample_block;
+    Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
+    Block result_sample_block;  /// Block with columns that are returned by this step.
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;
     Names non_const_virtual_column_names;
+
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeRangeReader");
 };
 
 }

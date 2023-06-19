@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/truncate
 sidebar_position: 51
 sidebar_label: TRUNCATE
 ---
@@ -13,9 +14,10 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Запрос `TRUNCATE` не поддерживается для следующих движков: [View](../../engines/table-engines/special/view.md), [File](../../engines/table-engines/special/file.md), [URL](../../engines/table-engines/special/url.md), [Buffer](../../engines/table-engines/special/buffer.md) и [Null](../../engines/table-engines/special/null.md).
 
-Вы можете настроить ожидание выполнения действий на репликах с помощью настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync).
+Вы можете настроить ожидание выполнения действий на репликах с помощью настройки [alter_sync](../../operations/settings/settings.md#alter-sync).
 
 Вы можете указать время ожидания (в секундах) выполнения запросов `TRUNCATE` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
 
 :::info "Примечание"
-    Если значение настройки `replication_alter_partitions_sync` равно `2` и некоторые реплики не активны больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, то генерируется исключение `UNFINISHED`.
+    Если значение настройки `alter_sync` равно `2` и некоторые реплики не активны больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, то генерируется исключение `UNFINISHED`.
+:::

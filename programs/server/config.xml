@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
   If you have accidentally specified user-level settings here, server won't start.
@@ -60,6 +59,36 @@
           </logger>
         </levels>
         -->
+        <!-- Structured log formatting:
+        You can specify log format(for now, JSON only). In that case, the console log will be printed
+        in specified format like JSON.
+        For example, as below:
+        {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        To enable JSON logging support, please uncomment the entire <formatting> tag below.
+
+        a) You can modify key names by changing values under tag values inside <names> tag.
+        For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
+            <date_time>MY_DATE_TIME</date_time>
+        b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
+        that property from this file.
+        For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
+        However, if you comment out all the tags under <names>, the program will print default values for as
+        below.
+        -->
+        <!-- <formatting>
+            <type>json</type>
+            <names>
+                <date_time>date_time</date_time>
+                <thread_name>thread_name</thread_name>
+                <thread_id>thread_id</thread_id>
+                <level>level</level>
+                <query_id>query_id</query_id>
+                <logger_name>logger_name</logger_name>
+                <message>message</message>
+                <source_file>source_file</source_file>
+                <source_line>source_line</source_line>
+            </names>
+        </formatting> -->
     </logger>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
@@ -188,6 +217,10 @@
     <listen_host>127.0.0.1</listen_host>
     -->
 
+    <!-- <interserver_listen_host>::</interserver_listen_host> -->
+    <!-- Listen host for communication between replicas. Used for data exchange -->
+    <!-- Default values - equal to listen_host -->
+
     <!-- Don't exit if IPv6 or IPv4 networks are unavailable while trying to listen. -->
     <!-- <listen_try>0</listen_try> -->
 
@@ -269,6 +302,13 @@
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
 
+    <!-- The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries.
+         This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run.
+         Query can upscale to desired number of threads during execution if more threads become available.
+    -->
+    <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
+    <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
+
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 
@@ -294,9 +334,19 @@
 
     <max_thread_pool_size>10000</max_thread_pool_size>
 
-    <!-- Number of workers to recycle connections in background (see also drain_timeout).
-         If the pool is full, connection will be drained synchronously. -->
-    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
+    <!-- Configure other thread pools: -->
+    <!--
+    <background_buffer_flush_schedule_pool_size>16</background_buffer_flush_schedule_pool_size>
+    <background_pool_size>16</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <background_merges_mutations_scheduling_policy>round_robin</background_merges_mutations_scheduling_policy>
+    <background_move_pool_size>8</background_move_pool_size>
+    <background_fetches_pool_size>8</background_fetches_pool_size>
+    <background_common_pool_size>8</background_common_pool_size>
+    <background_schedule_pool_size>128</background_schedule_pool_size>
+    <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
+    <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -365,12 +415,98 @@
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
+    <!-- Multi-disk configuration example: -->
+    <!--
+    <storage_configuration>
+        <disks>
+            <default>
+                <keep_free_space_bytes>0</keep_free_space_bytes>
+            </default>
+            <data>
+                <path>/data/</path>
+                <keep_free_space_bytes>0</keep_free_space_bytes>
+            </data>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://path/to/endpoint</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+            </s3>
+            <blob_storage_disk>
+                <type>azure_blob_storage</type>
+                <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+                <container_name>container</container_name>
+                <account_name>account</account_name>
+                <account_key>pass123</account_key>
+                <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+                <cache_enabled>true</cache_enabled>
+                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+                <skip_access_check>false</skip_access_check>
+            </blob_storage_disk>
+        </disks>
+
+        <policies>
+            <all>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                        <disk>data</disk>
+                        <disk>s3</disk>
+                        <disk>blob_storage_disk</disk>
+
+                        <max_data_part_size_bytes></max_data_part_size_bytes>
+                        <max_data_part_size_ratio></max_data_part_size_ratio>
+                        <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
+                        <prefer_not_to_merge>false</prefer_not_to_merge>
+                        <load_balancing>round_robin</load_balancing>
+                    </main>
+                </volumes>
+                <move_factor>0.2</move_factor>
+            </all>
+        </policies>
+    </storage_configuration>
+    -->
+
+
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-    
+
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
-    <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
-    <!-- <allow_no_password>0</allow_no_password> -->`
+    <allow_plaintext_password>1</allow_plaintext_password>
+    <allow_no_password>1</allow_no_password>
+    <allow_implicit_no_password>1</allow_implicit_no_password>
+
+    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
+         Accepted values are: 'plaintext_password', 'sha256_password', 'double_sha1_password', 'bcrypt_password'.
+      -->
+    <default_password_type>sha256_password</default_password_type>
+
+    <!-- Work factor for bcrypt_password authentication type-->
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+
+    <!-- Complexity requirements for user passwords. -->
+    <!-- <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+        <rule>
+            <pattern>\p{Ll}</pattern>
+            <message>contain at least 1 lowercase character</message>
+        </rule>
+        <rule>
+            <pattern>\p{Lu}</pattern>
+            <message>contain at least 1 uppercase character</message>
+        </rule>
+        <rule>
+            <pattern>[^\p{L}\p{N}]</pattern>
+            <message>contain at least 1 special character</message>
+        </rule>
+    </password_complexity> -->
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -545,11 +681,50 @@
         -->
     </user_directories>
 
+    <access_control_improvements>
+        <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
+             For example, if there two users A, B and a row policy is defined only for A, then
+             if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
+             By default this setting is false for compatibility with earlier access configurations. -->
+        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+
+        <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
+             however you can change this behaviour by setting this to true -->
+        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
+
+        <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
+             by any user. You can change this behaviour by setting this to true.
+             If it's set to true then this query requires "GRANT SELECT ON system.<table>" just like as for non-system tables.
+             Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
+             are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
+             table (i.e. "system.users") will be accessible. -->
+        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
+
+        <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
+             executed by any user. You can change this behaviour by setting this to true.
+             If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
+        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
+
+        <!-- By default, for backward compatibility a settings profile constraint for a specific setting inherit every not set field from
+             previous profile. You can change this behaviour by setting this to true.
+             If it's set to true then if settings profile has a constraint for a specific setting, then this constraint completely cancels all
+             actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
+             It also enables 'changeable_in_readonly' constraint type -->
+        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+
+        <!-- Number of seconds since last access a role is stored in the Role Cache -->
+        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    </access_control_improvements>
+
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
-    <!-- Comma-separated list of prefixes for user-defined settings. -->
-    <custom_settings_prefixes></custom_settings_prefixes>
+    <!-- Comma-separated list of prefixes for user-defined settings.
+         The server will allow to set these settings, and retrieve them with the getSetting function.
+         They are also logged in the query_log, similarly to other settings, but have no special effect.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+    -->
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
@@ -691,6 +866,56 @@
                 </replica>
             </shard-->
         </test_cluster_one_shard_three_replicas_localhost>
+	<parallel_replicas>
+		<shard>
+            <internal_replication>false</internal_replication>
+            <replica>
+                <host>127.0.0.1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.2</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.3</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.4</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.5</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.6</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.7</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.8</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.9</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.10</host>
+                <port>9000</port>
+            </replica>
+            <!-- Unavailable replica -->
+            <replica>
+                <host>127.0.0.11</host>
+                <port>1234</port>
+            </replica>
+        </shard>
+	</parallel_replicas>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>
@@ -917,12 +1142,25 @@
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
         -->
 
+        <!--
+            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order_by
+            Example:
+                event_date, event_time
+                event_date, type, query_id
+                event_date, event_time, initial_query_id
+
+        <order_by>event_date, event_time, initial_query_id</order_by>
+        -->
+
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
           -->
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+
+        <!-- example of using a different storage policy for a system table -->
+        <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>
 
     <!-- Trace log. Stores stack traces collected by query profilers.
@@ -988,10 +1226,6 @@
     <asynchronous_metric_log>
         <database>system</database>
         <table>asynchronous_metric_log</table>
-        <!--
-            Asynchronous metrics are updated once a minute, so there is
-            no need to flush more often.
-        -->
         <flush_interval_milliseconds>7000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
@@ -1051,6 +1285,18 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </processors_profile_log>
 
+    <!-- Log of asynchronous inserts. It allows to check status
+         of insert query in fire-and-forget mode.
+    -->
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>event_date</partition_by>
+        <ttl>event_date + INTERVAL 3 DAY</ttl>
+    </asynchronous_insert_log>
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
@@ -1067,10 +1313,14 @@
     <!-- Configuration of external dictionaries. See:
          https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
-    <dictionaries_config>*_dictionary.xml</dictionaries_config>
+    <dictionaries_config>*_dictionary.*ml</dictionaries_config>
 
     <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+    <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
+
+    <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
+     If not specified they will be stored locally. -->
+    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1202,17 +1452,13 @@
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
         replace - substitution string for sensitive data (optional, by default - six asterisks)
-    -->
     <query_masking_rules>
         <rule>
             <name>hide encrypt/decrypt arguments</name>
             <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
-            <!-- or more secure, but also more invasive:
-                (aes_\w+)\s*\(.*\)
-            -->
             <replace>\1(???)</replace>
         </rule>
-    </query_masking_rules>
+    </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
         rules are checked from top to bottom, first match runs the handler
@@ -1296,9 +1542,30 @@
     </rocksdb>
     -->
 
+    <!-- Configuration for the query cache -->
+    <!-- <query_cache> -->
+    <!--     <max_size_in_bytes>1073741824</max_size_in_bytes> -->
+    <!--     <max_entries>1024</max_entries> -->
+    <!--     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes> -->
+    <!--     <max_entry_size_in_rows>30000000</max_entry_size_in_rows> -->
+    <!-- </query_cache> -->
+
     <!-- Uncomment if enable merge tree metadata cache -->
-    <merge_tree_metadata_cache>
+    <!--merge_tree_metadata_cache>
         <lru_cache_size>268435456</lru_cache_size>
         <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache>
+    </merge_tree_metadata_cache-->
+
+    <!-- This allows to disable exposing addresses in stack traces for security reasons.
+         Please be aware that it does not improve security much, but makes debugging much harder.
+         The addresses that are small offsets from zero will be displayed nevertheless to show nullptr dereferences.
+         Regardless of this configuration, the addresses are visible in the system.stack_trace and system.trace_log tables
+         if the user has access to these tables.
+         I don't recommend to change this setting.
+    <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
+    -->
+
+    <!-- On Linux systems this can control the behavior of OOM killer.
+    <oom_score>-1000</oom_score>
+    -->
 </clickhouse>

@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/database-engines/postgresql
 sidebar_position: 35
 sidebar_label: PostgreSQL
 ---
@@ -29,7 +30,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 ## Поддерживаемые типы данных {#data_types-support}
 
-| PostgerSQL       | ClickHouse                                                   |
+| PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
 | DATE             | [Date](../../sql-reference/data-types/date.md)               |
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
@@ -135,5 +136,3 @@ DESCRIBE TABLE test_database.test_table;
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/database-engines/postgresql/) <!--hide-->

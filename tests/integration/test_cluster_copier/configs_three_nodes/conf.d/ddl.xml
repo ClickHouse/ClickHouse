@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <distributed_ddl>
         <path>/clickhouse/task_queue/ddl</path>

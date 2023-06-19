@@ -1,13 +1,15 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <base/types.h>
 #include <memory>
 #include <string>
 
+
 namespace DB
 {
+
 class GRPCServer;
 class TCPServer;
 
@@ -21,7 +23,7 @@ public:
     ProtocolServerAdapter & operator =(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<TCPServer> tcp_server_);
 
-#if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_GRPC && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
 #endif
 

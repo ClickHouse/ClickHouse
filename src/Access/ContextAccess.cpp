@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
@@ -17,7 +18,7 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <assert.h>
+#include <cassert>
 
 
 namespace DB
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int FUNCTION_NOT_ALLOWED;
     extern const int UNKNOWN_USER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -42,9 +44,17 @@ namespace
     }
 
 
-    AccessRights addImplicitAccessRights(const AccessRights & access)
+    AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
     {
-        auto modifier = [&](const AccessFlags & flags, const AccessFlags & min_flags_with_children, const AccessFlags & max_flags_with_children, const std::string_view & database, const std::string_view & table, const std::string_view & column) -> AccessFlags
+        AccessFlags max_flags;
+
+        auto modifier = [&](const AccessFlags & flags,
+                            const AccessFlags & min_flags_with_children,
+                            const AccessFlags & max_flags_with_children,
+                            std::string_view database,
+                            std::string_view table,
+                            std::string_view column,
+                            bool /* grant_option */) -> AccessFlags
         {
             size_t level = !database.empty() + !table.empty() + !column.empty();
             AccessFlags res = flags;
@@ -70,6 +80,11 @@ namespace
             static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;
+
+            /// CREATE TABLE (on any database/table) => CREATE_ARBITRARY_TEMPORARY_TABLE (global)
+            static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
+            if ((level == 0) && (max_flags_with_children & create_table))
+                res |= create_arbitrary_temporary_table;
 
             /// ALTER_TTL => ALTER_MATERIALIZE_TTL
             static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
@@ -113,16 +128,80 @@ namespace
                 res |= show_databases;
             }
 
+            max_flags |= res;
+
             return res;
         };
 
         AccessRights res = access;
         res.modifyFlags(modifier);
 
-        /// Anyone has access to the "system" and "information_schema" database.
-        res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
+        if (access_control.doesSelectFromSystemDatabaseRequireGrant())
+        {
+            const char * always_accessible_tables[] = {
+                /// Constant tables
+                "one",
+
+                /// "numbers", "numbers_mt", "zeros", "zeros_mt" were excluded because they can generate lots of values and
+                /// that can decrease performance in some cases.
+
+                "contributors",
+                "licenses",
+                "time_zones",
+                "collations",
+
+                "formats",
+                "privileges",
+                "data_type_families",
+                "table_engines",
+                "table_functions",
+                "aggregate_function_combinators",
+
+                "functions", /// Can contain user-defined functions
+
+                /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
+                "databases",
+                "tables",
+                "columns",
+
+                /// Specific to the current session
+                "settings",
+                "current_roles",
+                "enabled_roles",
+                "quota_usage"
+            };
+
+            for (const auto * table_name : always_accessible_tables)
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+
+            if (max_flags.contains(AccessType::SHOW_USERS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
+
+            if (max_flags.contains(AccessType::SHOW_ROLES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "roles");
+
+            if (max_flags.contains(AccessType::SHOW_ROW_POLICIES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "row_policies");
+
+            if (max_flags.contains(AccessType::SHOW_SETTINGS_PROFILES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "settings_profiles");
+
+            if (max_flags.contains(AccessType::SHOW_QUOTAS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+        }
+        else
+        {
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+        }
+
+        /// If "select_from_information_schema_requires_grant" is enabled we don't provide implicit grants for the information_schema database.
+        if (!access_control.doesSelectFromInformationSchemaRequireGrant())
+        {
+            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
+            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        }
+
         return res;
     }
 
@@ -138,7 +217,7 @@ namespace
     std::string_view getDatabase() { return {}; }
 
     template <typename... OtherArgs>
-    std::string_view getDatabase(const std::string_view & arg1, const OtherArgs &...) { return arg1; }
+    std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
 }
 
 
@@ -146,6 +225,21 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
     : access_control(&access_control_)
     , params(params_)
 {
+}
+
+
+ContextAccess::~ContextAccess()
+{
+    enabled_settings.reset();
+    enabled_quota.reset();
+    enabled_row_policies.reset();
+    access_with_implicit.reset();
+    access.reset();
+    roles_info.reset();
+    subscription_for_roles_changes.reset();
+    enabled_roles.reset();
+    subscription_for_user_change.reset();
+    user.reset();
 }
 
 
@@ -172,6 +266,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     if (!user)
     {
         /// User has been dropped.
+        user_was_dropped = true;
         subscription_for_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
@@ -228,7 +323,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 void ContextAccess::calculateAccessRights() const
 {
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access));
+    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
 
     if (trace_log)
     {
@@ -238,7 +333,7 @@ void ContextAccess::calculateAccessRights() const
                 boost::algorithm::join(roles_info->getCurrentRolesNames(), ", "),
                 boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
-        LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", params.readonly, params.allow_ddl, params.allow_introspection);
+        LOG_TRACE(trace_log, "Settings: readonly = {}, allow_ddl = {}, allow_introspection_functions = {}", params.readonly, params.allow_ddl, params.allow_introspection);
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
@@ -246,6 +341,20 @@ void ContextAccess::calculateAccessRights() const
 
 
 UserPtr ContextAccess::getUser() const
+{
+    auto res = tryGetUser();
+
+    if (likely(res))
+        return res;
+
+    if (user_was_dropped)
+        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in current context, it's a bug");
+}
+
+
+UserPtr ContextAccess::tryGetUser() const
 {
     std::lock_guard lock{mutex};
     return user;
@@ -275,12 +384,12 @@ std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies()
     return no_row_policies;
 }
 
-ASTPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const
+RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
     std::lock_guard lock{mutex};
     if (enabled_row_policies)
-        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_expr);
-    return nullptr;
+        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_filter);
+    return combine_with_filter;
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
@@ -306,10 +415,10 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 {
     static const std::shared_ptr<const ContextAccess> res = []
     {
-        auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
+        auto full_access = std::make_shared<ContextAccess>();
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
+        full_access->access_with_implicit = full_access->access;
         return full_access;
     }();
     return res;
@@ -359,8 +468,19 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
 {
+    if (user_was_dropped)
+    {
+        /// If the current user has been dropped we always throw an exception (even if `throw_if_denied` is false)
+        /// because dropping of the current user is considered as a situation which is exceptional enough to stop
+        /// query execution.
+        throw Exception(ErrorCodes::UNKNOWN_USER, "{}: User has been dropped", getUserName());
+    }
+
+    if (is_full_access)
+        return true;
+
     auto access_granted = [&]
     {
         if (trace_log)
@@ -369,29 +489,35 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         return true;
     };
 
-    auto access_denied = [&](const String & error_msg, int error_code [[maybe_unused]])
+    auto access_denied = [&]<typename... FmtArgs>(int error_code [[maybe_unused]],
+                                               FormatStringHelper<String, FmtArgs...> fmt_string [[maybe_unused]],
+                                               FmtArgs && ...fmt_args [[maybe_unused]])
     {
         if (trace_log)
             LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
                       (grant_option ? " WITH GRANT OPTION" : ""));
         if constexpr (throw_if_denied)
-            throw Exception(getUserName() + ": " + error_msg, error_code);
+            throw Exception(error_code, std::move(fmt_string), getUserName(), std::forward<FmtArgs>(fmt_args)...);
         return false;
     };
 
-    if (!flags || is_full_access)
-        return access_granted();
+    if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
+        flags &= ~AccessType::CLUSTER;
 
-    if (!getUser())
-        return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
+    if (!flags)
+        return true;
 
-    /// Access to temporary tables is controlled in an unusual way, not like normal tables.
-    /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
-    /// and other grants are considered as always given.
-    /// The DatabaseCatalog class won't resolve StorageID for temporary tables
-    /// which shouldn't be accessed.
-    if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
-        return access_granted();
+    const auto parameter_type = flags.getParameterType();
+    if (parameter_type == AccessFlags::NONE)
+    {
+        /// Access to temporary tables is controlled in an unusual way, not like normal tables.
+        /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
+        /// and other grants are considered as always given.
+        /// The DatabaseCatalog class won't resolve StorageID for temporary tables
+        /// which shouldn't be accessed.
+        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
+            return access_granted();
+    }
 
     auto acs = getAccessRightsWithImplicit();
     bool granted;
@@ -404,18 +530,16 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
     {
         if (grant_option && acs->isGranted(flags, args...))
         {
-            return access_denied(
-                "Not enough privileges. "
+            return access_denied(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. "
                 "The required privileges have been granted, but without grant option. "
-                "To execute this query it's necessary to have grant "
-                    + AccessRightsElement{flags, args...}.toStringWithoutOptions() + " WITH GRANT OPTION",
-                ErrorCodes::ACCESS_DENIED);
+                "To execute this query it's necessary to have grant {} WITH GRANT OPTION",
+                AccessRightsElement{flags, args...}.toStringWithoutOptions());
         }
 
-        return access_denied(
-            "Not enough privileges. To execute this query it's necessary to have grant "
-                + AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
-            ErrorCodes::ACCESS_DENIED);
+        return access_denied(ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. To execute this query it's necessary to have grant {}",
+            AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
     }
 
     struct PrecalculatedFlags
@@ -427,10 +551,11 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
+        const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
@@ -441,32 +566,34 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
     if (params.readonly)
     {
         if constexpr (grant_option)
-            return access_denied("Cannot change grants in readonly mode.", ErrorCodes::READONLY);
+            return access_denied(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.");
         if ((flags & precalc.not_readonly_flags) ||
             ((params.readonly == 1) && (flags & precalc.not_readonly_1_flags)))
         {
             if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
             {
-                return access_denied(
-                    "Cannot execute query in readonly mode. "
-                    "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries",
-                    ErrorCodes::READONLY);
+                return access_denied(ErrorCodes::READONLY,
+                    "{}: Cannot execute query in readonly mode. "
+                    "For queries over HTTP, method GET implies readonly. "
+                    "You should use method POST for modifying queries");
             }
             else
-                return access_denied("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+                return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
         }
     }
 
     if (!params.allow_ddl && !grant_option)
     {
         if (flags & precalc.ddl_flags)
-            return access_denied("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+            return access_denied(ErrorCodes::QUERY_IS_PROHIBITED,
+                                 "Cannot execute query. DDL queries are prohibited for the user {}");
     }
 
     if (!params.allow_introspection && !grant_option)
     {
         if (flags & precalc.introspection_flags)
-            return access_denied("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+            return access_denied(ErrorCodes::FUNCTION_NOT_ALLOWED, "{}: Introspection functions are disabled, "
+                                 "because setting 'allow_introspection_functions' is set to 0");
     }
 
     return access_granted();
@@ -479,7 +606,7 @@ bool ContextAccess::checkAccessImpl(const AccessFlags & flags) const
 }
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImpl(const AccessFlags & flags, const std::string_view & database, const Args &... args) const
+bool ContextAccess::checkAccessImpl(const AccessFlags & flags, std::string_view database, const Args &... args) const
 {
     return checkAccessImplHelper<throw_if_denied, grant_option>(flags, database.empty() ? params.current_database : database, args...);
 }
@@ -488,7 +615,14 @@ template <bool throw_if_denied, bool grant_option>
 bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
+        else
+            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.parameter);
+    }
+    else if (element.any_database)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
     else if (element.any_table)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);
@@ -524,38 +658,38 @@ bool ContextAccess::checkAccessImpl(const AccessRightsElements & elements) const
 }
 
 bool ContextAccess::isGranted(const AccessFlags & flags) const { return checkAccessImpl<false, false>(flags); }
-bool ContextAccess::isGranted(const AccessFlags & flags, const std::string_view & database) const { return checkAccessImpl<false, false>(flags, database); }
-bool ContextAccess::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl<false, false>(flags, database, table); }
-bool ContextAccess::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl<false, false>(flags, database, table, column); }
-bool ContextAccess::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl<false, false>(flags, database, table, columns); }
-bool ContextAccess::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl<false, false>(flags, database, table, columns); }
+bool ContextAccess::isGranted(const AccessFlags & flags, std::string_view database) const { return checkAccessImpl<false, false>(flags, database); }
+bool ContextAccess::isGranted(const AccessFlags & flags, std::string_view database, std::string_view table) const { return checkAccessImpl<false, false>(flags, database, table); }
+bool ContextAccess::isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { return checkAccessImpl<false, false>(flags, database, table, column); }
+bool ContextAccess::isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { return checkAccessImpl<false, false>(flags, database, table, columns); }
+bool ContextAccess::isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return checkAccessImpl<false, false>(flags, database, table, columns); }
 bool ContextAccess::isGranted(const AccessRightsElement & element) const { return checkAccessImpl<false, false>(element); }
 bool ContextAccess::isGranted(const AccessRightsElements & elements) const { return checkAccessImpl<false, false>(elements); }
 
 bool ContextAccess::hasGrantOption(const AccessFlags & flags) const { return checkAccessImpl<false, true>(flags); }
-bool ContextAccess::hasGrantOption(const AccessFlags & flags, const std::string_view & database) const { return checkAccessImpl<false, true>(flags, database); }
-bool ContextAccess::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl<false, true>(flags, database, table); }
-bool ContextAccess::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl<false, true>(flags, database, table, column); }
-bool ContextAccess::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl<false, true>(flags, database, table, columns); }
-bool ContextAccess::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl<false, true>(flags, database, table, columns); }
+bool ContextAccess::hasGrantOption(const AccessFlags & flags, std::string_view database) const { return checkAccessImpl<false, true>(flags, database); }
+bool ContextAccess::hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table) const { return checkAccessImpl<false, true>(flags, database, table); }
+bool ContextAccess::hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { return checkAccessImpl<false, true>(flags, database, table, column); }
+bool ContextAccess::hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { return checkAccessImpl<false, true>(flags, database, table, columns); }
+bool ContextAccess::hasGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return checkAccessImpl<false, true>(flags, database, table, columns); }
 bool ContextAccess::hasGrantOption(const AccessRightsElement & element) const { return checkAccessImpl<false, true>(element); }
 bool ContextAccess::hasGrantOption(const AccessRightsElements & elements) const { return checkAccessImpl<false, true>(elements); }
 
 void ContextAccess::checkAccess(const AccessFlags & flags) const { checkAccessImpl<true, false>(flags); }
-void ContextAccess::checkAccess(const AccessFlags & flags, const std::string_view & database) const { checkAccessImpl<true, false>(flags, database); }
-void ContextAccess::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { checkAccessImpl<true, false>(flags, database, table); }
-void ContextAccess::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { checkAccessImpl<true, false>(flags, database, table, column); }
-void ContextAccess::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { checkAccessImpl<true, false>(flags, database, table, columns); }
-void ContextAccess::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { checkAccessImpl<true, false>(flags, database, table, columns); }
+void ContextAccess::checkAccess(const AccessFlags & flags, std::string_view database) const { checkAccessImpl<true, false>(flags, database); }
+void ContextAccess::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { checkAccessImpl<true, false>(flags, database, table); }
+void ContextAccess::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { checkAccessImpl<true, false>(flags, database, table, column); }
+void ContextAccess::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { checkAccessImpl<true, false>(flags, database, table, columns); }
+void ContextAccess::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { checkAccessImpl<true, false>(flags, database, table, columns); }
 void ContextAccess::checkAccess(const AccessRightsElement & element) const { checkAccessImpl<true, false>(element); }
 void ContextAccess::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl<true, false>(elements); }
 
 void ContextAccess::checkGrantOption(const AccessFlags & flags) const { checkAccessImpl<true, true>(flags); }
-void ContextAccess::checkGrantOption(const AccessFlags & flags, const std::string_view & database) const { checkAccessImpl<true, true>(flags, database); }
-void ContextAccess::checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { checkAccessImpl<true, true>(flags, database, table); }
-void ContextAccess::checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { checkAccessImpl<true, true>(flags, database, table, column); }
-void ContextAccess::checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { checkAccessImpl<true, true>(flags, database, table, columns); }
-void ContextAccess::checkGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { checkAccessImpl<true, true>(flags, database, table, columns); }
+void ContextAccess::checkGrantOption(const AccessFlags & flags, std::string_view database) const { checkAccessImpl<true, true>(flags, database); }
+void ContextAccess::checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table) const { checkAccessImpl<true, true>(flags, database, table); }
+void ContextAccess::checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { checkAccessImpl<true, true>(flags, database, table, column); }
+void ContextAccess::checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { checkAccessImpl<true, true>(flags, database, table, columns); }
+void ContextAccess::checkGrantOption(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { checkAccessImpl<true, true>(flags, database, table, columns); }
 void ContextAccess::checkGrantOption(const AccessRightsElement & element) const { checkAccessImpl<true, true>(element); }
 void ContextAccess::checkGrantOption(const AccessRightsElements & elements) const { checkAccessImpl<true, true>(elements); }
 
@@ -563,21 +697,26 @@ void ContextAccess::checkGrantOption(const AccessRightsElements & elements) cons
 template <bool throw_if_denied, typename Container, typename GetNameFunction>
 bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const
 {
-    if (!std::size(role_ids) || is_full_access)
-        return true;
-
-    auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
+    auto show_error = []<typename... FmtArgs>(int error_code [[maybe_unused]],
+                                                  FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
+                                                  FmtArgs && ...fmt_args [[maybe_unused]])
     {
-        UNUSED(this);
         if constexpr (throw_if_denied)
-            throw Exception(getUserName() + ": " + msg, error_code);
+            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+        return false;
     };
 
-    if (!getUser())
+    if (is_full_access)
+        return true;
+
+    if (user_was_dropped)
     {
-        show_error("User has been dropped", ErrorCodes::UNKNOWN_USER);
+        show_error(ErrorCodes::UNKNOWN_USER, "User has been dropped");
         return false;
     }
+
+    if (!std::size(role_ids))
+        return true;
 
     if (isGranted(AccessType::ROLE_ADMIN))
         return true;
@@ -597,14 +736,15 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
                 role_name = "ID {" + toString(role_id) + "}";
 
             if (info->enabled_roles.count(role_id))
-                show_error("Not enough privileges. "
-                           "Role " + backQuote(*role_name) + " is granted, but without ADMIN option. "
-                           "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option.",
-                           ErrorCodes::ACCESS_DENIED);
+                show_error(ErrorCodes::ACCESS_DENIED,
+                           "Not enough privileges. "
+                           "Role {} is granted, but without ADMIN option. "
+                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           backQuote(*role_name), backQuoteIfNeed(*role_name));
             else
-                show_error("Not enough privileges. "
-                           "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option.",
-                           ErrorCodes::ACCESS_DENIED);
+                show_error(ErrorCodes::ACCESS_DENIED, "Not enough privileges. "
+                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           backQuoteIfNeed(*role_name));
         }
 
         return false;
@@ -662,5 +802,35 @@ void ContextAccess::checkAdminOption(const UUID & role_id, const std::unordered_
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids) const { checkAdminOptionImpl<true>(role_ids); }
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const { checkAdminOptionImpl<true>(role_ids, names_of_roles); }
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const { checkAdminOptionImpl<true>(role_ids, names_of_roles); }
+
+
+void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const
+{
+    if (is_full_access)
+        return;
+
+    auto current_user = getUser();
+    if (!current_user->grantees.match(grantee_id))
+        throw Exception(ErrorCodes::ACCESS_DENIED, "{} is not allowed as grantee", grantee.formatTypeWithName());
+}
+
+void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const
+{
+    if (is_full_access)
+        return;
+
+    auto current_user = getUser();
+    if (current_user->grantees == RolesOrUsersSet::AllTag{})
+        return;
+
+    for (const auto & id : grantee_ids)
+    {
+        auto entity = access_control->tryRead(id);
+        if (auto role_entity = typeid_cast<RolePtr>(entity))
+            checkGranteeIsAllowed(id, *role_entity);
+        else if (auto user_entity = typeid_cast<UserPtr>(entity))
+            checkGranteeIsAllowed(id, *user_entity);
+    }
+}
 
 }

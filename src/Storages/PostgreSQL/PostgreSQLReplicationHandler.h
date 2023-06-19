@@ -18,6 +18,8 @@ class PostgreSQLReplicationHandler : WithContext
 friend class TemporaryReplicationSlot;
 
 public:
+    using ConsumerPtr = std::shared_ptr<MaterializedPostgreSQLConsumer>;
+
     PostgreSQLReplicationHandler(
             const String & replication_identifier,
             const String & postgres_database_,
@@ -87,15 +89,17 @@ private:
 
     void consumerFunc();
 
-    StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
+    ConsumerPtr getConsumer();
 
-    void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
+    StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
     String doubleQuoteWithSchema(const String & table_name) const;
 
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
+
+    void assertInitialized() const;
 
     Poco::Logger * log;
 
@@ -111,10 +115,6 @@ private:
 
     /// max_block_size for replication stream.
     const size_t max_block_size;
-
-    /// Table structure changes are always tracked. By default, table with changed schema will get into a skip list.
-    /// This setting allows to reloas table in the background.
-    bool allow_automatic_update = false;
 
     /// To distinguish whether current replication handler belongs to a MaterializedPostgreSQL database engine or single storage.
     bool is_materialized_postgresql_database;
@@ -134,7 +134,7 @@ private:
     String replication_slot, publication_name;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
-    std::shared_ptr<MaterializedPostgreSQLConsumer> consumer;
+    ConsumerPtr consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task;
     BackgroundSchedulePool::TaskHolder consumer_task;
@@ -146,6 +146,8 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
+
+    bool replication_handler_initialized = false;
 };
 
 }

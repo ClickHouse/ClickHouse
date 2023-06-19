@@ -6,6 +6,7 @@ namespace DB
 {
 
 class Context;
+class ASTSetQuery;
 
 /* executable(script_name_optional_arguments, format, structure, input_query) - creates a temporary storage from executable file
  *
@@ -17,14 +18,20 @@ class TableFunctionExecutable : public ITableFunction
 {
 public:
     static constexpr auto name = "executable";
+
     std::string getName() const override { return name; }
+
     bool hasStaticStructure() const override { return true; }
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+
     const char * getStorageTypeName() const override { return "Executable"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String script_name;
@@ -32,5 +39,6 @@ private:
     String format;
     String structure;
     std::vector<ASTPtr> input_queries;
+    ASTPtr settings_query = nullptr;
 };
 }

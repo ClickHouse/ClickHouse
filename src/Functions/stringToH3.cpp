@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -44,9 +44,8 @@ public:
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isStringOrFixedString())
-            throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be String or FixedString",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
+                "Must be String or FixedString", arg->getName(), std::to_string(1), getName());
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -68,7 +67,7 @@ public:
         else if (const ColumnConst * h3index_const_fixed = checkAndGetColumnConst<ColumnFixedString>(col_hindex))
             execute<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*h3index_const_fixed), dst_data);
         else
-            throw Exception("Illegal column as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column as argument of function {}", getName());
 
         return dst;
     }
@@ -84,12 +83,12 @@ private:
             auto h3index = h3index_source.getWhole();
 
             // convert to std::string and get the c_str to have the delimiting \0 at the end.
-            auto h3index_str = StringRef(h3index.data, h3index.size).toString();
+            auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
             res_data[row_num] = stringToH3(h3index_str.c_str());
 
             if (res_data[row_num] == 0)
             {
-                throw Exception("Invalid H3 index: " + h3index_str, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {}", h3index_str);
             }
 
             h3index_source.next();
@@ -100,7 +99,7 @@ private:
 
 }
 
-void registerFunctionStringToH3(FunctionFactory & factory)
+REGISTER_FUNCTION(StringToH3)
 {
     factory.registerFunction<FunctionStringToH3>();
 }

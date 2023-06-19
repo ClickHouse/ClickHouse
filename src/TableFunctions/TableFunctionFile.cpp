@@ -1,5 +1,5 @@
 #include <TableFunctions/TableFunctionFile.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
@@ -17,11 +17,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
-void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, ContextPtr context)
+void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
 {
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
@@ -29,36 +28,27 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, ContextPtr conte
         return;
     }
 
-    if (auto opt_name = tryGetIdentifierName(arg))
+    const auto * literal = arg->as<ASTLiteral>();
+    auto type = literal->value.getType();
+    if (type == Field::Types::String)
     {
-        if (*opt_name == "stdin")
+        filename = literal->value.safeGet<String>();
+        if (filename == "stdin" || filename == "-")
             fd = STDIN_FILENO;
-        else if (*opt_name == "stdout")
+        else if (filename == "stdout")
             fd = STDOUT_FILENO;
-        else if (*opt_name == "stderr")
+        else if (filename == "stderr")
             fd = STDERR_FILENO;
-        else
-            filename = *opt_name;
     }
-    else if (const auto * literal = arg->as<ASTLiteral>())
+    else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
-        auto type = literal->value.getType();
-        if (type == Field::Types::Int64 || type == Field::Types::UInt64)
-        {
-            fd = (type == Field::Types::Int64) ? static_cast<int>(literal->value.get<Int64>()) : static_cast<int>(literal->value.get<UInt64>());
-            if (fd < 0)
-                throw Exception("File descriptor must be non-negative", ErrorCodes::BAD_ARGUMENTS);
-        }
-        else if (type == Field::Types::String)
-        {
-            filename = literal->value.get<String>();
-            if (filename == "-")
-                fd = STDIN_FILENO;
-        }
-        else
-            throw Exception(
-                "The first argument of table function '" + getName() + "' mush be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
+        fd = static_cast<int>(
+            (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>());
+        if (fd < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
 }
 
 String TableFunctionFile::getFormatFromFirstArgument()
@@ -85,11 +75,12 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         columns,
         ConstraintsDescription{},
         String{},
+        global_context->getSettingsRef().rename_files_after_processing,
     };
     if (fd >= 0)
-        return StorageFile::create(fd, args);
+        return std::make_shared<StorageFile>(fd, args);
 
-    return StorageFile::create(source, global_context->getUserFilesPath(), args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context) const
@@ -97,8 +88,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     if (structure == "auto")
     {
         if (fd >= 0)
-            throw Exception(
-                "Schema inference is not supported for table function '" + getName() + "' with file descriptor", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
         size_t total_bytes_to_read = 0;
         Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);

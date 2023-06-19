@@ -1,3 +1,4 @@
+#include <memory>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
@@ -50,7 +51,7 @@ bool isValidFunction(const ASTPtr & expression, const std::function<bool(const A
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, std::vector<ASTPtr> & result)
+bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTs & result)
 {
     const auto * function = expression->as<ASTFunction>();
     if (function && (function->name == "and" || function->name == "indexHint"))
@@ -131,7 +132,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
     if (block.rows() == 0)
-        throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot prepare filter with empty block");
 
     /// Take the first row of the input block to build a constant block
     auto columns = block.getColumns();
@@ -143,6 +144,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         else
             const_columns[i] = ColumnConst::create(columns[i]->cloneResized(1), 1);
     }
+
     block.setColumns(const_columns);
 
     bool unmodified = true;
@@ -154,10 +156,15 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
     {
         auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
-        PreparedSets prepared_sets;
-        SubqueriesForSets subqueries_for_sets;
+        PreparedSetsPtr prepared_sets = std::make_shared<PreparedSets>();
+        const NamesAndTypesList source_columns;
+        const NamesAndTypesList aggregation_keys;
+        const ColumnNumbersList grouping_set_keys;
+
         ActionsVisitor::Data visitor_data(
-            context, SizeLimits{}, 1, {}, std::move(actions), prepared_sets, subqueries_for_sets, true, true, true, false);
+            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
+            { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
+
         ActionsVisitor(visitor_data).visit(node);
         actions = visitor_data.getActions();
         auto expression_actions = std::make_shared<ExpressionActions>(actions);
@@ -168,7 +175,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
-    std::vector<ASTPtr> functions;
+    ASTs functions;
     if (select.where())
         unmodified &= extractFunctions(select.where(), is_constant, functions);
     if (select.prewhere())

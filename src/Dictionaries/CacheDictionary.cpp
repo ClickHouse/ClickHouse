@@ -504,7 +504,7 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;
@@ -685,9 +685,11 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     {
         /// Won't request source for keys
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
-            "Query contains keys that are not present in cache or expired. Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
-            getDictionaryID().getNameForLogs(),
-            to_string(backoff_end_time.load()));
+                            "Query contains keys that are not present in cache or expired. "
+                            "Could not update cache dictionary {} now, because nearest update is scheduled at {}. "
+                            "Try again later.",
+                            getDictionaryID().getNameForLogs(),
+                            to_string(backoff_end_time.load()));
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
@@ -13,6 +14,8 @@
 #include <IO/Operators.h>
 
 #include <unistd.h>
+#include <bit>
+
 
 namespace DB
 {
@@ -33,7 +36,7 @@ int32_t IFourLetterCommand::code()
 
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = __builtin_bswap32(code);
+    int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
@@ -41,7 +44,7 @@ int32_t IFourLetterCommand::toCode(const String & name)
 {
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return __builtin_bswap32(res);
+    return std::byteswap(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -55,7 +58,7 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
 void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
-        throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
 bool FourLetterCommandFactory::isKnown(int32_t code)
@@ -73,7 +76,7 @@ FourLetterCommandPtr FourLetterCommandFactory::get(int32_t code)
 void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
-        throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command {} already registered", command->name());
 
     commands.emplace(command->code(), std::move(command));
 }
@@ -131,6 +134,24 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr recovery_command = std::make_shared<RecoveryCommand>(keeper_dispatcher);
         factory.registerCommand(recovery_command);
+
+        FourLetterCommandPtr api_version_command = std::make_shared<ApiVersionCommand>(keeper_dispatcher);
+        factory.registerCommand(api_version_command);
+
+        FourLetterCommandPtr create_snapshot_command = std::make_shared<CreateSnapshotCommand>(keeper_dispatcher);
+        factory.registerCommand(create_snapshot_command);
+
+        FourLetterCommandPtr log_info_command = std::make_shared<LogInfoCommand>(keeper_dispatcher);
+        factory.registerCommand(log_info_command);
+
+        FourLetterCommandPtr request_leader_command = std::make_shared<RequestLeaderCommand>(keeper_dispatcher);
+        factory.registerCommand(request_leader_command);
+
+        FourLetterCommandPtr recalculate_command = std::make_shared<RecalculateCommand>(keeper_dispatcher);
+        factory.registerCommand(recalculate_command);
+
+        FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
+        factory.registerCommand(clean_resources_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -236,7 +257,7 @@ String MonitorCommand::run()
     print(ret, "key_arena_size", state_machine.getKeyArenaSize());
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
     print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif
@@ -460,6 +481,57 @@ String IsReadOnlyCommand::run()
 String RecoveryCommand::run()
 {
     keeper_dispatcher.forceRecovery();
+    return "ok";
+}
+
+String ApiVersionCommand::run()
+{
+    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+}
+
+String CreateSnapshotCommand::run()
+{
+    auto log_index = keeper_dispatcher.createSnapshot();
+    return log_index > 0 ? std::to_string(log_index) : "Failed to schedule snapshot creation task.";
+}
+
+String LogInfoCommand::run()
+{
+    KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
+    StringBuffer ret;
+
+    auto append = [&ret] (String key, uint64_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+    append("first_log_idx", log_info.first_log_idx);
+    append("first_log_term", log_info.first_log_idx);
+    append("last_log_idx", log_info.last_log_idx);
+    append("last_log_term", log_info.last_log_term);
+    append("last_committed_log_idx", log_info.last_committed_log_idx);
+    append("leader_committed_log_idx", log_info.leader_committed_log_idx);
+    append("target_committed_log_idx", log_info.target_committed_log_idx);
+    append("last_snapshot_idx", log_info.last_snapshot_idx);
+    return ret.str();
+}
+
+String RequestLeaderCommand::run()
+{
+    return keeper_dispatcher.requestLeader() ? "Sent leadership request to leader." : "Failed to send leadership request to leader.";
+}
+
+String RecalculateCommand::run()
+{
+    keeper_dispatcher.recalculateStorageStats();
+    return "ok";
+}
+
+String CleanResourcesCommand::run()
+{
+    keeper_dispatcher.cleanResources();
     return "ok";
 }
 

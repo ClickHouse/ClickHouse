@@ -5,6 +5,12 @@ if (NOT ENABLE_CASSANDRA)
     return()
 endif()
 
+# can be removed once libuv build on MacOS with GCC is possible
+if (NOT TARGET ch_contrib::uv)
+    message(STATUS "Not using cassandra because libuv is disabled")
+    return()
+endif()
+
 if (APPLE)
     set(CMAKE_MACOSX_RPATH ON)
 endif()
@@ -12,7 +18,7 @@ endif()
 # Need to use C++17 since the compilation is not possible with C++20 currently.
 set (CMAKE_CXX_STANDARD 17)
 
-set(CASS_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/cassandra)
+set(CASS_ROOT_DIR ${PROJECT_SOURCE_DIR}/contrib/cassandra)
 set(CASS_SRC_DIR "${CASS_ROOT_DIR}/src")
 set(CASS_INCLUDE_DIR "${CASS_ROOT_DIR}/include")
 

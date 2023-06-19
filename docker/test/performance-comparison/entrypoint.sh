@@ -5,11 +5,8 @@ CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
 export CHPC_CHECK_START_TIMESTAMP
 
 S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
-
-COMMON_BUILD_PREFIX="/clickhouse_build_check"
-if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
-    COMMON_BUILD_PREFIX=""
-fi
+BUILD_NAME=${BUILD_NAME:-package_release}
+export S3_URL BUILD_NAME
 
 # Sometimes AWS responde with DNS error and it's impossible to retry it with
 # current curl version options.
@@ -64,7 +61,11 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz")
+        declare -a urls_to_try=(
+            "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
+        )
         for path in "${urls_to_try[@]}"
         do
             if curl_with_retry "$path"
@@ -88,13 +89,18 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
-then
-    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
-fi
+# A temporary solution for migrating into PRs directory
+for prefix in "$S3_URL/PRs" "$S3_URL";
+do
+    if curl_with_retry "$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
+    then
+        right_path="$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
+        break
+    fi
+done
 
 mkdir right
-wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
+wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
@@ -155,7 +161,7 @@ ulimit -c unlimited
 cat /proc/sys/kernel/core_pattern
 
 # Start the main comparison script.
-{ \
+{
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
 } 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
@@ -178,4 +184,6 @@ ls -lath
     report analyze benchmark metrics \
     ./*.core.dmp ./*.core
 
-cp compare.log /output
+# If the files aren't same, copy it
+cmp --silent compare.log /output/compare.log || \
+  cp compare.log /output
