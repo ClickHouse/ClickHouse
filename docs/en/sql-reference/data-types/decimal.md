@@ -60,7 +60,7 @@ Some functions on Decimal return result as Float64 (for example, var or stddev).
 During calculations on Decimal, integer overflows might happen. Excessive digits in a fraction are discarded (not rounded). Excessive digits in integer part will lead to an exception.
 
 :::warning
-Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is always silently returned.
+Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is returned, no exception is thrown.
 :::
 
 ``` sql
