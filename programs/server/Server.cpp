@@ -1822,9 +1822,21 @@ try
             else
                 LOG_INFO(log, "Closed all listening sockets.");
 
-            /// Killing remaining queries.
+            /// Killing all remaining queries.
             if (!server_settings.shutdown_wait_unfinished_queries)
+            {
                 global_context->getProcessList().killAllQueries();
+            }
+            /// Killing only selected queries.
+            else
+            {
+                if (!server_settings.shutdown_wait_unfinished_query_kind.value.empty())
+                    for (auto & query : global_context->getProcessList().processes)
+                    {
+                        if (query->getInfo().query_kind != server_settings.shutdown_wait_unfinished_query_type)
+                            query->cancelQuery(true)
+                    }
+            }
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
