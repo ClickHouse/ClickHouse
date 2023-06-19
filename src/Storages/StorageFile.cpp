@@ -102,8 +102,8 @@ void listFilesWithRegexpMatchingImpl(
 
 /*
  * When `{...}` has any `/`s, it must be processed in a different way:
- * Basically, a path with globs is processed by listFilesWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
- * listFilesWithFoldedRegexpMatching is in charge from now on.
+ * Basically, a path with globs is processed by listFilesWithRegexpMatchingImpl. In case it detects multi-dir glob {.../..., .../...},
+ * listFilesWithFoldedRegexpMatchingImpl is in charge from now on.
  * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
  * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
  * StorageHDFS.cpp has the same logic.
@@ -111,7 +111,6 @@ void listFilesWithRegexpMatchingImpl(
 void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
                                            const std::string & processed_suffix,
                                            const std::string & suffix_with_globs,
-                                           const std::string & current_glob,
                                            re2::RE2 & matcher,
                                            size_t & total_bytes_to_read,
                                            const size_t max_depth,
@@ -145,8 +144,8 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
         else if (it->is_directory())
         {
             listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path), processed_suffix + dir_or_file_name,
-                                                  suffix_with_globs, current_glob, matcher,
-                                                  total_bytes_to_read, max_depth - 1, next_slash_after_glob_pos, result);
+                                                  suffix_with_globs, matcher, total_bytes_to_read,
+                                                  max_depth - 1, next_slash_after_glob_pos, result);
         }
 
     }
@@ -217,7 +216,7 @@ void listFilesWithRegexpMatchingImpl(
     if (slashes_in_glob)
     {
         listFilesWithFoldedRegexpMatchingImpl(fs::path(prefix_without_globs), "", suffix_with_globs,
-                                              current_glob, matcher, total_bytes_to_read, slashes_in_glob,
+                                              matcher, total_bytes_to_read, slashes_in_glob,
                                               next_slash_after_glob_pos, result);
         return;
     }
