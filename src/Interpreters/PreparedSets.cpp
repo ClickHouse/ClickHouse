@@ -30,9 +30,7 @@ class FutureSetFromTuple final : public FutureSet
 public:
     FutureSetFromTuple(Block block, const Settings & settings);
 
-    bool isReady() const override { return true; }
     SetPtr get() const override { return set; }
-
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     DataTypes getTypes() const override { return set->getElementsTypes(); }
@@ -44,7 +42,6 @@ private:
 
 
 FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
-bool FutureSetFromStorage::isReady() const { return set != nullptr; }
 SetPtr FutureSetFromStorage::get() const { return set; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
@@ -297,7 +294,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     return subquery.set;
 }
 
-bool FutureSetFromSubquery::isReady() const { return subquery.set != nullptr && subquery.set->isCreated(); }
+SetPtr FutureSetFromSubquery::get() const
+{
+    if (subquery.set != nullptr && subquery.set->isCreated())
+        return subquery.set;
+
+    return nullptr;
+}
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & context)
 {

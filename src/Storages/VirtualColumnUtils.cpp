@@ -222,7 +222,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
             if (column_set)
             {
                 auto future_set = column_set->getData();
-                if (!future_set->isReady())
+                if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
                     {
