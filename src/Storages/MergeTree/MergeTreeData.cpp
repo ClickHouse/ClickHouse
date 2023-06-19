@@ -4365,14 +4365,14 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
 
-    /// check if have too many parts in total
-    if (parts_count_in_total >= settings->max_parts_in_total)
+    /// Check if we have too many parts in total
+    if (allow_throw && parts_count_in_total >= settings->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
@@ -4388,7 +4388,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
             outdated_parts_count_in_partition = getMaxOutdatedPartsCountForPartition();
 
-        if (settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        if (allow_throw && settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -4412,7 +4412,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         bool parts_are_large_enough_in_average
             = settings->max_avg_part_size_for_too_many_parts && average_part_size > settings->max_avg_part_size_for_too_many_parts;
 
-        if (parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
+        if (allow_throw && parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -4450,18 +4450,17 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
                 allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
         }
 
-        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold) [[unlikely]]
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Incorrect calculation of {} parts over threshold: allowed_parts_over_threshold={}, parts_over_threshold={}",
-                (use_active_parts_threshold ? "active" : "inactive"),
-                allowed_parts_over_threshold,
-                parts_over_threshold);
-
         const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
-        double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
-        const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
-        delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold)
+        {
+            delay_milliseconds = max_delay_milliseconds;
+        }
+        else
+        {
+            double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+            const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
+            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
