@@ -479,8 +479,8 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 RIGHT JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -555,8 +555,8 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 FULL JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -783,8 +783,8 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 RIGHT JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -868,8 +868,8 @@ FULL JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	0		0	
 2	Join_1_Value_2	0		0	
-0		0		4	Join_3_Value_4
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -1014,8 +1014,8 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 LEFT JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		3	Join_2_Value_3	0	
 0		1	Join_2_Value_1	0	
+0		3	Join_2_Value_3	0	
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -1090,8 +1090,8 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 RIGHT JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -1170,10 +1170,10 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 FULL JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		3	Join_2_Value_3	0	
 0		1	Join_2_Value_1	0	
-0		0		4	Join_3_Value_4
+0		3	Join_2_Value_3	0	
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -1331,8 +1331,8 @@ LEFT JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	0		0	
 2	Join_1_Value_2	0		0	
-0		3	Join_2_Value_3	0	
 0		1	Join_2_Value_1	0	
+0		3	Join_2_Value_3	0	
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -1416,8 +1416,8 @@ SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
 RIGHT JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
@@ -1505,10 +1505,10 @@ FULL JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	0		0	
 2	Join_1_Value_2	0		0	
-0		3	Join_2_Value_3	0	
 0		1	Join_2_Value_1	0	
-0		0		4	Join_3_Value_4
+0		3	Join_2_Value_3	0	
 0		0		1	Join_3_Value_1
+0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
