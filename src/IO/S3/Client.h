@@ -105,6 +105,8 @@ private:
 class Client : private Aws::S3::S3Client
 {
 public:
+    class RetryStrategy;
+
     /// we use a factory method to verify arguments before creating a client because
     /// there are certain requirements on arguments for it to work correctly
     /// e.g. Client::RetryStrategy should be used
@@ -112,11 +114,19 @@ public:
             size_t max_redirects_,
             ServerSideEncryptionKMSConfig sse_kms_config_,
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-            const Aws::Client::ClientConfiguration & client_configuration,
+            const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
             bool use_virtual_addressing);
 
-    static std::unique_ptr<Client> create(const Client & other);
+    /// Create a client with adjusted settings:
+    ///  * override_retry_strategy can be used to disable retries to avoid nested retries when we have
+    ///    a retry loop outside of S3 client. Specifically, for read and write buffers. Currently not
+    ///    actually used.
+    ///  * override_request_timeout_ms is used to increase timeout for CompleteMultipartUploadRequest
+    ///    because it often sits idle for 10 seconds: https://github.com/ClickHouse/ClickHouse/pull/42321
+    std::unique_ptr<Client> clone(
+        std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy = std::nullopt,
+        std::optional<Int64> override_request_timeout_ms = std::nullopt) const;
 
     Client & operator=(const Client &) = delete;
 
@@ -211,11 +221,12 @@ private:
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
-           const Aws::Client::ClientConfiguration& client_configuration,
+           const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
            bool use_virtual_addressing);
 
-    Client(const Client & other);
+    Client(
+        const Client & other, const PocoHTTPClientConfiguration & client_configuration);
 
     /// Leave regular functions private so we don't accidentally use them
     /// otherwise region and endpoint redirection won't work
@@ -251,6 +262,9 @@ private:
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
+    PocoHTTPClientConfiguration client_configuration;
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
+    bool use_virtual_addressing;
 
     std::string explicit_region;
     mutable bool detect_region = true;

@@ -274,6 +274,7 @@ public:
         HTTPHeaderEntries headers_from_ast;
 
         std::shared_ptr<const S3::Client> client;
+        std::shared_ptr<const S3::Client> client_with_long_timeout;
         std::vector<String> keys;
     };
 

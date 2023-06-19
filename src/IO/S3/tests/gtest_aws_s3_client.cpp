@@ -90,6 +90,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
     request_settings.max_unexpected_write_error_retries = max_unexpected_write_error_retries;
     DB::WriteBufferFromS3 write_buffer(
         client,
+        client,
         uri.bucket,
         uri.key,
         DBMS_DEFAULT_BUFFER_SIZE,
