@@ -82,7 +82,8 @@ QueryLogElement logQueryStart(
     const std::unique_ptr<IInterpreter> & interpreter,
     bool internal,
     const String & query_database,
-    const String & query_table);
+    const String & query_table,
+    bool async_insert = false);
 
 void logQueryFinish(
     QueryLogElement & elem,
@@ -99,12 +100,14 @@ void logQueryException(
     const Stopwatch & start_watch,
     const ASTPtr & query_ast,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    bool internal);
+    bool internal,
+    bool log_error);
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_millliseconds);
+    UInt64 elapsed_millliseconds,
+    bool async_insert = false);
 }

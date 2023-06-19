@@ -275,7 +275,8 @@ QueryLogElement logQueryStart(
     const std::unique_ptr<IInterpreter> & interpreter,
     bool internal,
     const String & query_database,
-    const String & query_table)
+    const String & query_table,
+    bool async_insert)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -292,7 +293,7 @@ QueryLogElement logQueryStart(
     if (settings.log_formatted_queries)
         elem.formatted_query = queryToString(query_ast);
     elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
-    elem.query_kind = query_ast->getQueryKind();
+    elem.query_kind = async_insert ? IAST::QueryKind::AsyncInsertFlush : query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
 
@@ -316,7 +317,7 @@ QueryLogElement logQueryStart(
             elem.query_views = info.views;
         }
 
-        if (settings.async_insert)
+        if (settings.async_insert || async_insert)
             InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
@@ -536,7 +537,8 @@ void logExceptionBeforeStart(
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_millliseconds)
+    UInt64 elapsed_millliseconds,
+    bool async_insert)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -569,6 +571,9 @@ void logExceptionBeforeStart(
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
+
+    if (async_insert)
+        elem.query_kind = IAST::QueryKind::AsyncInsertFlush;
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
