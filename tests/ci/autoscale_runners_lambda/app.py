@@ -59,12 +59,14 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     scale_down = 2
     scale_up = 5
     if runner_type == "style-checker":
-        # the style checkers have so many noise, so it scales up too quickly
+        # The ASG should deflate almost instantly
         scale_down = 1
+        # the style checkers have so many noise, so it scales up too quickly
         # The 5 was too quick, there are complainings regarding too slow with
         # 10. I am trying 7 now.
+        # 7 still looks a bit slow, so I try 6
         # UPDATE THE COMMENT ON CHANGES
-        scale_up = 7
+        scale_up = 6
     elif runner_type == "limited-tester":
         # The limited runners should inflate and deflate faster
         scale_down = 1
