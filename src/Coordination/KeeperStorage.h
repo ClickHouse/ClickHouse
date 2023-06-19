@@ -281,11 +281,9 @@ public:
 
         struct Hash
         {
-            auto operator()(const std::string_view view) const
+            uint64_t operator()(const std::string_view view) const
             {
-                SipHash hash;
-                hash.update(view);
-                return hash.get64();
+                return StringRefHash()(StringRef{view});
             }
 
             using is_transparent = void; // required to make find() work with different type than key_type
@@ -362,6 +360,7 @@ public:
     {
         int64_t zxid;
         Digest nodes_digest;
+        KeeperStorageRequestProcessorPtr request_processor{nullptr};
     };
 
     std::deque<TransactionInfo> uncommitted_transactions;

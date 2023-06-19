@@ -1491,7 +1491,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
         Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
 
-        auto node = storage.uncommitted_state.getNode(request.path);
+        auto node = storage.uncommitted_state.getNode(StringRef{request.path_view});
         if (check_not_exists)
         {
             if (node && (request.version == -1 || request.version == node->stat.version))
@@ -2134,8 +2134,6 @@ void KeeperStorage::preprocessRequest(
         uncommitted_state.addDeltas(std::move(new_deltas));
     });
 
-    KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
-
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
         auto session_ephemerals = ephemerals.find(session_id);
@@ -2167,13 +2165,15 @@ void KeeperStorage::preprocessRequest(
         return;
     }
 
-    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
+    transaction.request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
+
+    if (check_acl && !transaction.request_processor->checkAuth(*this, session_id, false))
     {
         uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
         return;
     }
 
-    new_deltas = request_processor->preprocess(*this, transaction.zxid, session_id, time, new_digest, *keeper_context);
+    new_deltas = transaction.request_processor->preprocess(*this, transaction.zxid, session_id, time, new_digest, *keeper_context);
 }
 
 KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
@@ -2186,6 +2186,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
+    KeeperStorageRequestProcessorPtr request_processor{nullptr};
     if (new_last_zxid)
     {
         if (uncommitted_transactions.empty())
@@ -2199,6 +2200,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                 uncommitted_transactions.front().zxid);
 
         zxid = *new_last_zxid;
+        request_processor = std::move(uncommitted_transactions.front().request_processor);
         uncommitted_transactions.pop_front();
     }
 
@@ -2240,8 +2242,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
-        KeeperStorageRequestProcessorPtr storage_request = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
-        auto response = storage_request->process(*this, zxid);
+        chassert(request_processor);
+        auto response = request_processor->process(*this, zxid);
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
@@ -2249,11 +2251,11 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     }
     else /// normal requests proccession
     {
-        KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
         Coordination::ZooKeeperResponsePtr response;
 
         if (is_local)
         {
+            request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
             assert(zk_request->isReadRequest());
             if (check_acl && !request_processor->checkAuth(*this, session_id, true))
             {
@@ -2268,6 +2270,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         }
         else
         {
+            chassert(request_processor);
             response = request_processor->process(*this, zxid);
             uncommitted_state.commit(zxid);
         }
