@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS mt;
 
-CREATE TABLE mt (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS max_part_removal_threads = 16, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1, parts_to_delay_insert = 100000, parts_to_throw_insert = 100000;
+CREATE TABLE mt (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1, parts_to_delay_insert = 100000, parts_to_throw_insert = 100000;
 
 SYSTEM STOP MERGES mt;
 

@@ -7,7 +7,13 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
+namespace ProfileEvents
+{
+    extern const Event ConnectionPoolIsFullMicroseconds;
+}
 
 namespace DB
 {
@@ -144,6 +150,7 @@ public:
                 return Entry(*items.back());
             }
 
+            Stopwatch blocked;
             if (timeout < 0)
             {
                 LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
@@ -155,6 +162,7 @@ public:
                 LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
                 available.wait_for(lock, timeout_ms);
             }
+            ProfileEvents::increment(ProfileEvents::ConnectionPoolIsFullMicroseconds, blocked.elapsedMicroseconds());
         }
     }
 

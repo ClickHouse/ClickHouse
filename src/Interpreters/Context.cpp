@@ -381,7 +381,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
                 asynchronous_remote_fs_reader->wait();
                 asynchronous_remote_fs_reader.reset();
             }
@@ -395,7 +395,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 asynchronous_local_fs_reader->wait();
                 asynchronous_local_fs_reader.reset();
             }
@@ -409,7 +409,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 synchronous_local_fs_reader->wait();
                 synchronous_local_fs_reader.reset();
             }
@@ -423,7 +423,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing threadpool writer");
+                LOG_DEBUG(log, "Destructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
@@ -437,7 +437,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing marks loader");
+                LOG_DEBUG(log, "Destructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
@@ -451,7 +451,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                LOG_DEBUG(log, "Destructing prefetch threadpool");
                 prefetch_threadpool->wait();
                 prefetch_threadpool.reset();
             }
@@ -1390,6 +1390,20 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
+void Context::addQueryAccessInfo(const Names & partition_names)
+{
+    if (isGlobalContext())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+    }
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    for (const auto & partition_name : partition_names)
+    {
+        query_access_info.partitions.emplace(partition_name);
+    }
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (isGlobalContext())
@@ -1624,6 +1638,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             table_function_results[key] = res;
         }
     }
+    return res;
+}
+
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
+{
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+    StoragePtr & res = table_function_results[key];
+
+    if (!res)
+    {
+        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+    }
+
     return res;
 }
 
@@ -2786,11 +2814,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    if (!shared->auxiliary_zookeepers.empty())
-        return shared->auxiliary_zookeepers;
-    else
-        return std::map<String, zkutil::ZooKeeperPtr>();
+    return shared->auxiliary_zookeepers;
 }
 
 #if USE_ROCKSDB
@@ -3535,9 +3559,9 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
@@ -4279,7 +4303,7 @@ ReadSettings Context::getReadSettings() const
     res.prefetch_buffer_size = settings.prefetch_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
-    res.priority = settings.read_priority;
+    res.priority = Priority{settings.read_priority};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
@@ -4334,7 +4358,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas
+    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
         && !settings_.use_hedged_requests)
         return READ_TASKS;
 

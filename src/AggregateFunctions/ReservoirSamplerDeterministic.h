@@ -157,8 +157,8 @@ public:
     void read(DB::ReadBuffer & buf)
     {
         size_t size = 0;
-        DB::readIntBinary<size_t>(size, buf);
-        DB::readIntBinary<size_t>(total_values, buf);
+        readBinaryLittleEndian(size, buf);
+        readBinaryLittleEndian(total_values, buf);
 
         /// Compatibility with old versions.
         if (size > total_values)
@@ -171,16 +171,16 @@ public:
 
         samples.resize(size);
         for (size_t i = 0; i < size; ++i)
-            DB::readPODBinary(samples[i], buf);
+            readBinaryLittleEndian(samples[i], buf);
 
         sorted = false;
     }
 
     void write(DB::WriteBuffer & buf) const
     {
-        size_t size = samples.size();
-        DB::writeIntBinary<size_t>(size, buf);
-        DB::writeIntBinary<size_t>(total_values, buf);
+        const size_t size = samples.size();
+        writeBinaryLittleEndian(size, buf);
+        writeBinaryLittleEndian(total_values, buf);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -190,12 +190,12 @@ public:
             /// Here we ensure that padding is zero without changing the protocol.
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
-
             Element elem;
             memset(&elem, 0, sizeof(elem));
             elem = samples[i];
 
-            DB::writePODBinary(elem, buf);
+            DB::transformEndianness<std::endian::little>(elem);
+            DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
         }
     }
 

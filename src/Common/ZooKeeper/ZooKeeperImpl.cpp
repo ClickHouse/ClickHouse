@@ -433,7 +433,7 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                connected_zk_address = node.address.toString();
+                connected_zk_address = node.address;
 
                 break;
             }
@@ -450,7 +450,7 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = "";
+        connected_zk_address = Poco::Net::SocketAddress();
 
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;

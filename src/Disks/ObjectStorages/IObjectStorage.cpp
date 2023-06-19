@@ -3,7 +3,9 @@
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
 
 namespace DB
@@ -15,15 +17,37 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
+bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
+    RelativePathsWithMetadata files;
+    listObjects(path, files, 1);
+    return !files.empty();
 }
-void IObjectStorage::getDirectoryContents(const std::string &,
-    RelativePathsWithSize &,
-    std::vector<std::string> &) const
+
+void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, int) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
+}
+
+
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix) const
+{
+    RelativePathsWithMetadata files;
+    listObjects(path_prefix, files, 0);
+
+    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
+}
+
+std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
+{
+    try
+    {
+        return getObjectMetadata(path);
+    }
+    catch (...)
+    {
+        return {};
+    }
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()

@@ -379,6 +379,46 @@ def drop_table_with_materialized_mysql_database(
         "",
     )
 
+    mysql_node.query(
+        "CREATE TABLE test_database_drop.test_table_3 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
+    )
+    mysql_node.query("INSERT INTO test_database_drop.test_table_3 VALUES(1), (2)")
+    check_query(
+        clickhouse_node,
+        "SHOW TABLES FROM test_database_drop FORMAT TSV",
+        "test_table_2\ntest_table_3\n",
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_3 ORDER BY id FORMAT TSV",
+        "1\n2\n",
+    )
+    mysql_node.query("TRUNCATE test_database_drop.test_table_3")
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_3 ORDER BY id FORMAT TSV",
+        "",
+    )
+
+    mysql_node.query(
+        "CREATE TABLE test_database_drop.test_table_4 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
+    )
+    mysql_node.query("INSERT INTO test_database_drop.test_table_4 VALUES(1), (2)")
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_4 ORDER BY id FORMAT TSV",
+        "1\n2\n",
+    )
+    with mysql_node.alloc_connection() as mysql:
+        mysql.query("USE test_database_drop")
+        mysql.query("TRUNCATE test_table_4")
+
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_drop.test_table_4 ORDER BY id FORMAT TSV",
+        "",
+    )
+
     clickhouse_node.query("DROP DATABASE test_database_drop")
     mysql_node.query("DROP DATABASE test_database_drop")
 
@@ -1010,6 +1050,8 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
 
 
 def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_checksum")
+    mysql_node.query("DROP DATABASE IF EXISTS test_checksum")
     mysql_node.query("CREATE DATABASE test_checksum")
     mysql_node.query("CREATE TABLE test_checksum.t (a INT PRIMARY KEY, b varchar(200))")
     clickhouse_node.query(
@@ -1039,6 +1081,21 @@ def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name
         clickhouse_node,
         "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV",
         "1\t1111\n2\t2222\n3\t3333\n",
+    )
+
+    clickhouse_node.query("DROP DATABASE test_checksum")
+    mysql_node.query("SET GLOBAL binlog_checksum=NONE")
+    clickhouse_node.query(
+        "CREATE DATABASE test_checksum ENGINE = MaterializeMySQL('{}:3306', 'test_checksum', 'root', 'clickhouse')".format(
+            service_name
+        )
+    )
+    check_query(clickhouse_node, "SHOW TABLES FROM test_checksum FORMAT TSV", "t\n")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(4, '4444')")
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV",
+        "1\t1111\n2\t2222\n3\t3333\n4\t4444\n",
     )
 
     clickhouse_node.query("DROP DATABASE test_checksum")
@@ -1436,6 +1493,9 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
         "1\t\U0001F984\n2\t\u2601\n",
     )
 
+    clickhouse_node.query("DROP DATABASE utf8mb4_test")
+    mysql_node.query("DROP DATABASE utf8mb4_test")
+
 
 def system_parts_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS system_parts_test")
@@ -1464,6 +1524,9 @@ def system_parts_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("OPTIMIZE TABLE system_parts_test.test")
     check_active_parts(1)
 
+    clickhouse_node.query("DROP DATABASE system_parts_test")
+    mysql_node.query("DROP DATABASE system_parts_test")
+
 
 def multi_table_update_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS multi_table_update")
@@ -1489,6 +1552,8 @@ def multi_table_update_test(clickhouse_node, mysql_node, service_name):
 
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.a", "1\tbaz\n")
     check_query(clickhouse_node, "SELECT * FROM multi_table_update.b", "1\tquux\n")
+    clickhouse_node.query("DROP DATABASE multi_table_update")
+    mysql_node.query("DROP DATABASE multi_table_update")
 
 
 def system_tables_test(clickhouse_node, mysql_node, service_name):
@@ -1508,6 +1573,9 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
         "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'",
         "intDiv(id, 4294967)\tid\tid\n",
     )
+
+    clickhouse_node.query("DROP DATABASE system_tables_test")
+    mysql_node.query("DROP DATABASE system_tables_test")
 
 
 def materialize_with_column_comments_test(clickhouse_node, mysql_node, service_name):
@@ -1973,6 +2041,18 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
         assert testcase[1] in clickhouse_node.query(
             f"{explain_with_table_func} {testcase[0]}"
         )
+
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    # Check empty table overrides
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 ()
+    """
+    )
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
+    show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
+    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
