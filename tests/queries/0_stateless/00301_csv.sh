@@ -58,7 +58,9 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 echo === Test input_format_csv_missing_as_default
 $CLICKHOUSE_CLIENT --query="CREATE TABLE csv (f1 String, f2 UInt64, f3 UInt256, f4 UInt64 Default 33, f5 Nullable(UInt64), f6 Nullable(UInt64) Default 55, f7 String DEFAULT 'Default') ENGINE = Memory";
 
-echo 'Hello
+echo '
+,
+Hello
 Hello,
 Hello, 1, 3, 2
 Hello, 1, 4, 2, 3, 4, String
