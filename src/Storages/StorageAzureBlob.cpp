@@ -344,7 +344,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
             {
                 std::string final_url;
-                size_t pos = configuration.connection_url.find("?");
+                size_t pos = configuration.connection_url.find('?');
                 if (pos != std::string::npos)
                 {
                     auto url_without_sas = configuration.connection_url.substr(0, pos);
