@@ -69,6 +69,16 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
     lazy_sources.clear();
 }
 
+void CascadeWriteBuffer::finalizeImpl()
+{
+    for (auto & buf : prepared_sources)
+    {
+        if (buf)
+        {
+            buf->finalize();
+        }
+    }
+}
 
 WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 {

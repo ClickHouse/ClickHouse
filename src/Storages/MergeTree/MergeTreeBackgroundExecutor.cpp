@@ -136,7 +136,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void print_exception_with_respect_to_abort(Poco::Logger * log)
+void printExceptionWithRespectToAbort(Poco::Logger * log)
 {
     std::exception_ptr ex = std::current_exception();
 
@@ -182,7 +182,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         }
         catch (...)
         {
-            print_exception_with_respect_to_abort(log);
+            printExceptionWithRespectToAbort(log);
             pending.remove(id);
         }
 
@@ -257,7 +257,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
         catch (...)
         {
-            print_exception_with_respect_to_abort(log);
+            printExceptionWithRespectToAbort(log);
         }
 
         on_task_done(std::move(item_));
@@ -272,7 +272,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        print_exception_with_respect_to_abort(log);
+        printExceptionWithRespectToAbort(log);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));
@@ -299,7 +299,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
             catch (...)
             {
-                print_exception_with_respect_to_abort(log);
+                printExceptionWithRespectToAbort(log);
                 on_task_done(std::move(item));
                 return;
             }
