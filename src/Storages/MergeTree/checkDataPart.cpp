@@ -1,4 +1,3 @@
-#include "Storages/MergeTree/IDataPartStorage.h"
 #include <algorithm>
 #include <optional>
 
@@ -8,6 +7,9 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <Common/CurrentMetrics.h>
@@ -45,12 +47,13 @@ bool isNotEnoughMemoryErrorCode(int code)
 }
 
 
-IMergeTreeDataPart::Checksums checkDataPart(
+static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
     const NamesAndTypesList & columns_list,
     const MergeTreeDataPartType & part_type,
     const NameSet & files_without_checksums,
+    const ReadSettings & read_settings,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
@@ -65,7 +68,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = data_part_storage.readFile("columns.txt", {}, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt, std::nullopt);
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -78,9 +81,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
     IMergeTreeDataPart::Checksums checksums_data;
 
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
-    auto checksum_compressed_file = [](const IDataPartStorage & data_part_storage_, const String & file_path)
+    auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
-        auto file_buf = data_part_storage_.readFile(file_path, {}, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
@@ -98,7 +101,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
-        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, {}, std::nullopt, std::nullopt);
+        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
         SerializationInfo::Settings settings{ratio_of_defaults, false};
         serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
     }
@@ -114,7 +117,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
     {
-        auto file_buf = data_part_storage.readFile(file_name, {}, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt, std::nullopt);
         HashingReadBuffer hashing_buf(*file_buf);
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
@@ -152,7 +155,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || data_part_storage.exists("checksums.txt"))
     {
-        auto buf = data_part_storage.readFile("checksums.txt", {}, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt, std::nullopt);
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }
@@ -202,7 +205,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             projection, *data_part_storage.getProjection(projection_file),
             projection->getColumns(), projection->getType(),
             projection->getFileNamesWithoutChecksums(),
-            require_checksums, is_cancelled);
+            read_settings, require_checksums, is_cancelled);
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
             projection_checksums.getTotalSizeOnDisk(),
@@ -243,14 +246,65 @@ IMergeTreeDataPart::Checksums checkDataPart(
     if (auto part_in_memory = asInMemoryPart(data_part))
         return checkDataPartInMemory(part_in_memory);
 
-    return checkDataPart(
-        data_part,
-        data_part->getDataPartStorage(),
-        data_part->getColumns(),
-        data_part->getType(),
-        data_part->getFileNamesWithoutChecksums(),
-        require_checksums,
-        is_cancelled);
+    auto drop_cache_and_check = [&]
+    {
+        const auto & data_part_storage = data_part->getDataPartStorage();
+        auto cache_name = data_part_storage.getCacheName();
+
+        if (!cache_name)
+            throw;
+
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
+        for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
+        {
+            auto file_name = it->name();
+            if (!data_part_storage.isDirectory(file_name))
+            {
+                auto remote_path = data_part_storage.getRemotePath(file_name);
+                cache.removePathIfExists(remote_path);
+            }
+        }
+
+        ReadSettings read_settings;
+        read_settings.enable_filesystem_cache = false;
+        read_settings.remote_fs_prefetch = false;
+        read_settings.remote_fs_method = RemoteFSReadMethod::read;
+
+        return checkDataPart(
+            data_part,
+            data_part_storage,
+            data_part->getColumns(),
+            data_part->getType(),
+            data_part->getFileNamesWithoutChecksums(),
+            read_settings,
+            require_checksums,
+            is_cancelled);
+    };
+
+    try
+    {
+        ReadSettings read_settings;
+        return checkDataPart(
+            data_part,
+            data_part->getDataPartStorage(),
+            data_part->getColumns(),
+            data_part->getType(),
+            data_part->getFileNamesWithoutChecksums(),
+            read_settings,
+            require_checksums,
+            is_cancelled);
+    }
+    catch (const Exception & e)
+    {
+        if (isNotEnoughMemoryErrorCode(e.code()))
+            throw;
+
+        return drop_cache_and_check();
+    }
+    catch (...)
+    {
+        return drop_cache_and_check();
+    }
 }
 
 }
