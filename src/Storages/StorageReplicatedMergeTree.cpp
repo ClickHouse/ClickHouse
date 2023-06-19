@@ -9463,7 +9463,7 @@ void StorageReplicatedMergeTree::backupData(
     auto post_collecting_task = [shared_id,
                                  my_replica_name = getReplicaName(),
                                  coordination,
-                                 parts_backup_entries = std::move(parts_backup_entries),
+                                 my_parts_backup_entries = std::move(parts_backup_entries),
                                  &backup_entries_collector]()
     {
         Strings data_paths = coordination->getReplicatedDataPaths(shared_id);
@@ -9475,7 +9475,7 @@ void StorageReplicatedMergeTree::backupData(
         Strings part_names = coordination->getReplicatedPartNames(shared_id, my_replica_name);
         std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
 
-        for (const auto & part_backup_entries : parts_backup_entries)
+        for (const auto & part_backup_entries : my_parts_backup_entries)
         {
             if (part_names_set.contains(part_backup_entries.part_name))
             {

@@ -1433,6 +1433,21 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     UNREACHABLE();
 }
 
+/// Wait for all tasks to finish and rethrow the first exception if any.
+/// The tasks access local variables of the caller function, so we can't just rethrow the first exception until all other tasks are finished.
+void waitForAllToFinishAndRethrowFirstError(std::vector<std::future<void>> & futures)
+{
+    /// First wait for all tasks to finish.
+    for (auto & future : futures)
+        future.wait();
+
+    /// Now rethrow the first exception if any.
+    for (auto & future : futures)
+        future.get();
+
+    futures.clear();
+}
+
 std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load)
 {
     const size_t num_parts = parts_to_load.size();
@@ -1463,10 +1478,8 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
             if (are_parts_to_load_empty)
             {
                 /// Wait for all scheduled tasks.
-                /// We have to use .get() method to rethrow any exception that could occur.
-                for (auto & future: parts_futures)
-                    future.get();
-                parts_futures.clear();
+                waitForAllToFinishAndRethrowFirstError(parts_futures);
+
                 /// At this point it is possible, that some other parts appeared in the queue for processing (parts_to_load),
                 /// because we added them from inside the pool.
                 /// So we need to recheck it.
@@ -1660,10 +1673,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     /// For iteration to be completed
-    /// Any exception will be re-thrown.
-    for (auto & future : disks_futures)
-        future.get();
-    disks_futures.clear();
+    waitForAllToFinishAndRethrowFirstError(disks_futures);
 
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
@@ -1773,10 +1783,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
 
         /// For for iteration to be completed
-        /// Any exception will be re-thrown.
-        for (auto & future : wal_disks_futures)
-            future.get();
-        wal_disks_futures.clear();
+        waitForAllToFinishAndRethrowFirstError(wal_disks_futures);
 
         MutableDataPartsVector parts_from_wal;
         for (auto & disk_wal_parts : disks_wal_parts)
@@ -1891,9 +1898,7 @@ try
             {
                 /// Wait for every scheduled task
                 /// In case of any exception it will be re-thrown and server will be terminated.
-                for (auto & future : parts_futures)
-                    future.get();
-                parts_futures.clear();
+                waitForAllToFinishAndRethrowFirstError(parts_futures);
 
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
@@ -2443,10 +2448,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             }, Priority{0}));
         }
 
-        /// Any exception will be re-thrown.
-        for (auto & future : parts_to_remove_futures)
-            future.get();
-        parts_to_remove_futures.clear();
+        waitForAllToFinishAndRethrowFirstError(parts_to_remove_futures);
 
         return;
     }
@@ -2602,10 +2604,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     independent_ranges = split_into_independent_ranges(excluded_parts, /* split_times */ 0);
 
-    /// Any exception will be re-thrown.
-    for (auto & future : part_removal_futures)
-        future.get();
-    part_removal_futures.clear();
+    waitForAllToFinishAndRethrowFirstError(part_removal_futures);
 
     for (size_t i = 0; i < independent_ranges.infos.size(); ++i)
     {
@@ -2614,10 +2613,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         schedule_parts_removal(range, std::move(parts_in_range));
     }
 
-    /// Any exception will be re-thrown.
-    for (auto & future : part_removal_futures)
-        future.get();
-    part_removal_futures.clear();
+    waitForAllToFinishAndRethrowFirstError(part_removal_futures);
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -4345,14 +4341,14 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
 
-    /// check if have too many parts in total
-    if (parts_count_in_total >= settings->max_parts_in_total)
+    /// Check if we have too many parts in total
+    if (allow_throw && parts_count_in_total >= settings->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
@@ -4368,7 +4364,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
             outdated_parts_count_in_partition = getMaxOutdatedPartsCountForPartition();
 
-        if (settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        if (allow_throw && settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -4392,7 +4388,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         bool parts_are_large_enough_in_average
             = settings->max_avg_part_size_for_too_many_parts && average_part_size > settings->max_avg_part_size_for_too_many_parts;
 
-        if (parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
+        if (allow_throw && parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -4430,18 +4426,17 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
                 allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
         }
 
-        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold) [[unlikely]]
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Incorrect calculation of {} parts over threshold: allowed_parts_over_threshold={}, parts_over_threshold={}",
-                (use_active_parts_threshold ? "active" : "inactive"),
-                allowed_parts_over_threshold,
-                parts_over_threshold);
-
         const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
-        double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
-        const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
-        delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold)
+        {
+            delay_milliseconds = max_delay_milliseconds;
+        }
+        else
+        {
+            double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+            const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
+            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
