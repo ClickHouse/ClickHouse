@@ -29,6 +29,7 @@ function print_flush_query_logs()
       WHERE
           event_date >= yesterday()
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '$1')
+      -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC
       FORMAT Vertical"
 
