@@ -80,7 +80,6 @@ namespace
         const HDFSFSPtr & fs,
         const String & processed_suffix,
         const String & suffix_with_globs,
-        const String & current_glob,
         re2::RE2 & matcher,
         const size_t max_depth,
         const size_t next_slash_after_glob_pos)
@@ -115,9 +114,6 @@ namespace
             {
                 if (next_slash_after_glob_pos == std::string::npos)
                 {
-//                    result.push_back(String(ls.file_info[i].mName));
-//                    if (last_mod_times)
-//                        (*last_mod_times)[result.back()] = ls.file_info[i].mLastMod;
                     result.emplace_back(
                         String(ls.file_info[i].mName),
                         StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)});
@@ -133,7 +129,7 @@ namespace
             {
                 std::vector<StorageHDFS::PathWithInfo> result_part = LSWithFoldedRegexpMatching(
                     fs::path(full_path), fs, processed_suffix + dir_or_file_name,
-                    suffix_with_globs, current_glob, matcher, max_depth - 1, next_slash_after_glob_pos);
+                    suffix_with_globs, matcher, max_depth - 1, next_slash_after_glob_pos);
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -188,7 +184,7 @@ namespace
 
         if (slashes_in_glob)
         {
-            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs, current_glob,
+            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs,
                                               matcher, slashes_in_glob, next_slash_after_glob_pos);
         }
 
