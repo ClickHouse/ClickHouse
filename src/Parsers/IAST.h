@@ -333,6 +333,12 @@ private:
       */
     ASTPtr next_to_delete = nullptr;
     ASTPtr * next_to_delete_list_head = nullptr;
+
+    /** Cached column name to avoid expensive recursive `getColumnName`
+     * in a huge AST tree
+     */
+    mutable String cached_column_name;
+    mutable String cached_column_name_without_alias;
 };
 
 }

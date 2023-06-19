@@ -190,22 +190,28 @@ void IAST::cloneChildren()
         child = child->clone();
 }
 
-
 String IAST::getColumnName() const
 {
-    WriteBufferFromOwnString write_buffer;
-    appendColumnName(write_buffer);
-    return write_buffer.str();
+    if (cached_column_name.empty())
+    {
+        WriteBufferFromOwnString write_buffer;
+        appendColumnName(write_buffer);
+        cached_column_name = write_buffer.str();
+    }
+    return cached_column_name;
 }
 
 
 String IAST::getColumnNameWithoutAlias() const
 {
-    WriteBufferFromOwnString write_buffer;
-    appendColumnNameWithoutAlias(write_buffer);
-    return write_buffer.str();
+    if (cached_column_name_without_alias.empty())
+    {
+        WriteBufferFromOwnString write_buffer;
+        appendColumnNameWithoutAlias(write_buffer);
+        cached_column_name_without_alias = write_buffer.str();
+    }
+    return cached_column_name_without_alias;
 }
-
 
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
