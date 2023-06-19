@@ -1,0 +1,87 @@
+SELECT value1
+FROM date_t
+WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((date1 < \'1993-01-01\') OR (date1 >= \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 < \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 >= \'1994-01-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 < \'1994-01-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 >= \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1998-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) OR ((date1 >= \'1994-01-01\') AND (date1 < \'1995-01-01\'))) AND ((id >= 1) AND (id <= 3))
+SELECT
+    value1,
+    toYear(date1) AS year1
+FROM date_t
+WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 < \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+PREWHERE (date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')
+WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((id >= 1) AND (id <= 3)) AND ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\'))
+SELECT value1
+FROM date_t
+WHERE (toYYYYMM(date1) = 199300) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (toYYYYMM(date1) = 199313) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((date1 >= \'1993-12-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((date1 >= \'1992-03-01\') AND (date1 < \'1992-04-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((date1 < \'1992-03-01\') OR (date1 >= \'1992-04-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 < \'1992-03-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 >= \'1992-04-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 < \'1992-04-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE (date1 >= \'1992-03-01\') AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date_t
+WHERE ((date1 >= \'1992-03-01\') OR ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\'))) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM datetime_t
+WHERE ((date1 >= \'1993-01-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM datetime_t
+WHERE ((date1 >= \'1993-12-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date32_t
+WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM date32_t
+WHERE ((date1 >= \'1993-12-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM datetime64_t
+WHERE ((date1 >= \'1993-01-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
+SELECT value1
+FROM datetime64_t
+WHERE ((date1 >= \'1993-12-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
