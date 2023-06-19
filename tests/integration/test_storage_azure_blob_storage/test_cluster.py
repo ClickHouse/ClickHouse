@@ -257,6 +257,7 @@ def test_cluster_with_named_collection(cluster):
 
     assert TSV(pure_azure) == TSV(azure_cluster)
 
+
 def test_partition_parallel_readig_withcluster(cluster):
     node = cluster.instances["node_0"]
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
