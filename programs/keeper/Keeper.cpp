@@ -34,6 +34,8 @@
 #include "Core/Defines.h"
 #include "config.h"
 #include "config_version.h"
+#include "config_tools.h"
+
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -131,7 +133,10 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
+        auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+                                      "{0} client [OPTION]\n"
+#endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
                                       commandName());
         help_formatter.setHeader(header_str);
