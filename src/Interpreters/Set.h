@@ -47,6 +47,8 @@ public:
     {
     }
 
+    void fillSetElements() { fill_set_elements = true; }
+
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
 

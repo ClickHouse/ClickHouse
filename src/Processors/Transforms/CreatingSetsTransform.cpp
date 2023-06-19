@@ -135,11 +135,11 @@ void CreatingSetsTransform::init()
 {
     is_initialized = true;
 
-    if (subquery.set)
-    {
-        //std::cerr << "=========== " << getInputPort().getHeader().dumpStructure() << std::endl;
-        subquery.set->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
-    }
+    // if (subquery.set)
+    // {
+    //     //std::cerr << "=========== " << getInputPort().getHeader().dumpStructure() << std::endl;
+    //     subquery.set->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
+    // }
 
     watch.restart();
     startSubquery();

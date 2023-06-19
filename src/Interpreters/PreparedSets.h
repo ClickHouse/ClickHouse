@@ -37,7 +37,7 @@ public:
     virtual SetPtr get() const = 0;
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
-    virtual DataTypes getTypes() const = 0;
+    virtual const DataTypes & getTypes() const = 0;
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
@@ -50,7 +50,7 @@ public:
 
     SetPtr get() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
 
 private:
     SetPtr set;
@@ -86,7 +86,7 @@ public:
 class FutureSetFromSubquery : public FutureSet, public std::enable_shared_from_this<FutureSetFromSubquery>
 {
 public:
-    FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_, bool transform_null_in_);
+    FutureSetFromSubquery(SubqueryForSet subquery_, FutureSetPtr external_table_set_, const Settings & settings);
 
     SetPtr get() const override;
 
@@ -94,74 +94,87 @@ public:
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
 
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
 
     SubqueryForSet & getSubquery() { return subquery; }
+    void setQueryPlan(std::unique_ptr<QueryPlan> source);
 
 private:
     SubqueryForSet subquery;
     FutureSetPtr external_table_set;
-    bool transform_null_in;
 
-    std::unique_ptr<QueryPlan> buildPlan(const ContextPtr & context, bool create_ordered_set);
+    std::unique_ptr<QueryPlan> buildPlan(const ContextPtr & context);
 };
 
-struct PreparedSetKey
-{
-    using Hash = std::pair<UInt64, UInt64>;
+// struct PreparedSetKey
+// {
+//     using Hash = std::pair<UInt64, UInt64>;
 
-    /// Prepared sets for tuple literals are indexed by the hash of the tree contents and by the desired
-    /// data types of set elements (two different Sets can be required for two tuples with the same contents
-    /// if left hand sides of the IN operators have different types).
-    static PreparedSetKey forLiteral(Hash hash, DataTypes types_);
+//     /// Prepared sets for tuple literals are indexed by the hash of the tree contents and by the desired
+//     /// data types of set elements (two different Sets can be required for two tuples with the same contents
+//     /// if left hand sides of the IN operators have different types).
+//     static PreparedSetKey forLiteral(Hash hash, DataTypes types_);
 
-    /// Prepared sets for subqueries are indexed only by the AST contents because the type of the resulting
-    /// set is fully determined by the subquery.
-    static PreparedSetKey forSubquery(Hash hash);
+//     /// Prepared sets for subqueries are indexed only by the AST contents because the type of the resulting
+//     /// set is fully determined by the subquery.
+//     static PreparedSetKey forSubquery(Hash hash);
 
-    Hash ast_hash;
-    DataTypes types; /// Empty for subqueries.
+//     Hash ast_hash;
+//     DataTypes types; /// Empty for subqueries.
 
-    bool operator==(const PreparedSetKey & other) const;
+//     bool operator==(const PreparedSetKey & other) const;
 
-    String toString() const;
+//     String toString() const;
 
-    struct Hashing
-    {
-        UInt64 operator()(const PreparedSetKey & key) const { return key.ast_hash.first; }
-    };
-};
+//     struct Hashing
+//     {
+//         UInt64 operator()(const PreparedSetKey & key) const { return key.ast_hash.first; }
+//     };
+// };
 
 class PreparedSets
 {
 public:
-    struct SetAndName
+
+    using Hash = std::pair<UInt64, UInt64>;
+    struct Hashing
     {
-        String name;
-        std::shared_ptr<FutureSetFromSubquery> set;
+        UInt64 operator()(const Hash & key) const { return key.first ^ key.second; }
     };
-    using SubqueriesForSets = std::vector<SetAndName>;
 
-    FutureSetPtr addFromStorage(const PreparedSetKey & key, SetPtr set_);
-    FutureSetPtr addFromTuple(const PreparedSetKey & key, Block block, const Settings & settings);
-    FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery, const Settings & settings, FutureSetPtr external_table_set);
+    // struct SetAndName
+    // {
+    //     String name;
+    //     std::shared_ptr<FutureSetFromSubquery> set;
+    // };
 
-    FutureSetPtr getFuture(const PreparedSetKey & key) const;
+    using Sets = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSet>>, Hashing>;
+    using SetsFromSubqueries = std::unordered_map<Hash, std::shared_ptr<FutureSetFromSubquery>, Hashing>;
+
+    FutureSetPtr addFromStorage(const Hash & key, SetPtr set_);
+    FutureSetPtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetPtr addFromSubquery(const Hash & key, SubqueryForSet subquery, const Settings & settings, FutureSetPtr external_table_set);
+
+    FutureSetPtr find(const Hash & key, const DataTypes & types) const;
+    std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
+
+    //FutureSetPtr getFuture(const PreparedSetKey & key) const;
 
     /// Get subqueries and clear them.
     /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
     /// SetPtr would still be available for consumers of PreparedSets.
-    SubqueriesForSets detachSubqueries();
+    std::vector<std::shared_ptr<FutureSetFromSubquery>> detachSubqueries();
 
-    const std::unordered_map<PreparedSetKey, FutureSetPtr, PreparedSetKey::Hashing> & getSets() const { return sets; }
+    const Sets & getNormalSets() const { return sets; }
+    const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     bool empty() const;
 
-private:
-    std::unordered_map<PreparedSetKey, FutureSetPtr, PreparedSetKey::Hashing> sets;
+    static String toString(const Hash & key, const DataTypes & types);
 
-    /// This is the information required for building sets
-    SubqueriesForSets subqueries;
+private:
+    Sets sets;
+    SetsFromSubqueries sets_from_subqueries;
 };
 
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;

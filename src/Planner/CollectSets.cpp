@@ -61,9 +61,8 @@ public:
         if (storage_set)
         {
             /// Handle storage_set as ready set.
-            auto set_key = PreparedSetKey::forSubquery(in_second_argument->getTreeHash());
+            auto set_key = in_second_argument->getTreeHash();
             sets.addFromStorage(set_key, storage_set->getSet());
-            //planner_context.registerSet(set_key, PlannerSet(FutureSet(storage_set->getSet())));
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -82,8 +81,8 @@ public:
                 if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
                     element_type = low_cardinality_type->getDictionaryType();
 
-            auto set_key = PreparedSetKey::forLiteral(in_second_argument->getTreeHash(), set_element_types);
-            if (sets.getFuture(set_key))
+            auto set_key = in_second_argument->getTreeHash();
+            if (sets.find(set_key, set_element_types))
                 return;
 
             sets.addFromTuple(set_key, std::move(set), settings);
@@ -94,8 +93,8 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = PreparedSetKey::forSubquery(in_second_argument->getTreeHash());
-            if (sets.getFuture(set_key))
+            auto set_key = in_second_argument->getTreeHash();
+            if (sets.findSubquery(set_key))
                 return;
 
             auto subquery_to_execute = in_second_argument;

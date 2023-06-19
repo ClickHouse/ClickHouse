@@ -52,7 +52,7 @@ public:
 class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
-    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::SubqueriesForSets subqueries_for_sets_, ContextPtr context_);
+    DelayedCreatingSetsStep(DataStream input_stream, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery_, ContextPtr context_);
 
     String getName() const override { return "DelayedCreatingSets"; }
 
@@ -61,14 +61,14 @@ public:
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
 
     ContextPtr getContext() const { return context; }
-    PreparedSets::SubqueriesForSets detachSubqueries() { return std::move(subqueries_for_sets); }
+    std::vector<std::shared_ptr<FutureSetFromSubquery>> detachSets() { return std::move(sets_from_subquery); }
 
 private:
-    PreparedSets::SubqueriesForSets subqueries_for_sets;
+    std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery;
     ContextPtr context;
 };
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context);
+void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery, ContextPtr context);
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 
