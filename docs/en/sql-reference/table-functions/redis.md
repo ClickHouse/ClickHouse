@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/table-functions/redis
-sidebar_position: 10
-sidebar_label: Redis
+sidebar_position: 43
+sidebar_label: redis
 ---
 
-# Redis
+# redis
 
 This table function allows integrating ClickHouse with [Redis](https://redis.io/).
 
