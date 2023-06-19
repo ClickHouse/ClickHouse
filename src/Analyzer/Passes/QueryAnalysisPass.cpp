@@ -4723,6 +4723,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
+            /// Replace storage with values storage of insertion block
+            if (auto * query_node = in_second_argument->as<QueryNode>())
+            {
+                auto table_expression = extractLeftTableExpression(query_node->getJoinTree());
+                if (auto * query_table_node = table_expression->as<TableNode>())
+                {
+                    if (StoragePtr storage = scope.context->getViewSource(); storage && query_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullTableName())
+                    {
+                        auto replacement_table_expression = std::make_shared<TableNode>(storage, scope.context);
+                        if (std::optional<TableExpressionModifiers> table_expression_modifiers = query_table_node->getTableExpressionModifiers())
+                            replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+                        in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression));
+                    }
+                }
+            }
+
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
         }
     }
