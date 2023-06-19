@@ -49,7 +49,7 @@ RUN arch=${TARGETARCH:-amd64} \
   && curl -o mysql-odbc.rpm "https://cdn.mysql.com/archives/mysql-connector-odbc-8.0/mysql-connector-odbc-8.0.27-1.el8.${rarch}.rpm" \
   && rpm2archive mysql-odbc.rpm \
   && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
-  && LINK_DIR=$(dpkg -L libodbc1 | rg '^/usr/lib/.*-linux-gnu/odbc$') \
+  && LINK_DIR=$(dpkg -L odbc-postgresql | rg '^/usr/lib/.*-linux-gnu/odbc$') \
   && ln -s /usr/lib64/libmyodbc8a.so "$LINK_DIR" \
   && ln -s /usr/lib64/libmyodbc8a.so "$LINK_DIR"/libmyodbc.so
 
