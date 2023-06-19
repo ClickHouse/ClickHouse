@@ -8,10 +8,11 @@
 #include <Common/SipHash.h>
 #include <Common/safe_cast.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <cassert>
-#include <random>
+#    include <cassert>
+#    include <boost/algorithm/string/predicate.hpp>
 
+#    include <openssl/err.h>
+#    include <openssl/rand.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATA_ENCRYPTION_ERROR;
+    extern const int OPENSSL_ERROR;
 }
 
 namespace FileEncryption
@@ -254,12 +256,11 @@ void InitVector::write(WriteBuffer & out) const
 
 InitVector InitVector::random()
 {
-    std::random_device rd;
-    std::mt19937 gen{rd()};
-    std::uniform_int_distribution<UInt128::base_type> dis;
     UInt128 counter;
-    for (auto & i : counter.items)
-        i = dis(gen);
+    auto * buf = reinterpret_cast<unsigned char *>(counter.items);
+    auto ret = RAND_bytes(buf, sizeof(counter.items));
+    if (ret != 1)
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "OpenSSL error code: {}", ERR_get_error());
     return InitVector{counter};
 }
 
