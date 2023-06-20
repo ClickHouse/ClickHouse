@@ -560,6 +560,36 @@ void ProcessList::killAllQueries()
 }
 
 
+void ProcessList::killAllQueriesExceptQueryKind(MultiEnum<IAST::QueryKind> query_kind)
+{
+    std::vector<QueryStatusPtr> cancelled_processes;
+
+    SCOPE_EXIT({
+        auto lock = safeLock();
+        for (auto & cancelled_process : cancelled_processes)
+            cancelled_process->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    {
+        auto lock = safeLock();
+        cancelled_processes.reserve(processes.size());
+        for (auto & process : processes)
+        {
+            if (!query_kind.isSet(process->getInfo().query_kind))
+            {
+                cancelled_processes.push_back(process);
+                process->is_cancelling = true;
+            }
+        }
+    }
+
+    for (auto & cancelled_process : cancelled_processes)
+        cancelled_process->cancelQuery(true);
+
+}
+
+
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
     QueryStatusInfo res{};

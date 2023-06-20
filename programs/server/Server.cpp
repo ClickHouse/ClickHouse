@@ -1831,12 +1831,7 @@ try
             else
             {
                 MultiEnum<IAST::QueryKind> shutdown_wait_unfinished_query_kind = server_settings.shutdown_wait_unfinished_query_kind;
-                ProcessList & process_list = global_context->getProcessList();
-                for (auto const & query : process_list->processes)
-                {
-                    if (!shutdown_wait_unfinished_query_kind.isSet(query->getInfo().query_kind))
-                        query->cancelQuery(true);
-                }
+                global_context->getProcessList().killAllQueriesExceptQueryKind(shutdown_wait_unfinished_query_kind)
             }
 
             if (current_connections)

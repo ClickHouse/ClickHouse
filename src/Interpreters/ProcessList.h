@@ -427,6 +427,8 @@ public:
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
 
     void killAllQueries();
+
+    void killAllQueriesExceptQueryKind(MultiEnum<IAST::QueryKind> query_kind);
 };
 
 }
