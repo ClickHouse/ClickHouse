@@ -1,3 +1,4 @@
+#include <Poco/Logger.h>
 #include <algorithm>
 #include <optional>
 
@@ -246,6 +247,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
     if (auto part_in_memory = asInMemoryPart(data_part))
         return checkDataPartInMemory(part_in_memory);
 
+    /// If check of part has failed and it is stored on disk with cache
+    /// try to drop cache and check it once again because maybe the cache
+    /// is broken not the part itself.
     auto drop_cache_and_check = [&]
     {
         const auto & data_part_storage = data_part->getDataPartStorage();
@@ -253,6 +257,10 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
         if (!cache_name)
             throw;
+
+        LOG_DEBUG(
+            &Poco::Logger::get("checkDataPart"),
+            "Will drop cache for data part {} and will check it once again", data_part->name);
 
         auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
@@ -267,8 +275,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
         ReadSettings read_settings;
         read_settings.enable_filesystem_cache = false;
-        read_settings.remote_fs_prefetch = false;
-        read_settings.remote_fs_method = RemoteFSReadMethod::read;
 
         return checkDataPart(
             data_part,
