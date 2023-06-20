@@ -176,7 +176,6 @@ public:
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
-
             Int64 adjust_value;
             const auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
             auto x_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
@@ -219,7 +218,7 @@ public:
                     || ((a_date.day == b_date.day) && ((a_time.hour > b_time.hour)
                     || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
                     || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
-                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
                     || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
@@ -229,7 +228,7 @@ public:
                     || ((a_date.day == b_date.day) && ((a_time.hour > b_time.hour)
                     || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
                     || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
-                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
                     || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))
                     res += adjust_value;
             }
@@ -241,7 +240,7 @@ public:
                     || ((x_day_of_week == y_day_of_week) && (a_time.hour > b_time.hour))
                     || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
                     || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
-                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
                     || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
@@ -250,7 +249,7 @@ public:
                 if ((a_time.hour > b_time.hour)
                     || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
                     || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
-                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
                     || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
@@ -403,9 +402,9 @@ public:
         else if (unit == "second" || unit == "ss" || unit == "s")
             impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "millisecond" || unit == "ms")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<1000>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<DecimalUtils::scaleMultiplier<DateTime64>(3)>>(x, y, timezone_x, timezone_y, res->getData());
          else if (unit == "microsecond" || unit == "us" || unit == "u")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<1000000>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<DecimalUtils::scaleMultiplier<DateTime64>(6)>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);
