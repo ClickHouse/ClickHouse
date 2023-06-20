@@ -78,6 +78,7 @@ ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 
 if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
