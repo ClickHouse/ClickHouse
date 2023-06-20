@@ -1,17 +1,29 @@
 #include <unordered_map>
 #include <QueryCoordination/FragmentMgr.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sinks/DataSink.h>
+#include <QueryCoordination/DataSink.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/Cluster.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
+ContextMutablePtr FragmentMgr::findQueryContext(const String & query_id)
+{
+    std::lock_guard lock(fragments_mutex);
+    if (!query_fragment.contains(query_id))
+    {
+        throw;
+    }
+    auto & data = query_fragment[query_id];
+    return data->query_context;
+}
+
 // for SECONDARY_QUERY from tcphandler, for INITIAL_QUERY from InterpreterSelectQueryFragments
-void FragmentMgr::addFragment(String query_id, PlanFragmentPtr fragment, ContextMutablePtr context_)
+void FragmentMgr::addFragment(const String & query_id, PlanFragmentPtr fragment, ContextMutablePtr context_)
 {
     std::lock_guard lock(fragments_mutex);
     if (!query_fragment.contains(query_id))
@@ -25,7 +37,7 @@ void FragmentMgr::addFragment(String query_id, PlanFragmentPtr fragment, Context
 }
 
 // Keep fragments that need to be executed by themselves
-void FragmentMgr::fragmentsToDistributed(String query_id, const std::vector<FragmentRequest> & need_execute_plan_fragments)
+void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vector<FragmentRequest> & need_execute_plan_fragments)
 {
     std::unordered_map<FragmentID, FragmentRequest> need_execute_fragments;
     for (const auto & request : need_execute_plan_fragments)
@@ -53,7 +65,7 @@ void FragmentMgr::fragmentsToDistributed(String query_id, const std::vector<Frag
     fragmentsToQueryPipelines(query_id);
 }
 
-void FragmentMgr::fragmentsToQueryPipelines(String query_id)
+void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 {
     auto & data = query_fragment[query_id];
     auto context = data->query_context;
@@ -122,7 +134,7 @@ void FragmentMgr::fragmentsToQueryPipelines(String query_id)
 
 }
 
-void FragmentMgr::executeQueryPipelines(String query_id)
+void FragmentMgr::executeQueryPipelines(const String & query_id)
 {
     /// begin execute pipeline
     std::lock_guard lock(fragments_mutex);
@@ -143,7 +155,7 @@ void FragmentMgr::executeQueryPipelines(String query_id)
     }
 }
 
-QueryPipeline FragmentMgr::findRootQueryPipeline(String query_id)
+QueryPipeline FragmentMgr::findRootQueryPipeline(const String & query_id)
 {
     std::lock_guard lock(fragments_mutex);
     auto & data = query_fragment[query_id];
@@ -158,28 +170,18 @@ QueryPipeline FragmentMgr::findRootQueryPipeline(String query_id)
     throw;
 }
 
-void FragmentMgr::cleanerThread()
+void FragmentMgr::rootQueryPipelineFinish(const String & query_id)
 {
-    // TODO lock
-//    while (!shutdown)
-//    {
-//        for (auto it = executors.begin(); it != executors.end();)
-//        {
-//            if ((*it)->is_finished)
-//            {
-//                it = executors.erase(it);
-//            }
-//            else
-//            {
-//                it++;
-//            }
-//        }
-//
-//        /// TODO sleep
-//    }
+    std::lock_guard lock(fragments_mutex);
+    auto & data = query_fragment[query_id];
+    for (auto & fragment_distributed : data->fragments_distributed)
+    {
+        if (!fragment_distributed.fragment->getDestFragment())
+        {
+            onFinish(query_id, fragment_distributed.fragment->getFragmentId());
+        }
+    }
 }
-
-/// TODO when pipeline execute done remove fragment.
 
 void FragmentMgr::receiveData(const ExchangeDataRequest & exchange_data_request, Block block)
 {
@@ -211,6 +213,36 @@ void FragmentMgr::receiveData(const ExchangeDataRequest & exchange_data_request,
     receiver->receive(std::move(block));
 }
 
+std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDataRequest & exchange_data_request) const
+{
+    std::shared_ptr<ExchangeDataReceiver> receiver;
+    {
+        std::lock_guard lock(fragments_mutex);
+        auto it = query_fragment.find(exchange_data_request.query_id);
+        if (it == query_fragment.end())
+            throw;
+
+        for (auto & fragment : it->second->fragments_distributed)
+        {
+            if (fragment.fragment->getFragmentId() == exchange_data_request.fragment_id)
+            {
+                const auto & receiver_key = FragmentDistributed::receiverKey(exchange_data_request.fragment_id, exchange_data_request.from_host);
+                auto receiver_it = fragment.receivers.find(receiver_key);
+                if (receiver_it == fragment.receivers.end())
+                    throw;
+
+                receiver = receiver_it->second;
+                break;
+            }
+        }
+    }
+
+    if (!receiver)
+        throw;
+
+    return receiver;
+}
+
 void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)
 {
     std::lock_guard lock(fragments_mutex);
@@ -237,6 +269,7 @@ void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)
 
     if (all_finished)
     {
+        LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Query {} fragment execute finished", query_id);
         query_fragment.erase(it);
     }
 }

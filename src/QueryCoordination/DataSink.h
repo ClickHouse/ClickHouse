@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class ExchangeDataReceiver;
+
 /// Sink which sends data for exchange data. like ExternalTableDataSink
 class DataSink : public ISink
 {
@@ -17,6 +19,9 @@ public:
     {
         IConnectionPool::Entry connection;
         bool is_local;
+        std::shared_ptr<ExchangeDataReceiver> local_receiver;
+
+        void sendData(Block block);
     };
 
     DataSink(
@@ -32,6 +37,8 @@ public:
         , output_partition(partition)
         , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
     {
+        if (partition.keys_size)
+            calculateKeysPositions();
     }
 
     String getName() const override { return "DataSink"; }
@@ -43,6 +50,8 @@ protected:
 
     void onFinish() override;
 
+    void calculateKeysPositions();
+
 private:
     std::vector<Channel> channels;
     size_t num_rows = 0;
@@ -51,6 +60,8 @@ private:
     ExchangeDataRequest request;
 
     bool was_begin_sent = false;
+
+    DB::ColumnNumbers keys_positions;
 };
 
 }

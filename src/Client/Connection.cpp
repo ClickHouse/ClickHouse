@@ -694,10 +694,15 @@ void Connection::sendCancel()
     out->next();
 }
 
-void Connection::sendExchangeData(const ExchangeDataRequest & request) const
+void Connection::sendExchangeData(const ExchangeDataRequest & request)
 {
+    compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+
     writeVarUInt(Protocol::Client::ExchangeData, *out);
     request.write(*out);
+
+    writeVarUInt(static_cast<bool>(compression), *out);
+
     out->next();
 }
 

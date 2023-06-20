@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/ExchangeDataStep.h>
+#include <QueryCoordination/ExchangeDataStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryCoordination/ExchangeDataReceiver.h>

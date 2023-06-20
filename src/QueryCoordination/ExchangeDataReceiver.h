@@ -58,6 +58,11 @@ public:
         return source;
     }
 
+    Block getHeader() const
+    {
+        return getPort().getHeader();
+    }
+
 protected:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() override;

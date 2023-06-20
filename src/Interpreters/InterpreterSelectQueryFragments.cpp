@@ -46,7 +46,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/ExchangeDataStep.h>
+#include <QueryCoordination/ExchangeDataStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -1089,7 +1089,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
         settings.group_by_overflow_mode == OverflowMode::ANY &&
         settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 
-    auto aggregating_step = executeAggregationImpl(childFragment->getRootNode()->step->getOutputStream(), aggregate_overflow_row, false, query_info.input_order_info);
+    auto aggregating_step = executeAggregationImpl(
+        childFragment->getRootNode()->step->getOutputStream(), aggregate_overflow_row, false, query_info.input_order_info);
     childFragment->addStep(aggregating_step);
 
     DataPartition partition;
@@ -1099,9 +1100,10 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
     }
     else
     {
-//        partition.type = PartitionType::HASH_PARTITIONED; TODO DataSink impl HASH_PARTITIONED
-        partition.type = PartitionType::UNPARTITIONED;
-        partition.expressions = expressions.group_by_elements_actions;
+        partition.type = PartitionType::HASH_PARTITIONED;
+        partition.keys = aggregating_step->getParams().keys;
+        partition.keys_size = aggregating_step->getParams().keys_size;
+        partition.partition_by_bucket_num = true;
     }
 
     // place a merge aggregation step in a new fragment
@@ -1111,7 +1113,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
         expressions.need_aggregate &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
-    std::shared_ptr<MergingAggregatedStep> merge_agg_node = executeMergeAggregated(merge_fragment->getCurrentDataStream(), aggregate_overflow_row, aggregate_final, expressions.use_grouping_set_key);
+    std::shared_ptr<MergingAggregatedStep> merge_agg_node = executeMergeAggregated(
+        merge_fragment->getCurrentDataStream(), aggregate_overflow_row, aggregate_final, expressions.use_grouping_set_key);
 
     merge_fragment->addStep(std::move(merge_agg_node));
 

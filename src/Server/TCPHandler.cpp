@@ -874,6 +874,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             }
         }
 
+        if (query_context->getSettingsRef().allow_experimental_fragment && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+            FragmentMgr::getInstance().rootQueryPipelineFinish(state.query_id);
+
         /// This lock wasn't acquired before and we make .lock() call here
         /// so everything under this line is covered even together
         /// with sendProgress() out of the scope
@@ -1381,12 +1384,41 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::ExchangeData:
         {
+            state.is_empty = false;
+
             ExchangeDataRequest exchange_data_request;
             exchange_data_request.read(*in);
             state.exchange_data_request.emplace(exchange_data_request);
 
+            LOG_DEBUG(log, "{} Read exchange data request done", state.exchange_data_request->query_id);
+
+            /// TODO ThreadGroup
+//            std::optional<CurrentThread::QueryScope> query_scope;
+//
+//            auto context = FragmentMgr::getInstance().findQueryContext(state.exchange_data_request->query_id);
+//
+//            query_scope.emplace(context, /* fatal_error_callback */ [this]
+//            {
+//                std::lock_guard lock(fatal_error_mutex);
+//                sendLogs();
+//            });
+
+            UInt64 compression = 0;
+            readVarUInt(compression, *in);
+            state.compression = static_cast<Protocol::Compression>(compression);
+            last_block_in.compression = state.compression;
+
+            LOG_DEBUG(log, "Read compression");
+
+            state.exchange_data_receiver = FragmentMgr::getInstance().findReceiver(*state.exchange_data_request);
+            state.exchange_data_header = state.exchange_data_receiver->getHeader();
+
+            LOG_DEBUG(log, "Found exchange data receiver");
+
             /// read exchange data
             readData();
+
+            LOG_DEBUG(log, "Read exchange data done");
 
             return false;
         }
@@ -1717,7 +1749,7 @@ bool TCPHandler::receiveData(bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
-    if (!block)
+    if (!block && !state.exchange_data_request) // exchange_data_request empty block need send to receiver
     {
         state.read_all_data = true;
         return false;
@@ -1728,7 +1760,7 @@ bool TCPHandler::receiveData(bool scalar)
         /// Scalar value
         query_context->addScalar(temporary_id.table_name, block);
     }
-    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input && !state.exchange_data_request)
     {
         /// Data for external tables
 
@@ -1754,14 +1786,21 @@ bool TCPHandler::receiveData(bool scalar)
         executor.push(block);
         executor.finish();
     }
-    else if (state.need_receive_data_for_input)
+    else if (state.need_receive_data_for_input && !state.exchange_data_request)
     {
         /// 'input' table function.
         state.block_for_input = block;
     }
     else if (state.exchange_data_request)
     {
-        FragmentMgr::getInstance().receiveData(state.exchange_data_request.value(), block);
+        bool has_data = true;
+        if (!block) // exchange_data_request empty block need send to receiver
+        {
+            LOG_DEBUG(log, "exchange_data receive empty block");
+            has_data = false;
+        }
+        state.exchange_data_receiver->receive(std::move(block));
+        return has_data;
     }
     else
     {
@@ -1812,6 +1851,8 @@ void TCPHandler::initBlockInput()
             header = state.io.pipeline.getHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
+        else if (state.exchange_data_request)
+            header = state.exchange_data_header;
 
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,

@@ -3,10 +3,10 @@
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Processors/QueryPlan/ExchangeDataStep.h>
+#include <QueryCoordination/ExchangeDataStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sinks/DataSink.h>
+#include <QueryCoordination/DataSink.h>
 #include <QueryCoordination/DataPartition.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>

@@ -17,8 +17,10 @@ enum PartitionType : uint8_t
 struct DataPartition
 {
     PartitionType type;
-    ManyExpressionActions expressions;
-};
+    Names keys;            /// keys for partition
+    size_t keys_size = 0;
 
+    bool partition_by_bucket_num = false;
+};
 
 }

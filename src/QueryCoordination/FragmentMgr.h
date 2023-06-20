@@ -36,16 +36,22 @@ class FragmentMgr
 {
 public:
     // from InterpreterSelectQueryFragments
-    void addFragment(String query_id, PlanFragmentPtr fragment, ContextMutablePtr context_);
+    void addFragment(const String & query_id, PlanFragmentPtr fragment, ContextMutablePtr context_);
 
     // Keep fragments that need to be executed by themselves
-    void fragmentsToDistributed(String query_id, const std::vector<FragmentRequest> & need_execute_fragments);
+    void fragmentsToDistributed(const String & query_id, const std::vector<FragmentRequest> & need_execute_fragments);
 
-    void executeQueryPipelines(String query_id);
+    void executeQueryPipelines(const String & query_id);
 
     void receiveData(const ExchangeDataRequest & exchange_data_request, Block block);
 
-    QueryPipeline findRootQueryPipeline(String query_id);
+    std::shared_ptr<ExchangeDataReceiver> findReceiver(const ExchangeDataRequest & exchange_data_request) const;
+
+    void rootQueryPipelineFinish(const String & query_id);
+
+    QueryPipeline findRootQueryPipeline(const String & query_id);
+
+    ContextMutablePtr findQueryContext(const String & query_id);
 
     static FragmentMgr & getInstance()
     {
@@ -58,9 +64,7 @@ public:
 private:
     FragmentMgr() = default;
 
-    void fragmentsToQueryPipelines(String query_id);
-
-    void cleanerThread();
+    void fragmentsToQueryPipelines(const String & query_id);
 
     struct Data
     {

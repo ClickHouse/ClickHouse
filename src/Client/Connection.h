@@ -132,7 +132,7 @@ public:
 
     void sendExecuteQueryPipelines(const String & query_id_);
 
-    void sendExchangeData(const ExchangeDataRequest & request) const;
+    void sendExchangeData(const ExchangeDataRequest & request);
 
     void sendCancel() override;
 
