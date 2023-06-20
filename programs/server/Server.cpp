@@ -1834,7 +1834,7 @@ try
                 for (auto & query : global_context->getProcessList().processes)
                 {
                     if (!shutdown_wait_unfinished_query_kind.isSet(query->getInfo().query_kind))
-                        query->cancelQuery(true)
+                        query->cancelQuery(true);
                 }
             }
 
