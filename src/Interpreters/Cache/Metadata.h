@@ -120,8 +120,9 @@ public:
     void cancelDownload();
 
 private:
+    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    CacheMetadataGuard guard;
+    mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     Poco::Logger * log;
