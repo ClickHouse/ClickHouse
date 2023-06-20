@@ -471,7 +471,7 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
             String node;            /// Node name
         };
         std::vector<GetTask> get_tasks;
-        Coordination::Requests get_requests;
+        std::vector<String> paths_to_get;
         for (size_t list_task_idx = 0; list_task_idx < list_tasks.size(); ++list_task_idx)
         {
             auto & list_result = list_responses[list_task_idx];
@@ -501,23 +501,22 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
             get_tasks.reserve(get_tasks.size() + nodes.size());
             for (const String & node : nodes)
             {
-                get_requests.emplace_back(zkutil::makeGetRequest(task.path_part + '/' + node));
+                paths_to_get.emplace_back(task.path_part + '/' + node);
                 get_tasks.emplace_back(GetTask{list_task_idx, node});
             }
         }
 
-        Coordination::Responses get_responses;
-        zookeeper->tryMulti(get_requests, get_responses);
+        auto get_responses = zookeeper->tryGet(paths_to_get);
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
-            if (get_responses[i]->error == Coordination::Error::ZNONODE)
+            auto & res = get_responses[i];
+            if (res.error == Coordination::Error::ZNONODE)
                 continue; /// Node was deleted meanwhile.
 
             auto & get_task = get_tasks[i];
             auto & list_task = list_tasks[get_task.list_task_idx];
             context->getProcessListElement()->checkTimeLimit();
-            auto & res = dynamic_cast<Coordination::GetResponse &>(*get_responses[i]);
 
             // Deduplication
             String key = list_task.path_part + '/' + get_task.node;
