@@ -36,6 +36,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/AlterCommands.h>
 
 namespace DB
 {
@@ -252,7 +253,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
-        /*priority=*/ 1,
+        Priority{1},
         TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret};
 
@@ -1441,9 +1442,49 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         return table->as<StorageKeeperMap>() != nullptr;
     };
 
+    const auto is_replicated_table = [&](const ASTPtr & ast)
+    {
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        return table->supportsReplication();
+    };
+
+    const auto has_many_shards = [&]()
+    {
+        /// If there is only 1 shard then there is no need to replicate some queries.
+        auto current_cluster = tryGetCluster();
+        return
+            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
+            current_cluster->getShardsInfo().size() > 1;
+    };
+
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter() && !is_keeper_map_table(query_ptr);
+    {
+        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr))
+            return false;
+
+        if (has_many_shards() || !is_replicated_table(query_ptr))
+            return true;
+
+        try
+        {
+            /// Metadata alter should go through database
+            for (const auto & child : alter->command_list->children)
+                if (AlterCommand::parse(child->as<ASTAlterCommand>()))
+                    return true;
+
+            /// It's ALTER PARTITION or mutation, doesn't involve database
+            return false;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
+        return true;
+    }
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
@@ -1459,11 +1500,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         if (is_keeper_map_table(query_ptr))
             return false;
 
-        /// If there is only 1 shard then there is no need to replicate DELETE query.
-        auto current_cluster = tryGetCluster();
-        return
-            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
-            current_cluster->getShardsInfo().size() > 1;
+        return has_many_shards() || !is_replicated_table(query_ptr);
     }
 
     return true;
