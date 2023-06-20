@@ -29,6 +29,8 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix);
 
+    DiskLocal(const String & name_, const String & path_);
+
     const String & getPath() const override { return disk_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
