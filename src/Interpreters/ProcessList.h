@@ -394,12 +394,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(
-        const String & query_,
-        const IAST * ast,
-        ContextMutablePtr query_context,
-        UInt64 watch_start_nanoseconds,
-        IAST::QueryKind force_query_kind = IAST::QueryKind::None);
+    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }

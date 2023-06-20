@@ -206,6 +206,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     query = query->clone();
     const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
+    insert_query.async_insert_flush = true;
 
     InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
@@ -435,8 +436,8 @@ try
     /// a) it appears in system.processes
     /// b) can be cancelled if we want to
     /// c) has an associated process list element where runtime metrics are stored
-    auto process_list_entry = insert_context->getProcessList().insert(
-        query_for_logging, key.query.get(), insert_context, start_watch.getStart(), IAST::QueryKind::AsyncInsertFlush);
+    auto process_list_entry
+        = insert_context->getProcessList().insert(query_for_logging, key.query.get(), insert_context, start_watch.getStart());
     auto query_status = process_list_entry->getQueryStatus();
     insert_context->setProcessListElement(std::move(query_status));
 
@@ -473,7 +474,7 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), async_insert);
+        logExceptionBeforeStart(query_for_logging, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
         throw;
     }
 
