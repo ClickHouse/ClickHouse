@@ -72,7 +72,7 @@ bool traverseASTFilter(
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))
                 future_set = prepared_sets->findSubquery(set_key);
             else
-                future_set = prepared_sets->find(set_key, {primary_key_type});
+                future_set = prepared_sets->findTuple(set_key, {primary_key_type});
 
             if (!future_set)
                 return false;

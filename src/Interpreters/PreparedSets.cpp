@@ -178,26 +178,26 @@ static FutureSetPtr findSet(const std::vector<std::shared_ptr<FutureSet>> & sets
     return nullptr;
 }
 
-FutureSetPtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
-{
-    auto from_storage = std::make_shared<FutureSetFromStorage>(std::move(set_));
-    auto & sets_by_hash = sets[key];
-
-    if (!tryInsertSet(sets_by_hash, from_storage))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, from_storage->getTypes()));
-
-    return from_storage;
-}
-
 FutureSetPtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings)
 {
     auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings);
-    auto & sets_by_hash = sets[key];
+    auto & sets_by_hash = sets_from_tuple[key];
 
     if (!tryInsertSet(sets_by_hash, from_tuple))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, from_tuple->getTypes()));
 
     return from_tuple;
+}
+
+FutureSetPtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
+{
+    auto from_storage = std::make_shared<FutureSetFromStorage>(std::move(set_));
+    auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
+
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, {}));
+
+    return from_storage;
 }
 
 FutureSetPtr PreparedSets::addFromSubquery(const Hash & key, SubqueryForSet subquery, const Settings & settings, FutureSetPtr external_table_set)
@@ -215,10 +215,10 @@ FutureSetPtr PreparedSets::addFromSubquery(const Hash & key, SubqueryForSet subq
     return from_subquery;
 }
 
-FutureSetPtr PreparedSets::find(const Hash & key, const DataTypes & types) const
+FutureSetPtr PreparedSets::findTuple(const Hash & key, const DataTypes & types) const
 {
-    auto it = sets.find(key);
-    if (it == sets.end())
+    auto it = sets_from_tuple.find(key);
+    if (it == sets_from_tuple.end())
         return nullptr;
 
     return findSet(it->second, types);
@@ -228,6 +228,15 @@ std::shared_ptr<FutureSetFromSubquery> PreparedSets::findSubquery(const Hash & k
 {
     auto it = sets_from_subqueries.find(key);
     if (it == sets_from_subqueries.end())
+        return nullptr;
+
+    return it->second;
+}
+
+std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key) const
+{
+    auto it = sets_from_storage.find(key);
+    if (it == sets_from_storage.end())
         return nullptr;
 
     return it->second;

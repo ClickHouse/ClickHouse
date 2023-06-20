@@ -455,7 +455,7 @@ FutureSetPtr makeExplicitSet(
     //     std::cerr << "========== " << set_element_types[0]->getName() << std::endl;
 
     auto set_key = right_arg->getTreeHash();
-    if (auto set = prepared_sets.find(set_key, set_element_types))
+    if (auto set = prepared_sets.findTuple(set_key, set_element_types))
         return set; /// Already prepared.
 
     Block block;

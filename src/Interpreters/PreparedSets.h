@@ -148,14 +148,16 @@ public:
     //     std::shared_ptr<FutureSetFromSubquery> set;
     // };
 
-    using Sets = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSet>>, Hashing>;
+    using SetsFromTuple = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSet>>, Hashing>;
+    using SetsFromStorage = std::unordered_map<Hash, std::shared_ptr<FutureSetFromStorage>, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, std::shared_ptr<FutureSetFromSubquery>, Hashing>;
 
     FutureSetPtr addFromStorage(const Hash & key, SetPtr set_);
     FutureSetPtr addFromTuple(const Hash & key, Block block, const Settings & settings);
     FutureSetPtr addFromSubquery(const Hash & key, SubqueryForSet subquery, const Settings & settings, FutureSetPtr external_table_set);
 
-    FutureSetPtr find(const Hash & key, const DataTypes & types) const;
+    FutureSetPtr findTuple(const Hash & key, const DataTypes & types) const;
+    std::shared_ptr<FutureSetFromStorage> findStorage(const Hash & key) const;
     std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
 
     //FutureSetPtr getFuture(const PreparedSetKey & key) const;
@@ -165,13 +167,15 @@ public:
     /// SetPtr would still be available for consumers of PreparedSets.
     std::vector<std::shared_ptr<FutureSetFromSubquery>> detachSubqueries();
 
-    const Sets & getNormalSets() const { return sets; }
+    const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
+    const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
     const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
 
 private:
-    Sets sets;
+    SetsFromTuple sets_from_tuple;
+    SetsFromStorage sets_from_storage;
     SetsFromSubqueries sets_from_subqueries;
 };
 
