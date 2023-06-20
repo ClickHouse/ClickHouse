@@ -442,7 +442,7 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
     while (!paths.empty())
     {
         list_tasks.clear();
-        Coordination::Requests list_requests;
+        std::vector<String> paths_to_list;
         while (!paths.empty() && static_cast<Int64>(list_tasks.size()) < max_inflight_requests)
         {
             auto [path, path_type] = std::move(paths.front());
@@ -460,11 +460,10 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
 
             task.path_corrected = pathCorrected(path);
 
-            list_requests.emplace_back(zkutil::makeListRequest(task.path_corrected));
+            paths_to_list.emplace_back(task.path_corrected);
             list_tasks.emplace_back(std::move(task));
         }
-        Coordination::Responses list_responses;
-        zookeeper->tryMulti(list_requests, list_responses);
+        auto list_responses = zookeeper->tryGetChildren(paths_to_list);
 
         struct GetTask
         {
@@ -475,14 +474,14 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
         Coordination::Requests get_requests;
         for (size_t list_task_idx = 0; list_task_idx < list_tasks.size(); ++list_task_idx)
         {
+            auto & list_result = list_responses[list_task_idx];
             /// Node can be deleted concurrently. It's Ok, we don't provide any
             /// consistency guarantees for system.zookeeper table.
-            if (list_responses[list_task_idx]->error == Coordination::Error::ZNONODE)
+            if (list_result.error == Coordination::Error::ZNONODE)
                 continue;
 
             auto & task = list_tasks[list_task_idx];
             context->getProcessListElement()->checkTimeLimit();
-            auto & list_result = dynamic_cast<Coordination::ListResponse &>(*list_responses[list_task_idx]);
 
             Strings nodes = std::move(list_result.names);
 
