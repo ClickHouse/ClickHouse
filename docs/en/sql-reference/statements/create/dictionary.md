@@ -87,6 +87,8 @@ When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you mu
 :::note
 
 ```sql
+CREATE DATABASE foo_db;
+
 CREATE TABLE foo_db.source_table (
     id UInt64,
     value String
