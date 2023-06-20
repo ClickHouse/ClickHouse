@@ -174,12 +174,15 @@ public:
         {
             auto res = static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
-            DateLUTImpl::DateTimeComponents a_comp;
-            DateLUTImpl::DateTimeComponents b_comp;
+            DateTimeComponentsWithFractionalPart a_comp;
+            DateTimeComponentsWithFractionalPart b_comp;
+
             Int64 adjust_value;
-            auto x_seconds = TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-            auto y_seconds = TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
-            if (x_seconds <= y_seconds)
+            const auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
+            auto x_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            auto y_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+
+            if (x_microseconds <= y_microseconds)
             {
                 a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
                 b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
@@ -191,36 +194,43 @@ public:
                 b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
                 adjust_value = 1;
             }
+            const auto & a_date = a_comp.datetime.date;
+            const auto & b_date = b_comp.datetime.date;
+            const auto & a_time = a_comp.datetime.time;
+            const auto & b_time = b_comp.datetime.time;
 
             if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.date.month > b_comp.date.month)
-                    || ((a_comp.date.month == b_comp.date.month) && ((a_comp.date.day > b_comp.date.day)
-                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second))))
-                    )))))
+                if ((a_date.month > b_date.month)
+                    || ((a_date.month == b_date.month) && ((a_date.day > b_date.day)
+                    || ((a_date.day == b_date.day) && ((a_time.hour > b_time.hour)
+                    || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
+                    || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_month_in_quarter = (a_comp.date.month - 1) % 3;
-                auto y_month_in_quarter = (b_comp.date.month - 1) % 3;
+                auto x_month_in_quarter = (a_date.month - 1) % 3;
+                auto y_month_in_quarter = (b_date.month - 1) % 3;
                 if ((x_month_in_quarter > y_month_in_quarter)
-                    || ((x_month_in_quarter == y_month_in_quarter) && ((a_comp.date.day > b_comp.date.day)
-                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second))))
-                    )))))
+                    || ((x_month_in_quarter == y_month_in_quarter) && ((a_date.day > b_date.day)
+                    || ((a_date.day == b_date.day) && ((a_time.hour > b_time.hour)
+                    || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
+                    || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.date.day > b_comp.date.day)
-                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second))))
-                    )))
+                if ((a_date.day > b_date.day)
+                    || ((a_date.day == b_date.day) && ((a_time.hour > b_time.hour)
+                    || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
+                    || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
@@ -228,27 +238,46 @@ public:
                 auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
                 auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
                 if ((x_day_of_week > y_day_of_week)
-                    || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second)))))
+                    || ((x_day_of_week == y_day_of_week) && (a_time.hour > b_time.hour))
+                    || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
+                    || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second)))))
+                if ((a_time.hour > b_time.hour)
+                    || ((a_time.hour == b_time.hour) && ((a_time.minute > b_time.minute)
+                    || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond) 
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeHourNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second)))
+                if ((a_time.minute > b_time.minute)
+                    || ((a_time.minute == b_time.minute) && ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
             {
-                if (a_comp.time.second > b_comp.time.second)
+                if ((a_time.second > b_time.second)
+                    || ((a_time.second == b_time.second) && ((a_comp.millisecond > b_comp.millisecond)
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((a_comp.millisecond > b_comp.millisecond)
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<1000>>>)
+            {
+                if (a_comp.microsecond > b_comp.microsecond)
                     res += adjust_value;
             }
             return res;

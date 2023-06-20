@@ -1377,30 +1377,30 @@ struct ToRelativeSecondNumImpl
     using FactorTransform = ZeroTransform;
 };
 
-template <Int64 second_divider>
+template <Int64 scale_multiplier>
 struct ToRelativeSubsecondNumImpl
 {
     static constexpr auto name = "toRelativeSubsecondNumImpl";
 
     static inline UInt64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
     {
-        if (scale == second_divider)
+        if (scale == scale_multiplier)
             return t.value;
-        if (scale > second_divider)
-            return t.value / (scale / second_divider);
-        return t.value * (second_divider / scale);
+        if (scale > scale_multiplier)
+            return t.value / (scale / scale_multiplier);
+        return t.value * (scale_multiplier / scale);
     }
     static inline UInt64 execute(UInt32 t, const DateLUTImpl &)
     {
-        return t * second_divider;
+        return t * scale_multiplier;
     }
     static inline UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) * second_divider;
+        return static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) * scale_multiplier;
     }
     static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt64>(time_zone.fromDayNum(DayNum(d)) * second_divider);
+        return static_cast<UInt64>(time_zone.fromDayNum(DayNum(d)) * scale_multiplier);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1505,25 +1505,43 @@ struct ToYYYYMMDDhhmmssImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct DateTimeComponentsWithFractionalPart
+{
+    DateLUTImpl::DateTimeComponents datetime;
+    UInt16  millisecond = 0;
+    UInt16  microsecond = 0;
+};
+
 struct ToDateTimeComponentsImpl
 {
     static constexpr auto name = "toDateTimeComponents";
 
-    static inline DateLUTImpl::DateTimeComponents execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(t);
+        const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+        const auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
+        Int64 fractional = components.fractional;
+
+        if (scale_multiplier > multiplier)
+            fractional = fractional / (scale_multiplier / multiplier);
+        else if (scale_multiplier < multiplier)
+            fractional = fractional * (multiplier / scale_multiplier);
+
+        UInt16 millisecond = static_cast<UInt16>(fractional / 1000);
+        UInt16 microsecond = static_cast<UInt16>(fractional % 1000);
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond};
     }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt32 t, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t));
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t)), 0, 0};
     }
-    static inline DateLUTImpl::DateTimeComponents execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(ExtendedDayNum(d));
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(ExtendedDayNum(d)), 0, 0};
     }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(DayNum(d));
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(DayNum(d)), 0, 0};
     }
 
     using FactorTransform = ZeroTransform;
