@@ -83,7 +83,7 @@ QueryLogElement logQueryStart(
     bool internal,
     const String & query_database,
     const String & query_table,
-    bool async_insert = false);
+    bool async_insert);
 
 void logQueryFinish(
     QueryLogElement & elem,
@@ -109,5 +109,5 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_millliseconds,
-    bool async_insert = false);
+    bool async_insert_flush = false);
 }
