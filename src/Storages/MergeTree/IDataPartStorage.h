@@ -110,6 +110,8 @@ public:
     /// Get metadata for a file inside path dir.
     virtual size_t getFileSize(const std::string & file_name) const = 0;
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
+
+    /// Get path on remote filesystem from file name on local filesystem.
     virtual std::string getRemotePath(const std::string & file_name) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
