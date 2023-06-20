@@ -239,6 +239,8 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
+        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
+
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
             self.run_by_hash_num = self.params["run_by_hash_num"]
@@ -398,6 +400,9 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--tmpfs")
         if self.disable_net_host:
             result.append("--disable-net-host")
+        if self.use_analyzer:
+            result.append("--analyzer")
+
         return " ".join(result)
 
     def _get_all_tests(self, repo_path):
