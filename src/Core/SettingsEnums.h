@@ -34,7 +34,9 @@ DECLARE_SETTING_ENUM(JoinStrictness)
 
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 
-DECLARE_SETTING_MULTI_ENUM(IAST::QueryKind)
+using QueryKind = IAST::QueryKind;
+
+DECLARE_SETTING_MULTI_ENUM(QueryKind)
 
 
 /// Which rows should be included in TOTALS.
