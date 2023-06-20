@@ -265,9 +265,8 @@ std::vector<std::shared_ptr<FutureSetFromSubquery>> PreparedSets::detachSubqueri
     std::vector<std::shared_ptr<FutureSetFromSubquery>> res;
     res.reserve(sets_from_subqueries.size());
     for (auto & [_, set] : sets_from_subqueries)
-        res.push_back(std::move(set));
+        res.push_back(set);
 
-    sets_from_subqueries.clear();
     return res;
 }
 
