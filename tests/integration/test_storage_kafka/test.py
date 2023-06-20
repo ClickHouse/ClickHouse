@@ -4722,6 +4722,14 @@ is_currently_used:          0
 """
     )
 
+    result_rdkafka_stat = instance.query(
+        """
+        SELECT table, rdkafka_stat
+          FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
+        """
+    )
+    logging.debug(f"result_rdkafka_stat: {result_rdkafka_stat}")
+
     instance.query("DROP TABLE test.kafka")
     instance.query("DROP TABLE test.kafka2")
 

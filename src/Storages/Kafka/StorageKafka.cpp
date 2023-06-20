@@ -642,10 +642,12 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
-    // kafka_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & json_string)
-    // {
-    //     LOG_DEBUG(log, "kafka statistics {}", json_string);
-    // });
+    kafka_config.set("statistics.interval.ms","1000000"); // 10 times per a second
+    kafka_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json_string)
+    {
+        LOG_DEBUG(log, "kafka statistics {}", stat_json_string);
+        rdkafka_stat = std::make_shared<const String>(stat_json_string);
+    });
 
 
     // Configure interceptor to change thread name

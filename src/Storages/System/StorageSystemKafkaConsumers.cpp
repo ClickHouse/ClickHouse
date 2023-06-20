@@ -42,6 +42,9 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"num_rebalance_revocations", std::make_shared<DataTypeUInt64>()},
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>()},
         {"is_currently_used", std::make_shared<DataTypeUInt8>()},
+        {"rdkafka_stat", std::make_shared<DataTypeString>()},
+        {"json", std::make_shared<DataTypeObject>("json", false)}};
+
     };
     return names_and_types;
 }
@@ -77,6 +80,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & num_rebalance_revocations = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & num_rebalance_assigments = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & is_currently_used = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
+    auto & rdkafka_stat = assert_cast<ColumnString &>(*res_columns[index++]);
 
     const auto access = context->getAccess();
     size_t last_assignment_num = 0;
@@ -146,6 +150,16 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             num_rebalance_assigments.insert(consumer->num_rebalance_assignments.load());
 
             is_currently_used.insert(consumer->stalled_status != KafkaConsumer::CONSUMER_STOPPED && consumer->assignment.has_value() && consumer->assignment.value().size() > 0);
+
+            auto stat_string_ptr = storage_kafka_ptr->getRdkafkaStat();
+            if (stat_string_ptr)
+            {
+                rdkafka_stat.insertData(stat_string_ptr->data(), stat_string_ptr->size());
+            }
+            else
+            {
+                rdkafka_stat.insertData(nullptr, 0);
+            }
         }
 
     };

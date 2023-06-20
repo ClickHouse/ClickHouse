@@ -78,6 +78,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+    std::shared_ptr<const String> getRdkafkaStat() const { return rdkafka_stat; }
 
 private:
     // Configuration and state
@@ -144,6 +145,8 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+
+    std::shared_ptr<const String> rdkafka_stat;
 
     friend class DB::StorageSystemKafkaConsumers;
 };
