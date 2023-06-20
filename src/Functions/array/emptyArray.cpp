@@ -60,9 +60,10 @@ REGISTER_FUNCTION(EmptyArray)
 {
 
 #define REGISTER_EMPTY_ARRAY_FUNCTION(TYPE) \
-    do { \
+    do \
+    { \
         static const char name[] = "emptyArray" #TYPE; \
-       registerFunction<FunctionEmptyArray<DataType##TYPE, name>>(factory); \
+        registerFunction<FunctionEmptyArray<DataType##TYPE, name>>(factory); \
     } while(0)
 
     REGISTER_EMPTY_ARRAY_FUNCTION(UInt8);
