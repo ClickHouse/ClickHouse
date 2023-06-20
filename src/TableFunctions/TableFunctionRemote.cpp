@@ -37,7 +37,10 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     String cluster_name;
     String cluster_description;
-    String database = "system", table = "one", username = "default", password;
+    String database = "system";
+    String table = "one"; /// The table containing one row is used by default for queries without explicit table specification.
+    String username = "default";
+    String password;
 
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
