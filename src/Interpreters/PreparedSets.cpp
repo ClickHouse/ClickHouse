@@ -88,10 +88,10 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 //     return true;
 // }
 
-String PreparedSets::toString(const PreparedSets::Hash & hash, const DataTypes & types)
+String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & types)
 {
     WriteBufferFromOwnString buf;
-    buf << "__set_" << hash.first << "_" << hash.second;
+    buf << "__set_" << key.first << "_" << key.second;
     if (!types.empty())
     {
         buf << "(";
