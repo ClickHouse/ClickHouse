@@ -2,6 +2,8 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
+#include <IO/Operators.h>
 #include <base/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
@@ -547,14 +549,16 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 template <typename TTraits>
 String BaseSettings<TTraits>::toString() const
 {
-    String res;
-    for (const auto & field : *this)
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & setting : *this)
     {
-        if (!res.empty())
-            res += ", ";
-        res += field.getName() + " = " + field.getValueString();
+        if (!first)
+            out << ", ";
+        out << setting.getName() << " = " << applyVisitor(FieldVisitorToString(), setting.getValue());
+        first = false;
     }
-    return res;
+    return out.str();
 }
 
 template <typename TTraits>
