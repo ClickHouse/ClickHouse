@@ -89,16 +89,20 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
         pool.scheduleOrThrowOnError(
             [&from_disk, from_path, &to_disk, to_path, &settings, promise, thread_group = CurrentThread::getGroup()]()
             {
-                SCOPE_EXIT_SAFE(
+                try
+                {
+                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+
                     if (thread_group)
-                        CurrentThread::detachFromGroupIfNotDetached();
-                );
+                        CurrentThread::attachToGroup(thread_group);
 
-                if (thread_group)
-                    CurrentThread::attachToGroup(thread_group);
-
-                from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
-                promise->set_value();
+                    from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    promise->set_exception(std::current_exception());
+                }
             });
 
         results.push_back(std::move(future));
@@ -130,7 +134,9 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
     asyncCopy(*this, from_path, *to_disk, to_path, copying_thread_pool, results, copy_root_dir, settings);
 
     for (auto & result : results)
-        result.get();
+        result.wait();
+    for (auto & result : results)
+        result.get();   /// May rethrow an exception
 }
 
 
