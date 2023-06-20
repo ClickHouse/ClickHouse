@@ -271,8 +271,6 @@ std::vector<std::shared_ptr<FutureSetFromSubquery>> PreparedSets::detachSubqueri
     return res;
 }
 
-bool PreparedSets::empty() const { return sets.empty(); }
-
 void SubqueryForSet::createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_)
 {
     source = std::make_unique<QueryPlan>();
@@ -330,13 +328,18 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     }
 
     if (external_table_set)
-        return subquery.set = external_table_set->buildOrderedSetInplace(context);
+    {
+        auto set = external_table_set->buildOrderedSetInplace(context);
+        if (set)
+            return subquery.set = set;
+    }
 
     auto plan = buildPlan(context);
     if (!plan)
         return nullptr;
 
     subquery.set->fillSetElements();
+    subquery.set->initSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(Block()));
@@ -376,6 +379,9 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
 
     auto plan = subquery.detachSource();
     auto description = subquery.key;
+
+    if (!plan)
+        return nullptr;
 
     auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentDataStream(),

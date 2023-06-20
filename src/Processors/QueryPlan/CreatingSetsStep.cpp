@@ -190,10 +190,14 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
-    if (!prepared_sets || prepared_sets->empty())
+    if (!prepared_sets)
         return;
 
-    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
+    auto subqueries = prepared_sets->detachSubqueries();
+    if (subqueries.empty())
+        return;
+
+    addCreatingSetsStep(query_plan, std::move(subqueries), context);
 }
 
 DelayedCreatingSetsStep::DelayedCreatingSetsStep(

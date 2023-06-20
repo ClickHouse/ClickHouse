@@ -92,7 +92,7 @@ public:
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
-    static DataTypes getElementTypes(const ColumnsWithTypeAndName & header, bool transform_null_in);
+    static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
 private:
     size_t keys_size = 0;

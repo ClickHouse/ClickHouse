@@ -445,9 +445,14 @@ FutureSetPtr makeExplicitSet(
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
-    for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            element_type = low_cardinality_type->getDictionaryType();
+    set_element_types = Set::getElementTypes(std::move(set_element_types), context->getSettingsRef().transform_null_in);
+
+    // for (auto & element_type : set_element_types)
+    //     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+    //         element_type = low_cardinality_type->getDictionaryType();
+
+    // if (!set_element_types.empty())
+    //     std::cerr << "========== " << set_element_types[0]->getName() << std::endl;
 
     auto set_key = right_arg->getTreeHash();
     if (auto set = prepared_sets.find(set_key, set_element_types))

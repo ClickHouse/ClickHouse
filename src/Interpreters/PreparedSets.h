@@ -168,8 +168,6 @@ public:
     const Sets & getNormalSets() const { return sets; }
     const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
-    bool empty() const;
-
     static String toString(const Hash & key, const DataTypes & types);
 
 private:

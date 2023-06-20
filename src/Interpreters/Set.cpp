@@ -103,22 +103,18 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-DataTypes Set::getElementTypes(const ColumnsWithTypeAndName & header, bool transform_null_in)
+DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
-    DataTypes data_types;
-    data_types.reserve(header.size());
-
-    for (const auto & column : header)
+    for (auto & type : types)
     {
-        data_types.push_back(column.type);
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
-            data_types.back() = low_cardinality_type->getDictionaryType();
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            type = low_cardinality_type->getDictionaryType();
 
         if (!transform_null_in)
-            data_types.back() = removeNullable(data_types.back());
+            type = removeNullable(type);
     }
 
-    return data_types;
+    return types;
 }
 
 
