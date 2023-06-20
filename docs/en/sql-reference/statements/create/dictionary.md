@@ -106,7 +106,7 @@ CREATE DICTIONARY foo_db.id_value_dictionary
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(TABLE 'source_table' USER 'foo_user' PASSWORD 'foo_user_complex_password' DB 'foo_db' ))
+SOURCE(CLICKHOUSE(TABLE 'source_table' USER 'clickhouse_admin' PASSWORD 'passworD43$x' DB 'foo_db' ))
 LAYOUT(FLAT())
 LIFETIME(MIN 0 MAX 1000);
 ```
