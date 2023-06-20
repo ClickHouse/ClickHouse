@@ -1382,7 +1382,7 @@ struct ToRelativeSubsecondNumImpl
 {
     static constexpr auto name = "toRelativeSubsecondNumImpl";
 
-    static inline UInt64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
+    static inline Int64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
     {
         if (scale == scale_multiplier)
             return t.value;
@@ -1390,17 +1390,17 @@ struct ToRelativeSubsecondNumImpl
             return t.value / (scale / scale_multiplier);
         return t.value * (scale_multiplier / scale);
     }
-    static inline UInt64 execute(UInt32 t, const DateLUTImpl &)
+    static inline Int64 execute(UInt32 t, const DateLUTImpl &)
     {
         return t * scale_multiplier;
     }
-    static inline UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) * scale_multiplier;
+        return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))) * scale_multiplier;
     }
-    static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt64>(time_zone.fromDayNum(DayNum(d)) * scale_multiplier);
+        return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)) * scale_multiplier);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1505,9 +1505,8 @@ struct ToYYYYMMDDhhmmssImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct DateTimeComponentsWithFractionalPart
+struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeComponents
 {
-    DateLUTImpl::DateTimeComponents datetime;
     UInt16  millisecond = 0;
     UInt16  microsecond = 0;
 };
@@ -1518,10 +1517,15 @@ struct ToDateTimeComponentsImpl
 
     static inline DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
-        const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+        auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
         const auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
-        Int64 fractional = components.fractional;
 
+        if (t.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
         if (scale_multiplier > multiplier)
             fractional = fractional / (scale_multiplier / multiplier);
         else if (scale_multiplier < multiplier)

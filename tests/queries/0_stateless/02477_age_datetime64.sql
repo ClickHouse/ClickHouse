@@ -134,3 +134,9 @@ SELECT age('year', toDateTime64('2015-02-02 20:30:36.200', 3, 'UTC'), toDateTime
 SELECT age('year', toDateTime64('2015-02-02 20:30:36.200', 3, 'UTC'), toDateTime64('2023-02-02 20:30:35.200', 3, 'UTC'));
 SELECT age('year', toDateTime64('2015-02-02 20:30:36.200', 3, 'UTC'), toDateTime64('2023-02-02 20:30:36.100', 3, 'UTC'));
 SELECT age('year', toDateTime64('2015-02-02 20:30:36.200101', 6, 'UTC'), toDateTime64('2023-02-02 20:30:36.200100', 6, 'UTC'));
+
+-- DateTime64 vs DateTime64 with negative time
+SELECT age('millisecond', toDateTime64('1969-12-31 23:59:58.001', 3), toDateTime64('1970-01-01 00:00:00.350', 3, 'UTC'));
+SELECT age('second', toDateTime64('1969-12-31 23:59:58.001', 3), toDateTime64('1970-01-01 00:00:00.35', 3, 'UTC'));
+SELECT age('second', toDateTime64('1969-12-31 23:59:50.001', 3), toDateTime64('1969-12-31 23:59:55.002', 3, 'UTC'));
+SELECT age('second', toDateTime64('1969-12-31 23:59:50.003', 3), toDateTime64('1969-12-31 23:59:55.002', 3, 'UTC'));
