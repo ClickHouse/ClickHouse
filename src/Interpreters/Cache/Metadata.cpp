@@ -396,11 +396,11 @@ void CacheMetadata::downloadThreadFunc()
                     || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
                     continue;
 
-                auto lock = lockKeyMetadata(file_segment->key(), KeyNotFoundPolicy::RETURN_NULL);
-                if (!lock)
+                auto locked_key = lockKeyMetadata(file_segment->key(), KeyNotFoundPolicy::RETURN_NULL);
+                if (!locked_key)
                     continue;
 
-                auto file_segment_metadata = lock->tryGetByOffset(file_segment->offset());
+                auto file_segment_metadata = locked_key->tryGetByOffset(file_segment->offset());
                 if (!file_segment_metadata || file_segment_metadata->evicting())
                     continue;
 
