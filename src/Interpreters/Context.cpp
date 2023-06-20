@@ -386,7 +386,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
                 asynchronous_remote_fs_reader->wait();
                 asynchronous_remote_fs_reader.reset();
             }
@@ -400,7 +400,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 asynchronous_local_fs_reader->wait();
                 asynchronous_local_fs_reader.reset();
             }
@@ -414,7 +414,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 synchronous_local_fs_reader->wait();
                 synchronous_local_fs_reader.reset();
             }
@@ -428,7 +428,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing threadpool writer");
+                LOG_DEBUG(log, "Destructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
@@ -442,7 +442,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing marks loader");
+                LOG_DEBUG(log, "Destructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
@@ -456,7 +456,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                LOG_DEBUG(log, "Destructing prefetch threadpool");
                 prefetch_threadpool->wait();
                 prefetch_threadpool.reset();
             }

@@ -367,6 +367,9 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 {
+    if (num_blocks_processed > 0)
+        storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
+
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     const auto & settings = context->getSettingsRef();
@@ -512,6 +515,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     /// TODO: we can also delay commit if there is no MVs.
     if (!settings.deduplicate_blocks_in_dependent_materialized_views)
         finishDelayedChunk(zookeeper);
+
+    ++num_blocks_processed;
 }
 
 template<>
@@ -1136,9 +1141,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 {
-    /// Only check "too many parts" before write,
+    /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context);
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
 }
 
 template<bool async_insert>

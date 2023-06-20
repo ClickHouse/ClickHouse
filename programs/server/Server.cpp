@@ -1714,7 +1714,6 @@ try
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-
         async_metrics.start();
 
         {

@@ -26,6 +26,7 @@ AlertManager
 Alexey
 AnyEvent
 AppleClang
+Approximative
 ArrayJoin
 ArrowStream
 AsynchronousHeavyMetricsCalculationTimeSpent
@@ -1007,6 +1008,7 @@ anyLast
 anyheavy
 anylast
 appendTrailingCharIfAbsent
+approximative
 argMax
 argMin
 argmax
@@ -1083,6 +1085,7 @@ avgweighted
 avro
 avx
 aws
+azureBlobStorage
 backend
 backoff
 backticks
@@ -2045,6 +2048,7 @@ reconnection
 recurse
 redash
 reddit
+redis
 redisstreams
 refcounter
 regexpExtract
@@ -2421,6 +2425,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unintuitive
 uniq
 uniqCombined
 uniqExact
