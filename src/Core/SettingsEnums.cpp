@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
+    extern const int UNKNOWN_QUERY_KIND;
 }
 
 
@@ -40,6 +41,37 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+
+
+IMPLEMENT_SETTING_MULTI_ENUM(IAST::QueryKind, ErrorCodes::UNKNOWN_QUERY_KIND,
+    {{"None",                   IAST::QueryKind::NONE},
+     {"Select",                 IAST::QueryKind::SELECT},
+     {"Insert",                 IAST::QueryKind::INSERT},
+     {"Delete",                 IAST::QueryKind::DELETE},
+     {"Create",                 IAST::QueryKind::CREATE},
+     {"Drop",                   IAST::QueryKind::DROP},
+     {"Undrop",                 IAST::QueryKind::UNDROP},
+     {"Rename",                 IAST::QueryKind::RENAME},
+     {"Optimize",               IAST::QueryKind::OPTIMIZE},
+     {"Check",                  IAST::QueryKind::CHECK},
+     {"Alter",                  IAST::QueryKind::ALTER},
+     {"Grant",                  IAST::QueryKind::GRANT},
+     {"Revoke",                 IAST::QueryKind::REVOKE},
+     {"System",                 IAST::QueryKind::SYSTEM},
+     {"Set",                    IAST::QueryKind::SET},
+     {"Use",                    IAST::QueryKind::USE},
+     {"Show",                   IAST::QueryKind::SHOW},
+     {"Exists",                 IAST::QueryKind::EXISTS},
+     {"Describe",               IAST::QueryKind::DESCRIBE},
+     {"Explain",                IAST::QueryKind::EXPLAIN},
+     {"Backup",                 IAST::QueryKind::BACKUP},
+     {"Restore",                IAST::QueryKind::RESTORE},
+     {"KillQuery",              IAST::QueryKind::KILL_QUERY},
+     {"ExternalDDL",            IAST::QueryKind::EXTERNAL_DDL},
+     {"Begin",                  IAST::QueryKind::BEGIN},
+     {"Commit",                 IAST::QueryKind::COMMIT},
+     {"Rollback",               IAST::QueryKind::ROLLBACK},
+     {"SetTransactionSnapshot", IAST::QueryKind::SET_TRANSACTION_SNAPSHOT}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
