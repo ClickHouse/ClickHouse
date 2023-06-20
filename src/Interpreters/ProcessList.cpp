@@ -32,13 +32,13 @@ namespace ErrorCodes
 
 
 /// Should we execute the query even if max_concurrent_queries limit is exhausted
-static bool isUnlimitedQuery(const IAST * ast, IAST::QueryKind query_kind)
+static bool isUnlimitedQuery(const IAST * ast)
 {
     if (!ast)
         return false;
 
     /// It is KILL QUERY or an async insert flush query
-    if (ast->as<ASTKillQueryQuery>() || query_kind == IAST::QueryKind::AsyncInsertFlush)
+    if (ast->as<ASTKillQueryQuery>() || ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
         return true;
 
     /// It is SELECT FROM system.processes
@@ -65,12 +65,8 @@ static bool isUnlimitedQuery(const IAST * ast, IAST::QueryKind query_kind)
 }
 
 
-ProcessList::EntryPtr ProcessList::insert(
-    const String & query_,
-    const IAST * ast,
-    ContextMutablePtr query_context,
-    UInt64 watch_start_nanoseconds,
-    IAST::QueryKind force_query_kind)
+ProcessList::EntryPtr
+ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds)
 {
     EntryPtr res;
 
@@ -80,11 +76,11 @@ ProcessList::EntryPtr ProcessList::insert(
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
-    bool is_unlimited_query = isUnlimitedQuery(ast, force_query_kind);
+    bool is_unlimited_query = isUnlimitedQuery(ast);
 
     {
         auto [lock, overcommit_blocker] = safeLock(); // To avoid deadlock in case of OOM
-        IAST::QueryKind query_kind = force_query_kind != IAST::QueryKind::None ? force_query_kind : ast->getQueryKind();
+        IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
