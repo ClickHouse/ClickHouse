@@ -69,10 +69,10 @@ public:
         /// offset in Ranges
         size_t x;
         /// offset in Range
-        size_t y;
+        UInt128 y;
     };
 
-    NumbersRangedSource(const Ranges & ranges_, UInt64 base_block_size_, RangesPos start_, RangesPos end_, size_t size_)
+    NumbersRangedSource(const Ranges & ranges_, UInt64 base_block_size_, RangesPos start_, RangesPos end_, UInt128 size_)
         : ISource(NumbersSource::createHeader())
         , ranges(ranges_)
         , base_block_size(base_block_size_)
@@ -90,7 +90,7 @@ protected:
 
         auto first_value = [](const Range & r)
         {
-            return r.left.get<UInt64>() - (r.left_included ? 0 : 1);
+            return r.left.get<UInt64>() + (r.left_included ? 0 : 1);
         };
 
         auto last_value = [](const Range & r)
@@ -99,7 +99,9 @@ protected:
         };
 
         /// If data left is small, shrink block size.
-        auto block_size = std::min(base_block_size, static_cast<UInt64>(size));
+        auto block_size = base_block_size;
+        if (block_size > size)
+            block_size = static_cast<UInt64>(size);
 
         if (!block_size)
             return {};
@@ -110,13 +112,13 @@ protected:
         /// This will accelerates the code.
         UInt64 * pos = vec.data();
 
-        size_t provided = 0;
-        for (; size != 0 && block_size - provided != 0;)
+        UInt128 provided = 0;
+        while (size != 0 && block_size - provided != 0)
         {
-            size_t need = block_size - provided;
+            UInt128 need = block_size - provided;
             auto& range = ranges[cursor.x];
 
-            size_t can_provide = cursor.x == end.x ? end.y - cursor.y : last_value(range) - first_value(range) + 1 - cursor.y;
+            UInt128 can_provide = cursor.x == end.x ? end.y - cursor.y : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.y;
 
             uint64_t start_value = first_value(range) + cursor.y;
             if (can_provide > need)
@@ -164,7 +166,7 @@ private:
     RangesPos end; /// not included
 
     /// how many numbers left
-    size_t size;
+    UInt128 size;
 };
 
 }
@@ -204,13 +206,16 @@ Pipe StorageSystemNumbers::read(
     if (condition.extractPlainRanges(ranges))
     {
         /// Intersect ranges with table range
-        Range table_range(
-            FieldRef(offset), true, limit.has_value() ? FieldRef(offset + *limit) : POSITIVE_INFINITY, false);
+        std::optional<Range> table_range;
+        if (limit.has_value() && std::numeric_limits<UInt64>::max() - offset >= *limit)
+            table_range.emplace(FieldRef(offset), true, FieldRef(offset + *limit), false);
+        else
+            table_range.emplace(FieldRef(offset), true, std::numeric_limits<UInt64>::max(), true);
 
         Ranges intersected_ranges;
         for (auto & r : ranges)
         {
-            auto intersected_range = table_range.intersectWith(r);
+            auto intersected_range = table_range->intersectWith(r);
             if (intersected_range)
                 intersected_ranges.push_back(*intersected_range);
         }
@@ -241,13 +246,13 @@ Pipe StorageSystemNumbers::read(
         /// If intersected ranges is limited or we can pushdown limit.
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit())
         {
-            auto size_of_range = [] (const Range & r) -> size_t
+            auto size_of_range = [] (const Range & r) -> UInt128
             {
-                size_t size;
+                UInt128 size;
                 if (r.right.isPositiveInfinity())
-                    return std::numeric_limits<uint64_t>::max() - r.left.get<UInt64>();
+                    return static_cast<UInt128>(std::numeric_limits<uint64_t>::max()) - r.left.get<UInt64>() + r.left_included;
 
-                size = r.right.get<UInt64>() - r.left.get<UInt64>() + 1;
+                size = static_cast<UInt128>(r.right.get<UInt64>()) - r.left.get<UInt64>() + 1;
 
                 if (!r.left_included)
                     size--;
@@ -259,9 +264,9 @@ Pipe StorageSystemNumbers::read(
                 return size;
             };
 
-            auto size_of_ranges = [&size_of_range](const Ranges & rs) -> size_t
+            auto size_of_ranges = [&size_of_range](const Ranges & rs) -> UInt128
             {
-                size_t total_size{};
+                UInt128 total_size{};
                 for (const Range & r : rs)
                 {
                     /// total_size will never overflow
@@ -270,14 +275,15 @@ Pipe StorageSystemNumbers::read(
                 return total_size;
             };
 
-            size_t total_size = size_of_ranges(intersected_ranges);
-            size_t query_limit = limit_length + limit_offset;
+            UInt128 total_size = size_of_ranges(intersected_ranges);
+            UInt128 query_limit = limit_length + limit_offset;
 
             /// limit total_size by query_limit
             if (should_pushdown_limit() && query_limit < total_size)
                 total_size = query_limit;
 
-            num_streams = std::min(num_streams, total_size / max_block_size);
+            if (total_size / max_block_size < num_streams)
+                num_streams = static_cast<size_t>(total_size / max_block_size);
 
             if (num_streams == 0)
                 num_streams = 1;
@@ -286,14 +292,14 @@ Pipe StorageSystemNumbers::read(
             NumbersRangedSource::RangesPos start({0, 0});
             for (size_t i = 0; i < num_streams; ++i)
             {
-                auto size = total_size * (i + 1) / num_streams - total_size * i / num_streams;
-                size_t need = size;
+                UInt128 size = total_size * (i + 1) / num_streams - total_size * i / num_streams;
+                UInt128 need = size;
 
                 /// find end
                 NumbersRangedSource::RangesPos end(start);
                 while (need != 0)
                 {
-                    size_t can_provide = size_of_range(intersected_ranges[end.x]) - end.y;
+                    UInt128 can_provide = size_of_range(intersected_ranges[end.x]) - end.y;
                     if (can_provide > need)
                     {
                         end.y += need;
