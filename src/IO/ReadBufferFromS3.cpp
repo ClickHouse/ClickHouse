@@ -1,6 +1,4 @@
 #include <IO/S3Common.h>
-#include <aws/core/Aws.h>
-#include <aws/s3/model/GetObjectResult.h>
 #include "config.h"
 
 #if USE_AWS_S3
