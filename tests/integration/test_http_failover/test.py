@@ -26,12 +26,8 @@ node2 = cluster.add_instance(
 
 # Testing different scenarios, when the http endpoint have several ips.
 def _prepare(node):
-    node.exec_in_container(
-        (["bash", "-c", "echo '{}' node1 >> /etc/hosts".format(valid_ipv4)])
-    )
-    node.exec_in_container(
-        (["bash", "-c", "echo '{}' node1 >> /etc/hosts".format(wrong_ipv6)])
-    )
+    node.add_local_dns_entry("node1", valid_ipv4)
+    node.add_local_dns_entry("node1", valid_ipv4)
 
 
 @pytest.fixture(scope="module")
@@ -101,9 +97,7 @@ def test_url_ip_change(started_cluster):
 
     started_cluster.restart_instance_with_ip_change(node1, new_ip_host)
 
-    node2.exec_in_container(
-        (["bash", "-c", "echo '{}' node1 >> /etc/hosts".format(new_ip_host)])
-    )
+    node2.add_local_dns_entry("node1", new_ip_host)
 
     node2.query("SYSTEM DROP DNS CACHE")
 

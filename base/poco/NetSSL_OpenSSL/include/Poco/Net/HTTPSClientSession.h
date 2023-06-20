@@ -121,7 +121,7 @@ namespace Net
         /// caching is enabled for the given Context, and the server
         /// agrees to reuse the session).
 
-        virtual ~HTTPSClientSession();
+        ~HTTPSClientSession();
         /// Destroys the HTTPSClientSession and closes
         /// the underlying socket.
 

@@ -3508,6 +3508,11 @@ class ClickHouseInstance:
 
         return error
 
+    def add_local_dns_entry(self, name, ip):
+        self.exec_in_container(
+            (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)])
+        )
+
     # Connects to the instance via HTTP interface, sends a query and returns both the answer and the error message
     # as a tuple (output, error).
     def http_query_and_get_answer_with_error(

@@ -55,10 +55,11 @@ namespace
     class HTTPSessionAdapter : public Session
     {
     public:
-        HTTPSessionAdapter(const std::string & host, UInt16 port) :
-            Session(host,port)
+        HTTPSessionAdapter(const std::string & host, UInt16 port)
+            : Session(host,port)
+            , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
         {
-
+            static_assert(std::has_virtual_destructor_v<Session>, "The base class must have a virtual destructor");
         }
         ~HTTPSessionAdapter() override = default;
 
@@ -75,7 +76,7 @@ namespace
                 }
                 catch (...)
                 {
-                    LOG_TRACE((&Poco::Logger::get("HTTPSessionAdapter")), "Last ip ({})  is unreachable for {}:{}. Will try another resolved address.",
+                    LOG_TRACE(log, "Last ip ({})  is unreachable for {}:{}. Will try another resolved address.",
                                                                            Session::getResolvedHost(), Session::getHost(), Session::getPort());
                 }
             }
@@ -87,20 +88,23 @@ namespace
                 try {
                     Session::setResolvedHost(it->toString());
                     Session::reconnect();
-                    LOG_TRACE((&Poco::Logger::get("HTTPSessionAdapter")), "Created HTTP(S) session with {}:{} ({}:{})", Session::getHost(), Session::getPort(),
+                    LOG_TRACE(log, "Created HTTP(S) session with {}:{} ({}:{})", Session::getHost(), Session::getPort(),
                                                                            it->toString(), Session::getPort());
                     break;
                 }
                 catch (...)
                 {
                     Session::close();
+                    Session::setResolvedHost("");
+                    LOG_WARNING(log, "Failed to create connection with {}:{}. {}", Session::getResolvedHost(), Session::getPort(), getCurrentExceptionMessage(false));
                     if (++it == endpoinds.end())
                     {
-                        throw Poco::TimeoutException("Can't create HTTP(S) session with the host. All resolved endpoints are unreachable.");
+                        throw;
                     }
                 }
             }
         }
+        Poco::Logger * log;
     };
 
     bool isHTTPS(const Poco::URI & uri)
