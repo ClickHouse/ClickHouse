@@ -1,5 +1,6 @@
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageView.h>
@@ -51,6 +52,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Databases/IDatabase.h>
 #include <base/range.h>
+#include <Poco/Logger.h>
 #include <algorithm>
 #include <memory>
 
@@ -583,6 +585,76 @@ public:
     }
 };
 
+bool hasUnknownColumn(const QueryTreeNodePtr & node,
+    QueryTreeNodePtr original_table_expression,
+    QueryTreeNodePtr replacement_table_expression)
+{
+    QueryTreeNodes stack = { node };
+    while (!stack.empty())
+    {
+        auto current = stack.back();
+        stack.pop_back();
+
+        switch (current->getNodeType())
+        {
+            case QueryTreeNodeType::CONSTANT:
+                break;
+            case QueryTreeNodeType::COLUMN:
+            {
+                auto * column_node = current->as<ColumnNode>();
+                auto source = column_node->getColumnSourceOrNull();
+                if (source != original_table_expression)
+                    return true;
+                else
+                    column_node->setColumnSource(replacement_table_expression);
+                break;
+            }
+            default:
+            {
+                for (const auto & child : node->getChildren())
+                {
+                    if (child)
+                        stack.push_back(child);
+                }
+            }
+        }
+    }
+    return false;
+}
+
+QueryTreeNodePtr removeJoin(
+    QueryTreeNodePtr query,
+    QueryTreeNodePtr original_table_expression,
+    QueryTreeNodePtr replacement_table_expression)
+{
+    auto * query_node = query->as<QueryNode>();
+    auto modified_query = query_node->cloneAndReplace(query_node->getJoinTree(), replacement_table_expression);
+
+    query_node = modified_query->as<QueryNode>();
+    query_node->getGroupBy().getNodes().clear();
+    query_node->getHaving() = {};
+    query_node->getOrderBy().getNodes().clear();
+
+    auto & projection = query_node->getProjection().getNodes();
+    auto projection_columns = query_node->getProjectionColumns();
+    for (size_t i = 0; i < projection.size();)
+    {
+        if (hasUnknownColumn(projection[i], original_table_expression, replacement_table_expression))
+        {
+            projection.erase(projection.begin() + i);
+            projection_columns.erase(projection_columns.begin() + i);
+            continue;
+        }
+        ++i;
+    }
+
+    query_node->resolveProjectionColumns(std::move(projection_columns));
+
+    LOG_DEBUG(&Poco::Logger::get("removeJoin"), "Query without JOIN:\n{}", modified_query->dumpTree());
+
+    return modified_query;
+}
+
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_context,
@@ -602,8 +674,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = modified_query_info.query_tree->cloneAndReplace(modified_query_info.table_expression,
-            replacement_table_expression);
+        modified_query_info.query_tree = removeJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression);
+        // modified_query_info.query_tree = modified_query_info.query_tree->cloneAndReplace(modified_query_info.table_expression,
+        //     replacement_table_expression);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -877,7 +950,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, modified_query_info, storage_snapshot->metadata, aliases, modified_context, *builder, processed_stage);
+        convertingSourceStream(header, modified_query_info, storage_snapshot, aliases, modified_context, *builder, processed_stage);
     }
 
     return builder;
@@ -1052,7 +1125,7 @@ void StorageMerge::alter(
 void ReadFromMerge::convertingSourceStream(
     const Block & header,
     SelectQueryInfo & modified_query_info,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & snapshot,
     const Aliases & aliases,
     ContextMutablePtr local_context,
     QueryPipelineBuilder & builder,
@@ -1060,7 +1133,7 @@ void ReadFromMerge::convertingSourceStream(
 {
     Block before_block_header = builder.getHeader();
 
-    auto storage_sample_block = metadata_snapshot->getSampleBlock();
+    auto storage_sample_block = snapshot->metadata->getSampleBlock();
     auto pipe_columns = builder.getHeader().getNamesAndTypesList();
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
@@ -1115,7 +1188,8 @@ void ReadFromMerge::convertingSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
+    if (local_context->getSettingsRef().allow_experimental_analyzer
+        && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),

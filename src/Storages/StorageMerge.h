@@ -199,7 +199,7 @@ private:
     static void convertingSourceStream(
         const Block & header,
         SelectQueryInfo & modified_query_info,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
         ContextMutablePtr context,
         QueryPipelineBuilder & builder,
