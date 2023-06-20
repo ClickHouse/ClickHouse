@@ -11,6 +11,7 @@
 #include <base/hex.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/randomSeed.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <filesystem>
 
@@ -21,6 +22,10 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheLockCacheMicroseconds;
+    extern const Event FilesystemCacheReserveMicroseconds;
+    extern const Event FilesystemCacheGetOrSetMicroseconds;
+    extern const Event FilesystemCacheGetMicroseconds;
 }
 
 namespace
@@ -127,6 +132,12 @@ void FileCache::initialize()
     cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
+}
+
+CacheGuard::Lock FileCache::lockCache() const
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
+    return cache_guard.lock();
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const
@@ -414,6 +425,8 @@ FileSegmentsHolderPtr FileCache::set(
 FileSegmentsHolderPtr
 FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
+
     assertInitialized();
 
     const auto aligned_offset = roundDownToMultiple(offset, boundary_alignment);
@@ -448,6 +461,8 @@ FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_siz
 
 FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetMicroseconds);
+
     assertInitialized();
 
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL);
@@ -562,8 +577,10 @@ KeyMetadata::iterator FileCache::addFileSegment(
 
 bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
+
     assertInitialized();
-    auto cache_lock = cache_guard.lock();
+    auto cache_lock = lockCache();
 
     LOG_TEST(
         log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
@@ -799,7 +816,7 @@ void FileCache::removeAllReleasable()
     /// `remove_persistent_files` defines whether non-evictable by some criteria files
     /// (they do not comply with the cache eviction policy) should also be removed.
 
-    auto lock = cache_guard.lock();
+    auto lock = lockCache();
 
     main_priority->iterate([&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
@@ -822,7 +839,7 @@ void FileCache::removeAllReleasable()
 
 void FileCache::loadMetadata()
 {
-    auto lock = cache_guard.lock();
+    auto lock = lockCache();
 
     UInt64 offset = 0;
     size_t size = 0;
@@ -988,17 +1005,18 @@ void FileCache::cleanup()
 
 void FileCache::cleanupThreadFunc()
 {
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
-
     try
     {
+#ifdef ABORT_ON_LOGICAL_ERROR
+        assertCacheCorrectness();
+#endif
+
         cleanup();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
     }
 
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
@@ -1038,7 +1056,7 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
     {
         file_segments.push_back(FileSegment::getSnapshot(segment_metadata->file_segment));
         return PriorityIterationResult::CONTINUE;
-    }, cache_guard.lock());
+    }, lockCache());
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
@@ -1063,17 +1081,17 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
 size_t FileCache::getUsedCacheSize() const
 {
-    return main_priority->getSize(cache_guard.lock());
+    return main_priority->getSize(lockCache());
 }
 
 size_t FileCache::getFileSegmentsNum() const
 {
-    return main_priority->getElementsCount(cache_guard.lock());
+    return main_priority->getElementsCount(lockCache());
 }
 
 void FileCache::assertCacheCorrectness()
 {
-    auto lock = cache_guard.lock();
+    auto lock = lockCache();
     main_priority->iterate([&](LockedKey &, FileSegmentMetadataPtr segment_metadata)
     {
         const auto & file_segment = *segment_metadata->file_segment;
@@ -1099,7 +1117,7 @@ FileCache::QueryContextHolder::~QueryContextHolder()
     /// the query has been completed and the query_context is released.
     if (context && context.use_count() == 2)
     {
-        auto lock = cache->cache_guard.lock();
+        auto lock = cache->lockCache();
         cache->query_limit->removeQueryContext(query_id, lock);
     }
 }
@@ -1110,7 +1128,7 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     if (!query_limit || settings.filesystem_cache_max_download_size == 0)
         return {};
 
-    auto lock = cache_guard.lock();
+    auto lock = lockCache();
     auto context = query_limit->getOrSetQueryContext(query_id, settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
 }

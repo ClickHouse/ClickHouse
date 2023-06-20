@@ -535,8 +535,6 @@ Possible values:
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
- Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
-
 - hash
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
@@ -1959,6 +1957,10 @@ Default value: empty string (disabled)
 For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
+:::note
+`insert_deduplication_token` works on a partition level (the same as `insert_deduplication` checksum). Multiple partitions can have the same `insert_deduplication_token`.
+:::
+
 Example:
 
 ```sql
@@ -3326,7 +3328,35 @@ Possible values:
 
 Default value: `0`.
 
-## s3_truncate_on_insert
+## engine_file_allow_create_multiple_files {#engine_file_allow_create_multiple_files}
+
+Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## engine_file_skip_empty_files {#engine_file_skip_empty_files}
+
+Enables or disables skipping empty files in [File](../../engines/table-engines/special/file.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## storage_file_read_method {#storage_file_read_method}
+
+Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
+
+Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
@@ -3336,7 +3366,29 @@ Possible values:
 
 Default value: `0`.
 
-## hdfs_truncate_on_insert
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
+
+Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
+
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## s3_skip_empty_files {#s3_skip_empty_files}
+
+Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
 
@@ -3346,31 +3398,7 @@ Possible values:
 
 Default value: `0`.
 
-## engine_file_allow_create_multiple_files
-
-Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
-
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## s3_create_new_file_on_insert
-
-Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
-
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## hdfs_create_new_file_on_insert
+## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert
 
 Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
 
@@ -3378,7 +3406,27 @@ initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## hdfs_skip_empty_files {#hdfs_skip_empty_files}
+
+Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
+
+Enables or disables skipping empty files in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
 
 Default value: `0`.
 
@@ -4366,6 +4414,32 @@ Possible values:
 - false — Disallow.
 
 Default value: `false`.
+
+## rename_files_after_processing
+
+- **Type:** String
+
+- **Default value:** Empty string
+
+This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+### Placeholders
+
+- `%f` — Original filename without extension (e.g., "sample").
+- `%e` — Original file extension with dot (e.g., ".csv").
+- `%t` — Timestamp (in microseconds).
+- `%%` — Percentage sign ("%").
+
+### Example
+- Option: `--rename_files_after_processing="processed_%f_%t%e"`
+
+- Query: `SELECT * FROM file('sample.csv')`
+
+
+If reading `sample.csv` is successful, file will be renamed to `processed_sample_1683473210851438.csv`
+
+
+
 
 ## function_json_value_return_type_allow_complex
 
