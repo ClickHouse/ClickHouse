@@ -118,7 +118,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
         const auto & type = function_argument_types[i];
 
         auto * column_data_ptr = column.data_ptr;
-        auto * column_element_value = b.CreateLoad(column.data_element_type, b.CreateGEP(column.data_element_type, column_data_ptr, counter_phi));
+        auto * column_element_value = b.CreateLoad(column.data_element_type, b.CreateInBoundsGEP(column.data_element_type, column_data_ptr, counter_phi));
 
         if (!type->isNullable())
         {
@@ -126,7 +126,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
             continue;
         }
 
-        auto * column_is_null_element_value = b.CreateLoad(b.getInt8Ty(), b.CreateGEP(b.getInt8Ty(), column.null_data_ptr, counter_phi));
+        auto * column_is_null_element_value = b.CreateLoad(b.getInt8Ty(), b.CreateInBoundsGEP(b.getInt8Ty(), column.null_data_ptr, counter_phi));
         auto * is_null = b.CreateICmpNE(column_is_null_element_value, b.getInt8(0));
         auto * nullable_unitialized = llvm::Constant::getNullValue(toNullableType(b, column.data_element_type));
         auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitialized, column_element_value, {0}), is_null, {1});
@@ -136,12 +136,12 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     /// Compile values for column rows and store compiled value in result column
 
     auto * result = function.compile(b, arguments);
-    auto * result_column_element_ptr = b.CreateGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
+    auto * result_column_element_ptr = b.CreateInBoundsGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
 
     if (columns.back().null_data_ptr)
     {
         b.CreateStore(b.CreateExtractValue(result, {0}), result_column_element_ptr);
-        auto * result_column_is_null_element_ptr = b.CreateGEP(b.getInt8Ty(), columns.back().null_data_ptr, counter_phi);
+        auto * result_column_is_null_element_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), columns.back().null_data_ptr, counter_phi);
         auto * is_result_column_element_null = b.CreateSelect(b.CreateExtractValue(result, {1}), b.getInt8(1), b.getInt8(0));
         b.CreateStore(is_result_column_element_null, result_column_is_null_element_ptr);
     }
