@@ -84,7 +84,7 @@ public:
             //         element_type = low_cardinality_type->getDictionaryType();
 
             auto set_key = in_second_argument->getTreeHash();
-            if (sets.find(set_key, set_element_types))
+            if (sets.findTuple(set_key, set_element_types))
                 return;
 
             sets.addFromTuple(set_key, std::move(set), settings);

@@ -654,10 +654,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         //         element_type = low_cardinality_type->getDictionaryType();
 
         set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
-        set = planner_context->getPreparedSets().find(set_key, set_element_types);
+        set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else
+    {
         set = planner_context->getPreparedSets().findSubquery(set_key);
+        if (!set)
+            set = planner_context->getPreparedSets().findStorage(set_key);
+    }
 
     if (!set)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
