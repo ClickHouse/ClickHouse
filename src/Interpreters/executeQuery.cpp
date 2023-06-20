@@ -317,7 +317,7 @@ QueryLogElement logQueryStart(
             elem.query_views = info.views;
         }
 
-        if (settings.async_insert || async_insert)
+        if (async_insert)
             InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
@@ -538,7 +538,7 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_millliseconds,
-    bool async_insert)
+    bool async_insert_flush)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -572,7 +572,7 @@ void logExceptionBeforeStart(
             elem.formatted_query = queryToString(ast);
     }
 
-    if (async_insert)
+    if (async_insert_flush)
         elem.query_kind = IAST::QueryKind::AsyncInsertFlush;
 
     // We don't calculate databases, tables and columns when the query isn't able to start
@@ -1139,7 +1139,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Everything related to query log.
         {
             QueryLogElement elem = logQueryStart(
-                query_start_time, context, query_for_logging, ast, pipeline, interpreter, internal, query_database, query_table);
+                query_start_time,
+                context,
+                query_for_logging,
+                ast,
+                pipeline,
+                interpreter,
+                internal,
+                query_database,
+                query_table,
+                async_insert);
             /// Also make possible for caller to log successful query finish and exception during execution.
             auto finish_callback = [elem,
                                     context,
