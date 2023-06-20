@@ -42,7 +42,8 @@ def test_lost_part_same_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
             f"CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{node.name}') ORDER BY tuple() PARTITION BY date "
-            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1"
+            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,"
+            "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
         )
 
     node1.query("SYSTEM STOP MERGES mt0")
@@ -109,7 +110,8 @@ def test_lost_part_other_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
             f"CREATE TABLE mt1 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t1', '{node.name}') ORDER BY tuple() "
-            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1"
+            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,"
+            "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
         )
 
     node1.query("SYSTEM STOP MERGES mt1")
@@ -178,7 +180,8 @@ def test_lost_part_mutation(start_cluster):
     for node in [node1, node2]:
         node.query(
             f"CREATE TABLE mt2 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t2', '{node.name}') ORDER BY tuple() "
-            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1"
+            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,"
+            "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
         )
 
     node1.query("SYSTEM STOP MERGES mt2")
@@ -241,7 +244,8 @@ def test_lost_last_part(start_cluster):
     for node in [node1, node2]:
         node.query(
             f"CREATE TABLE mt3 (id UInt64, p String) ENGINE ReplicatedMergeTree('/clickhouse/tables/t3', '{node.name}') "
-            "ORDER BY tuple() PARTITION BY p SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1"
+            "ORDER BY tuple() PARTITION BY p SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,"
+            "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
         )
 
     node1.query("SYSTEM STOP MERGES mt3")
