@@ -17,9 +17,9 @@
 class DateLUT : private boost::noncopyable
 {
 public:
-    /// Return singleton DateLUTImpl instance for session timezone.
-    /// The session timezone is configured by a session setting.
-    /// If not set (empty string), it is the server timezone.
+    /// Return DateLUTImpl instance for session timezone.
+    /// session_timezone is a session-level setting.
+    /// If setting is not set, returns the server timezone.
     static ALWAYS_INLINE const DateLUTImpl & instance()
     {
         const auto & date_lut = getInstance();
@@ -37,7 +37,8 @@ public:
                     return date_lut.getImplementation(timezone_from_context);
             }
 
-            /// Timezone is passed in query_context, but on CH-Client we have no query context,
+            /// On the server side, timezone is passed in query_context,
+            /// but on CH-client side we have no query context,
             /// and each time we modify client's global context
             const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
             if (global_context)
@@ -61,7 +62,8 @@ public:
         return date_lut.getImplementation(time_zone);
     }
 
-    // Return singleton DateLUTImpl for the server time zone.
+    /// Return singleton DateLUTImpl for the server time zone.
+    /// It may be set using 'timezone' server setting.
     static ALWAYS_INLINE const DateLUTImpl & serverTimezoneInstance()
     {
         const auto & date_lut = getInstance();
