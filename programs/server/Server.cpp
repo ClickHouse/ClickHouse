@@ -1830,12 +1830,12 @@ try
             /// Killing only selected queries.
             else
             {
-                if (!server_settings.shutdown_wait_unfinished_query_kind.value.empty())
-                    for (auto & query : global_context->getProcessList().processes)
-                    {
-                        if (query->getInfo().query_kind != server_settings.shutdown_wait_unfinished_query_type)
-                            query->cancelQuery(true)
-                    }
+                MultiEnum<IAST::QueryKind> shutdown_wait_unfinished_query_kind = server_settings.shutdown_wait_unfinished_query_kind
+                for (auto & query : global_context->getProcessList().processes)
+                {
+                    if (!shutdown_wait_unfinished_query_kind.isSet(query->getInfo().query_kind))
+                        query->cancelQuery(true)
+                }
             }
 
             if (current_connections)

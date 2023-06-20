@@ -306,6 +306,10 @@ public:
         Rollback,
         SetTransactionSnapshot,
     };
+
+    /// Return string representation for enum members.
+    const char * toString(QueryKind kind);
+
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 

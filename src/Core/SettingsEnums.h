@@ -2,6 +2,7 @@
 
 #include <Core/SettingsFields.h>
 #include <Core/Joins.h>
+#include <Parsers/IAST.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
@@ -32,6 +33,8 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+
+DECLARE_SETTING_MULTI_ENUM(IAST::QueryKind)
 
 
 /// Which rows should be included in TOTALS.

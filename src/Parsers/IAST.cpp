@@ -268,3 +268,38 @@ std::string IAST::dumpTree(size_t indent) const
 }
 
 }
+
+const char * IAST::toString(IAST::QueryKind kind)
+{
+    switch (kind)
+    {
+        case IAST::QueryKind::None: return "NONE";
+        case IAST::QueryKind::Select: return "SELECT";
+        case IAST::QueryKind::Insert: return "INSERT";
+        case IAST::QueryKind::Delete: return "DELETE";
+        case IAST::QueryKind::Create: return "CREATE";
+        case IAST::QueryKind::Drop: return "DROP";
+        case IAST::QueryKind::Undrop: return "UNDROP";
+        case IAST::QueryKind::Rename: return "RENAME";
+        case IAST::QueryKind::Optimize: return "OPTIMIZE";
+        case IAST::QueryKind::Check: return "CHECK";
+        case IAST::QueryKind::Alter: return "ALTER";
+        case IAST::QueryKind::Grant: return "GRANT";
+        case IAST::QueryKind::Revoke: return "REVOKE";
+        case IAST::QueryKind::System: return "SYSTEM";
+        case IAST::QueryKind::Set: return "SET";
+        case IAST::QueryKind::Use: return "USE";
+        case IAST::QueryKind::Show: return "SHOW";
+        case IAST::QueryKind::Exists: return "EXISTS";
+        case IAST::QueryKind::Describe: return "DESCRIBE";
+        case IAST::QueryKind::Explain: return "EXPLAIN";
+        case IAST::QueryKind::Backup: return "BACKUP";
+        case IAST::QueryKind::Restore: return "RESTORE";
+        case IAST::QueryKind::KillQuery: return "KILL_QUERY";
+        case IAST::QueryKind::ExternalDDL: return "EXTERNAL_DDL";
+        case IAST::QueryKind::Begin: return "BEGIN";
+        case IAST::QueryKind::Commit: return "COMMIT";
+        case IAST::QueryKind::Rollback: return "ROLLBACK";
+        case IAST::QueryKind::SetTransactionSnapshot: return "SET_TRANSACTION_SNAPSHOT";
+    }
+};
