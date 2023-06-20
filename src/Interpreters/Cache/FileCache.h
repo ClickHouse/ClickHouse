@@ -125,7 +125,7 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
-    CacheGuard::Lock lockCache() { return cache_guard.lock(); }
+    CacheGuard::Lock lockCache() const;
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;

@@ -59,6 +59,8 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -85,6 +87,8 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start

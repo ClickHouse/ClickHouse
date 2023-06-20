@@ -533,6 +533,10 @@ public:
 
     size_t getActivePartsCount() const;
 
+    size_t getOutdatedPartsCount() const;
+
+    size_t getNumberOfOutdatedPartsWithExpiredRemovalTime() const;
+
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
     std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const;
@@ -557,7 +561,7 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -1508,6 +1512,8 @@ private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
+
+    mutable std::atomic<size_t> total_outdated_parts_count = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
