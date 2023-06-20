@@ -400,6 +400,10 @@ void CacheMetadata::downloadThreadFunc()
                 if (!lock)
                     continue;
 
+                auto file_segment_metadata = lock->tryGetByOffset(file_segment->offset());
+                if (!file_segment_metadata || file_segment_metadata->evicting())
+                    continue;
+
                 holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
             }
 
