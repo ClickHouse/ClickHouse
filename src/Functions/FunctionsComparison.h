@@ -1382,43 +1382,6 @@ public:
             return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
         }
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
-    {
-        if (2 != arguments.size())
-            return false;
-
-        WhichDataType data_type_lhs(arguments[0]);
-        WhichDataType data_type_rhs(arguments[1]);
-
-        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
-
-        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
-            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
-            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
-            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
-            return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-
-        DataTypePtr common_type = getLeastSupertype(arguments);
-        return canBeNativeType(arguments[0]) && canBeNativeType(arguments[1]) && canBeNativeType(result_type) && canBeNativeType(common_type);
-    }
-
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
-    {
-        assert(2 == arguments.size());
-
-        DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
-
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = nativeCast(b, arguments[0], common_type);
-        auto * y = nativeCast(b, arguments[1], common_type);
-
-        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*arguments[0].type) || typeIsSigned(*arguments[1].type));
-
-        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
-    }
-#endif
 };
 
 }
