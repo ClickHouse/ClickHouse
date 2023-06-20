@@ -87,6 +87,11 @@ When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you mu
 :::note
 
 ```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'passworD43$x';
+
+GRANT default_role TO clickhouse_admin;
+
 CREATE DATABASE foo_db;
 
 CREATE TABLE foo_db.source_table (
