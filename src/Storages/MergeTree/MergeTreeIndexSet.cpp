@@ -1,3 +1,4 @@
+#include "Parsers/queryToString.h"
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -554,7 +555,7 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     if (atomFromAST(node))
     {
         if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-    else
+            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("toUInt8OrDefault", node));
     }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
