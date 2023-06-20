@@ -3,6 +3,7 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -107,6 +108,9 @@ namespace
 
         ObjectPtr allocObject() override
         {
+            /// Pool is global, we shouldn't attribute this memory to query/user.
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+
             auto session = makeHTTPSessionImpl(host, port, https, true, resolve_host);
             if (!proxy_host.empty())
             {
