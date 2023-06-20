@@ -17,11 +17,12 @@ namespace DB
 namespace
 {
 
-template <typename DataType>
+template <typename DataType, const char * FunctionName>
 class FunctionEmptyArray : public IFunction
 {
 public:
-    static String getNameImpl() { return "emptyArray" + DataType().getName(); }
+    /// NOTE: Not using DataType().getName() because DataType ctor might be very heavy (e.g. for DataTypeDateTime as it initializes DateLUT singleton).
+    static String getNameImpl() { return FunctionName; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
@@ -57,19 +58,26 @@ void registerFunction(FunctionFactory & factory)
 
 REGISTER_FUNCTION(EmptyArray)
 {
-    registerFunction<FunctionEmptyArray<DataTypeUInt8>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeUInt16>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeUInt32>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeUInt64>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeInt8>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeInt16>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeInt32>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeInt64>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeFloat32>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeFloat64>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeDate>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeDateTime>>(factory);
-    registerFunction<FunctionEmptyArray<DataTypeString>>(factory);
+
+#define REGISTER_EMPTY_ARRAY_FUNCTION(TYPE) \
+    do { \
+        static const char name[] = "emptyArray" #TYPE; \
+       registerFunction<FunctionEmptyArray<DataType##TYPE, name>>(factory); \
+    } while(0)
+
+    REGISTER_EMPTY_ARRAY_FUNCTION(UInt8);
+    REGISTER_EMPTY_ARRAY_FUNCTION(UInt16);
+    REGISTER_EMPTY_ARRAY_FUNCTION(UInt32);
+    REGISTER_EMPTY_ARRAY_FUNCTION(UInt64);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Int8);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Int16);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Int32);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Int64);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Float32);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Float64);
+    REGISTER_EMPTY_ARRAY_FUNCTION(Date);
+    REGISTER_EMPTY_ARRAY_FUNCTION(DateTime);
+    REGISTER_EMPTY_ARRAY_FUNCTION(String);
 }
 
 }
