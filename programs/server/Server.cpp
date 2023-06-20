@@ -1830,8 +1830,9 @@ try
             /// Killing only selected queries.
             else
             {
-                MultiEnum<IAST::QueryKind> shutdown_wait_unfinished_query_kind = server_settings.shutdown_wait_unfinished_query_kind
-                for (auto & query : global_context->getProcessList().processes)
+                MultiEnum<IAST::QueryKind> shutdown_wait_unfinished_query_kind = server_settings.shutdown_wait_unfinished_query_kind;
+                ProcessList & process_list = global_context->getProcessList();
+                for (auto const & query : process_list->processes)
                 {
                     if (!shutdown_wait_unfinished_query_kind.isSet(query->getInfo().query_kind))
                         query->cancelQuery(true);
