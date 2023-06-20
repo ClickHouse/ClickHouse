@@ -639,6 +639,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::UNION ||
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
+    FutureSetPtr set;
+    auto set_key = in_second_argument->getTreeHash();
+
     if (!subquery_or_table)
     {
         set_element_types = {in_first_argument->getResultType()};
@@ -646,13 +649,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         if (left_tuple_type && left_tuple_type->getElements().size() != 1)
             set_element_types = left_tuple_type->getElements();
 
-        for (auto & element_type : set_element_types)
-            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-                element_type = low_cardinality_type->getDictionaryType();
-    }
+        // for (auto & element_type : set_element_types)
+        //     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+        //         element_type = low_cardinality_type->getDictionaryType();
 
-    auto set_key = in_second_argument->getTreeHash();
-    auto set = planner_context->getPreparedSets().find(set_key, set_element_types);
+        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
+        set = planner_context->getPreparedSets().find(set_key, set_element_types);
+    }
+    else
+        set = planner_context->getPreparedSets().findSubquery(set_key);
 
     if (!set)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
