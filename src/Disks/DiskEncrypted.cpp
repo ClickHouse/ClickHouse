@@ -303,6 +303,18 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     delegate->createDirectories(disk_path);
 }
 
+DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
+    : IDisk(name_)
+    , delegate(settings_->wrapped_disk)
+    , encrypted_name(name_)
+    , disk_path(settings_->disk_path)
+    , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
+    , current_settings(std::move(settings_))
+    , use_fake_transaction(true)
+{
+    delegate->createDirectories(disk_path);
+}
+
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 {
     auto reservation = delegate->reserve(bytes);

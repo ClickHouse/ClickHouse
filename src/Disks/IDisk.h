@@ -115,9 +115,15 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
         , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, config.getUInt(config_prefix + ".thread_pool_size", 16))
+    {
+    }
+
+    explicit IDisk(const String & name_)
+        : name(name_)
+        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, 16)
     {
     }
 

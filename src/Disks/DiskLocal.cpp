@@ -420,7 +420,7 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
 void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
     if (isSameDiskType(*this, *to_disk))
-        fs::copy(from_dir, to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
+        fs::copy(fs::path(disk_path) / from_dir, fs::path(to_disk->getPath()) / to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     else
         IDisk::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
@@ -465,6 +465,15 @@ DiskLocal::DiskLocal(
     auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
     if (local_disk_check_period_ms > 0)
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
+}
+
+DiskLocal::DiskLocal(const String & name_, const String & path_)
+    : IDisk(name_)
+    , disk_path(path_)
+    , keep_free_space_bytes(0)
+    , logger(&Poco::Logger::get("DiskLocal"))
+    , data_source_description(getLocalDataSourceDescription(disk_path))
+{
 }
 
 DataSourceDescription DiskLocal::getDataSourceDescription() const
