@@ -484,74 +484,59 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 
 static std::optional<DataTypes> removeNullables(const DataTypes & types)
 {
-    bool has_nullable = false;
     for (const auto & type : types)
     {
         if (!typeid_cast<const DataTypeNullable *>(type.get()))
             continue;
-
-        has_nullable = true;
-        break;
-    }
-
-    if (has_nullable)
-    {
         DataTypes filtered;
-        filtered.reserve(types.size());
-
         for (const auto & sub_type : types)
             filtered.emplace_back(removeNullable(sub_type));
-
         return filtered;
     }
-
     return {};
 }
 
-bool IFunction::isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const
+bool IFunction::isCompilable(const DataTypes & arguments) const
 {
-    if (useDefaultImplementationForNulls())
-        if (auto denulled_arguments = removeNullables(arguments))
-            return isCompilableImpl(*denulled_arguments, result_type);
 
-    return isCompilableImpl(arguments, result_type);
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return isCompilableImpl(*denulled);
+    return isCompilableImpl(arguments);
 }
 
-llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const
 {
-    DataTypes arguments_types;
-    arguments_types.reserve(arguments.size());
-
-    for (const auto & argument : arguments)
-        arguments_types.push_back(argument.type);
-
-    auto denulled_arguments_types = removeNullables(arguments_types);
-    if (useDefaultImplementationForNulls() && denulled_arguments_types)
+    auto denulled_arguments = removeNullables(arguments);
+    if (useDefaultImplementationForNulls() && denulled_arguments)
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        ValuesWithType unwrapped_arguments;
-        unwrapped_arguments.reserve(arguments.size());
-
+        std::vector<llvm::Value*> unwrapped_values;
         std::vector<llvm::Value*> is_null_values;
+
+        unwrapped_values.reserve(arguments.size());
+        is_null_values.reserve(arguments.size());
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = arguments[i];
-            llvm::Value * unwrapped_value = argument.value;
+            auto * value = values[i];
 
-            if (argument.type->isNullable())
+            WhichDataType data_type(arguments[i]);
+            if (data_type.isNullable())
             {
-                unwrapped_value = b.CreateExtractValue(argument.value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument.value, {1}));
+                unwrapped_values.emplace_back(b.CreateExtractValue(value, {0}));
+                is_null_values.emplace_back(b.CreateExtractValue(value, {1}));
             }
-
-            unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
+            else
+            {
+                unwrapped_values.emplace_back(value);
+            }
         }
 
-        auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
+        auto * result = compileImpl(builder, *denulled_arguments, unwrapped_values);
 
-        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
+        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments)));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
         auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
@@ -563,7 +548,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
     }
 
-    return compileImpl(builder, arguments, result_type);
+    return compileImpl(builder, arguments, std::move(values));
 }
 
 #endif

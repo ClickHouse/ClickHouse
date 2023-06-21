@@ -122,7 +122,7 @@ public:
             size_t size;
             readVarUInt(size, in);
 
-            static constexpr size_t max_size = 100_GiB;
+            static constexpr size_t max_size = 1_GiB;
 
             if (size == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size (0) in groupBitmap.");

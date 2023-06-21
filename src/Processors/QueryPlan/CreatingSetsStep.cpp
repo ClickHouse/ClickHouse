@@ -80,7 +80,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
     input_streams = std::move(input_streams_);
-    output_stream = DataStream{input_streams.front().header};
+    output_stream = input_streams.front();
 
     for (size_t i = 1; i < input_streams.size(); ++i)
         if (input_streams[i].header)

@@ -13,7 +13,6 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
-#include <Common/TransformEndianness.hpp>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
@@ -1175,11 +1174,30 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
+
 template <std::endian endian, typename T>
+requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
-    transformEndianness<endian>(x);
+    if constexpr (std::endian::native != endian)
+        x = std::byteswap(x);
     writePODBinary(x, buf);
+}
+
+template <std::endian endian, typename T>
+requires is_big_int_v<T>
+inline void writeBinaryEndian(const T & x, WriteBuffer & buf)
+{
+    if constexpr (std::endian::native == endian)
+    {
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[i], buf);
+    }
+    else
+    {
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
+    }
 }
 
 template <typename T>

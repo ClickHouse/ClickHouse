@@ -110,9 +110,8 @@ public:
     void doCleanup();
 
 private:
-    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    mutable CacheMetadataGuard guard;
+    CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     Poco::Logger * log;
 };

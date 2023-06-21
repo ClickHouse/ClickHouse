@@ -26,7 +26,6 @@ AlertManager
 Alexey
 AnyEvent
 AppleClang
-Approximative
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -1006,7 +1005,6 @@ anyLast
 anyheavy
 anylast
 appendTrailingCharIfAbsent
-approximative
 argMax
 argMin
 argmax
@@ -2046,7 +2044,6 @@ reconnection
 recurse
 redash
 reddit
-redis
 redisstreams
 refcounter
 regexpExtract
@@ -2423,7 +2420,6 @@ unescaping
 unhex
 unicode
 unidimensional
-unintuitive
 uniq
 uniqCombined
 uniqExact

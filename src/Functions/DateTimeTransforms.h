@@ -5,8 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -23,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 /** Transformations.
@@ -322,7 +319,6 @@ struct ToTimeImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl;
 };
@@ -394,7 +390,6 @@ struct ToStartOfSecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -442,7 +437,6 @@ struct ToStartOfMillisecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -486,7 +480,6 @@ struct ToStartOfMicrosecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -524,7 +517,6 @@ struct ToStartOfNanosecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -723,28 +715,6 @@ struct ToYearImpl
         return time_zone.toYear(DayNum(d));
     }
 
-    static inline constexpr bool hasPreimage() { return true; }
-
-    static inline RangeOrNull getPreimage(const IDataType & type, const Field & point)
-    {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
-
-        auto year = point.get<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
-
-        const DateLUTImpl & date_lut = DateLUT::instance();
-
-        auto start_time = date_lut.makeDateTime(year, 1, 1, 0, 0, 0);
-        auto end_time = date_lut.addYears(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                type.getName(), name);
-    }
-
     using FactorTransform = ZeroTransform;
 };
 
@@ -818,7 +788,6 @@ struct ToQuarterImpl
     {
         return time_zone.toQuarter(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -843,7 +812,6 @@ struct ToMonthImpl
     {
         return time_zone.toMonth(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -869,7 +837,6 @@ struct ToDayOfMonthImpl
         return time_zone.toDayOfMonth(DayNum(d));
     }
 
-    static inline constexpr bool hasPreimage() { return false; }
     using FactorTransform = ToStartOfMonthImpl;
 };
 
@@ -917,7 +884,6 @@ struct ToDayOfYearImpl
     {
         return time_zone.toDayOfYear(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -942,7 +908,6 @@ struct ToHourImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl;
 };
@@ -971,7 +936,6 @@ struct TimezoneOffsetImpl
         throwDateTimeIsNotSupported(name);
     }
 
-    static inline constexpr bool hasPreimage() { return false; }
     using FactorTransform = ToTimeImpl;
 };
 
@@ -995,7 +959,6 @@ struct ToMinuteImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfHourImpl;
 };
@@ -1020,7 +983,6 @@ struct ToSecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfMinuteImpl;
 };
@@ -1045,7 +1007,6 @@ struct ToISOYearImpl
     {
         return time_zone.toISOYear(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1102,7 +1063,6 @@ struct ToISOWeekImpl
     {
         return time_zone.toISOWeek(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToISOYearImpl;
 };
@@ -1145,7 +1105,6 @@ struct ToRelativeYearNumImpl
     {
         return time_zone.toYear(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1177,7 +1136,6 @@ struct ToRelativeQuarterNumImpl
     {
         return time_zone.toRelativeQuarterNum(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1209,7 +1167,6 @@ struct ToRelativeMonthNumImpl
     {
         return time_zone.toRelativeMonthNum(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1241,7 +1198,6 @@ struct ToRelativeWeekNumImpl
     {
         return time_zone.toRelativeWeekNum(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1273,7 +1229,6 @@ struct ToRelativeDayNumImpl
     {
         return static_cast<DayNum>(d);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1311,7 +1266,6 @@ struct ToRelativeHourNumImpl
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1343,7 +1297,6 @@ struct ToRelativeMinuteNumImpl
     {
         return static_cast<UInt32>(time_zone.toRelativeMinuteNum(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1372,7 +1325,6 @@ struct ToRelativeSecondNumImpl
     {
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1396,31 +1348,6 @@ struct ToYYYYMMImpl
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMM(DayNum(d));
-    }
-    static inline constexpr bool hasPreimage() { return true; }
-
-    static inline RangeOrNull getPreimage(const IDataType & type, const Field & point)
-    {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
-
-        auto year_month = point.get<UInt64>();
-        auto year = year_month / 100;
-        auto month = year_month % 100;
-
-        if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
-            return std::nullopt;
-
-        const DateLUTImpl & date_lut = DateLUT::instance();
-
-        auto start_time = date_lut.makeDateTime(year, month, 1, 0, 0, 0);
-        auto end_time = date_lut.addMonths(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                type.getName(), name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1446,7 +1373,6 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1471,7 +1397,6 @@ struct ToYYYYMMDDhhmmssImpl
     {
         return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1500,15 +1425,12 @@ struct ToDateTimeComponentsImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct DateTimeAccurateConvertStrategyAdditions {};
-struct DateTimeAccurateOrNullConvertStrategyAdditions {};
 
-template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false, typename Additions = void *>
+template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
 struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
-    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
-        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to)
+    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
     {
         using ValueType = typename ToTypeVector::value_type;
         size_t size = vec_from.size();
@@ -1516,30 +1438,6 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
-            {
-                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-                {
-                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-
-                    if (!is_valid_input)
-                    {
-                        if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-                        {
-                            vec_to[i] = 0;
-                            (*vec_null_map_to)[i] = true;
-                            continue;
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                vec_from[i], TypeName<ValueType>);
-                        }
-                    }
-                }
-            }
-
             if constexpr (is_extended_result)
                 vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], time_zone));
             else
@@ -1548,26 +1446,18 @@ struct Transformer
     }
 };
 
+
 template <typename FromDataType, typename ToDataType, typename Transform, bool is_extended_result = false>
 struct DateTimeTransformImpl
 {
-    template <typename Additions = void *>
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
-        using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
+        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>;
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
-            ColumnUInt8::MutablePtr col_null_map_to;
-            ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-            {
-                col_null_map_to = ColumnUInt8::create(sources->getData().size(), false);
-                vec_null_map_to = &col_null_map_to->getData();
-            }
-
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
@@ -1575,7 +1465,7 @@ struct DateTimeTransformImpl
             if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             }
             else
             {
@@ -1584,15 +1474,7 @@ struct DateTimeTransformImpl
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
-            }
-
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-            {
-                if (vec_null_map_to)
-                {
-                    return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
-                }
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             }
 
             return mutable_result_col;

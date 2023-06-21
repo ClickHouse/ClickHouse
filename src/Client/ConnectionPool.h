@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/PoolBase.h>
-#include <Common/Priority.h>
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -35,7 +34,7 @@ public:
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
 
-    virtual Priority getPriority() const { return Priority{1}; }
+    virtual Int64 getPriority() const { return 1; }
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -61,7 +60,7 @@ public:
             const String & client_name_,
             Protocol::Compression compression_,
             Protocol::Secure secure_,
-            Priority priority_ = Priority{1})
+            Int64 priority_ = 1)
        : Base(max_connections_,
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
@@ -104,7 +103,7 @@ public:
         return host + ":" + toString(port);
     }
 
-    Priority getPriority() const override
+    Int64 getPriority() const override
     {
         return priority;
     }
@@ -135,7 +134,7 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
-    Priority priority;                 /// priority from <remote_servers>
+    Int64 priority;                    /// priority from <remote_servers>
 };
 
 /**
@@ -158,7 +157,7 @@ public:
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
-        Priority priority;
+        Int64 priority;
     };
 
     struct KeyHash
@@ -181,7 +180,7 @@ public:
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,
-        Priority priority);
+        Int64 priority);
 private:
     mutable std::mutex mutex;
     using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;

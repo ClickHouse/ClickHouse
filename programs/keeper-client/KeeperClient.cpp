@@ -127,42 +127,42 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 
     options.addOption(
         Poco::Util::Option("host", "h", "server hostname. default `localhost`")
-            .argument("<host>")
+            .argument("host")
             .binding("host"));
 
     options.addOption(
         Poco::Util::Option("port", "p", "server port. default `2181`")
-            .argument("<port>")
+            .argument("port")
             .binding("port"));
 
     options.addOption(
         Poco::Util::Option("query", "q", "will execute given query, then exit.")
-            .argument("<query>")
+            .argument("query")
             .binding("query"));
 
     options.addOption(
         Poco::Util::Option("connection-timeout", "", "set connection timeout in seconds. default 10s.")
-            .argument("<seconds>")
+            .argument("connection-timeout")
             .binding("connection-timeout"));
 
     options.addOption(
         Poco::Util::Option("session-timeout", "", "set session timeout in seconds. default 10s.")
-            .argument("<seconds>")
+            .argument("session-timeout")
             .binding("session-timeout"));
 
     options.addOption(
         Poco::Util::Option("operation-timeout", "", "set operation timeout in seconds. default 10s.")
-            .argument("<seconds>")
+            .argument("operation-timeout")
             .binding("operation-timeout"));
 
     options.addOption(
         Poco::Util::Option("history-file", "", "set path of history file. default `~/.keeper-client-history`")
-            .argument("<file>")
+            .argument("history-file")
             .binding("history-file"));
 
     options.addOption(
         Poco::Util::Option("log-level", "", "set log level")
-            .argument("<level>")
+            .argument("log-level")
             .binding("log-level"));
 }
 

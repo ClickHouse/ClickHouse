@@ -2,16 +2,9 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-    extern const Event FilesystemCacheLockKeyMicroseconds;
-    extern const Event FilesystemCacheLockMetadataMicroseconds;
-}
 
 namespace DB
 {
@@ -76,8 +69,6 @@ LockedKeyPtr KeyMetadata::lock()
 
 LockedKeyPtr KeyMetadata::tryLock()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-
     auto locked = std::make_unique<LockedKey>(shared_from_this());
     if (key_state == KeyMetadata::KeyState::ACTIVE)
         return locked;
@@ -165,12 +156,6 @@ String CacheMetadata::getPathForKey(const Key & key) const
     return fs::path(path) / key_str.substr(0, 3) / key_str;
 }
 
-CacheMetadataGuard::Lock CacheMetadata::lockMetadata() const
-{
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
-    return guard.lock();
-}
-
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
     const FileCacheKey & key,
     KeyNotFoundPolicy key_not_found_policy,
@@ -178,7 +163,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 {
     KeyMetadataPtr key_metadata;
     {
-        auto lock = lockMetadata();
+        auto lock = guard.lock();
 
         auto it = find(key);
         if (it == end())
@@ -197,13 +182,9 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     }
 
     {
-        LockedKeyPtr locked_metadata;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_metadata = std::make_unique<LockedKey>(key_metadata);
-        }
-
+        auto locked_metadata = std::make_unique<LockedKey>(key_metadata);
         const auto key_state = locked_metadata->getKeyState();
+
         if (key_state == KeyMetadata::KeyState::ACTIVE)
             return locked_metadata;
 
@@ -232,15 +213,10 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
 void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
 {
-    auto lock = lockMetadata();
+    auto lock = guard.lock();
     for (const auto & [key, key_metadata] : *this)
     {
-        LockedKeyPtr locked_key;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_key = std::make_unique<LockedKey>(key_metadata);
-        }
-
+        auto locked_key = std::make_unique<LockedKey>(key_metadata);
         const auto key_state = locked_key->getKeyState();
 
         if (key_state == KeyMetadata::KeyState::ACTIVE)
@@ -259,7 +235,7 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
 
 void CacheMetadata::doCleanup()
 {
-    auto lock = lockMetadata();
+    auto lock = guard.lock();
 
     FileCacheKey cleanup_key;
     while (cleanup_queue->tryPop(cleanup_key))
@@ -268,13 +244,9 @@ void CacheMetadata::doCleanup()
         if (it == end())
             continue;
 
-        LockedKeyPtr locked_metadata;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_metadata = std::make_unique<LockedKey>(it->second);
-        }
-
+        auto locked_metadata = std::make_unique<LockedKey>(it->second);
         const auto key_state = locked_metadata->getKeyState();
+
         if (key_state == KeyMetadata::KeyState::ACTIVE)
         {
             /// Key was added back to cache after we submitted it to removal queue.

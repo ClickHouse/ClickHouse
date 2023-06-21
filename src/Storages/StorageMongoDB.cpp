@@ -99,7 +99,6 @@ public:
         , db_name(db_name_)
         , metadata_snapshot{metadata_snapshot_}
         , connection(connection_)
-        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_))
     {
     }
 
@@ -108,7 +107,7 @@ public:
     void consume(Chunk chunk) override
     {
         Poco::MongoDB::Database db(db_name);
-        Poco::MongoDB::Document::Vector documents;
+        Poco::MongoDB::Document::Ptr index = new Poco::MongoDB::Document();
 
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -119,35 +118,20 @@ public:
         const auto data_types = block.getDataTypes();
         const auto data_names = block.getNames();
 
-        documents.reserve(num_rows);
-
+        std::vector<std::string> row(num_cols);
         for (const auto i : collections::range(0, num_rows))
         {
-            Poco::MongoDB::Document::Ptr document = new Poco::MongoDB::Document();
-
             for (const auto j : collections::range(0, num_cols))
             {
                 WriteBufferFromOwnString ostr;
                 data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
-                document->add(data_names[j], ostr.str());
+                row[j] = ostr.str();
+                index->add(data_names[j], row[j]);
             }
-
-            documents.push_back(std::move(document));
         }
-
-        if (is_wire_protocol_old)
-        {
-            Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
-            insert_request->documents() = std::move(documents);
-            connection->sendRequest(*insert_request);
-        }
-        else
-        {
-            Poco::SharedPtr<Poco::MongoDB::OpMsgMessage> insert_request = db.createOpMsgMessage(collection_name);
-            insert_request->setCommandName(Poco::MongoDB::OpMsgMessage::CMD_INSERT);
-            insert_request->documents() = std::move(documents);
-            connection->sendRequest(*insert_request);
-        }
+        Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
+        insert_request->documents().push_back(index);
+        connection->sendRequest(*insert_request);
     }
 
 private:
@@ -155,8 +139,6 @@ private:
     String db_name;
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-
-    const bool is_wire_protocol_old;
 };
 
 
@@ -180,7 +162,7 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, database_name, collection_name, Poco::MongoDB::Document{}, sample_block, max_block_size));
+    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
 }
 
 SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)

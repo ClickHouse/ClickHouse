@@ -184,7 +184,7 @@ public:
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
-    static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
+    static std::tuple<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
@@ -198,7 +198,7 @@ public:
         bool delay_initialization);
 
 private:
-    using InitializeFunc = std::function<bool()>;
+    using InitializeFunc = std::function<void(const FailoverOptions &)>;
     InitializeFunc initialize;
 
     String name;

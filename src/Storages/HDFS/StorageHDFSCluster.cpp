@@ -79,7 +79,7 @@ void StorageHDFSCluster::addColumnsStructureToQuery(ASTPtr & query, const String
 RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
-    auto callback = std::make_shared<std::function<String()>>([iter = std::move(iterator)]() mutable -> String { return iter->next().path; });
+    auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

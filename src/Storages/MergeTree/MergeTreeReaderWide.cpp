@@ -188,11 +188,10 @@ size_t MergeTreeReaderWide::readRows(
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
         e.addMessage(
             fmt::format(
-                "(while reading from part {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
-                part_storage->getFullPath(), part_storage->getDiskName(), part_storage->getDiskType(),
+                "(while reading from part {} from mark {} with max_rows_to_read = {})",
+                data_part_info_for_read->getDataPartStorage()->getFullPath(),
                 toString(from_mark), toString(max_rows_to_read)));
         throw;
     }

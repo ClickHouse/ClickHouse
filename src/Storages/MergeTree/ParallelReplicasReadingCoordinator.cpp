@@ -43,7 +43,7 @@ struct fmt::formatter<DB::Part>
     template <typename FormatContext>
     auto format(const DB::Part & part, FormatContext & ctx)
     {
-        return fmt::format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
+        return format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
     }
 };
 

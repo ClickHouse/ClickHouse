@@ -12,7 +12,6 @@ jobs:
   # don't use dockerhub push because this image updates so rarely
   WoboqCodebrowser:
     runs-on: [self-hosted, style-checker]
-    timeout-minutes: 420  # the task is pretty heavy, so there's an additional hour
     steps:
       - name: Set envs
         run: |

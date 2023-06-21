@@ -130,7 +130,7 @@ public:
         size_t left;
         size_t right;
 
-        Range(size_t left_, size_t right_);
+        Range(size_t left_, size_t right_) : left(left_), right(right_) {}
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
 
@@ -293,7 +293,6 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-    FileSegmentGuard::Lock lockFileSegment() const;
 
     Key file_key;
     Range segment_range;

@@ -388,7 +388,7 @@ public:
 
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
+    void loadProjections(bool require_columns_checksums, bool check_consistency);
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -624,9 +624,6 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
-
-    void incrementStateMetric(MergeTreeDataPartState state) const;
-    void decrementStateMetric(MergeTreeDataPartState state) const;
 
     mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 

@@ -85,9 +85,6 @@ void BackupCoordinationStageSync::setError(const String & current_host, const Ex
         writeException(exception, buf, true);
         zookeeper->createIfNotExists(zookeeper_path + "/error", buf.str());
 
-        /// When backup/restore fails, it removes the nodes from Zookeeper.
-        /// Sometimes it fails to remove all nodes. It's possible that it removes /error node, but fails to remove /stage node,
-        /// so the following line tries to preserve the error status.
         auto code = zookeeper->trySet(zookeeper_path, Stage::ERROR);
         if (code != Coordination::Error::ZOK)
             throw zkutil::KeeperException(code, zookeeper_path);

@@ -40,7 +40,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -79,7 +78,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
@@ -259,39 +257,34 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     return res;
 }
 
-struct stat getFileStat(const String & current_path, bool use_table_fd, int table_fd, const String & storage_name)
-{
-    struct stat file_stat{};
-    if (use_table_fd)
-    {
-        /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != fstat(table_fd, &file_stat))
-            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
-    }
-    else
-    {
-        /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != stat(current_path.c_str(), &file_stat))
-            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
-    }
-
-    return file_stat;
-}
-
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
-    const struct stat & file_stat,
     bool use_table_fd,
+    const String & storage_name,
     int table_fd,
     const String & compression_method,
     ContextPtr context)
 {
     CompressionMethod method;
 
+    struct stat file_stat{};
+
     if (use_table_fd)
+    {
+        /// Check if file descriptor allows random reads (and reading it twice).
+        if (0 != fstat(table_fd, &file_stat))
+            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
+
         method = chooseCompressionMethod("", compression_method);
+    }
     else
+    {
+        /// Check if file descriptor allows random reads (and reading it twice).
+        if (0 != stat(current_path.c_str(), &file_stat))
+            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
+
         method = chooseCompressionMethod(current_path, compression_method);
+    }
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
@@ -362,8 +355,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        auto file_stat = getFileStat("", true, table_fd, getName());
-        read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -404,29 +396,12 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        String path;
-        struct stat file_stat;
-        do
-        {
-            if (it == paths.end())
-            {
-                if (first)
-                    throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
-                        format);
-                return nullptr;
-            }
+        if (it == paths.end())
+            return nullptr;
 
-            path = *it++;
-            file_stat = getFileStat(path, false, -1, "File");
-        }
-        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
-
-        first = false;
-        return createReadBuffer(path, file_stat, false, -1, compression_method, context);
+        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -486,8 +461,6 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
         path_for_partitioned_write = paths.front();
     else
         path_for_partitioned_write = table_path_;
-
-    file_renamer = FileRenamer(args.rename_after_processing);
 
     setStorageMetadata(args);
 }
@@ -622,67 +595,7 @@ public:
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-            storage->readers_counter.fetch_add(1, std::memory_order_release);
         }
-    }
-
-
-    /**
-      * If specified option --rename_files_after_processing and files created by TableFunctionFile
-      * Last reader will rename files according to specified pattern if desctuctor of reader was called without uncaught exceptions
-      */
-    void beforeDestroy()
-    {
-        if (storage->file_renamer.isEmpty())
-            return;
-
-        int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
-
-        if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
-        {
-            shared_lock.unlock();
-            auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(context)};
-
-            if (!exclusive_lock)
-                return;
-            if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
-                return;
-
-            for (auto & file_path_ref : storage->paths)
-            {
-                try
-                {
-                    auto file_path = fs::path(file_path_ref);
-                    String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
-                    file_path.replace_filename(new_filename);
-
-                    // Normalize new path
-                    file_path = file_path.lexically_normal();
-
-                    // Checking access rights
-                    checkCreationIsAllowed(context, context->getUserFilesPath(), file_path, true);
-
-                    // Checking an existing of new file
-                    if (fs::exists(file_path))
-                        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
-
-                    fs::rename(fs::path(file_path_ref), file_path);
-                    file_path_ref = file_path.string();
-                    storage->was_renamed = true;
-                }
-                catch (const std::exception & e)
-                {
-                    // Cannot throw exception from destructor, will write only error
-                    LOG_ERROR(&Poco::Logger::get("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
-                    continue;
-                }
-            }
-        }
-    }
-
-    ~StorageFileSource() override
-    {
-        beforeDestroy();
     }
 
     String getName() const override
@@ -715,12 +628,7 @@ public:
                 }
 
                 if (!read_buf)
-                {
-                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
-                        continue;
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
-                }
+                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
                 size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
                 /// Adjust total_rows_approx_accumulated with new total size.
@@ -1328,7 +1236,6 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.columns,
                 factory_args.constraints,
                 factory_args.comment,
-                {},
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;
