@@ -125,3 +125,4 @@
 02764_parallel_replicas_plain_merge_tree
 02765_parallel_replicas_final_modifier
 02784_parallel_replicas_automatic_disabling
+02772_s3_crash
