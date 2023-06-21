@@ -1406,7 +1406,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
             InterpreterSelectQueryAnalyzer interpreter(right_in_operand, data.getContext(), SelectQueryOptions().analyze(true).subquery());
-            auto query_tree = interpreter.getQueryTree();
+            const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
             set_key = query_tree->getTreeHash();
@@ -1449,11 +1449,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             }
         }
 
-        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        // String set_id = right_in_operand->getColumnName();
-        //bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
-        SubqueryForSet subquery_for_set; // = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
-        subquery_for_set.key = PreparedSets::toString(set_key, {}); //right_in_operand->getColumnName();
+        std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1465,10 +1461,10 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           */
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            subquery_for_set.createSource(*interpreter);
+            interpreter->buildQueryPlan(*source);
         }
 
-        return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), data.getContext()->getSettingsRef(), std::move(external_table_set));
+        return data.prepared_sets->addFromSubquery(set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
     else
     {

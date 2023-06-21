@@ -36,15 +36,13 @@ static ITransformingStep::Traits getTraits()
 
 CreatingSetStep::CreatingSetStep(
     const DataStream & input_stream_,
-    String description_,
-    SubqueryForSet & subquery_for_set_,
-    FutureSetPtr set_,
+    SetAndKeyPtr set_and_key_,
+    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     ContextPtr context_)
     : ITransformingStep(input_stream_, Block{}, getTraits())
-    , description(std::move(description_))
-    , subquery_for_set(subquery_for_set_)
-    , set(std::move(set_))
+    , set_and_key(std::move(set_and_key_))
+    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , context(std::move(context_))
 {
@@ -52,7 +50,7 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputStream().header, subquery_for_set, std::move(set), network_transfer_limits, context->getPreparedSetsCache());
+    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(set_and_key), std::move(external_table), network_transfer_limits, context->getPreparedSetsCache());
 }
 
 void CreatingSetStep::updateOutputStream()
@@ -65,16 +63,16 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set)
+    if (set_and_key->set)
         settings.out << "Set: ";
 
-    settings.out << description << '\n';
+    settings.out << set_and_key->key << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set)
-        map.add("Set", description);
+    if (set_and_key->set)
+        map.add("Set", set_and_key->key);
 }
 
 
@@ -126,7 +124,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subqueries, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery, ContextPtr context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
@@ -135,7 +133,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<Fut
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & future_set : sets_from_subqueries)
+    for (auto & future_set : sets_from_subquery)
     {
         if (future_set->get())
             continue;
@@ -193,7 +191,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, 
     if (!prepared_sets)
         return;
 
-    auto subqueries = prepared_sets->detachSubqueries();
+    auto subqueries = prepared_sets->getSubqueries();
     if (subqueries.empty())
         return;
 

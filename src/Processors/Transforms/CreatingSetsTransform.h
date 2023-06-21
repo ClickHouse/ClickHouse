@@ -29,8 +29,8 @@ public:
     CreatingSetsTransform(
         Block in_header_,
         Block out_header_,
-        SubqueryForSet & subquery_for_set_,
-        FutureSetPtr set_,
+        SetAndKeyPtr set_and_key_,
+        StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_);
 
@@ -43,8 +43,8 @@ public:
     Chunk generate() override;
 
 private:
-    SubqueryForSet & subquery;
-    FutureSetPtr set;
+    SetAndKeyPtr set_and_key;
+    StoragePtr external_table;
     std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;

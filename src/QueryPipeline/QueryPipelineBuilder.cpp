@@ -571,8 +571,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
 void QueryPipelineBuilder::addCreatingSetsTransform(
     const Block & res_header,
-    SubqueryForSet & subquery_for_set,
-    FutureSetPtr set,
+    SetAndKeyPtr set_and_key,
+    StoragePtr external_table,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
@@ -581,8 +581,8 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     auto transform = std::make_shared<CreatingSetsTransform>(
             getHeader(),
             res_header,
-            subquery_for_set,
-            std::move(set),
+            std::move(set_and_key),
+            std::move(external_table),
             limits,
             std::move(prepared_sets_cache));
 
