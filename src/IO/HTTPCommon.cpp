@@ -57,7 +57,7 @@ namespace
     public:
         HTTPSessionAdapter(const std::string & host, UInt16 port)
             : Session(host,port)
-            , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
+            , log{&Poco::Logger::get("HTTPSessionAdapter")}
         {
             static_assert(std::has_virtual_destructor_v<Session>, "The base class must have a virtual destructor");
         }
@@ -95,12 +95,13 @@ namespace
                 catch (...)
                 {
                     Session::close();
-                    Session::setResolvedHost("");
-                    LOG_WARNING(log, "Failed to create connection with {}:{}. {}", Session::getResolvedHost(), Session::getPort(), getCurrentExceptionMessage(false));
                     if (++it == endpoinds.end())
                     {
+                        Session::setResolvedHost("");
                         throw;
                     }
+                    LOG_WARNING(log, "Failed to create connection with {}:{}. {}", Session::getResolvedHost(), Session::getPort(), getCurrentExceptionMessage(false));
+                    Session::setResolvedHost("");
                 }
             }
         }
