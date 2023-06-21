@@ -50,7 +50,7 @@ public:
 
         virtual Entry & getEntry() = 0;
 
-        virtual void annul() = 0;
+        virtual void invalidate() = 0;
 
         virtual void updateSize(int64_t size) = 0;
     };
