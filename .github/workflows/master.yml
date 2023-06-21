@@ -840,7 +840,6 @@ jobs:
 ############################################################################################
   BuilderReport:
     needs:
-      - BuilderBinRelease
       - BuilderDebAarch64
       - BuilderDebAsan
       - BuilderDebDebug
