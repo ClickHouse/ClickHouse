@@ -49,6 +49,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 
     auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
     current_size += size;
+    ++current_elements_num;
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
@@ -63,12 +64,13 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 void LRUFileCachePriority::removeAll(const CacheGuard::Lock &)
 {
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, current_size);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, queue.size());
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, current_elements_num);
 
     LOG_TEST(log, "Removed all entries from LRU queue");
 
     queue.clear();
     current_size = 0;
+    current_elements_num = 0;
 }
 
 void LRUFileCachePriority::pop(const CacheGuard::Lock &)
@@ -78,10 +80,15 @@ void LRUFileCachePriority::pop(const CacheGuard::Lock &)
 
 LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIterator it)
 {
-    current_size -= it->size;
+    /// If size is 0, entry is annuled, current_elements_num was already updated.
+    if (it->size)
+    {
+        current_size -= it->size;
+        --current_elements_num;
 
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+    }
 
     LOG_TEST(
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
@@ -157,6 +164,7 @@ void LRUFileCachePriority::LRUFileCacheIterator::annul()
 {
     updateSize(-queue_iter->size);
     chassert(queue_iter->size == 0);
+    --cache_priority->current_elements_num;
 }
 
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
