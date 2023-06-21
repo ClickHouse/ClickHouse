@@ -138,6 +138,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
+    removeCacheIfExists(object.remote_path);
     object_storage->removeObject(object);
 }
 
