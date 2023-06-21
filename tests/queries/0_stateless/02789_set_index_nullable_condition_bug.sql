@@ -1,4 +1,5 @@
-CREATE OR REPLACE TABLE test_table
+drop table if exists test_table;
+CREATE TABLE test_table
 (
     col1 String,
     col2 String,
