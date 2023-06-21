@@ -126,6 +126,8 @@ public:
         return last_block_missing_values;
     }
 
+    size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
+
     String getName() const override final { return "ParallelParsingBlockInputFormat"; }
 
 private:
@@ -200,6 +202,7 @@ private:
     const size_t max_block_size;
 
     BlockMissingValues last_block_missing_values;
+    size_t last_approx_bytes_read_for_chunk;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -245,6 +248,7 @@ private:
     {
         std::vector<Chunk> chunk;
         std::vector<BlockMissingValues> block_missing_values;
+        std::vector<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit
@@ -256,6 +260,7 @@ private:
 
         ChunkExt chunk_ext;
         Memory<> segment;
+        size_t original_segment_size;
         std::atomic<ProcessingUnitStatus> status;
         /// Needed for better exception message.
         size_t offset = 0;

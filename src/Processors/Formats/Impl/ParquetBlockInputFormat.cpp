@@ -62,7 +62,14 @@ Chunk ParquetBlockInputFormat::generate()
     if (is_stopped)
         return {};
 
+    size_t batch_start = getDataOffsetMaybeCompressed(*in);
     auto batch = current_record_batch_reader->Next();
+    size_t batch_end = getDataOffsetMaybeCompressed(*in);
+    if (batch_start < batch_end)
+        approx_bytes_read_for_chunk = batch_end - batch_start;
+    else
+        approx_bytes_read_for_chunk = 0;
+
     if (!batch.ok())
     {
         throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}",
