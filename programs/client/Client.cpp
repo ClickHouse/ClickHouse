@@ -518,8 +518,8 @@ void Client::connect()
                         << std::endl;
         }
     }
-
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+    String connection_port = std::to_string(connection_parameters.port);
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name}") + ":" + connection_port +" :)";
 
     Strings keys;
     config().keys("prompt_by_server_display_name", keys);
@@ -543,7 +543,7 @@ void Client::connect()
     /// Prompt may contain the following substitutions in a form of {name}.
     std::map<String, String> prompt_substitutions{
         {"host", connection_parameters.host},
-        {"port", toString(connection_parameters.port)},
+        {"port", connection_port},
         {"user", connection_parameters.user},
         {"display_name", server_display_name},
     };
