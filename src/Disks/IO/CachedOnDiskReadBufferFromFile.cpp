@@ -8,6 +8,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <base/hex.h>
 #include <Interpreters/Context.h>
 
@@ -26,6 +27,7 @@ extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
+extern const Event CachedReadBufferCreateBufferMicroseconds;
 }
 
 namespace DB
@@ -145,6 +147,8 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segment) const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
+
     /// Use is_persistent flag from in-memory state of the filesegment,
     /// because it is consistent with what is written on disk.
     auto path = file_segment.getPathInLocalCache();
@@ -167,6 +171,8 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
+
     switch (read_type_)
     {
         case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
@@ -400,6 +406,8 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
 
     current_file_segment_counters.increment(
         ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
+
+    ProfileEvents::increment(ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
 
     [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     chassert(download_current_segment == file_segment.isDownloader());
