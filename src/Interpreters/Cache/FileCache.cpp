@@ -615,7 +615,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 
     struct EvictionCandidates
     {
-        explicit EvictionCandidates(const KeyMetadataPtr & key_metadata_) : key_metadata(key_metadata_) {}
+        explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(std::move(key_metadata_)) {}
 
         void add(const FileSegmentMetadataPtr & candidate)
         {
