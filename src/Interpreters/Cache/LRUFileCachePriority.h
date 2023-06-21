@@ -37,6 +37,8 @@ private:
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
 
     std::atomic<size_t> current_size = 0;
+    /// current_elements_num is not always equal to queue.size()
+    /// because of invalidated entries.
     std::atomic<size_t> current_elements_num = 0;
 
     LRUQueueIterator remove(LRUQueueIterator it);
@@ -57,7 +59,7 @@ public:
 
     Iterator remove(const CacheGuard::Lock &) override;
 
-    void annul() override;
+    void invalidate() override;
 
     void updateSize(int64_t size) override;
 

@@ -402,7 +402,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
     if (file_segment->queue_iterator)
-        file_segment->queue_iterator->annul();
+        file_segment->queue_iterator->invalidate();
 
     const auto path = key_metadata->getFileSegmentPath(*file_segment);
     bool exists = fs::exists(path);

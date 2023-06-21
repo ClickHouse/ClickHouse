@@ -25,6 +25,14 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     const CacheGuard::Lock &)
 {
     const auto & key = key_metadata->key;
+    if (size == 0)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Adding zero size entries to LRU queue is not allowed "
+            "(Key: {}, offset: {}", key, offset);
+    }
+
 #ifndef NDEBUG
     for (const auto & entry : queue)
     {
@@ -80,7 +88,7 @@ void LRUFileCachePriority::pop(const CacheGuard::Lock &)
 
 LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIterator it)
 {
-    /// If size is 0, entry is annuled, current_elements_num was already updated.
+    /// If size is 0, entry is invalidateed, current_elements_num was already updated.
     if (it->size)
     {
         current_size -= it->size;
@@ -160,11 +168,12 @@ LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
         cache_priority, cache_priority->remove(queue_iter));
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::annul()
+void LRUFileCachePriority::LRUFileCacheIterator::invalidate()
 {
     updateSize(-queue_iter->size);
     chassert(queue_iter->size == 0);
     --cache_priority->current_elements_num;
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
 }
 
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
