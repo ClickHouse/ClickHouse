@@ -61,6 +61,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "s3",
         "old_parts_lifetime": 0,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
