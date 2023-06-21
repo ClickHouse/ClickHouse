@@ -9,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/typeid_cast.h>
@@ -215,7 +216,7 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
@@ -426,60 +427,106 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
                         "or path IN ('path1','path2'...) or path IN (subquery) "
                         "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
 
+    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
+
+    struct ListTask
+    {
+        String path;
+        ZkPathType path_type;
+        String prefix;
+        String path_corrected;
+        String path_part;
+    };
+    std::vector<ListTask> list_tasks;
     std::unordered_set<String> added;
     while (!paths.empty())
     {
-        auto [path, path_type] = std::move(paths.front());
-        paths.pop_front();
-
-        String prefix;
-        if (path_type == ZkPathType::Prefix)
+        list_tasks.clear();
+        std::vector<String> paths_to_list;
+        while (!paths.empty() && static_cast<Int64>(list_tasks.size()) < max_inflight_requests)
         {
-            prefix = path;
-            size_t last_slash = prefix.rfind('/');
-            path = prefix.substr(0, last_slash == String::npos ? 0 : last_slash);
-        }
+            auto [path, path_type] = std::move(paths.front());
+            paths.pop_front();
 
-        String path_corrected = pathCorrected(path);
-
-        /// Node can be deleted concurrently. It's Ok, we don't provide any
-        /// consistency guarantees for system.zookeeper table.
-        zkutil::Strings nodes;
-        zookeeper->tryGetChildren(path_corrected, nodes);
-
-        String path_part = path_corrected;
-        if (path_part == "/")
-            path_part.clear();
-
-        if (!prefix.empty())
-        {
-            // Remove nodes that do not match specified prefix
-            std::erase_if(nodes, [&prefix, &path_part] (const String & node)
+            ListTask task;
+            task.path = path;
+            task.path_type = path_type;
+            if (path_type == ZkPathType::Prefix)
             {
-                return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
-            });
+                task.prefix = path;
+                size_t last_slash = task.prefix.rfind('/');
+                path = task.prefix.substr(0, last_slash == String::npos ? 0 : last_slash);
+            }
+
+            task.path_corrected = pathCorrected(path);
+
+            paths_to_list.emplace_back(task.path_corrected);
+            list_tasks.emplace_back(std::move(task));
+        }
+        auto list_responses = zookeeper->tryGetChildren(paths_to_list);
+
+        struct GetTask
+        {
+            size_t list_task_idx;   /// Index of 'parent' request in list_tasks
+            String node;            /// Node name
+        };
+        std::vector<GetTask> get_tasks;
+        std::vector<String> paths_to_get;
+        for (size_t list_task_idx = 0; list_task_idx < list_tasks.size(); ++list_task_idx)
+        {
+            auto & list_result = list_responses[list_task_idx];
+            /// Node can be deleted concurrently. It's Ok, we don't provide any
+            /// consistency guarantees for system.zookeeper table.
+            if (list_result.error == Coordination::Error::ZNONODE)
+                continue;
+
+            auto & task = list_tasks[list_task_idx];
+            context->getProcessListElement()->checkTimeLimit();
+
+            Strings nodes = std::move(list_result.names);
+
+            task.path_part = task.path_corrected;
+            if (task.path_part == "/")
+                task.path_part.clear();
+
+            if (!task.prefix.empty())
+            {
+                // Remove nodes that do not match specified prefix
+                std::erase_if(nodes, [&task] (const String & node)
+                {
+                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;
+                });
+            }
+
+            get_tasks.reserve(get_tasks.size() + nodes.size());
+            for (const String & node : nodes)
+            {
+                paths_to_get.emplace_back(task.path_part + '/' + node);
+                get_tasks.emplace_back(GetTask{list_task_idx, node});
+            }
         }
 
-        std::vector<std::future<Coordination::GetResponse>> futures;
-        futures.reserve(nodes.size());
-        for (const String & node : nodes)
-            futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
+        auto get_responses = zookeeper->tryGet(paths_to_get);
 
-        for (size_t i = 0, size = nodes.size(); i < size; ++i)
+        for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
-            auto res = futures[i].get();
+            auto & res = get_responses[i];
             if (res.error == Coordination::Error::ZNONODE)
                 continue; /// Node was deleted meanwhile.
 
+            auto & get_task = get_tasks[i];
+            auto & list_task = list_tasks[get_task.list_task_idx];
+            context->getProcessListElement()->checkTimeLimit();
+
             // Deduplication
-            String key = path_part + '/' + nodes[i];
+            String key = list_task.path_part + '/' + get_task.node;
             if (auto [it, inserted] = added.emplace(key); !inserted)
                 continue;
 
             const Coordination::Stat & stat = res.stat;
 
             size_t col_num = 0;
-            res_columns[col_num++]->insert(nodes[i]);
+            res_columns[col_num++]->insert(get_task.node);
             res_columns[col_num++]->insert(res.data);
             res_columns[col_num++]->insert(stat.czxid);
             res_columns[col_num++]->insert(stat.mzxid);
@@ -493,9 +540,9 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
             res_columns[col_num++]->insert(stat.numChildren);
             res_columns[col_num++]->insert(stat.pzxid);
             res_columns[col_num++]->insert(
-                path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
+                list_task.path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
 
-            if (path_type != ZkPathType::Exact && res.stat.numChildren > 0)
+            if (list_task.path_type != ZkPathType::Exact && res.stat.numChildren > 0)
             {
                 paths.emplace_back(key, ZkPathType::Recurse);
             }

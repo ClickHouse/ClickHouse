@@ -2,9 +2,16 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheLockKeyMicroseconds;
+    extern const Event FilesystemCacheLockMetadataMicroseconds;
+}
 
 namespace DB
 {
@@ -69,6 +76,8 @@ LockedKeyPtr KeyMetadata::lock()
 
 LockedKeyPtr KeyMetadata::tryLock()
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
+
     auto locked = std::make_unique<LockedKey>(shared_from_this());
     if (key_state == KeyMetadata::KeyState::ACTIVE)
         return locked;
@@ -145,18 +154,21 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     return std::to_string(offset) + file_suffix;
 }
 
-String CacheMetadata::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
+String CacheMetadata::getPathForFileSegment(const Key & key, size_t offset, FileSegmentKind segment_kind) const
 {
-    String file_suffix;
-
-    const auto key_str = key.toString();
-    return fs::path(path) / key_str.substr(0, 3) / key_str / getFileNameForFileSegment(offset, segment_kind);
+    return fs::path(getPathForKey(key)) / getFileNameForFileSegment(offset, segment_kind);
 }
 
-String CacheMetadata::getPathInLocalCache(const Key & key) const
+String CacheMetadata::getPathForKey(const Key & key) const
 {
     const auto key_str = key.toString();
     return fs::path(path) / key_str.substr(0, 3) / key_str;
+}
+
+CacheMetadataGuard::Lock CacheMetadata::lockMetadata() const
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
+    return guard.lock();
 }
 
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
@@ -166,7 +178,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 {
     KeyMetadataPtr key_metadata;
     {
-        auto lock = guard.lock();
+        auto lock = lockMetadata();
 
         auto it = find(key);
         if (it == end())
@@ -178,16 +190,20 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathInLocalCache(key), *cleanup_queue, is_initial_load)).first;
+                    key, getPathForKey(key), *cleanup_queue, is_initial_load)).first;
         }
 
         key_metadata = it->second;
     }
 
     {
-        auto locked_metadata = std::make_unique<LockedKey>(key_metadata);
-        const auto key_state = locked_metadata->getKeyState();
+        LockedKeyPtr locked_metadata;
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
+            locked_metadata = std::make_unique<LockedKey>(key_metadata);
+        }
 
+        const auto key_state = locked_metadata->getKeyState();
         if (key_state == KeyMetadata::KeyState::ACTIVE)
             return locked_metadata;
 
@@ -216,10 +232,15 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
 void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
 {
-    auto lock = guard.lock();
+    auto lock = lockMetadata();
     for (const auto & [key, key_metadata] : *this)
     {
-        auto locked_key = std::make_unique<LockedKey>(key_metadata);
+        LockedKeyPtr locked_key;
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
+            locked_key = std::make_unique<LockedKey>(key_metadata);
+        }
+
         const auto key_state = locked_key->getKeyState();
 
         if (key_state == KeyMetadata::KeyState::ACTIVE)
@@ -238,7 +259,7 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
 
 void CacheMetadata::doCleanup()
 {
-    auto lock = guard.lock();
+    auto lock = lockMetadata();
 
     FileCacheKey cleanup_key;
     while (cleanup_queue->tryPop(cleanup_key))
@@ -247,9 +268,13 @@ void CacheMetadata::doCleanup()
         if (it == end())
             continue;
 
-        auto locked_metadata = std::make_unique<LockedKey>(it->second);
-        const auto key_state = locked_metadata->getKeyState();
+        LockedKeyPtr locked_metadata;
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
+            locked_metadata = std::make_unique<LockedKey>(it->second);
+        }
 
+        const auto key_state = locked_metadata->getKeyState();
         if (key_state == KeyMetadata::KeyState::ACTIVE)
         {
             /// Key was added back to cache after we submitted it to removal queue.
@@ -260,7 +285,7 @@ void CacheMetadata::doCleanup()
         erase(it);
         LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
-        const fs::path key_directory = getPathInLocalCache(cleanup_key);
+        const fs::path key_directory = getPathForKey(cleanup_key);
         const fs::path key_prefix_directory = key_directory.parent_path();
 
         try
@@ -278,7 +303,7 @@ void CacheMetadata::doCleanup()
         try
         {
             if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove_all(key_prefix_directory);
+                fs::remove(key_prefix_directory);
         }
         catch (const fs::filesystem_error & e)
         {
@@ -380,8 +405,14 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
         file_segment->queue_iterator->annul();
 
     const auto path = key_metadata->getFileSegmentPath(*file_segment);
-    if (fs::exists(path))
+    bool exists = fs::exists(path);
+    if (exists)
+    {
         fs::remove(path);
+        LOG_TEST(log, "Removed file segment at path: {}", path);
+    }
+    else if (file_segment->downloaded_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 
     file_segment->detach(segment_lock, *this);
     return key_metadata->erase(it);

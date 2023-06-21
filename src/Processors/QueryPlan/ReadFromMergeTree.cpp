@@ -1427,6 +1427,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
+bool ReadFromMergeTree::readsInOrder() const
+{
+    return reader_settings.read_in_order;
+}
+
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
