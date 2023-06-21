@@ -2,10 +2,11 @@
 slug: /en/sql-reference/statements/create/function
 sidebar_position: 38
 sidebar_label: FUNCTION
-title: "CREATE FUNCTION -user defined function (UDF)"
 ---
 
-Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
+# CREATE FUNCTION - user defined function (UDF)
+
+Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 
 **Syntax**
 
@@ -60,6 +61,4 @@ Result:
 
 ## Related Content
 
-### [Executable UDFs](/docs/en/sql-reference/functions/udf.md).
-
-### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
+- [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

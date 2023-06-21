@@ -174,6 +174,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
 #else
 
-void registerDiskS3(DB::DiskFactory &, bool /* global_skip_access_check */) {}
+void registerDiskS3(DiskFactory &, bool /* global_skip_access_check */) {}
 
 #endif

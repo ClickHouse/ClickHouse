@@ -156,7 +156,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | rpc\_client\_connect\_timeout                         | 600 * 1000              |
 | rpc\_client\_read\_timeout                            | 3600 * 1000             |
 | rpc\_client\_write\_timeout                           | 3600 * 1000             |
-| rpc\_client\_socket\_linger\_timeout                  | -1                      |
+| rpc\_client\_socekt\_linger\_timeout                  | -1                      |
 | rpc\_client\_connect\_retry                           | 10                      |
 | rpc\_client\_timeout                                  | 3600 * 1000             |
 | dfs\_default\_replica                                 | 3                       |
@@ -176,7 +176,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | output\_write\_timeout                                | 3600 * 1000             |
 | output\_close\_timeout                                | 3600 * 1000             |
 | output\_packetpool\_size                              | 1024                    |
-| output\_heartbeat\_interval                          | 10 * 1000               |
+| output\_heeartbeat\_interval                          | 10 * 1000               |
 | dfs\_client\_failover\_max\_attempts                  | 15                      |
 | dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
 | dfs\_client\_socketcache\_expiryMsec                  | 3000                    |
@@ -232,12 +232,6 @@ libhdfs3 support HDFS namenode HA.
 
 - `_path` — Path to the file.
 - `_file` — Name of the file.
-
-## Storage Settings {#storage-settings}
-
-- [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_multiple_files](/docs/en/operations/settings/settings.md#hdfs_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**
 

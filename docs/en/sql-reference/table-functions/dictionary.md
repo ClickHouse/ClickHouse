@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/table-functions/dictionary
 sidebar_position: 54
-sidebar_label: dictionary
+sidebar_label: dictionary function
 title: dictionary
 ---
 

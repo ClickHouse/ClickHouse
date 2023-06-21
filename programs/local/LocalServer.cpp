@@ -26,13 +26,12 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/SharedThreadPools.h>
+#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -130,31 +129,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
     });
 #endif
 
-    getIOThreadPool().initialize(
+    IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
-
-
-    const size_t active_parts_loading_threads = config().getUInt("max_active_parts_loading_thread_pool_size", 64);
-    getActivePartsLoadingThreadPool().initialize(
-        active_parts_loading_threads,
-        0, // We don't need any threads one all the parts will be loaded
-        active_parts_loading_threads);
-
-    const size_t outdated_parts_loading_threads = config().getUInt("max_outdated_parts_loading_thread_pool_size", 32);
-    getOutdatedPartsLoadingThreadPool().initialize(
-        outdated_parts_loading_threads,
-        0, // We don't need any threads one all the parts will be loaded
-        outdated_parts_loading_threads);
-
-    getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
-
-    const size_t cleanup_threads = config().getUInt("max_parts_cleaning_thread_pool_size", 128);
-    getPartsCleaningThreadPool().initialize(
-        cleanup_threads,
-        0, // We don't need any threads one all the parts will be deleted
-        cleanup_threads);
 }
 
 
@@ -532,12 +510,12 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
-    if (config().has("query") && config().has("queries-file"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
-
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
     if (is_interactive && !delayed_interactive)
     {
+        if (config().has("query") && config().has("queries-file"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
+
         if (config().has("multiquery"))
             is_multiquery = true;
     }
@@ -834,16 +812,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 {
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
-        std::string_view arg = argv[arg_num];
-        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-        {
-            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
-            ++arg_num;
-            arg = argv[arg_num];
-            addMultiquery(arg, common_arguments);
-        }
-        else
-            common_arguments.emplace_back(arg);
+        const char * arg = argv[arg_num];
+        common_arguments.emplace_back(arg);
     }
 }
 

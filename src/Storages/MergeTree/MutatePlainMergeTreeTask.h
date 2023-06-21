@@ -36,13 +36,13 @@ public:
         , task_result_callback(task_result_callback_)
     {
         for (auto & part : merge_mutate_entry->future_part->parts)
-            priority.value += part->getBytesOnDisk();
+            priority += part->getBytesOnDisk();
     }
 
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() override;
-    Priority getPriority() override { return priority; }
+    UInt64 getPriority() override { return priority; }
 
 private:
 
@@ -66,7 +66,7 @@ private:
     std::unique_ptr<Stopwatch> stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
 
-    Priority priority;
+    UInt64 priority{0};
 
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;

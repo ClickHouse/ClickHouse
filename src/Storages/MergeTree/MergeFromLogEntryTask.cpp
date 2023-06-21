@@ -291,7 +291,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     /// Adjust priority
     for (auto & item : future_merged_part->parts)
-        priority.value += item->getBytesOnDisk();
+        priority += item->getBytesOnDisk();
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {

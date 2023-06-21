@@ -214,14 +214,14 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
 
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, hostname, port, log);
-    socket.setReceiveTimeout(Poco::Timespan(http_timeout, 0));
-    socket.setSendTimeout(Poco::Timespan(http_timeout, 0));
+    socket.setReceiveTimeout(http_timeout);
+    socket.setSendTimeout(http_timeout);
 
     Poco::ThreadPool server_pool(3, max_server_connections);
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(Poco::Timespan(http_timeout, 0));
-    http_params->setKeepAliveTimeout(Poco::Timespan(keep_alive_timeout, 0));
+    http_params->setTimeout(http_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     auto shared_context = Context::createShared();
     auto context = Context::createGlobal(shared_context.get());

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import logging
-import pytest
+import os
+import time
+
 
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_s3_mock
+import pytest
 
 
 @pytest.fixture(scope="module")
@@ -30,23 +32,12 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="module")
-def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
-
-
-@pytest.fixture(scope="function")
-def broken_s3(init_broken_s3):
-    init_broken_s3.reset()
-    yield init_broken_s3
-
-
-def test_upload_after_check_works(cluster, broken_s3):
+def test_paranoid_check_in_logs(cluster):
     node = cluster.instances["node"]
 
     node.query(
         """
-        CREATE TABLE s3_upload_after_check_works (
+        CREATE TABLE s3_failover_test (
             id Int64,
             data String
         ) ENGINE=MergeTree()
@@ -54,12 +45,8 @@ def test_upload_after_check_works(cluster, broken_s3):
         """
     )
 
-    broken_s3.setup_fake_upload(1)
+    node.query("INSERT INTO s3_failover_test VALUES (1, 'Hello')")
 
-    error = node.query_and_get_error(
-        "INSERT INTO s3_upload_after_check_works VALUES (1, 'Hello')"
-    )
+    assert node.contains_in_log("exists after upload")
 
-    assert "Code: 499" in error, error
-    assert "Immediately after upload" in error, error
-    assert "suddenly disappeared" in error, error
+    assert node.query("SELECT * FROM s3_failover_test ORDER BY id") == "1\tHello\n"

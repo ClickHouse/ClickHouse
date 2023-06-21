@@ -9,8 +9,6 @@
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
   * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
-  *
-  * Please keep in sync with PackedHashMap.h
   */
 
 namespace DB
@@ -55,13 +53,13 @@ PairNoInit<std::decay_t<First>, std::decay_t<Second>> makePairNoInit(First && fi
 }
 
 
-template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState, typename Pair = PairNoInit<Key, TMapped>>
+template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCell
 {
     using Mapped = TMapped;
     using State = TState;
 
-    using value_type = Pair;
+    using value_type = PairNoInit<Key, Mapped>;
     using mapped_type = Mapped;
     using key_type = Key;
 
@@ -153,14 +151,14 @@ struct HashMapCell
 namespace std
 {
 
-    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
-    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState, Pair>> : std::integral_constant<size_t, 2> { };
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
 
-    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
-    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = Key; };
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState>> { using type = Key; };
 
-    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
-    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = TMapped; };
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState>> { using type = TMapped; };
 }
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>

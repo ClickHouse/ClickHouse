@@ -5,8 +5,7 @@
 #include <Common/Exception.h>
 #include <base/hex.h>
 #include <Core/Settings.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <Common/AsyncTaskExecutor.h>
 
@@ -124,7 +123,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        this->addAttribute("clickhouse.thread_id", getThreadId());
+        /// Add new initialization here
     }
     catch (...)
     {
@@ -249,26 +248,26 @@ String TracingContext::composeTraceparentHeader() const
 
 void TracingContext::deserialize(ReadBuffer & buf)
 {
-    readUUIDText(trace_id, buf);
-    assertChar('\n', buf);
-    readIntText(span_id, buf);
-    assertChar('\n', buf);
-    readEscapedString(tracestate, buf);
-    assertChar('\n', buf);
-    readIntText(trace_flags, buf);
-    assertChar('\n', buf);
+    buf >> this->trace_id
+        >> "\n"
+        >> this->span_id
+        >> "\n"
+        >> this->tracestate
+        >> "\n"
+        >> this->trace_flags
+        >> "\n";
 }
 
 void TracingContext::serialize(WriteBuffer & buf) const
 {
-    writeUUIDText(trace_id, buf);
-    writeChar('\n', buf);
-    writeIntText(span_id, buf);
-    writeChar('\n', buf);
-    writeEscapedString(tracestate, buf);
-    writeChar('\n', buf);
-    writeIntText(trace_flags, buf);
-    writeChar('\n', buf);
+    buf << this->trace_id
+        << "\n"
+        << this->span_id
+        << "\n"
+        << this->tracestate
+        << "\n"
+        << this->trace_flags
+        << "\n";
 }
 
 const TracingContextOnThread & CurrentContext()

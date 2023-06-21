@@ -35,14 +35,6 @@ Document::~Document()
 }
 
 
-Array& Document::addNewArray(const std::string& name)
-{
-	Array::Ptr newArray = new Array();
-	add(name, newArray);
-	return *newArray;
-}
-
-
 Element::Ptr Document::get(const std::string& name) const
 {
 	Element::Ptr element;
@@ -92,7 +84,7 @@ void Document::read(BinaryReader& reader)
 	while (type != '\0')
 	{
 		Element::Ptr element;
-
+		
 		std::string name = BSONReader(reader).readCString();
 
 		switch (type)
@@ -206,7 +198,7 @@ void Document::write(BinaryWriter& writer)
 	else
 	{
 		std::stringstream sstream;
-		Poco::BinaryWriter tempWriter(sstream, BinaryWriter::LITTLE_ENDIAN_BYTE_ORDER);
+		Poco::BinaryWriter tempWriter(sstream);
 		for (ElementSet::iterator it = _elements.begin(); it != _elements.end(); ++it)
 		{
 			tempWriter << static_cast<unsigned char>((*it)->type());
@@ -215,7 +207,7 @@ void Document::write(BinaryWriter& writer)
 			element->write(tempWriter);
 		}
 		tempWriter.flush();
-
+		
 		Poco::Int32 len = static_cast<Poco::Int32>(5 + sstream.tellp()); /* 5 = sizeof(len) + 0-byte */
 		writer << len;
 		writer.writeRaw(sstream.str());

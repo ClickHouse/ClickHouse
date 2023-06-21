@@ -7,7 +7,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <base/hex.h>
+#include <IO/HashingReadBuffer.h>
 
 
 namespace DB
@@ -36,7 +36,7 @@ namespace
     {
         /// We cannot reuse base backup because our file is smaller
         /// than file stored in previous backup
-        if ((new_entry_info.size < base_backup_info.first) || !base_backup_info.first)
+        if (new_entry_info.size < base_backup_info.first)
             return CheckBackupResult::HasNothing;
 
         if (base_backup_info.first == new_entry_info.size)
@@ -48,22 +48,45 @@ namespace
 
     struct ChecksumsForNewEntry
     {
-        /// 0 is the valid checksum of empty data.
-        UInt128 full_checksum = 0;
-
-        /// std::nullopt here means that it's too difficult to calculate a partial checksum so it shouldn't be used.
-        std::optional<UInt128> prefix_checksum;
+        UInt128 full_checksum;
+        UInt128 prefix_checksum;
     };
 
     /// Calculate checksum for backup entry if it's empty.
     /// Also able to calculate additional checksum of some prefix.
     ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, size_t prefix_size)
     {
-        ChecksumsForNewEntry res;
-        /// The partial checksum should be calculated before the full checksum to enable optimization in BackupEntryWithChecksumCalculation.
-        res.prefix_checksum = entry->getPartialChecksum(prefix_size);
-        res.full_checksum = entry->getChecksum();
-        return res;
+        if (prefix_size > 0)
+        {
+            auto read_buffer = entry->getReadBuffer();
+            HashingReadBuffer hashing_read_buffer(*read_buffer);
+            hashing_read_buffer.ignore(prefix_size);
+            auto prefix_checksum = hashing_read_buffer.getHash();
+            if (entry->getChecksum() == std::nullopt)
+            {
+                hashing_read_buffer.ignoreAll();
+                auto full_checksum = hashing_read_buffer.getHash();
+                return ChecksumsForNewEntry{full_checksum, prefix_checksum};
+            }
+            else
+            {
+                return ChecksumsForNewEntry{*(entry->getChecksum()), prefix_checksum};
+            }
+        }
+        else
+        {
+            if (entry->getChecksum() == std::nullopt)
+            {
+                auto read_buffer = entry->getReadBuffer();
+                HashingReadBuffer hashing_read_buffer(*read_buffer);
+                hashing_read_buffer.ignoreAll();
+                return ChecksumsForNewEntry{hashing_read_buffer.getHash(), 0};
+            }
+            else
+            {
+                return ChecksumsForNewEntry{*(entry->getChecksum()), 0};
+            }
+        }
     }
 
     /// We store entries' file names in the backup without leading slashes.
@@ -88,7 +111,6 @@ String BackupFileInfo::describe() const
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
-    result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
     return result;
 }
 
@@ -100,7 +122,6 @@ BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const Backu
     BackupFileInfo info;
     info.file_name = adjusted_path;
     info.size = backup_entry->getSize();
-    info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
     /// We don't set `info.data_file_name` and `info.data_file_index` in this function because they're set during backup coordination
     /// (see the class BackupCoordinationFileInfos).
@@ -118,7 +139,7 @@ BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const Backu
 
     /// We have info about this file in base backup
     /// If file has no checksum -- calculate and fill it.
-    if (base_backup_file_info)
+    if (base_backup_file_info.has_value())
     {
         LOG_TRACE(log, "File {} found in base backup, checking for equality", adjusted_path);
         CheckBackupResult check_base = checkBaseBackupForFile(*base_backup_file_info, info);

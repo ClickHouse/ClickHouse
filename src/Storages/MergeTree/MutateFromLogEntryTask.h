@@ -27,7 +27,7 @@ public:
         {}
 
 
-    Priority getPriority() override { return priority; }
+    UInt64 getPriority() override { return priority; }
 
 private:
 
@@ -40,7 +40,7 @@ private:
         return mutate_task->execute();
     }
 
-    Priority priority;
+    UInt64 priority{0};
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};

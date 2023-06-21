@@ -98,7 +98,7 @@ public:
 protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
-    bool isDeflateQpl() const override { return true; }
+    bool isExperimental() const override { return true; }
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;

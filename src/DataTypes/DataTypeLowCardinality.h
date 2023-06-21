@@ -12,7 +12,6 @@ class DataTypeLowCardinality : public IDataType
 private:
     DataTypePtr dictionary_type;
 
-
 public:
     explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
@@ -23,8 +22,6 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    String getSQLCompatibleName() const override { return dictionary_type->getSQLCompatibleName(); }
-
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     MutableColumnPtr createColumn() const override;

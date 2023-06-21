@@ -969,15 +969,6 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     return select_query;
 }
 
-bool ExpressionAnalyzer::isRemoteStorage() const
-{
-    const Settings & csettings = getContext()->getSettingsRef();
-    // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
-    const bool enable_parallel_processing_of_joins
-        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
-    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
-}
-
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
@@ -1064,6 +1055,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 {
     const auto & settings = context->getSettings();
 
+    Block left_sample_block(left_sample_columns);
+    for (auto & column : left_sample_block)
+    {
+        if (!column.column)
+            column.column = column.type->createColumn();
+    }
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
     std::vector<String> tried_algorithms;
@@ -1109,10 +1107,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
-
-        // Grace hash join requires that columns exist in left_sample_block.
-        Block left_sample_block(left_sample_columns);
-        if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
+        if (GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 

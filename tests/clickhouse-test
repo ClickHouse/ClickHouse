@@ -11,7 +11,6 @@ import shutil
 import sys
 import os
 import os.path
-import platform
 import signal
 import re
 import copy
@@ -286,11 +285,11 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
-                    p.*,
                     arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
-                    )) AS stacktraces
+                    )) AS stacktraces,
+                    p.*
                 FROM system.processes p
                 JOIN system.stack_trace s USING (query_id)
                 WHERE query NOT LIKE '%system.processes%'
@@ -307,11 +306,11 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
-                p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces
+                )) AS stacktraces,
+                p.*
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
@@ -340,28 +339,9 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def kill_gdb_if_any():
-    # Check if we have running gdb.
-    code = subprocess.call("pidof gdb", shell=True)
-    if code != 0:
-        return
-
-    for i in range(5):
-        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
-        if code != 0:
-            sleep(i)
-        else:
-            break
-
-
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
-        # We could attach gdb to clickhouse-server before running some tests
-        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-        # We should kill existing gdb if any before starting new one.
-        kill_gdb_if_any()
-
         cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
@@ -549,7 +529,6 @@ class SettingsRandomizer:
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
-        "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
@@ -563,10 +542,7 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            # Allow to use uring only when running on Linux
             ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
-            if platform.system().lower() == "linux"
-            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -1067,13 +1043,12 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
-                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "rb")
+                file = open(self.stdout_file, "r")
                 diff += str(file.read())
                 file.close()
                 diff += "==================="
@@ -2043,7 +2018,7 @@ def reportLogStats(args):
 
     query = """
         WITH
-            240 AS mins,
+            120 AS mins,
             (
                 SELECT (count(), sum(length(message)))
                 FROM system.text_log
@@ -2073,7 +2048,7 @@ def reportLogStats(args):
 
     query = """
         WITH
-            240 AS mins
+            120 AS mins
         SELECT
             count() AS count,
             substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
@@ -2094,7 +2069,7 @@ def reportLogStats(args):
     query = """
         SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
         FROM system.text_log
-        WHERE (now() - toIntervalMinute(240)) < event_time
+        WHERE (now() - toIntervalMinute(120)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
         GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
@@ -2105,34 +2080,46 @@ def reportLogStats(args):
     print("\n")
 
     query = """
-        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
-              'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
-              'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}',
-              'Removed', 'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',
-              'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}', 'dropIfEmpty',
-              'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', '{}%', 'Read object: {}',
-              'New segment: {}', 'Convert overflow', 'Division by zero', 'Files set to {}',
-              'Bytes set to {}', 'Numeric overflow', 'Invalid mode: {}',
-              'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
-              'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
-              'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
-              'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
-              'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
-              'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
-              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
-              'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
-              'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
-              'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
-              'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
-              'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
-              'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
+        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue', 'Creating set.',
+              'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
+              'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
+              'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
+              'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', 'Query was cancelled',
+              'Table {} already exists.', '{}%', 'Cancelled merging parts', 'All replicas are lost',
+              'Cancelled mutating parts', 'Read object: {}', 'New segment: {}', 'Unknown geometry type {}',
+              'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
+              'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
+              'No part {} in committed state', 'Files set to {}', 'Bytes set to {}', 'Sharding key {} is not used',
+              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow',
+              'Polygon is not valid: {}', 'Decimal math overflow', '{} only accepts maps', 'Dictionary ({}) not found',
+              'Unknown format {}', 'Invalid IPv4 value', 'Invalid IPv6 value', 'Unknown setting {}',
+              'Unknown table function {}', 'Database {} already exists.', 'Table {} doesn''t exist',
+              'Invalid credentials', 'Part {} already exists', 'Invalid mode: {}', 'Log pulling is cancelled',
+              'JOIN {} cannot get JOIN keys', 'Unknown function {}{}', 'Cannot parse IPv6 {}',
+              'Not found address of host: {}', '{} must contain a tuple', 'Unknown codec family: {}',
+              'Expected const String column', 'Invalid partition format: {}', 'Cannot parse IPv4 {}',
+              'AST is too deep. Maximum: {}', 'Array sizes are too large: {}', 'Unable to connect to HDFS: {}',
+              'Shutdown is called for table', 'File is not inside {}',
+              'Table {} doesn''t exist', 'Database {} doesn''t exist', 'Table {}.{} doesn''t exist',
+              'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved',
+              'Could not find table: {}', 'Detached part "{}" not found', 'Unknown data type family: {}',
+              'Unknown input format {}', 'Cannot UPDATE key column {}', 'Substitution {} is not set',
+              'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}',
+              'Unsupported cipher mode', 'Unknown explain kind ''{}''', 'Table {} was suddenly removed',
+              'No cache found by path: {}', 'No such column {} in table {}', 'There is no port named {}',
+              'Function {} cannot resize {}', 'Function {} is not parametric', 'Unknown key attribute ''{}''',
+              'Transaction was cancelled', 'Unknown parent id {}', 'Session {} not found', 'Mutation {} was killed',
+              'Table {}.{} doesn''t exist.', 'Table is not initialized yet', '{} is not an identifier',
+              'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
+              'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
+              'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
+              'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist'
         ) AS known_short_messages
-        SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
-            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+        SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
-        WHERE (now() - toIntervalMinute(240)) < event_time
+        WHERE (now() - toIntervalMinute(120)) < event_time
             AND (length(message_format_string) < 16
-                OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
+                OR (length(message_format_string) < 30 AND message ilike '%DB::Exception%'))
             AND message_format_string NOT IN known_short_messages
         GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
     """
@@ -2144,7 +2131,7 @@ def reportLogStats(args):
     query = """
         SELECT max((freq, message_format_string)), level
         FROM (SELECT count() / (SELECT count() FROM system.text_log
-              WHERE (now() - toIntervalMinute(240)) < event_time) AS freq,
+              WHERE (now() - toIntervalMinute(120)) < event_time) AS freq,
               min(level) AS level, message_format_string FROM system.text_log
               WHERE (now() - toIntervalMinute(120)) < event_time
               GROUP BY message_format_string ORDER BY freq DESC)
@@ -2265,7 +2252,7 @@ def main(args):
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
             print_stacktraces()

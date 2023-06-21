@@ -20,7 +20,7 @@ static Block getSampleBlock()
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "max_elements"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "max_file_segment_size"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "cache_on_write_operations"},
-        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "cache_hits_threshold"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "enable_cache_hits_threshold"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_size"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_elements"},
         ColumnWithTypeAndName{std::make_shared<DataTypeString>(), "path"},
@@ -45,7 +45,7 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[1]->insert(settings.max_elements);
     res_columns[2]->insert(settings.max_file_segment_size);
     res_columns[3]->insert(settings.cache_on_write_operations);
-    res_columns[4]->insert(settings.cache_hits_threshold);
+    res_columns[4]->insert(settings.enable_cache_hits_threshold);
     res_columns[5]->insert(cache->getUsedCacheSize());
     res_columns[6]->insert(cache->getFileSegmentsNum());
     res_columns[7]->insert(cache->getBasePath());
