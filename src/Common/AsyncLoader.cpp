@@ -204,7 +204,7 @@ void AsyncLoader::wait()
     // Also wait for all workers to finish to avoid races on `pool.workers`,
     // which can be decrease even after all jobs are already finished.
     std::unique_lock lock{mutex};
-    while (!scheduled_jobs.empty() && hasWorker(lock))
+    while (!scheduled_jobs.empty() || hasWorker(lock))
     {
         lock.unlock();
         for (auto & p : pools)
