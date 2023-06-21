@@ -710,8 +710,9 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.find("ReplicatedMergeTree") != std::string::npos;
-    if (!looks_like_replicated)
+    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
+    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
+    if (!looks_like_replicated || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
