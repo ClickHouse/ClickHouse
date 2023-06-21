@@ -102,9 +102,12 @@ namespace
             if (!is_directory && !looking_for_directory)
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
-                    result.emplace_back(
-                        String(ls.file_info[i].mName),
-                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)});
+                {
+                    StorageHDFS::PathWithInfo one;
+                    one.path = String(ls.file_info[i].mName);
+                    one.info = StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)};
+                    result.emplace_back(std::move(one));
+                }
             }
             else if (is_directory && looking_for_directory)
             {
