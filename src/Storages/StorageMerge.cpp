@@ -631,6 +631,10 @@ QueryTreeNodePtr removeJoin(
     auto modified_query = query_node->cloneAndReplace(query_node->getJoinTree(), replacement_table_expression);
 
     query_node = modified_query->as<QueryNode>();
+
+    //TODO: change the predicates to make it valid and execute it on shards.
+    query_node->getPrewhere() = {};
+    query_node->getWhere() = {};
     query_node->getGroupBy().getNodes().clear();
     query_node->getHaving() = {};
     query_node->getOrderBy().getNodes().clear();
@@ -675,8 +679,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
         modified_query_info.query_tree = removeJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression);
-        // modified_query_info.query_tree = modified_query_info.query_tree->cloneAndReplace(modified_query_info.table_expression,
-        //     replacement_table_expression);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -694,7 +696,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
         }
 
         if (!storage_snapshot->tryGetColumn(get_column_options, "_database"))
-            column_name_to_node.emplace("_database", std::make_shared<ConstantNode>(current_storage_id.database_name));
+        {
+            auto database_name_node = std::make_shared<ConstantNode>(current_storage_id.database_name);
+            database_name_node->setAlias("_database");
+            column_name_to_node.emplace("_database", database_name_node);
+        }
 
         auto storage_columns = storage_snapshot->metadata->getColumns();
 
