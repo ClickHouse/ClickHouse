@@ -27,7 +27,7 @@ node2 = cluster.add_instance(
 # Testing different scenarios, when the http endpoint have several ips.
 def _prepare(node):
     node.add_local_dns_entry("node1", valid_ipv4)
-    node.add_local_dns_entry("node1", valid_ipv4)
+    node.add_local_dns_entry("node1", wrong_ipv6)
 
 
 @pytest.fixture(scope="module")
@@ -83,11 +83,9 @@ def test_url_invalid_hostname(started_cluster):
 
 def test_url_ip_change(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_table")
-
     node1.query(
         "CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE = MergeTree ORDER BY column2;"
     )
-
     node2.query(
         "INSERT INTO FUNCTION url('http://node1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('first', 1);"
     )
@@ -132,6 +130,8 @@ def test_url_inaccessible_hostname(started_cluster):
         node2.query(
             "SELECT count(*) FROM url('http://node1:8123/?query=SELECT+1', CSV, 'column2 UInt32', headers('Accept'='text/csv; charset=utf-8'));"
         )
+    node2.add_local_dns_entry("node1", new_ip_host)
+    node2.query("SYSTEM DROP DNS CACHE")
 
 
 def test_url_already_resolved(started_cluster):
