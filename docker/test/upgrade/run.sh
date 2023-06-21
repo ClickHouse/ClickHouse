@@ -59,8 +59,6 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
-rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
-
 start
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
@@ -84,8 +82,6 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
-
-rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
 

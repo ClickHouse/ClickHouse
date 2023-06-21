@@ -26,12 +26,13 @@ SELECT count() FROM test_infile_parallel WHERE Value='first';
 SELECT count() FROM test_infile_parallel WHERE Value='second';
 EOF
 
-# Error code is 27 (DB::ParsingException). It is not ignored.
-${CLICKHOUSE_CLIENT}  -m --multiquery --query "DROP TABLE IF EXISTS test_infile_parallel;
+# Error code is 36 (BAD_ARGUMENTS). It is not ignored.
+${CLICKHOUSE_CLIENT} --multiquery "
+DROP TABLE IF EXISTS test_infile_parallel;
 CREATE TABLE test_infile_parallel (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
 SET input_format_allow_errors_num=0;
 INSERT INTO test_infile_parallel FROM INFILE '${CLICKHOUSE_TMP}/test_infile_parallel*' FORMAT TSV;
-" 2>&1 | grep -q "27" && echo "Correct" || echo 'Fail'
+" 2>&1 | grep -q "36" && echo "Correct" || echo 'Fail'
 
 ${CLICKHOUSE_LOCAL} --multiquery <<EOF
 DROP TABLE IF EXISTS test_infile_parallel; 

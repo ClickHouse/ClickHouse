@@ -778,7 +778,7 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 
 ## zookeeper {#server-settings_zookeeper}
 
-包含允许ClickHouse与 [zookeeper](http://zookeeper.apache.org/) 集群。
+包含允许ClickHouse与 [zookpeer](http://zookeeper.apache.org/) 集群。
 
 ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复制的表，则可以省略此部分参数。
 

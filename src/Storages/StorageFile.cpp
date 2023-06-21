@@ -34,13 +34,11 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -52,8 +50,6 @@
 #include <re2/re2.h>
 #include <filesystem>
 #include <shared_mutex>
-#include <cmath>
-#include <algorithm>
 
 
 namespace ProfileEvents
@@ -79,7 +75,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
@@ -205,19 +200,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef().storage_file_read_method;
 
-    /** But using mmap on server-side is unsafe for the following reasons:
-      * - concurrent modifications of a file will result in SIGBUS;
-      * - IO error from the device will result in SIGBUS;
-      * - recovery from this signal is not feasible even with the usage of siglongjmp,
-      *   as it might require stack unwinding from arbitrary place;
-      * - arbitrary slowdown due to page fault in arbitrary place in the code is difficult to debug.
-      *
-      * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
-      */
-
-    if (S_ISREG(file_stat.st_mode)
-        && context->getApplicationType() != Context::ApplicationType::SERVER
-        && read_method == LocalFSReadMethod::mmap)
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -259,39 +242,34 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     return res;
 }
 
-struct stat getFileStat(const String & current_path, bool use_table_fd, int table_fd, const String & storage_name)
-{
-    struct stat file_stat{};
-    if (use_table_fd)
-    {
-        /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != fstat(table_fd, &file_stat))
-            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
-    }
-    else
-    {
-        /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != stat(current_path.c_str(), &file_stat))
-            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
-    }
-
-    return file_stat;
-}
-
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
-    const struct stat & file_stat,
     bool use_table_fd,
+    const String & storage_name,
     int table_fd,
     const String & compression_method,
     ContextPtr context)
 {
     CompressionMethod method;
 
+    struct stat file_stat{};
+
     if (use_table_fd)
+    {
+        /// Check if file descriptor allows random reads (and reading it twice).
+        if (0 != fstat(table_fd, &file_stat))
+            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
+
         method = chooseCompressionMethod("", compression_method);
+    }
     else
+    {
+        /// Check if file descriptor allows random reads (and reading it twice).
+        if (0 != stat(current_path.c_str(), &file_stat))
+            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
+
         method = chooseCompressionMethod(current_path, compression_method);
+    }
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
@@ -362,8 +340,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        auto file_stat = getFileStat("", true, table_fd, getName());
-        read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -404,29 +381,12 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        String path;
-        struct stat file_stat;
-        do
-        {
-            if (it == paths.end())
-            {
-                if (first)
-                    throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
-                        format);
-                return nullptr;
-            }
+        if (it == paths.end())
+            return nullptr;
 
-            path = *it++;
-            file_stat = getFileStat(path, false, -1, "File");
-        }
-        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
-
-        first = false;
-        return createReadBuffer(path, file_stat, false, -1, compression_method, context);
+        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -444,16 +404,6 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
 bool StorageFile::supportsSubsetOfColumns() const
 {
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
-}
-
-bool StorageFile::prefersLargeBlocks() const
-{
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
-}
-
-bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
-{
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -486,8 +436,6 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
         path_for_partitioned_write = paths.front();
     else
         path_for_partitioned_write = table_path_;
-
-    file_renamer = FileRenamer(args.rename_after_processing);
 
     setStorageMetadata(args);
 }
@@ -622,67 +570,7 @@ public:
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-            storage->readers_counter.fetch_add(1, std::memory_order_release);
         }
-    }
-
-
-    /**
-      * If specified option --rename_files_after_processing and files created by TableFunctionFile
-      * Last reader will rename files according to specified pattern if desctuctor of reader was called without uncaught exceptions
-      */
-    void beforeDestroy()
-    {
-        if (storage->file_renamer.isEmpty())
-            return;
-
-        int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
-
-        if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
-        {
-            shared_lock.unlock();
-            auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(context)};
-
-            if (!exclusive_lock)
-                return;
-            if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
-                return;
-
-            for (auto & file_path_ref : storage->paths)
-            {
-                try
-                {
-                    auto file_path = fs::path(file_path_ref);
-                    String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
-                    file_path.replace_filename(new_filename);
-
-                    // Normalize new path
-                    file_path = file_path.lexically_normal();
-
-                    // Checking access rights
-                    checkCreationIsAllowed(context, context->getUserFilesPath(), file_path, true);
-
-                    // Checking an existing of new file
-                    if (fs::exists(file_path))
-                        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
-
-                    fs::rename(fs::path(file_path_ref), file_path);
-                    file_path_ref = file_path.string();
-                    storage->was_renamed = true;
-                }
-                catch (const std::exception & e)
-                {
-                    // Cannot throw exception from destructor, will write only error
-                    LOG_ERROR(&Poco::Logger::get("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
-                    continue;
-                }
-            }
-        }
-    }
-
-    ~StorageFileSource() override
-    {
-        beforeDestroy();
     }
 
     String getName() const override
@@ -715,18 +603,10 @@ public:
                 }
 
                 if (!read_buf)
-                {
-                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
-                        continue;
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
-                }
+                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
-                const Settings & settings = context->getSettingsRef();
-                chassert(!storage->paths.empty());
-                const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
                 auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -820,7 +700,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    const size_t max_num_streams)
+    size_t num_streams)
 {
     if (use_table_fd)
     {
@@ -851,8 +731,7 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    size_t num_streams = max_num_streams;
-    if (max_num_streams > paths.size())
+    if (num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
@@ -1047,7 +926,6 @@ private:
         {
             /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
-            write_buf->finalize();
             throw;
         }
     }
@@ -1141,8 +1019,7 @@ private:
 SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    bool /*async_insert*/)
+    ContextPtr context)
 {
     if (format_name == "Distributed")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
@@ -1316,7 +1193,6 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.columns,
                 factory_args.constraints,
                 factory_args.comment,
-                {},
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;

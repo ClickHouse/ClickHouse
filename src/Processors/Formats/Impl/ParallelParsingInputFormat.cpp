@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -62,7 +62,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
     }
 }
 
-void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)

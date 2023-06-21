@@ -6,7 +6,6 @@
 #include <future>
 #include <boost/noncopyable.hpp>
 #include <Common/Stopwatch.h>
-#include <Common/Priority.h>
 
 
 namespace DB
@@ -48,7 +47,7 @@ public:
         size_t offset = 0;
         size_t size = 0;
         char * buf = nullptr;
-        Priority priority;
+        int64_t priority = 0;
         size_t ignore = 0;
     };
 

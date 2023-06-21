@@ -95,7 +95,7 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    instance.query("DROP DATABASE test SYNC")
+    instance.query("DROP DATABASE test NO DELAY")
     instance.query("CREATE DATABASE test")
 
 
@@ -1097,10 +1097,10 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload SYNC;
-        DROP TABLE test.view_overload SYNC;
-        DROP TABLE test.rabbitmq_consume SYNC;
-        DROP TABLE test.rabbitmq_overload SYNC;
+        DROP TABLE test.consumer_overload NO DELAY;
+        DROP TABLE test.view_overload NO DELAY;
+        DROP TABLE test.rabbitmq_consume NO DELAY;
+        DROP TABLE test.rabbitmq_overload NO DELAY;
     """
     )
 
@@ -2745,7 +2745,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
 
-    instance.query("DROP VIEW test.consumer SYNC")
+    instance.query("DROP VIEW test.consumer NO DELAY")
     time.sleep(10)
     for i in range(50, 60):
         channel.basic_publish(

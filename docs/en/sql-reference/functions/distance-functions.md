@@ -1,10 +1,7 @@
 ---
 slug: /en/sql-reference/functions/distance-functions
-sidebar_position: 55
-sidebar_label: Distance
 ---
-
-# Distance Functions
+# Distance functions
 
 ## L1Norm
 
@@ -20,11 +17,11 @@ Alias: `normL1`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
+-   L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
 
 Type: [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 
@@ -58,11 +55,11 @@ Alias: `normL2`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
+-   L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -96,11 +93,11 @@ Alias: `normLinf`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- Linf-norm or the maximum absolute value.
+-   Linf-norm or the maximum absolute value.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -134,12 +131,12 @@ Alias: `normLp`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `p` — The power. Possible values: real number in `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `p` — The power. Possible values: real number in `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)
+-   [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -173,12 +170,12 @@ Alias: `distanceL1`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- 1-norm distance.
+-   1-norm distance.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -212,12 +209,12 @@ Alias: `distanceL2`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- 2-norm distance.
+-   2-norm distance.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -251,12 +248,12 @@ Alias: `distanceLinf`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector1` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector1` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- Infinity-norm distance.
+-   Infinity-norm distance.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -290,13 +287,13 @@ Alias: `distanceLp`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `p` — The power. Possible values: real number from `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `p` — The power. Possible values: real number from `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- p-norm distance.
+-   p-norm distance.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -331,11 +328,11 @@ Alias: `normalizeL1`.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
-- Unit vector.
+-   Unit vector.
 
 Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
@@ -369,11 +366,11 @@ Alias: `normalizeL1`.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
-- Unit vector.
+-   Unit vector.
 
 Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
@@ -407,11 +404,11 @@ Alias: `normalizeLinf `.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
-- Unit vector.
+-   Unit vector.
 
 Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
@@ -445,12 +442,12 @@ Alias: `normalizeLp `.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
-- `p` — The power. Possible values: any number from [1;inf). [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `p` — The power. Possible values: any number from [1;inf). [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- Unit vector.
+-   Unit vector.
 
 Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
@@ -482,12 +479,12 @@ cosineDistance(vector1, vector2)
 
 **Arguments**
 
-- `vector1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `vector2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- Cosine of the angle between two vectors subtracted from one.
+-   Cosine of the angle between two vectors substracted from one.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 

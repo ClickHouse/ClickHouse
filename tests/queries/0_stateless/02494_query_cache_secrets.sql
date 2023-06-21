@@ -2,6 +2,8 @@
 -- Tag no-fasttest: Depends on OpenSSL
 -- Tag no-parallel: Messes with internal cache
 
+SET allow_experimental_query_cache = true;
+
 SYSTEM DROP QUERY CACHE;
 
 -- Cache a result of a query with secret in the query cache

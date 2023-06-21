@@ -15,13 +15,13 @@ groupArraySample(max_size[, seed])(x)
 
 **Arguments**
 
-- `max_size` — Maximum size of the resulting array. [UInt64](../../data-types/int-uint.md).
-- `seed` — Seed for the random number generator. Optional. [UInt64](../../data-types/int-uint.md). Default value: `123456`.
-- `x` — Argument (column name or expression).
+-   `max_size` — Maximum size of the resulting array. [UInt64](../../data-types/int-uint.md).
+-   `seed` — Seed for the random number generator. Optional. [UInt64](../../data-types/int-uint.md). Default value: `123456`.
+-   `x` — Argument (column name or expression).
 
 **Returned values**
 
-- Array of randomly selected `x` arguments.
+-   Array of randomly selected `x` arguments.
 
 Type: [Array](../../data-types/array.md).
 

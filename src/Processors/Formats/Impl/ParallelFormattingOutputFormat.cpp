@@ -96,7 +96,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
+    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
@@ -157,7 +157,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)

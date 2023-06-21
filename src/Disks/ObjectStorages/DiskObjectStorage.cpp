@@ -15,7 +15,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -297,7 +296,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].remote_path;
+        id = blobs_paths[0].absolute_path;
     return id;
 }
 
@@ -309,7 +308,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
         return false;
     }
 
-    auto object = StoredObject(id);
+    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
     return object_storage->exists(object);
 }
 
@@ -535,6 +534,14 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
+FileCachePtr DiskObjectStorage::getCache() const
+{
+    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
+    if (!cached_object_storage)
+        return nullptr;
+    return cached_object_storage->getCache();
+}
+
 NameSet DiskObjectStorage::getCacheLayersNames() const
 {
     NameSet cache_layers;
@@ -579,25 +586,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
-Strings DiskObjectStorage::getBlobPath(const String & path) const
-{
-    auto objects = getStorageObjects(path);
-    Strings res;
-    res.reserve(objects.size() + 1);
-    for (const auto & object : objects)
-        res.emplace_back(object.remote_path);
-    String objects_namespace = object_storage->getObjectsNamespace();
-    if (!objects_namespace.empty())
-        res.emplace_back(objects_namespace);
-    return res;
-}
-
-void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+void DiskObjectStorage::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
 {
     LOG_TEST(log, "Write file: {}", path);
     auto transaction = createObjectStorageTransaction();
-    transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
-    transaction->commit();
+    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
 }
 
 void DiskObjectStorage::applyNewSettings(

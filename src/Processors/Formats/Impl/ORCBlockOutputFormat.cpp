@@ -93,12 +93,10 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
                 return orc::createPrimitiveType(orc::TypeKind::BOOLEAN);
             return orc::createPrimitiveType(orc::TypeKind::BYTE);
         }
-        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             return orc::createPrimitiveType(orc::TypeKind::BYTE);
         }
-        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::UInt16: [[fallthrough]];
         case TypeIndex::Int16:
         {
@@ -133,12 +131,6 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         {
             return orc::createPrimitiveType(orc::TypeKind::TIMESTAMP);
         }
-        case TypeIndex::Int128: [[fallthrough]];
-        case TypeIndex::UInt128: [[fallthrough]];
-        case TypeIndex::Int256: [[fallthrough]];
-        case TypeIndex::UInt256: [[fallthrough]];
-        case TypeIndex::Decimal256:
-            return orc::createPrimitiveType(orc::TypeKind::BINARY);
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
         {
@@ -317,7 +309,6 @@ void ORCBlockOutputFormat::writeColumn(
 
     switch (type->getTypeId())
     {
-        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             /// Note: Explicit cast to avoid clang-tidy error: 'signed char' to 'long' conversion; consider casting to 'unsigned char' first.
@@ -329,7 +320,6 @@ void ORCBlockOutputFormat::writeColumn(
             writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return value; });
             break;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             writeNumbers<Int16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int16 & value){ return value; });
@@ -365,26 +355,6 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::UInt64:
         {
             writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt64 & value){ return value; });
-            break;
-        }
-        case TypeIndex::Int128:
-        {
-            writeStrings<ColumnInt128>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::UInt128:
-        {
-            writeStrings<ColumnUInt128>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::Int256:
-        {
-            writeStrings<ColumnInt256>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::UInt256:
-        {
-            writeStrings<ColumnUInt256>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Float32:
@@ -460,11 +430,6 @@ void ORCBlockOutputFormat::writeColumn(
                     type,
                     null_bytemap,
                     [](Int128 value){ return orc::Int128(value >> 64, (value << 64) >> 64); });
-            break;
-        }
-        case TypeIndex::Decimal256:
-        {
-            writeStrings<ColumnDecimal<Decimal256>>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Nullable:
@@ -624,7 +589,6 @@ void registerOutputFormatORC(FormatFactory & factory)
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);
     });
     factory.markFormatHasNoAppendSupport("ORC");
-    factory.markOutputFormatPrefersLargeBlocks("ORC");
 }
 
 }

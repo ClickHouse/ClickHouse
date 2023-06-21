@@ -19,9 +19,6 @@ node4 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
-    main_configs=[
-        "configs/compat.xml",
-    ],
 )
 
 node5 = cluster.add_instance(
@@ -31,9 +28,6 @@ node5 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
-    main_configs=[
-        "configs/compat.xml",
-    ],
 )
 node6 = cluster.add_instance(
     "node6",
@@ -42,9 +36,6 @@ node6 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
-    main_configs=[
-        "configs/compat.xml",
-    ],
 )
 
 
@@ -64,7 +55,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
 
 
 # Column TTL works only with wide parts, because it's very expensive to apply it for compact parts

@@ -125,8 +125,6 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
-
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback);
@@ -181,7 +179,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() const override;
+    DB::KeeperApiVersion getApiVersion() override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -203,7 +201,6 @@ public:
 
 private:
     ACLs default_acls;
-    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
 
@@ -258,30 +255,8 @@ private:
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
-    class ThreadReference
-    {
-    public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
-        {
-            std::lock_guard<std::mutex> l(lock);
-            thread = std::move(thread_);
-            return *this;
-        }
-
-        void join()
-        {
-            std::lock_guard<std::mutex> l(lock);
-            if (thread.joinable())
-                thread.join();
-        }
-    private:
-        std::mutex lock;
-        ThreadFromGlobalPool thread;
-    };
-
-    ThreadReference send_thread;
-    ThreadReference receive_thread;
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
     Poco::Logger * log;
 

@@ -523,9 +523,3 @@ def test_materialized_database_mysql_drop_ddl(
 ):
     materialize_with_ddl.dropddl(clickhouse_node, started_mysql_8_0, "mysql80")
     materialize_with_ddl.dropddl(clickhouse_node, started_mysql_5_7, "mysql57")
-
-
-def test_named_collections(started_cluster, started_mysql_8_0, clickhouse_node):
-    materialize_with_ddl.named_collections(
-        clickhouse_node, started_mysql_8_0, "mysql80"
-    )
