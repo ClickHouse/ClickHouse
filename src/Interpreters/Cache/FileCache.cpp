@@ -729,12 +729,12 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    LOG_DEBUG(
-        log, "Will evict {} file segments (while reserving {} bytes for {}:{})",
-        size, file_segment.key(), file_segment.offset());
-
     if (!to_delete.empty())
     {
+        LOG_DEBUG(
+            log, "Will evict {} file segments (while reserving {} bytes for {}:{})",
+            to_delete.size(), size, file_segment.key(), file_segment.offset());
+
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheEvictMicroseconds);
 
         for (auto & [current_key, deletion_info] : to_delete)
