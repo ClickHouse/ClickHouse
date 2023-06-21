@@ -177,7 +177,7 @@ public:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
             Int64 adjust_value;
-            const auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
+            constexpr auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(microsecond_scale);
             auto x_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
             auto y_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
 
@@ -399,9 +399,9 @@ public:
         else if (unit == "second" || unit == "ss" || unit == "s")
             impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "millisecond" || unit == "ms")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<DecimalUtils::scaleMultiplier<DateTime64>(3)>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<DecimalUtils::scaleMultiplier<DateTime64>(millisecond_scale)>>(x, y, timezone_x, timezone_y, res->getData());
          else if (unit == "microsecond" || unit == "us" || unit == "u")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<DecimalUtils::scaleMultiplier<DateTime64>(6)>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<DecimalUtils::scaleMultiplier<DateTime64>(microsecond_scale)>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);
