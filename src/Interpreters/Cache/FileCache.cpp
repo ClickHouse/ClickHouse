@@ -923,7 +923,7 @@ void FileCache::loadMetadata()
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
                     if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                     {
-                        /// For compatibility. Persistent files are no loger supported.
+                        /// For compatibility. Persistent files are no longer supported.
                         fs::remove(offset_it->path());
                         continue;
                     }
