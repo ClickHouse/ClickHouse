@@ -706,6 +706,7 @@ void finalizeMutatedPart(
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
+        out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out));
@@ -717,6 +718,7 @@ void finalizeMutatedPart(
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
+        out_hashing.finalize();
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
         new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_ttl));
@@ -727,6 +729,7 @@ void finalizeMutatedPart(
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));

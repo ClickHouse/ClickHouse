@@ -24,6 +24,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
+    extern const Event FilesystemCacheEvictMicroseconds;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
 }
@@ -612,10 +613,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             file_segment.key(), file_segment.offset());
     }
 
-    /// A file_segment_metadata acquires a LRUQueue iterator on first successful space reservation attempt.
-    auto queue_iterator = file_segment.getQueueIterator();
-    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
-
     struct EvictionCandidates
     {
         explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(key_metadata_) {}
@@ -732,37 +729,48 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    for (auto & [current_key, deletion_info] : to_delete)
+    if (!to_delete.empty())
     {
-        auto locked_key = deletion_info.key_metadata->tryLock();
-        if (!locked_key)
-            continue; /// key could become invalid after we released the key lock above, just skip it.
+        LOG_DEBUG(
+            log, "Will evict {} file segments (while reserving {} bytes for {}:{})",
+            to_delete.size(), size, file_segment.key(), file_segment.offset());
 
-        /// delete from vector in reverse order just for efficiency
-        auto & candidates = deletion_info.candidates;
-        while (!candidates.empty())
+        ProfileEventTimeIncrement<Microseconds> evict_watch(ProfileEvents::FilesystemCacheEvictMicroseconds);
+
+        for (auto & [current_key, deletion_info] : to_delete)
         {
-            auto & candidate = candidates.back();
-            chassert(candidate->releasable());
+            auto locked_key = deletion_info.key_metadata->tryLock();
+            if (!locked_key)
+                continue; /// key could become invalid after we released the key lock above, just skip it.
 
-            const auto * segment = candidate->file_segment.get();
+            /// delete from vector in reverse order just for efficiency
+            auto & candidates = deletion_info.candidates;
+            while (!candidates.empty())
+            {
+                auto & candidate = candidates.back();
+                chassert(candidate->releasable());
 
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+                const auto * segment = candidate->file_segment.get();
 
-            locked_key->removeFileSegment(segment->offset(), segment->lock());
-            segment->getQueueIterator()->remove(cache_lock);
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
-            if (query_context)
-                query_context->remove(current_key, segment->offset(), cache_lock);
+                locked_key->removeFileSegment(segment->offset(), segment->lock());
+                segment->getQueueIterator()->remove(cache_lock);
 
-            candidates.pop_back();
+                if (query_context)
+                    query_context->remove(current_key, segment->offset(), cache_lock);
+
+                candidates.pop_back();
+            }
         }
     }
 
-    /// queue_iteratir is std::nullopt here if no space has been reserved yet, a file_segment_metadata
-    /// acquires queue iterator on first successful space reservation attempt.
-    /// If queue iterator already exists, we need to update the size after each space reservation.
+    /// A file_segment_metadata acquires a LRUQueue iterator on first successful space reservation attempt,
+    /// e.g. queue_iteratir is std::nullopt here if no space has been reserved yet.
+    auto queue_iterator = file_segment.getQueueIterator();
+    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
+
     if (queue_iterator)
     {
         queue_iterator->updateSize(size);
@@ -806,6 +814,11 @@ void FileCache::removeKeyIfExists(const Key & key)
     /// it became possible to start removing something from cache when it is used
     /// by other "zero-copy" tables. That is why it's not an error.
     locked_key->removeAllReleasable();
+}
+
+void FileCache::removePathIfExists(const String & path)
+{
+    removeKeyIfExists(createKeyForPath(path));
 }
 
 void FileCache::removeAllReleasable()
