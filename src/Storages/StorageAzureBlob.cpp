@@ -882,7 +882,6 @@ StorageAzureBlobSource::Iterator::Iterator(
 
 RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
 {
-    std::lock_guard lock(next_mutex);
     if (is_finished)
         return {};
 
@@ -901,6 +900,7 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
     {
         bool need_new_batch = false;
         {
+            std::lock_guard lock(next_mutex);
             need_new_batch = !blobs_with_metadata || index >= blobs_with_metadata->size();
         }
 
@@ -909,10 +909,10 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
             RelativePathsWithMetadata new_batch;
             while (new_batch.empty())
             {
-                if (object_storage_iterator->isValid())
+                auto result = object_storage_iterator->getCurrrentBatchAndScheduleNext();
+                if (result.has_value())
                 {
-                    new_batch = object_storage_iterator->currentBatch();
-                    object_storage_iterator->nextBatch();
+                    new_batch = result.value();
                 }
                 else
                 {
@@ -945,6 +945,7 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
                 VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
                 const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
 
+                std::lock_guard lock(next_mutex);
                 blob_path_with_globs.reset();
                 blob_path_with_globs.emplace();
                 for (UInt64 idx : idxs.getData())
@@ -960,6 +961,7 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
                 if (outer_blobs)
                     outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
 
+                std::lock_guard lock(next_mutex);
                 blobs_with_metadata = std::move(new_batch);
                 for (const auto & [_, info] : *blobs_with_metadata)
                     total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
@@ -967,6 +969,7 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
         }
 
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        std::lock_guard lock(next_mutex);
         return (*blobs_with_metadata)[current_index];
     }
 }
