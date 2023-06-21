@@ -71,6 +71,9 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 
 void CascadeWriteBuffer::finalizeImpl()
 {
+    if (curr_buffer)
+        curr_buffer->position() = position();
+
     for (auto & buf : prepared_sources)
     {
         if (buf)
