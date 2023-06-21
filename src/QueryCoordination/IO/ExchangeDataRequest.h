@@ -30,6 +30,11 @@ struct ExchangeDataRequest
         readVarInt(fragment_id, in);
         readVarInt(exchange_id, in);
     }
+
+    String toString() const
+    {
+        return query_id + ", " + from_host + ", " + std::to_string(fragment_id) + ", " + std::to_string(exchange_id);
+    }
 };
 
 }

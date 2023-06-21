@@ -242,7 +242,7 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
             .getSampleBlock();
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        if (!context->getSettingsRef().allow_experimental_fragment)
+        if (!context->getSettingsRef().allow_experimental_query_coordination)
         {
             return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
         }
@@ -262,7 +262,7 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        if (!context->getSettingsRef().allow_experimental_fragment)
+        if (!context->getSettingsRef().allow_experimental_query_coordination)
         {
             return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
         }
@@ -414,7 +414,7 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
 {
     for (const auto & interpreter : nested_interpreters)
     {
-        if (context->getSettingsRef().allow_experimental_fragment)
+        if (context->getSettingsRef().allow_experimental_query_coordination)
         {
             const auto * select_interpreter = dynamic_cast<const InterpreterSelectQueryFragments *>(interpreter.get());
             if (select_interpreter)

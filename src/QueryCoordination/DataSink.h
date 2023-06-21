@@ -21,6 +21,7 @@ public:
         bool is_local;
         std::shared_ptr<ExchangeDataReceiver> local_receiver;
 
+        void prepareSendData(const ExchangeDataRequest & prepare_request);
         void sendData(Block block);
     };
 

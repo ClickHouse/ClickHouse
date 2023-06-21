@@ -1001,6 +1001,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     }
     else if (dynamic_cast<AggregatingStep *>(root_node.step.get()))
     {
+        /// push down partial aggregating to lower level fragment
         result = createAggregationFragment(childFragments[0]);
         tmp_fragments.emplace_back(result);
     }
@@ -1094,7 +1095,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
     childFragment->addStep(aggregating_step);
 
     DataPartition partition;
-    if (expressions.group_by_elements_actions.empty())
+//    if (expressions.group_by_elements_actions.empty())
+    if (query_analyzer->aggregationKeys().empty())
     {
         partition.type = PartitionType::UNPARTITIONED;
     }

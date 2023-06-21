@@ -5,16 +5,20 @@
 namespace DB
 {
 
+void DataSink::Channel::prepareSendData(const ExchangeDataRequest & prepare_request)
+{
+    if (!is_local)
+        connection->sendExchangeData(prepare_request);
+    else if (is_local && !local_receiver)
+        local_receiver = FragmentMgr::getInstance().findReceiver(prepare_request);
+}
+
 void DataSink::Channel::sendData(Block block)
 {
     if (is_local)
-    {
         local_receiver->receive(std::move(block));
-    }
     else
-    {
         connection->sendData(block, "", false);
-    }
 }
 
 void DataSink::calculateKeysPositions()
@@ -43,25 +47,15 @@ void DataSink::consume(Chunk chunk)
     if (!was_begin_sent)
     {
         for (auto & channel : channels)
-        {
-            if (!channel.is_local)
-            {
-                channel.connection->sendExchangeData(request);
-            }
-            else if (channel.is_local && !channel.local_receiver)
-            {
-                channel.local_receiver = FragmentMgr::getInstance().findReceiver(request);
-            }
-        }
+            channel.prepareSendData(request);
+
         was_begin_sent = true;
     }
 
     if (output_partition.type == PartitionType::UNPARTITIONED)
     {
         for (auto & channel : channels)
-        {
             channel.sendData(std::move(block));
-        }
     }
     else if (output_partition.type == PartitionType::HASH_PARTITIONED)
     {
@@ -73,18 +67,15 @@ void DataSink::consume(Chunk chunk)
         else
         {
             // normal shaffle
-            std::vector<SipHash> siphashs(rows);
-
-            std::vector<Block> blocks(channels.size());
+            std::vector<MutableColumns> mutable_columns(channels.size());
 
             for (size_t i = 0; i < channels.size(); ++i)
-            {
-                blocks[i] = block.cloneEmpty();
-            }
+                mutable_columns[i] = block.cloneEmptyColumns();
 
-            for (size_t j = 0; j < block.columns(); ++j)
+            std::vector<SipHash> siphashs(rows);
+            for (size_t keys_position : keys_positions)
             {
-                const auto column = block.getColumns()[keys_positions[j]];
+                const auto column = block.getColumns()[keys_position];
                 for (size_t i = 0; i < rows; ++i)
                 {
                     column->updateHashWithValue(i, siphashs[i]);
@@ -95,7 +86,7 @@ void DataSink::consume(Chunk chunk)
             {
                 size_t which_channel = siphashs[i].get64() % channels.size();
 
-                auto columns = blocks[which_channel].mutateColumns();
+                auto & columns = mutable_columns[which_channel];
                 auto src_columns = block.getColumns();
                 for (size_t j = 0; j < block.columns(); ++j)
                 {
@@ -105,7 +96,12 @@ void DataSink::consume(Chunk chunk)
 
             for (size_t i = 0; i < channels.size(); ++i)
             {
-                channels[i].sendData(std::move(blocks[i]));
+                if (!mutable_columns[i].empty() && !mutable_columns[i][0]->empty())
+                {
+                    Block block_for_send = block.cloneEmpty();
+                    block_for_send.setColumns(std::move(mutable_columns[i]));
+                    channels[i].sendData(std::move(block_for_send));
+                }
             }
         }
     }
@@ -113,24 +109,10 @@ void DataSink::consume(Chunk chunk)
 
 void DataSink::onFinish()
 {
-    LOG_DEBUG(&Poco::Logger::get("DataSink"), "DataSink finish");
-    if (output_partition.type == PartitionType::UNPARTITIONED)
+    LOG_DEBUG(&Poco::Logger::get("DataSink"), "DataSink finish for request {}", request.toString());
+    for (auto & channel : channels)
     {
-        for (auto channel : channels)
-        {
-            if (channel.is_local)
-            {
-                FragmentMgr::getInstance().receiveData(request, Block());
-            }
-            else
-            {
-                channel.connection->sendData(Block(), "", false);
-            }
-        }
-    }
-    else if (output_partition.type == PartitionType::HASH_PARTITIONED)
-    {
-        // TODO split by key
+        channel.sendData(Block());
     }
 }
 

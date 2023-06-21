@@ -422,7 +422,7 @@ void TCPHandler::runImpl()
 
             /// For fragments query
             /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
-            if (state.fragments_request && query_context->getSettingsRef().allow_experimental_fragment
+            if (state.fragments_request && query_context->getSettingsRef().allow_experimental_query_coordination
                 && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             {
                 FragmentMgr::getInstance().fragmentsToDistributed(
@@ -874,7 +874,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             }
         }
 
-        if (query_context->getSettingsRef().allow_experimental_fragment && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        if (query_context->getSettingsRef().allow_experimental_query_coordination && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
             FragmentMgr::getInstance().rootQueryPipelineFinish(state.query_id);
 
         /// This lock wasn't acquired before and we make .lock() call here
@@ -1390,7 +1390,7 @@ bool TCPHandler::receivePacket()
             exchange_data_request.read(*in);
             state.exchange_data_request.emplace(exchange_data_request);
 
-            LOG_DEBUG(log, "{} Read exchange data request done", state.exchange_data_request->query_id);
+            LOG_DEBUG(log, "Read exchange data request {}", state.exchange_data_request->toString());
 
             /// TODO ThreadGroup
 //            std::optional<CurrentThread::QueryScope> query_scope;
@@ -1794,7 +1794,7 @@ bool TCPHandler::receiveData(bool scalar)
     else if (state.exchange_data_request)
     {
         bool has_data = true;
-        if (!block) // exchange_data_request empty block need send to receiver
+        if (!block) // exchange_data_request empty block need send to receiver, it's meaning finished
         {
             LOG_DEBUG(log, "exchange_data receive empty block");
             has_data = false;
