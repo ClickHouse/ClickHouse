@@ -183,7 +183,8 @@ def test_move_failover(cluster):
         ) ENGINE=MergeTree()
         ORDER BY id
         TTL dt + INTERVAL 4 SECOND TO VOLUME 'external'
-        SETTINGS storage_policy='s3_cold'
+        SETTINGS storage_policy='s3_cold', temporary_directories_lifetime=1,
+        merge_tree_clear_old_temporary_directories_interval_seconds=1
         """
     )
 
