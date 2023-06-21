@@ -30,7 +30,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Adding zero size entries to LRU queue is not allowed "
-            "(Key: {}, offset: {}", key, offset);
+            "(Key: {}, offset: {})", key, offset);
     }
 
 #ifndef NDEBUG
