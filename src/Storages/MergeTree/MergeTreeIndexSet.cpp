@@ -1,4 +1,3 @@
-#include "Parsers/queryToString.h"
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
 #include <Interpreters/ExpressionActions.h>
