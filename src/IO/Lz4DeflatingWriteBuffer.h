@@ -21,6 +21,8 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
+    ~Lz4DeflatingWriteBuffer() override;
+
 private:
     void nextImpl() override;
 
