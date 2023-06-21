@@ -393,14 +393,6 @@ Chunk HDFSSource::generate()
             Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
 
-            if (num_rows && total_files_size)
-            {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                if (!chunk_size)
-                    chunk_size = chunk.bytes();
-                updateRowsProgressApprox(*this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-            }
-
             for (const auto & virtual_column : requested_virtual_columns)
             {
                 if (virtual_column.name == "_path")
