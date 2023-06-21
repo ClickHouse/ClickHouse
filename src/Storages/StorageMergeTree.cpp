@@ -1303,8 +1303,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
         auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(), mutate_entry, shared_lock, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
-        return true;
+        return assignee.scheduleMergeMutateTask(task);
     }
     if (has_mutations)
     {
