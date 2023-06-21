@@ -30,7 +30,6 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
-#include "Analyzer/IQueryTreeNode.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
