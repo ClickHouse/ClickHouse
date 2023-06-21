@@ -19,6 +19,9 @@
 namespace DB
 {
 
+static constexpr auto microsecond_scale = 6;
+static constexpr auto millisecond_scale = 3;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -1507,8 +1510,8 @@ struct ToYYYYMMDDhhmmssImpl
 
 struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeComponents
 {
-    UInt16  millisecond = 0;
-    UInt16  microsecond = 0;
+    UInt16  millisecond;
+    UInt16  microsecond;
 };
 
 struct ToDateTimeComponentsImpl
@@ -1518,7 +1521,7 @@ struct ToDateTimeComponentsImpl
     static inline DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
         auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-        const auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
+        constexpr auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(microsecond_scale);
 
         if (t.value < 0 && components.fractional)
         {
@@ -1531,8 +1534,9 @@ struct ToDateTimeComponentsImpl
         else if (scale_multiplier < multiplier)
             fractional = fractional * (multiplier / scale_multiplier);
 
-        UInt16 millisecond = static_cast<UInt16>(fractional / 1000);
-        UInt16 microsecond = static_cast<UInt16>(fractional % 1000);
+        constexpr auto divider = DecimalUtils::scaleMultiplier<DateTime64>(microsecond_scale - millisecond_scale);
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        UInt16 microsecond = static_cast<UInt16>(fractional % divider);
         return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond};
     }
     static inline DateTimeComponentsWithFractionalPart execute(UInt32 t, const DateLUTImpl & time_zone)
