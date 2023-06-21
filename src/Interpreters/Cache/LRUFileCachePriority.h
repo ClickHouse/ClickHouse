@@ -33,6 +33,9 @@ public:
     void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
 
 private:
+    void updateElementsCount(int64_t num);
+    void updateSize(int64_t size);
+
     LRUQueue queue;
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
 
