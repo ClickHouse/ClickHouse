@@ -86,6 +86,9 @@ public:
     /// Remove files by `key`. Removes files which might be used at the moment.
     void removeKeyIfExists(const Key & key);
 
+    /// Removes files by `path`. Removes files which might be used at the moment.
+    void removePathIfExists(const String & path);
+
     /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
 
@@ -125,7 +128,7 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
-    CacheGuard::Lock lockCache() { return cache_guard.lock(); }
+    CacheGuard::Lock lockCache() const;
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;

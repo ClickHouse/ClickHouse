@@ -79,7 +79,11 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while reading from part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
 }
@@ -124,7 +128,11 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while reading from part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
 }
@@ -199,7 +207,11 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while reading from part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
 }

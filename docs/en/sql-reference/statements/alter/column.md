@@ -232,6 +232,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
 It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
+Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
 
