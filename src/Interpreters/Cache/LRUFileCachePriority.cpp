@@ -80,7 +80,7 @@ void LRUFileCachePriority::pop(const CacheGuard::Lock &)
 
 LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIterator it)
 {
-    /// If size is 0, entry is annuled, current_elements_num was already updated.
+    /// If size is 0, entry is annulled, current_elements_num was already updated.
     if (it->size)
     {
         current_size -= it->size;
