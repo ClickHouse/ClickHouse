@@ -548,19 +548,16 @@ try
         select_into_file = false;
         select_into_file_and_stdout = false;
         /// The query can specify output format or output file.
-        if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
+        if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(parsed_query.get()))
         {
             String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
 
-                if (!query_parameters.empty())
-                {
-                    /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-                    ReplaceQueryParameterVisitor visitor(query_parameters);
-                    visitor.visit(query_with_output->out_file);
-                }
+                /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(query_with_output->out_file);
 
                 out_file = checkAndGetLiteralArgument<String>(query_with_output->out_file, "out_file");
 
@@ -1346,15 +1343,12 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
     {
-        if (!query_parameters.empty())
-        {
-            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-            ReplaceQueryParameterVisitor visitor(query_parameters);
-            visitor.visit(parsed_insert_query->infile);
-        }
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_insert_query->infile);
 
         /// Get name of this file (path to file)
-        const auto in_file = checkAndGetLiteralArgument<String>(query_with_output->out_file, "in_file");
+        const auto in_file = checkAndGetLiteralArgument<String>(parsed_insert_query->infile, "in_file");
 
         std::string compression_method;
         /// Compression method can be specified in query

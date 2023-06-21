@@ -102,7 +102,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserStringLiteral out_file_literal_p;
         ParserSubstitution out_file_parameter_p;
 
-        if (!out_file_p.parse(pos, query_with_output.out_file, expected)
+        if (!out_file_literal_p.parse(pos, query_with_output.out_file, expected)
             && !out_file_parameter_p.parse(pos, query_with_output.out_file, expected))
             return false;
 
