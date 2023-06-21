@@ -159,6 +159,9 @@ void ParquetBlockInputFormat::initializeRowGroupReader(size_t row_group_idx)
         format_settings.parquet.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.parquet.case_insensitive_column_matching);
+
+    row_group.row_group_bytes_uncompressed = metadata->RowGroup(static_cast<int>(row_group_idx))->total_compressed_size();
+    row_group.row_group_rows = metadata->RowGroup(static_cast<int>(row_group_idx))->num_rows();
 }
 
 void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_idx)
@@ -265,7 +268,8 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_idx, std::unique_l
 
     auto tmp_table = arrow::Table::FromRecordBatches({*batch});
 
-    PendingChunk res = {.chunk_idx = row_group.next_chunk_idx, .row_group_idx = row_group_idx};
+    size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(static_cast<double>(row_group.row_group_bytes_uncompressed) / row_group.row_group_rows * (*tmp_table)->num_rows()));
+    PendingChunk res = {.chunk_idx = row_group.next_chunk_idx, .row_group_idx = row_group_idx, .approx_original_chunk_size = approx_chunk_original_size};
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -339,6 +343,7 @@ Chunk ParquetBlockInputFormat::generate()
             scheduleMoreWorkIfNeeded(chunk.row_group_idx);
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
+            previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
             return std::move(chunk.chunk);
         }
 

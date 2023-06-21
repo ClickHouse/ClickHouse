@@ -217,17 +217,26 @@ namespace
                     glob_url,
                     uri_options.size() == 1);
 
+                size_t file_size = 0;
                 try
                 {
-                    total_size += buf_factory->getFileSize();
+                    file_size = buf_factory->getFileSize();
                 }
                 catch (...)
                 {
                     // we simply continue without total_size
                 }
 
+                if (file_size)
+                {
+                    /// Adjust total_rows_approx_accumulated with new total size.
+                    if (total_size)
+                        total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_size + file_size) / total_size * total_rows_approx_accumulated));
+                    total_size += file_size;
+                }
+
                 // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
-                auto input_format = FormatFactory::instance().getInputRandomAccess(
+                input_format = FormatFactory::instance().getInputRandomAccess(
                         format,
                         std::move(buf_factory),
                         sample_block,
@@ -279,14 +288,20 @@ namespace
                 {
                     UInt64 num_rows = chunk.getNumRows();
                     if (num_rows && total_size)
+                    {
+                        size_t chunk_size = input_format->getApproxBytesReadForChunk();
+                        if (!chunk_size)
+                            chunk_size = chunk.bytes();
                         updateRowsProgressApprox(
-                            *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                            *this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    }
 
                     return chunk;
                 }
 
                 pipeline->reset();
                 reader.reset();
+                input_format.reset();
             }
             return {};
         }
@@ -365,6 +380,7 @@ namespace
         String name;
         URIInfoPtr uri_info;
 
+        std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
 
