@@ -544,8 +544,10 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 }
 
 void DiskObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String & config_prefix, const DisksMap & disk_map)
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String & /*config_prefix*/, const DisksMap & disk_map)
 {
+    /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
+    const auto config_prefix = "storage_configuration.disks." + name;
     object_storage->applyNewSettings(config, config_prefix, context_);
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
