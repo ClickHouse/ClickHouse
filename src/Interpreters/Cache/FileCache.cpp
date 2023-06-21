@@ -52,7 +52,6 @@ namespace ErrorCodes
 
 FileCache::FileCache(const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
-    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , log(&Poco::Logger::get("FileCache"))
@@ -642,10 +641,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
 
-        const bool is_persistent = allow_persistent_files && segment_metadata->file_segment->isPersistent();
-        const bool releasable = segment_metadata->releasable() && !is_persistent;
-
-        if (releasable)
+        if (segment_metadata->releasable())
         {
             auto segment = segment_metadata->file_segment;
             if (segment->state() == FileSegment::State::DOWNLOADED)
@@ -820,10 +816,6 @@ void FileCache::removeAllReleasable()
 {
     assertInitialized();
 
-    /// Only releasable file segments are evicted.
-    /// `remove_persistent_files` defines whether non-evictable by some criteria files
-    /// (they do not comply with the cache eviction policy) should also be removed.
-
     auto lock = lockCache();
 
     main_priority->iterate([&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
@@ -926,7 +918,9 @@ void FileCache::loadMetadata()
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
                     if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                     {
-                        segment_kind = FileSegmentKind::Persistent;
+                        /// For compatibility. Persistent files are no loger supported.
+                        fs::remove(offset_it->path());
+                        continue;
                     }
                     if (offset_with_suffix.substr(delim_pos+1) == "temporary")
                     {
