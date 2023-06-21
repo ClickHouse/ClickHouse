@@ -72,7 +72,6 @@ def get_packager_cmd(
         cmd += f" --sanitizer={build_config['sanitizer']}"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
-
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
@@ -84,7 +83,7 @@ def get_packager_cmd(
     cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
-        cmd += " --with-binaries=tests"
+        cmd += " --with-binaries"
 
     if official:
         cmd += " --official"
