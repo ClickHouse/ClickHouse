@@ -930,7 +930,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     const PlannerContextPtr & planner_context,
     const std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    auto subqueries = planner_context->getPreparedSets().detachSubqueries();
+    auto subqueries = planner_context->getPreparedSets().getSubqueries();
     std::unordered_set<const FutureSet *> useful_sets;
 
     //PreparedSets::SubqueriesForSets subqueries_for_sets;
@@ -944,18 +944,16 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 
     for (auto & subquery : subqueries)
     {
-        auto & subquery_for_set = subquery->getSubquery();
+        auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
         Planner subquery_planner(
-            subquery_for_set.query_tree,
+            query_tree,
             subquery_options,
             planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
     }
-
-    //addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
 
     if (!subqueries.empty())
     {

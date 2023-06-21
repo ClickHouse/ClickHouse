@@ -46,12 +46,6 @@ public:
         auto in_second_argument_node_type = in_second_argument->getNodeType();
 
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-
-        // String set_key = planner_context.createSetKey(in_second_argument);
-
-        // if (planner_context.hasSet(set_key))
-        //     return;
-
         auto & sets = planner_context.getPreparedSets();
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
@@ -129,27 +123,7 @@ public:
                 subquery_to_execute = std::move(subquery_for_table);
             }
 
-            // auto subquery_options = select_query_options.subquery();
-            // Planner subquery_planner(
-            //     in_second_argument,
-            //     subquery_options,
-            //     planner_context.getGlobalPlannerContext());
-            // subquery_planner.buildQueryPlanIfNeeded();
-
-            // const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-            // SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-            // bool tranform_null_in = settings.transform_null_in;
-            // auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
-
-            SubqueryForSet subquery_for_set;
-            subquery_for_set.key = planner_context.createSetKey(in_second_argument);
-            subquery_for_set.query_tree = std::move(subquery_to_execute);
-            //subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
-
-            /// TODO
-            sets.addFromSubquery(set_key, std::move(subquery_for_set), settings, nullptr);
-
-            //planner_context.registerSet(set_key, PlannerSet(in_second_argument));
+            sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
         }
         else
         {

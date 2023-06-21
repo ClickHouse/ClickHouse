@@ -188,20 +188,17 @@ public:
             {
                 // auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
                 // subquery_for_set.createSource(*interpreter, external_storage);
-                auto key = subquery_or_table_name->getColumnName();
                 auto set_key = database_and_table_name->getTreeHash();
 
                 // std::cerr << "====== Adding key " << set_key.toString() << std::endl;
 
                 if (!prepared_sets->findSubquery(set_key))
                 {
-                    SubqueryForSet subquery_for_set;
-                    subquery_for_set.key = std::move(key);
-                    subquery_for_set.table = std::move(external_storage);
-                    subquery_for_set.createSource(*interpreter);
+                    std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
+                    interpreter->buildQueryPlan(*source);
 
                     //std::cerr << reinterpret_cast<const void *>(prepared_sets.get()) << std::endl;
-                    auto future_set = prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set), getContext()->getSettingsRef(), nullptr);
+                    auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
                     // std::cerr << "... Future set " << reinterpret_cast<const void *>(external_storage_holder.get()) << " " << reinterpret_cast<const void *>(future_set.get()) << std::endl;
                     external_storage_holder->future_set = std::move(future_set);
                 }

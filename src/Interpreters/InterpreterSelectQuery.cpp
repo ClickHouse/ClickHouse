@@ -3151,7 +3151,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan)
 {
-    auto subqueries = prepared_sets->detachSubqueries();
+    auto subqueries = prepared_sets->getSubqueries();
 
     if (!subqueries.empty())
     {

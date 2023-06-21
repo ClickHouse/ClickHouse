@@ -978,7 +978,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     break;
 
-                auto & index_and_condition = skip_indexes.useful_indices[idx];
+                const auto & index_and_condition = skip_indexes.useful_indices[idx];
                 auto & stat = useful_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 stat.total_granules.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1006,7 +1006,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     break;
 
-                auto & indices_and_condition = skip_indexes.merged_indices[idx];
+                const auto & indices_and_condition = skip_indexes.merged_indices[idx];
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
