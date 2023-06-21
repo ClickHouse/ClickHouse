@@ -22,7 +22,7 @@ void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);
 
-        for (auto & header_regex : forbidden_headers_regexp)
+        for (const auto & header_regex : forbidden_headers_regexp)
             if (re2::RE2::FullMatch(entry.name, header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
