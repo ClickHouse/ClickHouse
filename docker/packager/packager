@@ -102,7 +102,7 @@ def run_docker_image_with_env(
         ccache_mount = ""
 
     cmd = (
-        f"docker run --network=host --user={user} --rm {ccache_mount}"
+        f"docker run --network=host --user={user} --rm {ccache_mount} "
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"{interactive} {image_name}"
     )
@@ -130,7 +130,7 @@ def parse_env_variables(
     official: bool,
     additional_pkgs: bool,
     with_coverage: bool,
-    with_binaries: str,
+    with_binaries: bool,
 ):
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
@@ -219,8 +219,6 @@ def parse_env_variables(
     if package_type == "deb":
         # NOTE: This are the env for packages/build script
         result.append("MAKE_DEB=true")
-        cmake_flags.append("-DENABLE_TESTS=0")
-        cmake_flags.append("-DENABLE_UTILS=0")
         cmake_flags.append("-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON")
         cmake_flags.append("-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON")
         cmake_flags.append("-DCMAKE_AUTOGEN_VERBOSE=ON")
@@ -302,21 +300,20 @@ def parse_env_variables(
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
 
-    if with_binaries == "programs":
-        result.append("BINARY_OUTPUT=programs")
-    elif with_binaries == "tests":
-        result.append("ENABLE_TESTS=1")
-        result.append("BINARY_OUTPUT=tests")
+    if with_binaries or clang_tidy:
         cmake_flags.append("-DENABLE_TESTS=1")
+        cmake_flags.append("-DENABLE_UTILS=1")
+        build_target = "all"
+    else:
+        cmake_flags.append("-DENABLE_TESTS=0")
+        cmake_flags.append("-DENABLE_UTILS=0")
 
     if clang_tidy:
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
-        cmake_flags.append("-DENABLE_TESTS=1")
         cmake_flags.append("-DENABLE_EXAMPLES=1")
         # Don't stop on first error to find more clang-tidy errors in one run.
         result.append("NINJA_FLAGS=-k0")
 
-        cmake_flags.append("-DENABLE_UTILS=1")
         # utils are not included into clickhouse-bundle, so build everything
         build_target = "all"
 
@@ -414,9 +411,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--additional-pkgs", action="store_true")
     parser.add_argument("--with-coverage", action="store_true")
-    parser.add_argument(
-        "--with-binaries", choices=("programs", "tests", ""), default=""
-    )
+    parser.add_argument("--with-binaries", action="store_true")
     parser.add_argument(
         "--docker-image-version", default="latest", help="docker image tag to use"
     )
@@ -434,7 +429,7 @@ def parse_args() -> argparse.Namespace:
     if args.cache != "ccache":
         args.ccache_dir = None
 
-    if args.with_binaries != "":
+    if args.with_binaries:
         if args.package_type != "deb":
             raise argparse.ArgumentTypeError(
                 "Can add additional binaries only in deb build"
