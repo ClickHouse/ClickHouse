@@ -532,11 +532,6 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
     return which.isInt() || which.isUInt() || which.isFloat();
 }
 
-inline bool isCompilableType(const DataTypePtr & data_type)
-{
-    return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
-}
-
 inline bool isBool(const DataTypePtr & data_type)
 {
     return data_type->getName() == "Bool";
