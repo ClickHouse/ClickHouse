@@ -22,6 +22,13 @@ def start_cluster():
 
 
 def test_check_part_with_cache(start_cluster):
+    if node.is_built_with_sanitizer() or node.is_debug_build():
+        pytest.skip(
+            "Skip with debug build and sanitizers. \
+            This test manually corrupts cache which triggers LOGICAL_ERROR \
+            and leads to crash with those builds"
+        )
+
     node.query(
         """
         CREATE TABLE s3_test (
