@@ -30,7 +30,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Adding zero size entries to LRU queue is not allowed "
-            "(Key: {}, offset: {})", key, offset);
+            "(key: {}, offset: {})", key, offset);
     }
 
 #ifndef NDEBUG
@@ -56,11 +56,9 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     }
 
     auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
-    current_size += size;
-    ++current_elements_num;
 
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
+    updateSize(size);
+    updateElementsCount(1);
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
@@ -71,14 +69,11 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 
 void LRUFileCachePriority::removeAll(const CacheGuard::Lock &)
 {
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, current_size);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, current_elements_num);
-
     LOG_TEST(log, "Removed all entries from LRU queue");
 
+    updateSize(-current_size);
+    updateElementsCount(-current_elements_num);
     queue.clear();
-    current_size = 0;
-    current_elements_num = 0;
 }
 
 void LRUFileCachePriority::pop(const CacheGuard::Lock &)
@@ -91,11 +86,8 @@ LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIter
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
     if (it->size)
     {
-        current_size -= it->size;
-        --current_elements_num;
-
-        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
-        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+        updateSize(-it->size);
+        updateElementsCount(-1);
     }
 
     LOG_TEST(
@@ -104,6 +96,19 @@ LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIter
 
     return queue.erase(it);
 }
+
+void LRUFileCachePriority::updateSize(int64_t size)
+{
+    current_size += size;
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
+}
+
+void LRUFileCachePriority::updateElementsCount(int64_t num)
+{
+    current_elements_num += num;
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements, num);
+}
+
 
 LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
     LRUFileCachePriority * cache_priority_,
@@ -170,10 +175,14 @@ LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
 
 void LRUFileCachePriority::LRUFileCacheIterator::invalidate()
 {
-    updateSize(-queue_iter->size);
-    chassert(queue_iter->size == 0);
-    --cache_priority->current_elements_num;
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+    LOG_TEST(
+        cache_priority->log,
+        "Invalidating entry in LRU queue. Key: {}, offset: {}, previous size: {}",
+        queue_iter->key, queue_iter->offset, queue_iter->size);
+
+    cache_priority->updateSize(-queue_iter->size);
+    cache_priority->updateElementsCount(-1);
+    queue_iter->size = 0;
 }
 
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
@@ -183,13 +192,8 @@ void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
         "Update size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
         size, queue_iter->key, queue_iter->offset, queue_iter->size);
 
-    cache_priority->current_size += size;
+    cache_priority->updateSize(size);
     queue_iter->size += size;
-
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
-
-    chassert(cache_priority->current_size >= 0);
-    chassert(queue_iter->size >= 0);
 }
 
 size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
