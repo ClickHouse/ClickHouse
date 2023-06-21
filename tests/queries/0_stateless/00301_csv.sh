@@ -60,10 +60,11 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE csv (f1 String, f2 UInt64, f3 UInt256, 
 
 echo '
 ,
-Hello
-Hello,
-Hello, 1, 3, 2
-Hello, 1, 4, 2, 3, 4, String
-Hello, 1, 5, 2, 3, 4, String,'| $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --input_format_csv_missing_as_default=1 --query="INSERT INTO csv FORMAT CSV";
+"Hello"
+"Hello",
+"Hello", 1, 3, 2
+"Hello",1,4,2,3,4,"String"
+"Hello", 1, 4, 2, 3, 4, "String"
+"Hello", 1, 5, 2, 3, 4, "String",'| $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --input_format_csv_missing_as_default=1 --query="INSERT INTO csv FORMAT CSV";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY f1, f2, f3, f4, f5 NULLS FIRST, f6, f7";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
