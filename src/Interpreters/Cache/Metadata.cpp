@@ -141,9 +141,6 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Persistent:
-            file_suffix = "_persistent";
-            break;
         case FileSegmentKind::Temporary:
             file_suffix = "_temporary";
             break;
