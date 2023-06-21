@@ -1,5 +1,6 @@
 
 #include "Commands.h"
+#include <queue>
 #include "KeeperClient.h"
 
 
@@ -203,8 +204,100 @@ void FindSupperNodes::execute(const ASTKeeperQuery * query, KeeperClient * clien
     {
         auto next_query = *query;
         next_query.args[1] = DB::Field(path / child);
-        FindSupperNodes{}.execute(&next_query, client);
+        execute(&next_query, client);
     }
+}
+
+bool DeleteStableBackups::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
+{
+    return true;
+}
+
+void DeleteStableBackups::execute(const ASTKeeperQuery * /* query */, KeeperClient * client) const
+{
+    client->askConfirmation(
+        "You are going to delete all inactive backups in /clickhouse/backups.",
+        [client]
+        {
+            String backup_root = "/clickhouse/backups";
+            auto backups = client->zookeeper->getChildren(backup_root);
+
+            for (auto & child : backups)
+            {
+                String backup_path = backup_root + "/" + child;
+                std::cout << "Found backup " << backup_path << ", checking if it's active\n";
+
+                String stage_path = backup_path + "/stage";
+                auto stages = client->zookeeper->getChildren(stage_path);
+
+                bool is_active = false;
+                for (auto & stage : stages)
+                {
+                    if (startsWith(stage, "alive"))
+                    {
+                        is_active = true;
+                        break;
+                    }
+                }
+
+                if (is_active)
+                {
+                    std::cout << "Backup " << backup_path << " is active, not going to delete\n";
+                    continue;
+                }
+
+                std::cout << "Backup " << backup_path << " is not active, deleting it\n";
+                client->zookeeper->removeRecursive(backup_path);
+            }
+        });
+}
+
+bool FindBigFamily::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+
+    ASTPtr count;
+    if (ParserUnsignedInteger{}.parse(pos, count, expected))
+        node->args.push_back(count->as<ASTLiteral &>().value);
+    else
+        node->args.push_back(UInt64(10));
+
+    return true;
+}
+
+void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto n = query->args[1].safeGet<UInt64>();
+
+    std::vector<std::tuple<Int32, String>> result;
+
+    std::queue<fs::path> queue;
+    queue.push(path);
+    while (!queue.empty())
+    {
+        auto next_path = queue.front();
+        queue.pop();
+
+        auto children = client->zookeeper->getChildren(next_path);
+        std::transform(children.cbegin(), children.cend(), children.begin(), [&](const String & child) { return next_path / child; });
+
+        auto response = client->zookeeper->get(children);
+
+        for (size_t i = 0; i < response.size(); ++i)
+        {
+            result.emplace_back(response[i].stat.numChildren, children[i]);
+            queue.push(children[i]);
+        }
+    }
+
+    std::sort(result.begin(), result.end(), std::greater());
+    for (UInt64 i = 0; i < std::min(result.size(), static_cast<size_t>(n)); ++i)
+        std::cout << std::get<1>(result[i]) << "\t" << std::get<0>(result[i]) << "\n";
 }
 
 bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -247,7 +340,7 @@ bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery
 void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClient * /* client */) const
 {
     for (const auto & pair : KeeperClient::commands)
-        std::cout << pair.second->getHelpMessage() << "\n";
+        std::cout << pair.second->generateHelpString() << "\n";
 }
 
 bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
