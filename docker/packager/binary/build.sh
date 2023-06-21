@@ -110,6 +110,15 @@ fi
 mv ./programs/clickhouse* /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
+mv ./utils/check-marks/check-marks /output ||: # may not exist for some binary builds
+mv ./utils/check-mysql-binlog/check-mysql-binlog /output ||: # may not exist for some binary builds
+mv ./utils/checksum-for-compressed-block/checksum-for-compressed-block-find-bit-flips /output ||: # may not exist for some binary builds
+mv ./utils/keeper-bench/keeper-bench /output ||: # may not exist for some binary builds
+mv ./utils/keeper-data-dumper/keeper-data-dumper /output ||: # may not exist for some binary builds
+mv ./utils/memcpy-bench/memcpy-bench /output ||: # may not exist for some binary builds
+mv ./utils/memcpy-bench/memcpy-bench /output ||: # may not exist for some binary builds
+mv ./utils/wikistat-loader/wikistat-loader /output ||: # may not exist for some binary builds
+mv ./utils/zookeeper-cli/clickhouse-zookeeper-cli /output ||: # may not exist for some binary builds
 
 prepare_combined_output () {
     local OUTPUT
