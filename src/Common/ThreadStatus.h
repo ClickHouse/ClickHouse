@@ -85,8 +85,8 @@ public:
         InternalTextLogsQueueWeakPtr logs_queue_ptr;
         LogsLevel client_logs_level = LogsLevel::none;
 
-        String query_for_logs;
-        UInt64 normalized_query_hash = 0;
+        // String query_for_logs;
+        // UInt64 normalized_query_hash = 0;
     };
 
     SharedData getSharedData()
@@ -191,7 +191,7 @@ private:
 
     bool performance_counters_finalized = false;
 
-    String query_id_from_query_context;
+    // String query_id_from_query_context;
 
     struct TimePoint
     {

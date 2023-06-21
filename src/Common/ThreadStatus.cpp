@@ -128,7 +128,9 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 
 const String & ThreadStatus::getQueryId() const
 {
-    return query_id_from_query_context;
+    static String fake = "fake_query_id";
+    return fake;
+    // return query_id_from_query_context;
 }
 
 ContextPtr ThreadStatus::getQueryContext() const
@@ -170,7 +172,9 @@ InternalProfileEventsQueuePtr ThreadStatus::getInternalProfileEventsQueue() cons
 
 const String & ThreadStatus::getQueryForLog() const
 {
-    return local_data.query_for_logs;
+    // return local_data.query_for_logs;
+    static String fake = "fake_query_for_log";
+    return fake;
 }
 
 LogsLevel ThreadStatus::getClientLogsLevel() const

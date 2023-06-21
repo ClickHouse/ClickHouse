@@ -92,24 +92,24 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
     return group;
 }
 
-void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
+void ThreadGroup::attachQueryForLog(const String & /* query_ */, UInt64 /* normalized_hash */)
 {
-    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
-
-    std::lock_guard lock(mutex);
-    shared_data.query_for_logs = query_;
-    shared_data.normalized_query_hash = hash;
+//    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
+//
+//    std::lock_guard lock(mutex);
+//    shared_data.query_for_logs = query_;
+//    shared_data.normalized_query_hash = hash;
 }
 
-void ThreadStatus::attachQueryForLog(const String & query_)
+void ThreadStatus::attachQueryForLog(const String & /* query_ */)
 {
-    local_data.query_for_logs = query_;
-    local_data.normalized_query_hash = normalizedQueryHash<false>(query_);
-
-    if (!thread_group)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
-
-    thread_group->attachQueryForLog(local_data.query_for_logs, local_data.normalized_query_hash);
+//    local_data.query_for_logs = query_;
+//    local_data.normalized_query_hash = normalizedQueryHash<false>(query_);
+//
+//    if (!thread_group)
+//        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
+//
+//    thread_group->attachQueryForLog(local_data.query_for_logs, local_data.normalized_query_hash);
 }
 
 void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
@@ -167,7 +167,7 @@ void ThreadStatus::applyQuerySettings()
 
     const Settings & settings = query_context_ptr->getSettingsRef();
 
-    query_id_from_query_context = query_context_ptr->getCurrentQueryId();
+    // query_id_from_query_context = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
 
     untracked_memory_limit = settings.max_untracked_memory;
@@ -230,7 +230,7 @@ void ThreadStatus::detachFromGroup()
 
     thread_group.reset();
 
-    query_id_from_query_context.clear();
+    // query_id_from_query_context.clear();
     query_context.reset();
 
     local_data = {};
@@ -484,8 +484,8 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     if (thread_group)
     {
         elem.master_thread_id = thread_group->master_thread_id;
-        elem.query = local_data.query_for_logs;
-        elem.normalized_query_hash = local_data.normalized_query_hash;
+        // elem.query = local_data.query_for_logs;
+        // elem.normalized_query_hash = local_data.normalized_query_hash;
     }
 
     auto query_context_ptr = query_context.lock();
@@ -533,7 +533,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
     element.event_time_microseconds = timeInMicroseconds(vinfo.runtime_stats->event_time);
     element.view_duration_ms = vinfo.runtime_stats->elapsed_ms;
 
-    element.initial_query_id = query_id_from_query_context;
+    // element.initial_query_id = query_id_from_query_context;
     element.view_name = vinfo.table_id.getFullTableName();
     element.view_uuid = vinfo.table_id.uuid;
     element.view_type = vinfo.runtime_stats->type;
