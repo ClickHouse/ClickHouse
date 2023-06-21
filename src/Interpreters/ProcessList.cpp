@@ -203,10 +203,11 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
-        CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
+            thread_group->attachQueryForLog(query_);
+
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)

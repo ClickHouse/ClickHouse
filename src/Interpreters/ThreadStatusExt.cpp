@@ -52,6 +52,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
     std::vector<UInt64> res;
+    res.reserve(thread_ids.size());
 
     {
         std::lock_guard lock(mutex);
