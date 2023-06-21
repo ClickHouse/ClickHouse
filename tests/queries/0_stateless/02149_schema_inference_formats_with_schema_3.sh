@@ -9,7 +9,6 @@ DATA_FILE=$CURDIR/test_$CLICKHOUSE_TEST_UNIQUE_NAME.data
 
 echo "Avro"
 
-echo $format
 $CLICKHOUSE_LOCAL -q "select toInt8(-number) as int8, toUInt8(number) as uint8, toInt16(-number) as int16, toUInt16(number) as uint16, toInt32(-number) as int32, toUInt32(number) as uint32, toInt64(-number) as int64, toUInt64(number) as uint64 from numbers(2) format Avro" > $DATA_FILE
 $CLICKHOUSE_LOCAL -q "desc file('$DATA_FILE', 'Avro')"
 $CLICKHOUSE_LOCAL -q "select * from file('$DATA_FILE', 'Avro')"
