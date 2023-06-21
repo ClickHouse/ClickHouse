@@ -75,8 +75,6 @@ public:
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
-    /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
-    virtual String getSQLCompatibleName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
@@ -342,8 +340,8 @@ struct WhichDataType
     constexpr bool isUInt64() const { return idx == TypeIndex::UInt64; }
     constexpr bool isUInt128() const { return idx == TypeIndex::UInt128; }
     constexpr bool isUInt256() const { return idx == TypeIndex::UInt256; }
+    constexpr bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isUInt256(); }
     constexpr bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
-    constexpr bool isUInt() const { return isNativeUInt() || isUInt128() || isUInt256(); }
 
     constexpr bool isInt8() const { return idx == TypeIndex::Int8; }
     constexpr bool isInt16() const { return idx == TypeIndex::Int16; }
@@ -351,8 +349,8 @@ struct WhichDataType
     constexpr bool isInt64() const { return idx == TypeIndex::Int64; }
     constexpr bool isInt128() const { return idx == TypeIndex::Int128; }
     constexpr bool isInt256() const { return idx == TypeIndex::Int256; }
+    constexpr bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isInt256(); }
     constexpr bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
-    constexpr bool isInt() const { return isNativeInt() || isInt128() || isInt256(); }
 
     constexpr bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
     constexpr bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
@@ -534,6 +532,11 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
     return which.isInt() || which.isUInt() || which.isFloat();
 }
 
+inline bool isCompilableType(const DataTypePtr & data_type)
+{
+    return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
+}
+
 inline bool isBool(const DataTypePtr & data_type)
 {
     return data_type->getName() == "Bool";
@@ -553,7 +556,6 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
-template <typename DataType> constexpr bool IsDataTypeDate = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
@@ -573,9 +575,6 @@ template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = t
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
-
-template <> inline constexpr bool IsDataTypeDate<DataTypeDate> = true;
-template <> inline constexpr bool IsDataTypeDate<DataTypeDate32> = true;
 
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;

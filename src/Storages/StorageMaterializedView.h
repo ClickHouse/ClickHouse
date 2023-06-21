@@ -39,7 +39,7 @@ public:
         return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;

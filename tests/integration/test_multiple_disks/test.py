@@ -90,8 +90,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "small_jbod_with_external",
@@ -102,8 +100,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -114,8 +110,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -126,8 +120,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 1,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -138,8 +130,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -150,8 +140,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "jbods_with_external",
@@ -162,8 +150,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "jbods_with_external",
@@ -174,8 +160,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -186,8 +170,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -198,8 +180,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "default_disk_with_external",
@@ -210,8 +190,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "default_disk_with_external",
@@ -222,8 +200,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -234,8 +210,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -246,8 +220,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -258,8 +230,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "1024",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -270,8 +240,6 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
-            "perform_ttl_move_on_insert": 1,
-            "load_balancing": "ROUND_ROBIN",
         },
     ]
 
@@ -1294,13 +1262,13 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
                     else:
                         raise e
 
-        insert(20)
+        insert(100)
         p = Pool(15)
         tasks = []
         for i in range(5):
-            tasks.append(p.apply_async(insert, (20,)))
-            tasks.append(p.apply_async(alter_move, (20,)))
-            tasks.append(p.apply_async(alter_drop, (20,)))
+            tasks.append(p.apply_async(insert, (100,)))
+            tasks.append(p.apply_async(alter_move, (100,)))
+            tasks.append(p.apply_async(alter_drop, (100,)))
 
         for task in tasks:
             task.get(timeout=120)
@@ -1528,8 +1496,7 @@ def test_simple_replication_and_moves(start_cluster):
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_moves', '{}')
                 ORDER BY tuple()
-                SETTINGS storage_policy='moving_jbod_with_external', old_parts_lifetime=1,
-                cleanup_delay_period=1, cleanup_delay_period_random_add=2, cleanup_thread_preferred_points_per_iteration=0
+                SETTINGS storage_policy='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
             """.format(
                     i + 1
                 )
@@ -1610,8 +1577,7 @@ def test_download_appropriate_disk(start_cluster):
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_download', '{}')
                 ORDER BY tuple()
-                SETTINGS storage_policy='moving_jbod_with_external', old_parts_lifetime=1,
-                cleanup_delay_period=1, cleanup_delay_period_random_add=2, cleanup_thread_preferred_points_per_iteration=0
+                SETTINGS storage_policy='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
             """.format(
                     i + 1
                 )

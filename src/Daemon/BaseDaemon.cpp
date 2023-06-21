@@ -2,6 +2,7 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -54,7 +55,6 @@
 #include <Common/Elf.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Context.h>
 #include <filesystem>
 
 #include <Loggers/OwnFormattingChannel.h>
@@ -63,7 +63,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma clang diagnostic ignored "-Wunused-macros"
+#   pragma GCC diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
@@ -81,9 +81,7 @@ namespace DB
     }
 }
 
-using namespace DB;
-
-PipeFDs signal_pipe;
+DB::PipeFDs signal_pipe;
 
 
 /** Reset signal handler to the default and send signal to itself.
@@ -92,10 +90,10 @@ PipeFDs signal_pipe;
 static void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     if (0 != raise(sig))
-        throwFromErrno("Cannot send signal.", ErrorCodes::CANNOT_SEND_SIGNAL);
+        DB::throwFromErrno("Cannot send signal.", DB::ErrorCodes::CANNOT_SEND_SIGNAL);
 }
 
 static const size_t signal_pipe_buf_size =
@@ -113,8 +111,8 @@ static void writeSignalIDtoSignalPipe(int sig)
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
-    WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
-    writeBinary(sig, out);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    DB::writeBinary(sig, out);
     out.next();
 
     errno = saved_errno;
@@ -144,17 +142,17 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
-    WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
 
-    writeBinary(sig, out);
-    writePODBinary(*info, out);
-    writePODBinary(signal_context, out);
-    writePODBinary(stack_trace, out);
-    writeBinary(static_cast<UInt32>(getThreadId()), out);
-    writePODBinary(current_thread, out);
+    DB::writeBinary(sig, out);
+    DB::writePODBinary(*info, out);
+    DB::writePODBinary(signal_context, out);
+    DB::writePODBinary(stack_trace, out);
+    DB::writeBinary(static_cast<UInt32>(getThreadId()), out);
+    DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
@@ -206,12 +204,12 @@ public:
         static_assert(PIPE_BUF >= 512);
         static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
         char buf[signal_pipe_buf_size];
-        ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
 
         while (!in.eof())
         {
             int sig = 0;
-            readBinary(sig, in);
+            DB::readBinary(sig, in);
             // We may log some specific signals afterwards, with different log
             // levels and more info, but for completeness we log all signals
             // here at trace level.
@@ -234,8 +232,8 @@ public:
                 UInt32 thread_num;
                 std::string message;
 
-                readBinary(thread_num, in);
-                readBinary(message, in);
+                DB::readBinary(thread_num, in);
+                DB::readBinary(message, in);
 
                 onTerminate(message, thread_num);
             }
@@ -251,17 +249,17 @@ public:
                 ucontext_t * context{};
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num{};
-                ThreadStatus * thread_ptr{};
+                DB::ThreadStatus * thread_ptr{};
 
                 if (sig != SanitizerTrap)
                 {
-                    readPODBinary(info, in);
-                    readPODBinary(context, in);
+                    DB::readPODBinary(info, in);
+                    DB::readPODBinary(context, in);
                 }
 
-                readPODBinary(stack_trace, in);
-                readBinary(thread_num, in);
-                readPODBinary(thread_ptr, in);
+                DB::readPODBinary(stack_trace, in);
+                DB::readBinary(thread_num, in);
+                DB::readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
@@ -278,8 +276,8 @@ private:
     {
         size_t pos = message.find('\n');
 
-        LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash, thread_num, message.substr(0, pos));
+        LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) {}",
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, thread_num, message.substr(0, pos));
 
         /// Print trace from std::terminate exception line-by-line to make it easy for grep.
         while (pos != std::string_view::npos)
@@ -301,9 +299,9 @@ private:
         ucontext_t * context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
-        ThreadStatus * thread_ptr) const
+        DB::ThreadStatus * thread_ptr) const
     {
-        ThreadStatus thread_status;
+        DB::ThreadStatus thread_status;
 
         String query_id;
         String query;
@@ -317,7 +315,7 @@ private:
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
             {
-                CurrentThread::attachInternalTextLogsQueue(logs_queue, LogsLevel::trace);
+                DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
             }
         }
 
@@ -335,14 +333,14 @@ private:
 
         if (query_id.empty())
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash,
+            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
                 thread_num, signal_description, sig);
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash,
+            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
                 thread_num, query_id, query, signal_description, sig);
         }
 
@@ -361,13 +359,10 @@ private:
             /// NOTE: This still require memory allocations and mutex lock inside logger.
             ///       BTW we can also print it to stderr using write syscalls.
 
-            WriteBufferFromOwnString bare_stacktrace;
-            writeString("Stack trace:", bare_stacktrace);
+            std::stringstream bare_stacktrace; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            bare_stacktrace << "Stack trace:";
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            {
-                writeChar(' ', bare_stacktrace);
-                writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
-            }
+                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
             LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }
@@ -414,47 +409,7 @@ private:
 
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
-        {
             SentryWriter::onFault(sig, error_message, stack_trace);
-
-            /// Advice the user to send it manually.
-            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
-            {
-                const auto & date_lut = DateLUT::instance();
-
-                /// Approximate support period, upper bound.
-                if (time(nullptr) - date_lut.makeDate(2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
-                {
-                    LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
-                }
-                else
-                {
-                    LOG_FATAL(log, "ClickHouse version {} is old and should be upgraded to the latest version.", VERSION_STRING);
-                }
-            }
-            else
-            {
-                LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
-            }
-        }
-
-        /// ClickHouse Keeper does not link to some part of Settings.
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-        /// List changed settings.
-        if (!query_id.empty())
-        {
-            ContextPtr query_context = thread_ptr->getQueryContext();
-            if (query_context)
-            {
-                String changed_settings = query_context->getSettingsRef().toString();
-
-                if (changed_settings.empty())
-                    LOG_FATAL(log, "No settings were changed");
-                else
-                    LOG_FATAL(log, "Changed settings: {}", changed_settings);
-            }
-        }
-#endif
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
@@ -479,15 +434,15 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
 
     char buf[signal_pipe_buf_size];
-    WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const StackTrace stack_trace;
 
     int sig = SignalListener::SanitizerTrap;
-    writeBinary(sig, out);
-    writePODBinary(stack_trace, out);
-    writeBinary(UInt32(getThreadId()), out);
-    writePODBinary(current_thread, out);
+    DB::writeBinary(sig, out);
+    DB::writePODBinary(stack_trace, out);
+    DB::writeBinary(UInt32(getThreadId()), out);
+    DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
@@ -513,7 +468,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     std::string log_message;
 
     if (std::current_exception())
-        log_message = "Terminate called for uncaught exception:\n" + getCurrentExceptionMessage(true);
+        log_message = "Terminate called for uncaught exception:\n" + DB::getCurrentExceptionMessage(true);
     else
         log_message = "Terminate called without an active exception";
 
@@ -525,11 +480,11 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
         log_message.resize(buf_size - 16);
 
     char buf[buf_size];
-    WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
-    writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    writeBinary(static_cast<UInt32>(getThreadId()), out);
-    writeBinary(log_message, out);
+    DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
+    DB::writeBinary(static_cast<UInt32>(getThreadId()), out);
+    DB::writeBinary(log_message, out);
     out.next();
 
     abort();
@@ -555,7 +510,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
     }
     catch (...)
     {
-        LOG_WARNING(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, getCurrentExceptionMessage(true));
+        LOG_WARNING(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, DB::getCurrentExceptionMessage(true));
     }
     return false;
 }
@@ -570,7 +525,7 @@ void BaseDaemon::reloadConfiguration()
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
-    ConfigProcessor config_processor(config_path, false, true);
+    DB::ConfigProcessor config_processor(config_path, false, true);
     config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
@@ -591,7 +546,7 @@ BaseDaemon::~BaseDaemon()
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
         if (SIG_ERR == signal(sig, SIG_DFL))
-            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+            DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     signal_pipe.close();
 }
 
@@ -635,7 +590,7 @@ void BaseDaemon::closeFDs()
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
         std::vector<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
-            fds.push_back(parse<int>(path.path().filename()));
+            fds.push_back(DB::parse<int>(path.path().filename()));
 
         for (const auto & fd : fds)
         {
@@ -705,7 +660,7 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
+    DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
     /// Write core dump on crash.
     {
@@ -756,12 +711,12 @@ void BaseDaemon::initialize(Application & self)
         ///     {
         ///         try
         ///         {
-        ///             SomeApp app;
+        ///             DB::SomeApp app;
         ///             return app.run(argc, argv);
         ///         }
         ///         catch (...)
         ///         {
-        ///             std::cerr << getCurrentExceptionMessage(true) << "\n";
+        ///             std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         ///             return 1;
         ///         }
         ///     }
@@ -815,7 +770,7 @@ void BaseDaemon::initialize(Application & self)
 
     /// Create pid file.
     if (config().has("pid"))
-        pid_file.emplace(config().getString("pid"), StatusFile::write_pid);
+        pid_file.emplace(config().getString("pid"), DB::StatusFile::write_pid);
 
     if (is_daemon)
     {
@@ -842,7 +797,7 @@ void BaseDaemon::initialize(Application & self)
     initializeTerminationAndSignalProcessing();
     logRevision();
 
-    for (const auto & key : getMultipleKeysFromConfig(config(), "", "graphite"))
+    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {
         graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
     }
@@ -930,7 +885,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    String build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
         build_id = "";
     else
@@ -945,7 +900,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
-        stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
+        stored_binary_hash = DB::Elf(executable_path).getStoredBinaryHash();
 #endif
 }
 
@@ -1006,7 +961,7 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+        throw DB::Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
@@ -1063,7 +1018,7 @@ void BaseDaemon::setupWatchdog()
         pid = fork();
 
         if (-1 == pid)
-            throwFromErrno("Cannot fork", ErrorCodes::SYSTEM_ERROR);
+            DB::throwFromErrno("Cannot fork", DB::ErrorCodes::SYSTEM_ERROR);
 
         if (0 == pid)
         {
@@ -1116,13 +1071,13 @@ void BaseDaemon::setupWatchdog()
                 pf = new OwnJSONPatternFormatter(config());
             else
                 pf = new OwnPatternFormatter;
-            Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
 
         /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
         ///  but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
+        if (auto * channel = dynamic_cast<DB::OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
@@ -1234,7 +1189,7 @@ void systemdNotify(const std::string_view & command)
     int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
     if (s == -1)
-        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+        DB::throwFromErrno("Can't create UNIX socket for systemd notify.", DB::ErrorCodes::SYSTEM_ERROR);
 
     SCOPE_EXIT({ close(s); });
 
@@ -1245,7 +1200,7 @@ void systemdNotify(const std::string_view & command)
     addr.sun_family = AF_UNIX;
 
     if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
 
     memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
 
@@ -1257,7 +1212,7 @@ void systemdNotify(const std::string_view & command)
     else if (path[0] == '/')
         addrlen += 1; /// non-abstract-addresses should be zero terminated.
     else
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
 
     const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
 
@@ -1270,7 +1225,7 @@ void systemdNotify(const std::string_view & command)
             if (errno == EINTR)
                 continue;
             else
-                throwFromErrno("Failed to notify systemd, sendto returned error.", ErrorCodes::SYSTEM_ERROR);
+                DB::throwFromErrno("Failed to notify systemd, sendto returned error.", DB::ErrorCodes::SYSTEM_ERROR);
         }
         else
             sent_bytes_total += sent_bytes;

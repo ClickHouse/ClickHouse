@@ -95,7 +95,7 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    instance.query("DROP DATABASE test SYNC")
+    instance.query("DROP DATABASE test NO DELAY")
     instance.query("CREATE DATABASE test")
 
 
@@ -642,8 +642,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
             ENGINE = MergeTree
             ORDER BY key
-            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
-            cleanup_thread_preferred_points_per_iteration=0;
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT *, _channel_id AS channel_id FROM test.rabbitmq;
     """
@@ -1098,10 +1097,10 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload SYNC;
-        DROP TABLE test.view_overload SYNC;
-        DROP TABLE test.rabbitmq_consume SYNC;
-        DROP TABLE test.rabbitmq_overload SYNC;
+        DROP TABLE test.consumer_overload NO DELAY;
+        DROP TABLE test.view_overload NO DELAY;
+        DROP TABLE test.rabbitmq_consume NO DELAY;
+        DROP TABLE test.rabbitmq_overload NO DELAY;
     """
     )
 
@@ -1117,8 +1116,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         CREATE TABLE test.destination(key UInt64, value UInt64)
         ENGINE = MergeTree()
         ORDER BY key
-        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
-        cleanup_thread_preferred_points_per_iteration=0;
+        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
     """
     )
 
@@ -2747,7 +2745,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
 
-    instance.query("DROP VIEW test.consumer SYNC")
+    instance.query("DROP VIEW test.consumer NO DELAY")
     time.sleep(10)
     for i in range(50, 60):
         channel.basic_publish(

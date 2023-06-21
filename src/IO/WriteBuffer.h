@@ -42,8 +42,7 @@ public:
     {
         if (!offset())
             return;
-
-        auto bytes_in_buffer = offset();
+        bytes += offset();
 
         try
         {
@@ -55,11 +54,9 @@ public:
               * so that later (for example, when the stack was expanded) there was no second attempt to write data.
               */
             pos = working_buffer.begin();
-            bytes += bytes_in_buffer;
             throw;
         }
 
-        bytes += bytes_in_buffer;
         pos = working_buffer.begin();
     }
 

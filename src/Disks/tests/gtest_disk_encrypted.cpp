@@ -37,12 +37,10 @@ protected:
         auto settings = std::make_unique<DiskEncryptedSettings>();
         settings->wrapped_disk = local_disk;
         settings->current_algorithm = algorithm;
-        auto fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        settings->all_keys[fingerprint] = key;
-        settings->current_key = key;
-        settings->current_key_fingerprint = fingerprint;
+        settings->keys[0] = key;
+        settings->current_key_id = 0;
         settings->disk_path = path;
-        encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings), true);
+        encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
     }
 
     String getFileNames()
@@ -257,7 +255,7 @@ TEST_F(DiskEncryptedTest, RandomIV)
 
     String bina = getBinaryRepresentation(getDirectory() + "a.txt");
     String binb = getBinaryRepresentation(getDirectory() + "b.txt");
-    constexpr size_t iv_offset = 23; /// See the description of the format in the comment for FileEncryption::Header.
+    constexpr size_t iv_offset = 16;
     constexpr size_t iv_size = FileEncryption::InitVector::kSize;
     EXPECT_EQ(bina.substr(0, iv_offset), binb.substr(0, iv_offset)); /// Part of the header before IV is the same.
     EXPECT_NE(bina.substr(iv_offset, iv_size), binb.substr(iv_offset, iv_size)); /// IV differs.

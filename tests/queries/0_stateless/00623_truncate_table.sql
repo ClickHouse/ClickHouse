@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 set allow_deprecated_syntax_for_merge_tree=1;
 
 DROP DATABASE IF EXISTS truncate_test;

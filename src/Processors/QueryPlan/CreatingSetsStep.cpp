@@ -1,4 +1,3 @@
-#include <exception>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -61,7 +60,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         settings.out << "Set: ";
 
     settings.out << description << '\n';
@@ -69,7 +68,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         map.add("Set", description);
 }
 
@@ -80,7 +79,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
     input_streams = std::move(input_streams_);
-    output_stream = DataStream{input_streams.front().header};
+    output_stream = input_streams.front();
 
     for (size_t i = 1; i < input_streams.size(); ++i)
         if (input_streams[i].header)
@@ -134,11 +133,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     for (auto & [description, subquery_for_set] : subqueries_for_sets)
     {
         if (!subquery_for_set.hasSource())
-        {
-            subquery_for_set.promise_to_fill_set.set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::LOGICAL_ERROR, "Subquery for set {} has no source", subquery_for_set.key)));
             continue;
-        }
 
         auto plan = subquery_for_set.detachSource();
 
