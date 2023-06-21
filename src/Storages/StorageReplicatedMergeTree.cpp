@@ -1255,6 +1255,10 @@ static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicat
     if (!paranoid_check_for_covered_parts)
         return;
 
+    /// FIXME https://github.com/ClickHouse/ClickHouse/issues/51182
+    if (storage->getSettings()->use_metadata_cache)
+        return;
+
     ActiveDataPartSet active_set(format_version);
     for (const auto & part_name : parts_in_zk)
         active_set.add(part_name);
@@ -1992,7 +1996,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::executeFetchShared(
     }
 }
 
-static void paranoidCheckForCoveredPartsInZooKeeper(const ZooKeeperPtr & zookeeper, const String & replica_path,
+static void paranoidCheckForCoveredPartsInZooKeeper(const StorageReplicatedMergeTree * storage, const ZooKeeperPtr & zookeeper, const String & replica_path,
                                                     MergeTreeDataFormatVersion format_version, const String & covering_part_name)
 {
 #ifdef ABORT_ON_LOGICAL_ERROR
@@ -2003,17 +2007,21 @@ static void paranoidCheckForCoveredPartsInZooKeeper(const ZooKeeperPtr & zookeep
 
     bool paranoid_check_for_covered_parts = Context::getGlobalContextInstance()->getConfigRef().getBool(
         "replicated_merge_tree_paranoid_check_on_drop_range", paranoid_check_for_covered_parts_default);
-    if (paranoid_check_for_covered_parts)
+    if (!paranoid_check_for_covered_parts)
+        return;
+
+    /// FIXME https://github.com/ClickHouse/ClickHouse/issues/51182
+    if (storage->getSettings()->use_metadata_cache)
+        return;
+
+    auto drop_range_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
+    Strings parts_remain = zookeeper->getChildren(replica_path + "/parts");
+    for (const auto & part_name : parts_remain)
     {
-        auto drop_range_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
-        Strings parts_remain = zookeeper->getChildren(replica_path + "/parts");
-        for (const auto & part_name : parts_remain)
-        {
-            auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-            if (drop_range_info.contains(part_info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Part {} remains in ZooKeeper after DROP_RANGE {}", part_name, covering_part_name);
-        }
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        if (drop_range_info.contains(part_info))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Part {} remains in ZooKeeper after DROP_RANGE {}", part_name, covering_part_name);
     }
 }
 
@@ -2072,7 +2080,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
-    paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name);
+    paranoidCheckForCoveredPartsInZooKeeper(this, getZooKeeper(), replica_path, format_version, entry.new_part_name);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -2209,7 +2217,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
         removePartsFromZooKeeperWithRetries(parts_to_remove);
         if (replace)
-            paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
+            paranoidCheckForCoveredPartsInZooKeeper(this, getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
         return true;
     }
 
@@ -2510,7 +2518,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     if (replace)
-        paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
+        paranoidCheckForCoveredPartsInZooKeeper(this, getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
