@@ -103,9 +103,9 @@ namespace
             if (!is_directory && !looking_for_directory)
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
-                    result.emplace_back(
+                    result.push_back(StorageHDFS::PathWithInfo{
                         String(ls.file_info[i].mName),
-                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)});
+                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)}});
             }
             else if (is_directory && looking_for_directory)
             {
