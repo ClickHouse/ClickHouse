@@ -85,15 +85,6 @@ CI_CONFIG = {
             "with_coverage": False,
             "comment": "Note: sparse checkout was used",
         },
-        "binary_release": {
-            "compiler": "clang-16",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "binary",
-            "tidy": "disable",
-            "with_coverage": False,
-            "comment": "",
-        },
         "binary_tidy": {
             "compiler": "clang-16",
             "build_type": "debug",
@@ -184,7 +175,6 @@ CI_CONFIG = {
             "package_tsan",
             "package_msan",
             "package_debug",
-            "binary_release",
         ],
         "ClickHouse special build check": [
             "binary_tidy",
@@ -344,7 +334,7 @@ CI_CONFIG = {
             "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
-            "required_build": "binary_release",
+            "required_build": "package_release",
         },
         "Unit tests (asan)": {
             "required_build": "package_asan",
@@ -377,10 +367,10 @@ CI_CONFIG = {
             "required_build": "package_asan",
         },
         "ClickHouse Keeper Jepsen": {
-            "required_build": "binary_release",
+            "required_build": "package_release",
         },
         "ClickHouse Server Jepsen": {
-            "required_build": "binary_release",
+            "required_build": "package_release",
         },
         "Performance Comparison": {
             "required_build": "package_release",
