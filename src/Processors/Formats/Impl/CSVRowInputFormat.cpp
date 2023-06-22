@@ -156,16 +156,17 @@ void CSVFormatReader::skipFieldDelimiter()
 {
     skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
-    if (!checkChar(format_settings.csv.delimiter, *buf))
+    bool res = checkChar(format_settings.csv.delimiter, *buf);
+    if (res)
+        return;
+
+    if (!format_settings.csv.missing_as_default)
     {
-        if (!format_settings.csv.missing_as_default)
-        {
-            char err[2] = {format_settings.csv.delimiter, '\0'};
-            throwAtAssertionFailed(err, *buf);
-        }
-        else
-            current_row_has_missing_fields = true;
+        char err[2] = {format_settings.csv.delimiter, '\0'};
+        throwAtAssertionFailed(err, *buf);
     }
+    else
+        current_row_has_missing_fields = true;
 }
 
 template <bool read_string>
