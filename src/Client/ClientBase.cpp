@@ -90,14 +90,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-static const NameSet exit_strings
-{
-    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
-    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
-    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
-};
-
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -286,7 +278,7 @@ public:
     static Int32 cancelled_status() { return exit_after_signals.load(); }
 };
 
-/// This signal handler is set only for SIGINT.
+/// This signal handler is set for SIGINT and SIGQUIT.
 void interruptSignalHandler(int signum)
 {
     if (QueryInterruptHandler::try_stop())
@@ -324,6 +316,9 @@ void ClientBase::setupSignalHandler()
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+
+    if (sigaction(SIGQUIT, &new_act, nullptr))
         throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
@@ -1170,10 +1165,19 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    /// Order is important: format, compression, file
+
     if (output_format)
         output_format->finalize();
     output_format.reset();
+
     logs_out_stream.reset();
+
+    if (out_file_buf)
+    {
+        out_file_buf->finalize();
+        out_file_buf.reset();
+    }
 
     if (pager_cmd)
     {
@@ -1182,15 +1186,9 @@ void ClientBase::resetOutput()
     }
     pager_cmd = nullptr;
 
-    if (out_file_buf)
-    {
-        out_file_buf->next();
-        out_file_buf.reset();
-    }
-
     if (out_logs_buf)
     {
-        out_logs_buf->next();
+        out_logs_buf->finalize();
         out_logs_buf.reset();
     }
 
@@ -1369,6 +1367,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             columns_description_for_query,
             ConstraintsDescription{},
             String{},
+            {},
         };
         StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
         storage->startup();

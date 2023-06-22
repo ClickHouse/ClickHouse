@@ -22,7 +22,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool valid() const { return !removal_candidate.load(); }
+    bool evicting() const { return removal_candidate.load(); }
 
     Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
 
@@ -85,12 +85,12 @@ public:
 
     const String & getBaseDirectory() const { return path; }
 
-    String getPathInLocalCache(
+    String getPathForFileSegment(
         const Key & key,
         size_t offset,
         FileSegmentKind segment_kind) const;
 
-    String getPathInLocalCache(const Key & key) const;
+    String getPathForKey(const Key & key) const;
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateCacheMetadataFunc && func);
@@ -110,8 +110,9 @@ public:
     void doCleanup();
 
 private:
+    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    CacheMetadataGuard guard;
+    mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     Poco::Logger * log;
 };

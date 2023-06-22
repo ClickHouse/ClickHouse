@@ -11,12 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 CapnProtoOutputStream::CapnProtoOutputStream(WriteBuffer & out_) : out(out_)
 {
 }
@@ -48,6 +42,7 @@ void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
     capnp::DynamicStruct::Builder root = message.initRoot<capnp::DynamicStruct>(schema);
     serializer->writeRow(columns, std::move(root), row_num);
     capnp::writeMessage(*output_stream, message);
+
 }
 
 void registerOutputFormatCapnProto(FormatFactory & factory)

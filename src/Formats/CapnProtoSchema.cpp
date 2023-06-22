@@ -43,7 +43,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
         /// That's not good to determine the type of error by its description, but
         /// this is the only way to do it here, because kj doesn't specify the type of error.
         auto description = std::string_view(e.getDescription().cStr());
-        if (description.find("No such file or directory") != String::npos || description.find("no such directory") != String::npos)
+        if (description.find("No such file or directory") != String::npos || description.find("no such directory") != String::npos || description.find("no such file") != String::npos)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot open CapnProto schema, file {} doesn't exists", schema_info.absoluteSchemaPath());
 
         if (description.find("Parse error") != String::npos)
@@ -151,7 +151,7 @@ namespace
 {
 
     template <typename ValueType>
-    static DataTypePtr getEnumDataTypeFromEnumerants(const capnp::EnumSchema::EnumerantList & enumerants)
+    DataTypePtr getEnumDataTypeFromEnumerants(const capnp::EnumSchema::EnumerantList & enumerants)
     {
         std::vector<std::pair<String, ValueType>> values;
         for (auto enumerant : enumerants)
@@ -159,7 +159,7 @@ namespace
         return std::make_shared<DataTypeEnum<ValueType>>(std::move(values));
     }
 
-    static DataTypePtr getEnumDataTypeFromEnumSchema(const capnp::EnumSchema & enum_schema)
+    DataTypePtr getEnumDataTypeFromEnumSchema(const capnp::EnumSchema & enum_schema)
     {
         auto enumerants = enum_schema.getEnumerants();
         if (enumerants.size() < 128)
@@ -170,7 +170,7 @@ namespace
         throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "ClickHouse supports only 8 and 16-bit Enums");
     }
 
-    static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type, bool skip_unsupported_fields)
+    DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type, bool skip_unsupported_fields)
     {
         switch (capnp_type.which())
         {

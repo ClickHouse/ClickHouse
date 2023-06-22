@@ -36,7 +36,6 @@ private:
     std::shared_ptr<CapnProtoSchemaParser> parser;
     capnp::StructSchema schema;
     std::unique_ptr<CapnProtoSerializer> serializer;
-
 };
 
 class CapnProtoSchemaReader : public IExternalSchemaReader

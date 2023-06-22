@@ -1692,7 +1692,7 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
         executor.push(block);
@@ -1775,7 +1775,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
