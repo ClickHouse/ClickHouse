@@ -86,7 +86,7 @@
 	url = https://github.com/ClickHouse/fastops
 [submodule "contrib/orc"]
 	path = contrib/orc
-	url = https://github.com/wpleonardo/orc
+	url = https://github.com/ClickHouse/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
