@@ -1165,10 +1165,19 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    /// Order is important: format, compression, file
+
     if (output_format)
         output_format->finalize();
     output_format.reset();
+
     logs_out_stream.reset();
+
+    if (out_file_buf)
+    {
+        out_file_buf->finalize();
+        out_file_buf.reset();
+    }
 
     if (pager_cmd)
     {
@@ -1177,15 +1186,9 @@ void ClientBase::resetOutput()
     }
     pager_cmd = nullptr;
 
-    if (out_file_buf)
-    {
-        out_file_buf->next();
-        out_file_buf.reset();
-    }
-
     if (out_logs_buf)
     {
-        out_logs_buf->next();
+        out_logs_buf->finalize();
         out_logs_buf.reset();
     }
 
