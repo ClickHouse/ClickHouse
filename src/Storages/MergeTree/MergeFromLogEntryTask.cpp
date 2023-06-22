@@ -224,7 +224,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 estimated_space_for_merge >= storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock)
             {
                 /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-                /// Here we are trying to metigate the skew of merges execution because of faster/slower replicas.
+                /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
                 /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
                 /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
                 /// the fast replica is not overloaded because amount of executing merges don't affect the ability to aquite locks for new merges.
