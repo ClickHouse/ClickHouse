@@ -173,9 +173,6 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 
 void Set::fillSetElements()
 {
-    if (data.getTotalRowCount())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert set to ordered because it is not empty");
-
     fill_set_elements = true;
     set_elements.reserve(keys_size);
     for (const auto & type : set_elements_types)
