@@ -44,6 +44,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         const Key & key_,
         const std::string & key_path_,
         CleanupQueue & cleanup_queue_,
+        Poco::Logger * log_,
         bool created_base_directory_ = false);
 
     enum class KeyState
