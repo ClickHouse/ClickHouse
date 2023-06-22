@@ -86,7 +86,7 @@ void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
 RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.url, query, virtual_block, context);
+        *s3_configuration.client, s3_configuration.url, query, virtual_block, context, nullptr, s3_configuration.request_settings, context->getFileProgressCallback());
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

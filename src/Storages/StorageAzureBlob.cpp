@@ -617,13 +617,13 @@ Pipe StorageAzureBlob::read(
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::Iterator>(
             object_storage.get(), configuration.container, std::nullopt,
-            configuration.blob_path, query_info.query, virtual_block, local_context, nullptr);
+            configuration.blob_path, query_info.query, virtual_block, local_context, nullptr, local_context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::Iterator>(
             object_storage.get(), configuration.container, configuration.blobs_paths,
-            std::nullopt, query_info.query, virtual_block, local_context, nullptr);
+            std::nullopt, query_info.query, virtual_block, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
     ColumnsDescription columns_description;
@@ -794,15 +794,16 @@ StorageAzureBlobSource::Iterator::Iterator(
     ASTPtr query_,
     const Block & virtual_header_,
     ContextPtr context_,
-    RelativePathsWithMetadata * outer_blobs_)
+    RelativePathsWithMetadata * outer_blobs_,
+    std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , container(container_)
-    , keys(keys_)
     , blob_path_with_globs(blob_path_with_globs_)
     , query(query_)
     , virtual_header(virtual_header_)
     , outer_blobs(outer_blobs_)
+    , file_progress_callback(file_progress_callback_)
 {
     if (keys.has_value() && blob_path_with_globs.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify keys and glob simultaneously it's a bug");
@@ -810,11 +811,10 @@ StorageAzureBlobSource::Iterator::Iterator(
     if (!keys.has_value() && !blob_path_with_globs.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Both keys and glob mask are not specified");
 
-    if (keys)
+    if (keys_)
     {
         Strings all_keys = *keys;
 
-        blobs_with_metadata.emplace();
         /// Create a virtual block with one row to construct filter
         if (query && virtual_header && !all_keys.empty())
         {
@@ -843,29 +843,12 @@ StorageAzureBlobSource::Iterator::Iterator(
                 all_keys = std::move(filtered_keys);
             }
         }
-
-        for (auto && key : all_keys)
-        {
-            ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
-            total_size += object_metadata.size_bytes;
-            blobs_with_metadata->emplace_back(RelativePathWithMetadata{key, object_metadata});
-            if (outer_blobs)
-                outer_blobs->emplace_back(blobs_with_metadata->back());
-        }
+        keys = std::move(all_keys);
     }
     else
     {
         const String key_prefix = blob_path_with_globs->substr(0, blob_path_with_globs->find_first_of("*?{"));
-
-        /// We don't have to list bucket, because there is no asterisks.
-        if (key_prefix.size() == blob_path_with_globs->size())
-        {
-            ObjectMetadata object_metadata = object_storage->getObjectMetadata(*blob_path_with_globs);
-            blobs_with_metadata->emplace_back(*blob_path_with_globs, object_metadata);
-            if (outer_blobs)
-                outer_blobs->emplace_back(blobs_with_metadata->back());
-            return;
-        }
+        assert(key_prefix.size() != blob_path_with_globs->size());
 
         object_storage_iterator = object_storage->iterate(key_prefix);
 
@@ -888,13 +871,17 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
     if (keys)
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= blobs_with_metadata->size())
+        if (current_index >= keys->size())
         {
             is_finished = true;
             return {};
         }
 
-        return (*blobs_with_metadata)[current_index];
+        auto key = (*keys)[current_index];
+        ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+        if (file_progress_callback)
+            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
+        return {key, object_metadata};
     }
     else
     {
@@ -946,11 +933,12 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
                 const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
 
                 std::lock_guard lock(next_mutex);
-                blob_path_with_globs.reset();
-                blob_path_with_globs.emplace();
+                blobs_with_metadata.reset();
+                blobs_with_metadata.emplace();
                 for (UInt64 idx : idxs.getData())
                 {
-                    total_size.fetch_add(new_batch[idx].metadata.size_bytes, std::memory_order_relaxed);
+                    if (file_progress_callback)
+                        file_progress_callback(FileProgress(0, new_batch[idx].metadata.size_bytes));
                     blobs_with_metadata->emplace_back(std::move(new_batch[idx]));
                     if (outer_blobs)
                         outer_blobs->emplace_back(blobs_with_metadata->back());
@@ -963,8 +951,11 @@ RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
 
                 std::lock_guard lock(next_mutex);
                 blobs_with_metadata = std::move(new_batch);
-                for (const auto & [_, info] : *blobs_with_metadata)
-                    total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
+                if (file_progress_callback)
+                {
+                    for (const auto & [_, info] : *blobs_with_metadata)
+                        file_progress_callback(FileProgress(0, info.size_bytes));
+                }
             }
         }
 
@@ -1011,17 +1002,9 @@ Chunk StorageAzureBlobSource::generate()
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
+            progress(num_rows, 0);
 
             const auto & file_path = reader.getPath();
-            if (num_rows && total_objects_size)
-            {
-                size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
-                if (!chunk_size)
-                    chunk_size = chunk.bytes();
-                updateRowsProgressApprox(
-                    *this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-            }
-
             for (const auto & virtual_column : requested_virtual_columns)
             {
                 if (virtual_column.name == "_path")
@@ -1045,13 +1028,6 @@ Chunk StorageAzureBlobSource::generate()
 
         if (!reader)
             break;
-
-        size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
-        /// Adjust total_rows_approx_accumulated with new total size.
-        if (total_objects_size)
-            total_rows_approx_accumulated = static_cast<size_t>(
-                std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
-        total_objects_size += object_size;
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1083,7 +1059,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     AzureObjectStorage * object_storage_,
     const String & container_,
     std::shared_ptr<Iterator> file_iterator_)
-    :ISource(getHeader(sample_block_, requested_virtual_columns_))
+    :ISource(getHeader(sample_block_, requested_virtual_columns_), false)
     , WithContext(context_)
     , requested_virtual_columns(requested_virtual_columns_)
     , format(format_)
@@ -1101,13 +1077,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
 {
     reader = createReader();
     if (reader)
-    {
-        const auto & read_buf = reader.getReadBuffer();
-        if (read_buf)
-            total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
-
         reader_future = createReaderAsync();
-    }
 }
 
 
@@ -1149,7 +1119,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), input_format, std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageAzureBlobSource::ReaderHolder> StorageAzureBlobSource::createReaderAsync()
@@ -1163,6 +1133,7 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAzureReadBuffer(const 
     read_settings.enable_filesystem_cache = false;
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     const bool object_too_small = object_size <= 2 * download_buffer_size;
+    object_storage->setProgressCallback(getContext());
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.

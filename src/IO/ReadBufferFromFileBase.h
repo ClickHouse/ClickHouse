@@ -52,7 +52,7 @@ public:
 
     size_t getFileSize() override;
 
-    void setProgressCallback(ContextPtr context);
+    virtual void setProgressCallback(ContextPtr context);
 
 protected:
     std::optional<size_t> file_size;
