@@ -1274,6 +1274,7 @@ def test_recover_digest_mismatch(started_cluster):
 
     print("Everything Okay")
 
+
 def test_replicated_table_structure_alter(started_cluster):
     main_node.query("DROP DATABASE IF EXISTS table_structure")
     dummy_node.query("DROP DATABASE IF EXISTS table_structure")
@@ -1292,13 +1293,20 @@ def test_replicated_table_structure_alter(started_cluster):
     dummy_node.query("DETACH DATABASE table_structure")
 
     settings = {"distributed_ddl_task_timeout": 0}
-    main_node.query("CREATE TABLE table_structure.rmt (n int, v UInt64) ENGINE=ReplicatedReplacingMergeTree(v) ORDER BY n", settings=settings)
+    main_node.query(
+        "CREATE TABLE table_structure.rmt (n int, v UInt64) ENGINE=ReplicatedReplacingMergeTree(v) ORDER BY n",
+        settings=settings,
+    )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
     competing_node.query("DETACH DATABASE table_structure")
 
-    main_node.query("ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings)
-    main_node.query("ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings)
+    main_node.query(
+        "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
+    )
+    main_node.query(
+        "ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings
+    )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
     command = "rm -f /var/lib/clickhouse/metadata/table_structure/mem.sql"
@@ -1312,7 +1320,7 @@ def test_replicated_table_structure_alter(started_cluster):
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
     competing_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
-    #time.sleep(600)
+    # time.sleep(600)
     assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
     assert "1\t2\t3\n" == competing_node.query("SELECT * FROM table_structure.rmt")
 
@@ -1320,4 +1328,6 @@ def test_replicated_table_structure_alter(started_cluster):
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3, 4)")
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
     dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
-    assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query("SELECT * FROM table_structure.rmt ORDER BY k")
+    assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query(
+        "SELECT * FROM table_structure.rmt ORDER BY k"
+    )
