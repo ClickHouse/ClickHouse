@@ -943,7 +943,15 @@ public:
         {
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
-                const auto c = DecimalUtils::split(vec[i], scale);
+                auto c = DecimalUtils::split(vec[i], scale);
+
+                if (vec[i].value < 0 && c.fractional)
+                {
+                    c.fractional = DecimalUtils::scaleMultiplier<DataType::FieldType>(scale) 
+                        + (c.whole ? DataType::FieldType(-1) : DataType::FieldType(1)) * c.fractional;
+                    --c.whole;
+                }
+
                 for (auto & instruction : instructions)
                     instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, time_zone);
             }
