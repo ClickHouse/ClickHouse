@@ -53,17 +53,13 @@ KeyMetadata::KeyMetadata(
     const Key & key_,
     const std::string & key_path_,
     CleanupQueue & cleanup_queue_,
-    [[maybe_unused]] Poco::Logger * log_,
+    Poco::Logger * log_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
     , created_base_directory(created_base_directory_)
-#ifdef ABORT_ON_LOGICAL_ERROR
-    , log(&Poco::Logger::get("Key(" + key.toString() + ")"))
-#else
     , log(log_)
-#endif
 {
     if (created_base_directory)
         chassert(fs::exists(key_path));
