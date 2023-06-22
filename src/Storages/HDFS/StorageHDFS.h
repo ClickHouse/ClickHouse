@@ -12,6 +12,9 @@
 
 namespace DB
 {
+
+class IInputFormat;
+
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.

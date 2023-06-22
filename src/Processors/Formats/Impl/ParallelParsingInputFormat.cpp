@@ -39,8 +39,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
+            size_t segment_start = getDataOffsetMaybeCompressed(*in);
             auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
+            unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
 
@@ -108,6 +110,11 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+            size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
+            /// We could decompress data during file segmentation.
+            /// Correct chunk size using original segment size.
+            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / unit.segment.size() * unit.original_segment_size));
+            unit.chunk_ext.approx_chunk_sizes.push_back(approx_chunk_size);
         }
 
         /// Extract column_mapping from first parser to propagate it to others
@@ -237,6 +244,7 @@ Chunk ParallelParsingInputFormat::generate()
 
     Chunk res = std::move(unit.chunk_ext.chunk.at(*next_block_in_current_unit));
     last_block_missing_values = std::move(unit.chunk_ext.block_missing_values[*next_block_in_current_unit]);
+    last_approx_bytes_read_for_chunk = unit.chunk_ext.approx_chunk_sizes.at(*next_block_in_current_unit);
 
     next_block_in_current_unit.value() += 1;
 

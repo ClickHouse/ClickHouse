@@ -26,6 +26,8 @@ public:
 
     const BlockMissingValues & getMissingValues() const override;
 
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 private:
     Chunk generate() override;
 
@@ -43,6 +45,7 @@ private:
     std::vector<int> column_indices;
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk;
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
     std::shared_ptr<arrow::RecordBatchReader> current_record_batch_reader;

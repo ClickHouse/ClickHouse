@@ -58,6 +58,8 @@ public:
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
+    virtual size_t getApproxBytesReadForChunk() const { return 0; }
+
 protected:
     ColumnMappingPtr column_mapping{};
 
