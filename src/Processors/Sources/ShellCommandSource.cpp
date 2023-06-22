@@ -550,11 +550,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
 
+            timeout_write_buffer->finalize();
+            timeout_write_buffer->reset();
+
             if (!is_executable_pool)
             {
-                timeout_write_buffer->next();
-                timeout_write_buffer->reset();
-
                 write_buffer->close();
             }
         };

@@ -816,6 +816,11 @@ void FileCache::removeKeyIfExists(const Key & key)
     locked_key->removeAllReleasable();
 }
 
+void FileCache::removePathIfExists(const String & path)
+{
+    removeKeyIfExists(createKeyForPath(path));
+}
+
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
