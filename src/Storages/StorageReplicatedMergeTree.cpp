@@ -22,6 +22,7 @@
 
 #include <base/sort.h>
 
+#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
@@ -75,20 +76,23 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 
+#include <Planner/Utils.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/JoinedTables.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/JoinedTables.h>
 
 
 #include <Backups/BackupEntriesCollector.h>
@@ -4835,14 +4839,27 @@ void StorageReplicatedMergeTree::read(
     {
         auto table_id = getStorageID();
 
-        const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
-            local_context, query_info.query,
-            table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+        ASTPtr modified_query_ast;
+
+        Block header;
+
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        {
+            auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
+
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+            modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
+        }
+        else
+        {
+            modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
+                table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+            header
+                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        }
 
         auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
-
-        Block header =
-            InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
         ClusterProxy::SelectStreamFactory select_stream_factory =
             ClusterProxy::SelectStreamFactory(

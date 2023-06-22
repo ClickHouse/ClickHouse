@@ -27,7 +27,6 @@ void MergePlainMergeTreeTask::onCompleted()
     task_result_callback(delay);
 }
 
-
 bool MergePlainMergeTreeTask::executeStep()
 {
     /// All metrics will be saved in the thread_group, including all scheduled tasks.
