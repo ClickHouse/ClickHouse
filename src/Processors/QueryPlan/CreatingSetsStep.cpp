@@ -124,7 +124,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
@@ -133,7 +133,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<Fut
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & future_set : sets_from_subquery)
+    for (auto & future_set : subqueries)
     {
         if (future_set->get())
             continue;
@@ -157,18 +157,11 @@ void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<Fut
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }
 
-//void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context)
-
 std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(DelayedCreatingSetsStep && step)
 {
-    // DataStreams input_streams;
-    // input_streams.emplace_back(query_plan.getCurrentDataStream());
-
     std::vector<std::unique_ptr<QueryPlan>> plans;
-    // plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
-    // query_plan = QueryPlan();
 
-    for (auto & future_set : step.sets_from_subquery)
+    for (auto & future_set : step.subqueries)
     {
         if (future_set->get())
             continue;
@@ -179,7 +172,6 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
 
         plan->optimize(QueryPlanOptimizationSettings::fromContext(step.context));
 
-        //input_streams.emplace_back(plan->getCurrentDataStream());
         plans.emplace_back(std::move(plan));
     }
 
@@ -199,8 +191,8 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, 
 }
 
 DelayedCreatingSetsStep::DelayedCreatingSetsStep(
-    DataStream input_stream, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery_, ContextPtr context_)
-    : sets_from_subquery(std::move(sets_from_subquery_)), context(std::move(context_))
+    DataStream input_stream, PreparedSets::Subqueries subqueries_, ContextPtr context_)
+    : subqueries(std::move(subqueries_)), context(std::move(context_))
 {
     input_streams = {input_stream};
     output_stream = std::move(input_stream);

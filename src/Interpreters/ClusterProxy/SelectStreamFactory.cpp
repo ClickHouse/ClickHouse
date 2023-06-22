@@ -92,13 +92,11 @@ SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     const ColumnsDescriptionByShardNum & objects_by_shard_,
     const StorageSnapshotPtr & storage_snapshot_,
-    QueryProcessingStage::Enum processed_stage_,
-    PreparedSetsPtr prepared_sets_)
+    QueryProcessingStage::Enum processed_stage_)
     : header(header_),
     objects_by_shard(objects_by_shard_),
     storage_snapshot(storage_snapshot_),
-    processed_stage(processed_stage_),
-    prepared_sets(std::move(prepared_sets_))
+    processed_stage(processed_stage_)
 {
 }
 
@@ -119,7 +117,7 @@ void SelectStreamFactory::createForShard(
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, prepared_sets, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)

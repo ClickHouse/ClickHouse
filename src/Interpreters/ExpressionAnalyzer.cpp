@@ -450,77 +450,6 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
 }
 
 
-// void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options)
-// {
-//     if (!prepared_sets)
-//         return;
-
-//     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
-
-//     if (prepared_sets->getFuture(set_key).isValid())
-//         return; /// Already prepared.
-
-//     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
-//     {
-//         prepared_sets->set(set_key, set_ptr_from_storage_set);
-//         return;
-//     }
-
-//     auto build_set = [&] () -> SetPtr
-//     {
-//         LOG_TRACE(getLogger(), "Building set, key: {}", set_key.toString());
-
-//         auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
-//         auto io = interpreter_subquery->execute();
-//         PullingAsyncPipelineExecutor executor(io.pipeline);
-
-//         SetPtr set = std::make_shared<Set>(settings.size_limits_for_set_used_with_index, true, getContext()->getSettingsRef().transform_null_in);
-//         set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
-
-//         Block block;
-//         while (executor.pull(block))
-//         {
-//             if (block.rows() == 0)
-//                 continue;
-
-//             /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-//             if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
-//                 return nullptr;
-//         }
-
-//         set->finishInsert();
-
-//         return set;
-//     };
-
-//     SetPtr set;
-
-//     auto set_cache = getContext()->getPreparedSetsCache();
-//     if (set_cache)
-//     {
-//         auto from_cache = set_cache->findOrPromiseToBuild(set_key.toString());
-//         if (from_cache.index() == 0)
-//         {
-//             set = build_set();
-//             std::get<0>(from_cache).set_value(set);
-//         }
-//         else
-//         {
-//             LOG_TRACE(getLogger(), "Waiting for set, key: {}", set_key.toString());
-//             set = std::get<1>(from_cache).get();
-//         }
-//     }
-//     else
-//     {
-//         set = build_set();
-//     }
-
-//     if (!set)
-//         return;
-
-//     prepared_sets->set(set_key, std::move(set));
-// }
-
 SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
     const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
@@ -533,54 +462,6 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
     return storage_set->getSet();
 }
-
-
-/// Performance optimization for IN() if storage supports it.
-// void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
-// {
-//     if (!node || !storage() || !storage()->supportsIndexForIn())
-//         return;
-
-//     for (auto & child : node->children)
-//     {
-//         /// Don't descend into subqueries.
-//         if (child->as<ASTSubquery>())
-//             continue;
-
-//         /// Don't descend into lambda functions
-//         const auto * func = child->as<ASTFunction>();
-//         if (func && func->name == "lambda")
-//             continue;
-
-//         makeSetsForIndex(child);
-//     }
-
-//     const auto * func = node->as<ASTFunction>();
-//     if (func && functionIsInOrGlobalInOperator(func->name))
-//     {
-//         const IAST & args = *func->arguments;
-//         const ASTPtr & left_in_operand = args.children.at(0);
-
-//         if (storage()->mayBenefitFromIndexForIn(left_in_operand, getContext(), metadata_snapshot))
-//         {
-//             const ASTPtr & arg = args.children.at(1);
-//             if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
-//             {
-//                 if (settings.use_index_for_in_with_subqueries)
-//                     tryMakeSetForIndexFromSubquery(arg, query_options);
-//             }
-//             else
-//             {
-//                 auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
-//                 getRootActions(left_in_operand, true, temp_actions);
-
-//                 if (prepared_sets && temp_actions->tryFindInOutputs(left_in_operand->getColumnName()))
-//                     makeExplicitSet(func, *temp_actions, true, getContext(), settings.size_limits_for_set, *prepared_sets);
-//             }
-//         }
-//     }
-// }
-
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {

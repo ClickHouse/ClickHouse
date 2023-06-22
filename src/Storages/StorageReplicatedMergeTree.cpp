@@ -4866,8 +4866,7 @@ void StorageReplicatedMergeTree::read(
                 header,
                 {},
                 storage_snapshot,
-                processed_stage,
-                query_info.prepared_sets);
+                processed_stage);
 
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,

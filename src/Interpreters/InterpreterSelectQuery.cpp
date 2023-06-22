@@ -953,10 +953,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (storage && !options.only_analyze)
     {
-        // query_analyzer->makeSetsForIndex(select_query.where());
-        // query_analyzer->makeSetsForIndex(select_query.prewhere());
         query_info.prepared_sets = query_analyzer->getPreparedSets();
-
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
     }
 

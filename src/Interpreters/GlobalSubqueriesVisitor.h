@@ -69,7 +69,6 @@ public:
 
         void addExternalStorage(ASTPtr & ast, const Names & required_columns, bool set_alias = false)
         {
-            // std::cerr << "=============== addExternalStorage is remote " << is_remote << std::endl;
             /// With nondistributed queries, creating temporary tables does not make sense.
             if (!is_remote)
                 return;
@@ -163,49 +162,20 @@ public:
                 nullptr,
                 /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
-
-            // std::cerr << "......... adding external table " << external_table_name << std::endl;
-
             external_tables.emplace(external_table_name, external_storage_holder);
 
-            /// We need to materialize external tables immediately because reading from distributed
-            /// tables might generate local plans which can refer to external tables during index
-            /// analysis. It's too late to populate the external table via CreatingSetsTransform.
-            // if (is_explain)
-            // {
-            //     /// Do not materialize external tables if it's explain statement.
-            // }
-            // else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
-            // {
-            //     auto external_table = external_storage_holder->getTable();
-            //     auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
-            //     auto io = interpreter->execute();
-            //     io.pipeline.complete(std::move(table_out));
-            //     CompletedPipelineExecutor executor(io.pipeline);
-            //     executor.execute();
-            // }
-            // else
+            auto set_key = database_and_table_name->getTreeHash();
+
+            if (!prepared_sets->findSubquery(set_key))
             {
-                // auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
-                // subquery_for_set.createSource(*interpreter, external_storage);
-                auto set_key = database_and_table_name->getTreeHash();
+                std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
+                interpreter->buildQueryPlan(*source);
 
-                // std::cerr << "====== Adding key " << set_key.toString() << std::endl;
-
-                if (!prepared_sets->findSubquery(set_key))
-                {
-                    std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
-                    interpreter->buildQueryPlan(*source);
-
-                    //std::cerr << reinterpret_cast<const void *>(prepared_sets.get()) << std::endl;
-                    auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
-                    // std::cerr << "... Future set " << reinterpret_cast<const void *>(external_storage_holder.get()) << " " << reinterpret_cast<const void *>(future_set.get()) << std::endl;
-                    external_storage_holder->future_set = std::move(future_set);
-                }
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Set is already created for GLOBAL IN");
-                    //prepared_sets->addStorageToSubquery(key, std::move(external_storage));
+                auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
+                external_storage_holder->future_set = std::move(future_set);
             }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set is already created for GLOBAL IN");
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
             *  then a new temporary table will be created (for example, _data1),

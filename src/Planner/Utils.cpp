@@ -429,7 +429,6 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
-        [[maybe_unused]] const SelectQueryOptions & select_query_options,
         NameSet table_expression_required_names_without_filter)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -447,7 +446,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
     }
 
     collectSourceColumns(filter_query_tree, planner_context);
-    collectSets(filter_query_tree, *planner_context); //, select_query_options);
+    collectSets(filter_query_tree, *planner_context);
 
     auto filter_actions_dag = std::make_shared<ActionsDAG>();
 

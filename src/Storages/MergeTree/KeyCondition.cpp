@@ -1194,8 +1194,6 @@ bool KeyCondition::tryPrepareSetIndex(
     RPNElement & out,
     size_t & out_key_column_num)
 {
-    // std::cerr << "::: tryPrepareSetIndex for " << func.getColumnName() << std::endl;
-    // std::cerr << StackTrace().toString() << std::endl;
     const auto & left_arg = func.getArgumentAt(0);
 
     out_key_column_num = 0;
@@ -1239,56 +1237,27 @@ bool KeyCondition::tryPrepareSetIndex(
     }
 
     if (indexes_mapping.empty())
-    {
-        // std::cerr << ".. index mapping is empty\n";
         return false;
-    }
 
     const auto right_arg = func.getArgumentAt(1);
 
-    // LOG_TRACE(&Poco::Logger::get("KK"), "Trying to get set for {}", right_arg.getColumnName());
-
     auto future_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
     if (!future_set)
-    {
-        // std::cerr << ".. no future set\n";
         return false;
-    }
 
-    // LOG_TRACE(&Poco::Logger::get("KK"), "Found set for {}", right_arg.getColumnName());
-
-    //if (!future_set->isReady())
-    //{
-        // LOG_TRACE(&Poco::Logger::get("KK"), "Building set inplace for {}", right_arg.getColumnName());
-    future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
-    //}
-
-    auto prepared_set = future_set->get();
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
-    {
-
-        // std::cerr << ".. no prepared set\n";
         return false;
-    }
-
-    // LOG_TRACE(&Poco::Logger::get("KK"), "Set if ready for {}", right_arg.getColumnName());
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
-    {
-
-        // std::cerr << ".. no explicit elements\n";
         return false;
-    }
-
-    // LOG_TRACE(&Poco::Logger::get("KK"), "Has explicit elements for {}", right_arg.getColumnName());
 
     prepared_set->checkColumnsNumber(left_args_count);
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
         prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
-    // std::cerr << ".. can use\n";
     return true;
 }
 

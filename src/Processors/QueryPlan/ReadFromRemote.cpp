@@ -97,7 +97,6 @@ ReadFromRemote::ReadFromRemote(
     ClusterProxy::SelectStreamFactory::Shards shards_,
     Block header_,
     QueryProcessingStage::Enum stage_,
-    PreparedSetsPtr prepared_sets_,
     StorageID main_table_,
     ASTPtr table_func_ptr_,
     ContextMutablePtr context_,
@@ -110,7 +109,6 @@ ReadFromRemote::ReadFromRemote(
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
-    , prepared_sets(std::move(prepared_sets_))
     , main_table(std::move(main_table_))
     , table_func_ptr(std::move(table_func_ptr_))
     , context(std::move(context_))
@@ -152,7 +150,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, my_prepared_sets = prepared_sets, local_delay = shard.local_delay,
+            my_stage = stage, local_delay = shard.local_delay,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending]() mutable
         -> QueryPipelineBuilder
     {
@@ -187,7 +185,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_prepared_sets, my_shard.shard_info.shard_num, my_shard_count, 0, 0, /*coordinator=*/nullptr);
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, 0, 0, /*coordinator=*/nullptr);
 
             return std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(my_context),

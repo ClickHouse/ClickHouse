@@ -445,18 +445,15 @@ FutureSetPtr makeExplicitSet(
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
-    for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            element_type = low_cardinality_type->getDictionaryType();
-
-    // if (!set_element_types.empty())
-    //     std::cerr << "========== " << set_element_types[0]->getName() << std::endl;
-
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
     auto set_key = right_arg->getTreeHash();
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
+
+    for (auto & element_type : set_element_types)
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+            element_type = low_cardinality_type->getDictionaryType();
 
     Block block;
     const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
@@ -1400,11 +1397,21 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
     {
         if (no_subqueries)
             return {};
-        //std::cerr << queryToString(right_in_operand) << std::endl;
 
         PreparedSets::Hash set_key;
         if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
+            /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
+            /// This is a hacky way to allow reusing cache for prepared sets.
+            ///
+            /// Mutation is executed in two stages:
+            /// * first, query 'SELECT count() FROM table WHERE ...' is executed to get the set of affected parts (using analyzer)
+            /// * second, every part is mutated separately, where plan is build "manually", usign this code as well
+            /// To share the Set in between first and second stage, we should use the same hash.
+            /// New analyzer is uses a hash from query tree, so here we also build a query tree.
+            ///
+            /// Note : this code can be safely removed, but the test 02581_share_big_sets will be too slow (and fail by timeout).
+            /// Note : we should use new analyzer for mutations and remove this hack.
             InterpreterSelectQueryAnalyzer interpreter(right_in_operand, data.getContext(), SelectQueryOptions().analyze(true).subquery());
             const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
@@ -1413,12 +1420,6 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
         else
             set_key = right_in_operand->getTreeHash();
-
-        // std::cerr << set_key.toString() << std::endl;
-        // std::cerr << data.prepared_sets->getSets().size() << std::endl;
-        // std::cerr << reinterpret_cast<const void *>(data.prepared_sets.get()) << std::endl;
-        // for (const auto & [k, v] : data.prepared_sets->getSets())
-        //     std::cerr << "... " << k.toString();
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
             return set;
@@ -1440,12 +1441,12 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
 
             if (!data.getContext()->isGlobalContext())
             {
-                // std::cerr << ".... checking for " << identifier->getColumnName() << std::endl;
+                /// If we are reading from storage, it can be an external table which is used for GLOBAL IN.
+                /// Here, we take FutureSet which is used to build external table.
+                /// It will be used if set is useful for primary key. During PK analysis
+                /// temporary table is not filled yet, so we need to fill it first.
                 if (auto tmp_table = data.getContext()->findExternalTable(identifier->getColumnName()))
-                {
                     external_table_set = tmp_table->future_set;
-                    // std::cerr << "Found " << reinterpret_cast<const void *>(tmp_table.get()) << " " << reinterpret_cast<const void *>(external_table_set.get()) << std::endl;
-                }
             }
         }
 

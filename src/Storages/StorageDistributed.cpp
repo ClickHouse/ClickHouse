@@ -88,10 +88,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -769,8 +767,7 @@ void StorageDistributed::read(
             header,
             snapshot_data.objects_by_shard,
             storage_snapshot,
-            processed_stage,
-            query_info.prepared_sets);
+            processed_stage);
 
     auto settings = local_context->getSettingsRef();
 

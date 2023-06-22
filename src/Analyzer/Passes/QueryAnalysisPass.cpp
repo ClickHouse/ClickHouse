@@ -5211,14 +5211,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             const auto & settings = scope.context->getSettingsRef();
 
-            auto result_block = makeSetForConstantValue(first_argument_constant_type,
+            auto result_block = getSetElementsForConstantValue(first_argument_constant_type,
                 second_argument_constant_literal,
                 second_argument_constant_type,
                 settings.transform_null_in);
 
             SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
 
-            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, 0, settings.transform_null_in);
+            auto set = std::make_shared<Set>(size_limits_for_set, 0, settings.transform_null_in);
 
             set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
             set->insertFromBlock(result_block.getColumnsWithTypeAndName());

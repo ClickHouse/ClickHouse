@@ -123,9 +123,12 @@ public:
         }
 
         auto future_set = column_set->getData();
-        auto set = future_set ? future_set->get() : nullptr;
-        if (!future_set || !set)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set passed as the second argument for function '{}'", getName());
+        if (!future_set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+
+        auto set = future_set->get();
+        if (!set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
 
         auto set_types = set->getDataTypes();
 

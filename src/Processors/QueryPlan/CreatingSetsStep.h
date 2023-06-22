@@ -47,10 +47,12 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 };
 
+/// This is a temporary step which is converted to CreatingSetStep after plan optimization.
+/// Can't be used by itself.
 class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
-    DelayedCreatingSetsStep(DataStream input_stream, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery_, ContextPtr context_);
+    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::Subqueries subqueries_, ContextPtr context_);
 
     String getName() const override { return "DelayedCreatingSets"; }
 
@@ -59,14 +61,14 @@ public:
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
 
     ContextPtr getContext() const { return context; }
-    std::vector<std::shared_ptr<FutureSetFromSubquery>> detachSets() { return std::move(sets_from_subquery); }
+    PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
 private:
-    std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery;
+    PreparedSets::Subqueries subqueries;
     ContextPtr context;
 };
 
-void addCreatingSetsStep(QueryPlan & query_plan, std::vector<std::shared_ptr<FutureSetFromSubquery>> sets_from_subquery, ContextPtr context);
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 

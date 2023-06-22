@@ -633,7 +633,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     DataTypes set_element_types;
 
     auto in_second_argument_node_type = in_second_argument->getNodeType();
-    // std::cerr << "=========== " << in_second_argument->getNodeTypeName() << std::endl;
+
     bool subquery_or_table =
         in_second_argument_node_type == QueryTreeNodeType::QUERY ||
         in_second_argument_node_type == QueryTreeNodeType::UNION ||
@@ -648,10 +648,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
         if (left_tuple_type && left_tuple_type->getElements().size() != 1)
             set_element_types = left_tuple_type->getElements();
-
-        // for (auto & element_type : set_element_types)
-        //     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-        //         element_type = low_cardinality_type->getDictionaryType();
 
         set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
