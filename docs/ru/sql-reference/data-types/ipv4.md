@@ -1,12 +1,12 @@
 ---
-slug: /ru/sql-reference/data-types/domains/ipv4
+slug: /ru/sql-reference/data-types/ipv4
 sidebar_position: 59
 sidebar_label: IPv4
 ---
 
 ## IPv4 {#ipv4}
 
-`IPv4` — это домен, базирующийся на типе данных `UInt32` предназначенный для хранения адресов IPv4. Он обеспечивает компактное хранение данных с удобным для человека форматом ввода-вывода, и явно отображаемым типом данных в структуре таблицы.
+IPv4-адреса. Хранится в 4 байтах как UInt32.
 
 ### Применение {#primenenie}
 
@@ -57,27 +57,6 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴───────────┘
 ```
 
-Значения с доменным типом данных не преобразуются неявно в другие типы данных, кроме `UInt32`.
-Если необходимо преобразовать значение типа `IPv4` в строку, то это необходимо делать явно с помощью функции `IPv4NumToString()`:
+**См. также**
 
-``` sql
-SELECT toTypeName(s), IPv4NumToString(from) AS s FROM hits LIMIT 1;
-```
-
-``` text
-┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
-│ String                            │ 183.247.232.58 │
-└───────────────────────────────────┴────────────────┘
-```
-
-Или приводить к типу данных `UInt32`:
-
-``` sql
-SELECT toTypeName(i), CAST(from AS UInt32) AS i FROM hits LIMIT 1;
-```
-
-``` text
-┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
-│ UInt32                           │ 3086477370 │
-└──────────────────────────────────┴────────────┘
-```
+- [Functions for Working with IPv4 and IPv6 Addresses](../functions/ip-address-functions.md)

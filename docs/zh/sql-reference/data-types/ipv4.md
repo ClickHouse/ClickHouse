@@ -1,5 +1,5 @@
 ---
-slug: /zh/sql-reference/data-types/domains/ipv4
+slug: /zh/sql-reference/data-types/ipv4
 ---
 ## IPv4 {#ipv4}
 
