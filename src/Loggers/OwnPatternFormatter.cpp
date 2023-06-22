@@ -4,7 +4,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
-#include <Interpreters/InternalTextLogsQueue.h>
 #include <base/terminalColors.h>
 
 

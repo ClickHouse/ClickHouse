@@ -1014,11 +1014,13 @@ Chunk StorageAzureBlobSource::generate()
             UInt64 num_rows = chunk.getNumRows();
 
             const auto & file_path = reader.getPath();
-            size_t total_size = file_iterator->getTotalSize();
-            if (num_rows && total_size)
+            if (num_rows && total_objects_size)
             {
+                size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
+                if (!chunk_size)
+                    chunk_size = chunk.bytes();
                 updateRowsProgressApprox(
-                    *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    *this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)
@@ -1044,6 +1046,13 @@ Chunk StorageAzureBlobSource::generate()
 
         if (!reader)
             break;
+
+        size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+        /// Adjust total_rows_approx_accumulated with new total size.
+        if (total_objects_size)
+            total_rows_approx_accumulated = static_cast<size_t>(
+                std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
+        total_objects_size += object_size;
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1093,7 +1102,13 @@ StorageAzureBlobSource::StorageAzureBlobSource(
 {
     reader = createReader();
     if (reader)
+    {
+        const auto & read_buf = reader.getReadBuffer();
+        if (read_buf)
+            total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+
         reader_future = createReaderAsync();
+    }
 }
 
 
@@ -1135,7 +1150,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), input_format, std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageAzureBlobSource::ReaderHolder> StorageAzureBlobSource::createReaderAsync()

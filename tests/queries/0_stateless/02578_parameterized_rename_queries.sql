@@ -24,6 +24,7 @@ SET param_new_tbl_name = 02661_t1;
 CREATE TABLE {new_db_name:Identifier}.{old_tbl_name:Identifier} (a UInt64) ENGINE = MergeTree ORDER BY tuple();
 RENAME TABLE {new_db_name:Identifier}.{old_tbl_name:Identifier} TO {new_db_name:Identifier}.{new_tbl_name:Identifier};
 
+-- NOTE: no 'database = currentDatabase()' on purpose
 SELECT name FROM system.tables WHERE name = {new_tbl_name:String};
 
 -- Case 3: RENAME DICTIONARY

@@ -7,6 +7,14 @@ description: This section contains descriptions of server settings that cannot b
 
 # Server Settings
 
+This section contains descriptions of server settings that cannot be changed at the session or query level.
+
+These settings are stored in the `config.xml` file on the ClickHouse server.
+
+Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
+
+Before studying the settings, read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
+
 ## allow_use_jemalloc_memory
 
 Allows to use jemalloc memory.
@@ -202,7 +210,7 @@ Default: 15
 
 ## dns_max_consecutive_failures
 
-Max connection failures before dropping host from ClickHouse DNS cache
+Max consecutive resolving failures before dropping a host from ClickHouse DNS cache
 
 Type: UInt32
 
