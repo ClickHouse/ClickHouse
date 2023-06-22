@@ -156,8 +156,7 @@ void CSVFormatReader::skipFieldDelimiter()
 {
     skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
-    bool res = checkChar(format_settings.csv.delimiter, *buf);
-    if (!res)
+    if (!checkChar(format_settings.csv.delimiter, *buf))
     {
         if (!format_settings.csv.missing_as_default)
         {
@@ -165,9 +164,7 @@ void CSVFormatReader::skipFieldDelimiter()
             throwAtAssertionFailed(err, *buf);
         }
         else
-        {
             current_row_has_missing_fields = true;
-        }
     }
 }
 
