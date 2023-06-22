@@ -167,7 +167,7 @@ void ThreadStatus::applyQuerySettings()
 
     const Settings & settings = query_context_ptr->getSettingsRef();
 
-    // query_id_from_query_context = query_context_ptr->getCurrentQueryId();
+    query_id_from_query_context = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
 
     untracked_memory_limit = settings.max_untracked_memory;
@@ -230,7 +230,7 @@ void ThreadStatus::detachFromGroup()
 
     thread_group.reset();
 
-    // query_id_from_query_context.clear();
+    query_id_from_query_context.clear();
     query_context.reset();
 
     local_data = {};
@@ -535,7 +535,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
     element.event_time_microseconds = timeInMicroseconds(vinfo.runtime_stats->event_time);
     element.view_duration_ms = vinfo.runtime_stats->elapsed_ms;
 
-    // element.initial_query_id = query_id_from_query_context;
+    element.initial_query_id = query_id_from_query_context;
     element.view_name = vinfo.table_id.getFullTableName();
     element.view_uuid = vinfo.table_id.uuid;
     element.view_type = vinfo.runtime_stats->type;

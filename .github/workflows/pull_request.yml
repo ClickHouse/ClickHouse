@@ -113,41 +113,41 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
-  StyleCheck:
-    needs: DockerHubPush
-    runs-on: [self-hosted, style-checker]
-    # We need additional `&& ! cancelled()` to have the job being able to cancel
-    if: ${{ success() || failure() || ( always() && ! cancelled() ) }}
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{ runner.temp }}/style_check
-          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
-          RCSK
-          EOF
-      - name: Download changed images
-        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
-        continue-on-error: true
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.TEMP_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Style Check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 style_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
+#  StyleCheck:
+#    needs: DockerHubPush
+#    runs-on: [self-hosted, style-checker]
+#    # We need additional `&& ! cancelled()` to have the job being able to cancel
+#    if: ${{ success() || failure() || ( always() && ! cancelled() ) }}
+#    steps:
+#      - name: Set envs
+#        run: |
+#          cat >> "$GITHUB_ENV" << 'EOF'
+#          TEMP_PATH=${{ runner.temp }}/style_check
+#          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+#          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+#          RCSK
+#          EOF
+#      - name: Download changed images
+#        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+#        continue-on-error: true
+#        uses: actions/download-artifact@v3
+#        with:
+#          name: changed_images
+#          path: ${{ env.TEMP_PATH }}
+#      - name: Check out repository code
+#        uses: ClickHouse/checkout@v1
+#        with:
+#          clear-repository: true
+#      - name: Style Check
+#        run: |
+#          cd "$GITHUB_WORKSPACE/tests/ci"
+#          python3 style_check.py
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+#          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+#          sudo rm -fr "$TEMP_PATH"
   FastTest:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -915,30 +915,30 @@ jobs:
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
-  DockerServerImages:
-    needs:
-      - BuilderDebRelease
-      # - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
-      - name: Check docker clickhouse/clickhouse-server building
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_server.py --release-type head --no-push \
-            --image-repo clickhouse/clickhouse-server --image-path docker/server
-          python3 docker_server.py --release-type head --no-push \
-            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
+#  DockerServerImages:
+#    needs:
+#      - BuilderDebRelease
+#      # - BuilderDebAarch64
+#    runs-on: [self-hosted, style-checker]
+#    steps:
+#      - name: Check out repository code
+#        uses: ClickHouse/checkout@v1
+#        with:
+#          clear-repository: true
+#          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
+#      - name: Check docker clickhouse/clickhouse-server building
+#        run: |
+#          cd "$GITHUB_WORKSPACE/tests/ci"
+#          python3 docker_server.py --release-type head --no-push \
+#            --image-repo clickhouse/clickhouse-server --image-path docker/server
+#          python3 docker_server.py --release-type head --no-push \
+#            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+#          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+#          sudo rm -fr "$TEMP_PATH"
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################

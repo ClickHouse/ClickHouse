@@ -128,9 +128,9 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 
 const String & ThreadStatus::getQueryId() const
 {
-    static String fake = "fake_query_id";
-    return fake;
-    // return query_id_from_query_context;
+//    static String fake = "fake_query_id";
+//    return fake;
+    return query_id_from_query_context;
 }
 
 ContextPtr ThreadStatus::getQueryContext() const

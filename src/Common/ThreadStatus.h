@@ -191,7 +191,7 @@ private:
 
     bool performance_counters_finalized = false;
 
-    // String query_id_from_query_context;
+    String query_id_from_query_context;
 
     struct TimePoint
     {
