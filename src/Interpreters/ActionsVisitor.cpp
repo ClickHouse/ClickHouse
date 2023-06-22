@@ -1406,7 +1406,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             ///
             /// Mutation is executed in two stages:
             /// * first, query 'SELECT count() FROM table WHERE ...' is executed to get the set of affected parts (using analyzer)
-            /// * second, every part is mutated separately, where plan is build "manually", usign this code as well
+            /// * second, every part is mutated separately, where plan is build "manually", using this code as well
             /// To share the Set in between first and second stage, we should use the same hash.
             /// New analyzer is uses a hash from query tree, so here we also build a query tree.
             ///
