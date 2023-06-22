@@ -104,14 +104,8 @@ void Lz4DeflatingWriteBuffer::nextImpl()
             if (LZ4F_isError(compressed_size))
                 throw Exception(
                     ErrorCodes::LZ4_ENCODER_FAILED,
-                    "LZ4 failed to encode stream. LZ4F version: {}, CodeName: {},"
-                    " in_capacity: {}, out_capacity: {}, cur_buffer_size: {}, min_compressed_block_size: {}",
-                    LZ4F_VERSION,
-                    LZ4F_getErrorName(compressed_size),
-                    in_capacity,
-                    out_capacity,
-                    cur_buffer_size,
-                    min_compressed_block_size);
+                    "LZ4 failed to encode stream. LZ4F version: {}",
+                    LZ4F_VERSION);
 
             in_capacity -= cur_buffer_size;
             in_data = reinterpret_cast<void *>(working_buffer.end() - in_capacity);
