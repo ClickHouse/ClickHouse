@@ -107,9 +107,7 @@ struct UniqVariadicHash<true, false>
             ++column;
         }
 
-        UInt128 key;
-        hash.get128(key);
-        return key;
+        return hash.get128();
     }
 };
 
@@ -131,9 +129,7 @@ struct UniqVariadicHash<true, true>
             ++column;
         }
 
-        UInt128 key;
-        hash.get128(key);
-        return key;
+        return hash.get128();
     }
 };
 

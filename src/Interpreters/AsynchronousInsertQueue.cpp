@@ -105,9 +105,7 @@ UInt128 AsynchronousInsertQueue::InsertQuery::calculateHash() const
         applyVisitor(FieldVisitorHash(siphash), setting.getValue());
     }
 
-    UInt128 res;
-    siphash.get128(res);
-    return res;
+    return siphash.get128();
 }
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
