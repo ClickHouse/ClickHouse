@@ -41,12 +41,12 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     }
     else
     {
+        if (args.empty() || args.size() > 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
+
         auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, context);
         if (header_it != args.end())
             args.erase(header_it);
-
-        if (args.empty() || args.size() > 6)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
