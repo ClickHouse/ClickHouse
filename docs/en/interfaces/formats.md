@@ -1300,8 +1300,8 @@ For output it uses the following correspondence between ClickHouse types and BSO
 | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                   | `\x04` array                                                                                                  |
 | [Named Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                             | `\x03` document                                                                                               |
 | [Map](/docs/en/sql-reference/data-types/map.md)                                                                       | `\x03` document                                                                                               |
-| [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                             | `\x10` int32                                                                                                  |
-| [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                             | `\x05` binary, `\x00` binary subtype                                                                          |
+| [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                     | `\x10` int32                                                                                                  |
+| [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
 
 For input it uses the following correspondence between BSON types and ClickHouse types:
 
@@ -1311,7 +1311,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x02` string                            | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
 | `\x03` document                          | [Map](/docs/en/sql-reference/data-types/map.md)/[Named Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                                   |
 | `\x04` array                             | [Array](/docs/en/sql-reference/data-types/array.md)/[Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                                     |
-| `\x05` binary, `\x00` binary subtype     | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)/[IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                             |
+| `\x05` binary, `\x00` binary subtype     | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)/[IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                             |
 | `\x05` binary, `\x02` old binary subtype | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
 | `\x05` binary, `\x03` old uuid subtype   | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
 | `\x05` binary, `\x04` uuid subtype       | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
@@ -1321,7 +1321,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x0A` null value                        | [NULL](/docs/en/sql-reference/data-types/nullable.md)                                                                                                                                                                                       |
 | `\x0D` JavaScript code                   | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
 | `\x0E` symbol                            | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)/[IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)/[Enum8/Enum16](/docs/en/sql-reference/data-types/enum.md) |
+| `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)/[IPv4](/docs/en/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/docs/en/sql-reference/data-types/enum.md) |
 | `\x12` int64                             | [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal64](/docs/en/sql-reference/data-types/decimal.md)/[DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                       |
 
 Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8).
@@ -1671,8 +1671,8 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `ENUM`                                               | [Enum(8/16)](/docs/en/sql-reference/data-types/enum.md)                                                                                                                        | `ENUM`                                               |
 | `LIST`                                               | [Array](/docs/en/sql-reference/data-types/array.md)                                                                                                                            | `LIST`                                               |
 | `STRUCT`                                             | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                            | `STRUCT`                                             |
-| `UINT32`                                             | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                                                                                      | `UINT32`                                             |
-| `DATA`                                               | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                                                                                      | `DATA`                                               |
+| `UINT32`                                             | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                                                                              | `UINT32`                                             |
+| `DATA`                                               | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                                                                              | `DATA`                                               |
 | `DATA`                                               | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                                                                                 | `DATA`                                               |
 | `DATA`                                               | [Decimal128/Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                                                                                          | `DATA`                                               |
 | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/docs/en/sql-reference/data-types/map.md)                                                                                                                                | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
@@ -1874,8 +1874,8 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `long (timestamp-millis)` \**               | [DateTime64(3)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \** |
 | `long (timestamp-micros)` \**               | [DateTime64(6)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \** |
 | `bytes (decimal)`  \**                      | [DateTime64(N)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**        |
-| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                                     | `int`                         |
-| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                                     | `fixed(16)`                   |
+| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                             | `int`                         |
+| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                   |
 | `bytes (decimal)` \**                       | [Decimal(P, S)](/docs/en/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**         |
 | `string (uuid)` \**                         | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**           |
 | `fixed(16)`                                 | [Int128/UInt128](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                   |
@@ -2028,9 +2028,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `LIST`                                        | [Array](/docs/en/sql-reference/data-types/array.md)                                                        | `LIST`                        |
 | `STRUCT`                                      | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                        | `STRUCT`                      |
 | `MAP`                                         | [Map](/docs/en/sql-reference/data-types/map.md)                                                            | `MAP`                         |
-| `UINT32`                                      | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                  | `UINT32`                      |
-| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                  | `FIXED_LENGTH_BYTE_ARRAY`     |
-| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                     | `FIXED_LENGTH_BYTE_ARRAY`     |
+| `UINT32`                                      | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                      |
+| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                          | `FIXED_LENGTH_BYTE_ARRAY`     |
+| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                             | `FIXED_LENGTH_BYTE_ARRAY`     |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
@@ -2231,9 +2231,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `LIST`                                  | [Array](/docs/en/sql-reference/data-types/array.md)                                                        | `LIST`                     |
 | `STRUCT`                                | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                        | `STRUCT`                   |
 | `MAP`                                   | [Map](/docs/en/sql-reference/data-types/map.md)                                                            | `MAP`                      |
-| `UINT32`                                | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                  | `UINT32`                   |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                  | `FIXED_SIZE_BINARY`        |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                     | `FIXED_SIZE_BINARY`        |
+| `UINT32`                                | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                          | `FIXED_SIZE_BINARY`        |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                             | `FIXED_SIZE_BINARY`        |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
@@ -2299,7 +2299,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `Struct`                              | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
 | `Map`                                 | [Map](/docs/en/sql-reference/data-types/map.md)                                                                   | `Map`                    |
 | `Int`                                 | [IPv4](/docs/en/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                         | `Binary`                 |
+| `Binary`                              | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
 | `Binary`                              | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
 | `Binary`                              | [Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
 
@@ -2512,7 +2512,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 | `uint 64`                                                          | [DateTime64](/docs/en/sql-reference/data-types/datetime.md)                                             | `uint 64`                        |
 | `fixarray`, `array 16`, `array 32`                                 | [Array](/docs/en/sql-reference/data-types/array.md)/[Tuple](/docs/en/sql-reference/data-types/tuple.md) | `fixarray`, `array 16`, `array 32` |
 | `fixmap`, `map 16`, `map 32`                                       | [Map](/docs/en/sql-reference/data-types/map.md)                                                         | `fixmap`, `map 16`, `map 32`     |
-| `uint 32`                                                          | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                               | `uint 32`                        |
+| `uint 32`                                                          | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                       | `uint 32`                        |
 | `bin 8`                                                            | [String](/docs/en/sql-reference/data-types/string.md)                                                   | `bin 8`                          |
 | `int 8`                                                            | [Enum8](/docs/en/sql-reference/data-types/enum.md)                                                      | `int 8`                          |
 | `bin 8`                                                            | [(U)Int128/(U)Int256](/docs/en/sql-reference/data-types/int-uint.md)                                    | `bin 8`                          |
