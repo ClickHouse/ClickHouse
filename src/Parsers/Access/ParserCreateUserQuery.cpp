@@ -363,6 +363,19 @@ namespace
             return true;
         });
     }
+
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"VALID UNTIL"}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution until_p;
+
+            return until_p.parse(pos, valid_until, expected);
+        });
+    }
 }
 
 
@@ -413,6 +426,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
+    ASTPtr valid_until;
     String cluster;
 
     while (true)
@@ -425,6 +439,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 auth_data = std::move(new_auth_data);
                 continue;
             }
+        }
+
+        if (!valid_until)
+        {
+            parseValidUntil(pos, expected, valid_until);
         }
 
         AllowedClientHosts new_hosts;
@@ -514,9 +533,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
+    query->valid_until = std::move(valid_until);
 
     if (query->auth_data)
         query->children.push_back(query->auth_data);
+
+    if (query->valid_until)
+        query->children.push_back(query->valid_until);
 
     return true;
 }
