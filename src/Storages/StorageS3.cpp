@@ -29,7 +29,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>

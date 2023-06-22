@@ -30,7 +30,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
