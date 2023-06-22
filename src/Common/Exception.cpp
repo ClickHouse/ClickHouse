@@ -401,17 +401,17 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (...) {}
 
-#ifdef ABORT_ON_LOGICAL_ERROR
-        try
-        {
-            throw;
-        }
-        catch (const std::logic_error &)
-        {
-            abortOnFailedAssertion(stream.str());
-        }
-        catch (...) {}
-#endif
+// #ifdef ABORT_ON_LOGICAL_ERROR
+//         try
+//         {
+//             throw;
+//         }
+//         catch (const std::logic_error &)
+//         {
+//             abortOnFailedAssertion(stream.str());
+//         }
+//         catch (...) {}
+// #endif
     }
     catch (...)
     {
