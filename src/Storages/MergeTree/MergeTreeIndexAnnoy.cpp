@@ -125,7 +125,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndR
 {
     /// Seed random generator used for building the trees in Annoy. All other parameters being equal (granularity trees, search_k), this
     /// theoretically makes search results deterministic as well. In practice, it is hard to achieve that on SQL level because the index
-    /// structure is also affected by implicit things like the row order or how the column data is splitted into parts.
+    /// structure is also affected by implicit things like the row order or how the column data is split into parts.
     index->set_seed(42);
 
     // NOLINTNEXTLINE(*)
