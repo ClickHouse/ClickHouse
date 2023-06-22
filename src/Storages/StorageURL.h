@@ -241,6 +241,7 @@ public:
 
 private:
     void finalize();
+    void release();
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;
