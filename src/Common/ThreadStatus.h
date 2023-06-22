@@ -92,7 +92,7 @@ public:
     SharedData getSharedData()
     {
         /// Critical section for making the copy of shared_data
-        std::lock_guard lock(mutex);
+        // std::lock_guard lock(mutex);
         return shared_data;
     }
 
