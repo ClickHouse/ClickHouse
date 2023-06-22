@@ -944,9 +944,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         LOG_TEST(
             log,
-            "Read {} bytes, read type {}, file offset: {}, impl offset: {}/{}, segment: {}",
+            "Read {} bytes, read type {}, file offset: {}, impl offset: {}/{}, impl position: {}, segment: {}",
             size, toString(read_type), file_offset_of_buffer_end,
-            implementation_buffer->getFileOffsetOfBufferEnd(), read_until_position, file_segment.range().toString());
+            implementation_buffer->getFileOffsetOfBufferEnd(), read_until_position,
+            implementation_buffer->getPosition(), file_segment.range().toString());
 
         if (read_type == ReadType::CACHED)
         {
@@ -955,20 +956,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
             const size_t new_file_offset = file_offset_of_buffer_end + size;
             const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
-            if (new_file_offset > file_segment.range().right + 1)
+            if (new_file_offset > file_segment.range().right + 1 || new_file_offset > file_segment_write_offset)
             {
                 auto file_segment_path = file_segment.getPathInLocalCache();
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Read unexpected size. File size: {}, file path: {}, file segment info: {}",
                     fs::file_size(file_segment_path), file_segment_path, file_segment.getInfoForLog());
-            }
-            if (new_file_offset > file_segment_write_offset)
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Read unexpected size. Read {} bytes, file offset: {}, segment: {}, segment write offset: {}",
-                    size, file_offset_of_buffer_end, file_segment.range().toString(), file_segment_write_offset);
             }
         }
         else
