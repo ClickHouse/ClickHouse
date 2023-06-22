@@ -233,6 +233,7 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
             convertToFullIfSparse(chunk);
+            convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
                 buffered_chunk = std::move(chunk);
@@ -279,7 +280,8 @@ void QueryCache::Writer::finalizeWrite()
 
         for (auto & chunk : query_result->chunks)
         {
-            convertToFullIfNeeded(chunk);
+            convertToFullIfSparse(chunk);
+            convertToFullIfConst(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
