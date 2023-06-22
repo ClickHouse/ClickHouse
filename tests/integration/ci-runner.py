@@ -581,11 +581,22 @@ class ClickhouseIntegrationTestsRunner:
         return res
 
     def try_run_test_group(
-        self, repo_path, test_group, tests_in_group, num_tries, num_workers, broken_tests
+        self,
+        repo_path,
+        test_group,
+        tests_in_group,
+        num_tries,
+        num_workers,
+        broken_tests,
     ):
         try:
             return self.run_test_group(
-                repo_path, test_group, tests_in_group, num_tries, num_workers, broken_tests
+                repo_path,
+                test_group,
+                tests_in_group,
+                num_tries,
+                num_workers,
+                broken_tests,
             )
         except Exception as e:
             logging.info("Failed to run {}:\n{}".format(str(test_group), str(e)))
@@ -603,7 +614,13 @@ class ClickhouseIntegrationTestsRunner:
             return counters, tests_times, []
 
     def run_test_group(
-        self, repo_path, test_group, tests_in_group, num_tries, num_workers, broken_tests
+        self,
+        repo_path,
+        test_group,
+        tests_in_group,
+        num_tries,
+        num_workers,
+        broken_tests,
     ):
         counters = {
             "ERROR": [],
