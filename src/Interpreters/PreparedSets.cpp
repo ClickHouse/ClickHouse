@@ -230,12 +230,11 @@ FutureSetPtr PreparedSets::addFromTuple(const Hash & key, Block block, const Set
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];
 
-    auto types = from_tuple->getTypes();
     for (const auto & set : sets_by_hash)
         if (equals(set->getTypes(), set_types))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, from_tuple->getTypes()));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, set_types));
 
-    sets_by_hash.push_back(std::move(from_tuple));
+    sets_by_hash.push_back(from_tuple);
     return from_tuple;
 }
 
