@@ -68,44 +68,35 @@ void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, cons
 
 void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const
 {
-    for (const auto & it : rhs.files)
-    {
-        const String & name = it.first;
-
+    for (const auto & [name, _] : rhs.files)
         if (!files.contains(name))
             throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Unexpected file {} in data part", name);
-    }
 
-    for (const auto & it : files)
+    for (const auto & [name, checksum] : files)
     {
-        const String & name = it.first;
-
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
         if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
             continue;
 
-        auto jt = rhs.files.find(name);
-        if (jt == rhs.files.end())
+        auto it = rhs.files.find(name);
+        if (it == rhs.files.end())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
 
-        it.second.checkEqual(jt->second, have_uncompressed, name);
+        checksum.checkEqual(it->second, have_uncompressed, name);
     }
 }
 
 void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
 {
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        it.second.checkSize(storage, name);
-    }
+    for (const auto & [name, checksum] : files)
+        checksum.checkSize(storage, name);
 }
 
 UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
 {
     UInt64 res = 0;
-    for (const auto & it : files)
-        res += it.second.file_size;
+    for (const auto & [_, checksum] : files)
+        res += checksum.file_size;
     return res;
 }
 
@@ -219,11 +210,8 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 
     writeVarUInt(files.size(), out);
 
-    for (const auto & it : files)
+    for (const auto & [name, sum] : files)
     {
-        const String & name = it.first;
-        const Checksum & sum = it.second;
-
         writeBinary(name, out);
         writeVarUInt(sum.file_size, out);
         writePODBinary(sum.file_hash, out);
@@ -256,11 +244,8 @@ void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums
 void MergeTreeDataPartChecksums::computeTotalChecksumDataOnly(SipHash & hash) const
 {
     /// We use fact that iteration is in deterministic (lexicographical) order.
-    for (const auto & it : files)
+    for (const auto & [name, sum] : files)
     {
-        const String & name = it.first;
-        const Checksum & sum = it.second;
-
         if (!endsWith(name, ".bin"))
             continue;
 

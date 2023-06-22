@@ -1,5 +1,4 @@
 #include "IMergeTreeDataPart.h"
-#include "Common/SipHash.h"
 #include "Storages/MergeTree/IDataPartStorage.h"
 
 #include <optional>
