@@ -101,7 +101,9 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
-    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    /// FIXME: Forbid this query using new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
+    /// We should remove this restriction after resolving this bug.
+    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res) SETTINGS allow_experimental_analyzer=0";
     return query;
 }
 

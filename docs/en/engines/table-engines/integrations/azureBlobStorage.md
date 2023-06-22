@@ -48,4 +48,4 @@ SELECT * FROM test_table;
 
 ## See also
 
-[Azure Blob Storage Table Function](/docs/en/sql-reference/table-functions/azureBlobStorage.md)
+[Azure Blob Storage Table Function](/docs/en/sql-reference/table-functions/azureBlobStorage)

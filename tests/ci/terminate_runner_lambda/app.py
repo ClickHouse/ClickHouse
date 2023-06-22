@@ -31,6 +31,8 @@ def get_cached_instances() -> dict:
     # used. The first setting and close-to-ttl are not counted as update
     if cached_instances.time != 0 or time.time() - 300 < cached_instances.time:
         cached_instances.updating = True
+    else:
+        cached_instances.updating = False
     ec2_client = boto3.client("ec2")
     instances_response = ec2_client.describe_instances(
         Filters=[{"Name": "instance-state-name", "Values": ["running"]}]
