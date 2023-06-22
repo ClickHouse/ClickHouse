@@ -59,6 +59,7 @@ void registerStorageMySQL(StorageFactory & factory);
 #endif
 
 void registerStorageMongoDB(StorageFactory & factory);
+void registerStorageRedis(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -160,6 +161,7 @@ void registerStorages()
     #endif
 
     registerStorageMongoDB(factory);
+    registerStorageRedis(factory);
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);
