@@ -1,0 +1,8 @@
+#pragma once
+
+/* Define as 1 if we use unsigned int __atribute__ ((__mode__(TI))) for uint128 values */
+#cmakedefine01 MMDB_UINT128_USING_MODE
+
+/* Define as 1 if we don't have an unsigned __int128 type */
+#cmakedefine01 MMDB_UINT128_IS_BYTE_ARRAY
+

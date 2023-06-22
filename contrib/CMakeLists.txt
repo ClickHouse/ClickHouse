@@ -95,6 +95,8 @@ add_contrib (msgpack-c-cmake msgpack-c)
 
 add_contrib (corrosion-cmake corrosion)
 
+add_contrib (libmaxminddb-cmake libmaxminddb)
+
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()

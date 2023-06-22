@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 2531 
 AArch
 ACLs
 ALTERs
@@ -478,6 +478,7 @@ MaterializedPostgreSQL
 MaterializedView
 MaxDDLEntryID
 MaxMind
+MaxMindDB
 MaxPartCountForPartition
 MaxPushedDDLEntryID
 Mbps
@@ -1471,6 +1472,7 @@ geohashDecode
 geohashEncode
 geohashesInBox
 geoip
+geolocation
 geospatial
 getMacro
 getOSKernelVersion
@@ -1699,6 +1701,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -1738,6 +1741,7 @@ maxintersections
 maxintersectionsposition
 maxmap
 maxmind
+maxminddb
 mdadm
 meanZTest
 meanztest
@@ -1762,6 +1766,7 @@ misconfiguration
 mispredictions
 mmap
 mmapped
+mmdb
 moduloOrZero
 mongodb
 monthName

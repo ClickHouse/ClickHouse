@@ -14,3 +14,8 @@ if (TARGET ch_contrib::hdfs)
     clickhouse_add_executable (async_read_buffer_from_hdfs async_read_buffer_from_hdfs.cpp)
     target_link_libraries (async_read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
 endif ()
+
+if (TARGET ch_contrib::maxminddb)
+    clickhouse_add_executable (lookup_maxminddb lookup_maxminddb.cpp)
+    target_link_libraries (lookup_maxminddb PRIVATE dbms ch_contrib::maxminddb)
+endif ()
