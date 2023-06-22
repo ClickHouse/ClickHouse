@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
 
@@ -117,7 +116,14 @@ void registerInputFormatCapnProto(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
     factory.registerAdditionalInfoForSchemaCacheGetter(
-        "CapnProto", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
+        "CapnProto",
+        [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "format_schema={}, skip_fields_with_unsupported_types_in_schema_inference={}",
+                settings.schema.format_schema,
+                settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
+        });
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

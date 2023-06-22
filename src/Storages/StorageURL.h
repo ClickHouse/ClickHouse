@@ -19,6 +19,7 @@ namespace DB
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
 class PullingPipelineExecutor;
@@ -41,7 +42,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -183,7 +184,7 @@ public:
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
-    static std::tuple<Poco::URI, SeekableReadBufferFactoryPtr> getFirstAvailableURIAndReadBuffer(
+    static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
@@ -197,7 +198,7 @@ public:
         bool delay_initialization);
 
 private:
-    using InitializeFunc = std::function<void(const FailoverOptions &)>;
+    using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
     String name;
@@ -205,6 +206,8 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
 
+    std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 

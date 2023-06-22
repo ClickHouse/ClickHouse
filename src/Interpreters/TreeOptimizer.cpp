@@ -25,7 +25,7 @@
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
-#include <Interpreters/OptimizeDateFilterVisitor.h>
+#include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -678,18 +678,18 @@ void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
-void optimizeDateFilters(ASTSelectQuery * select_query)
+void optimizeDateFilters(ASTSelectQuery * select_query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, ContextPtr context)
 {
     /// Predicates in HAVING clause has been moved to WHERE clause.
     if (select_query->where())
     {
-        OptimizeDateFilterInPlaceVisitor::Data data;
-        OptimizeDateFilterInPlaceVisitor(data).visit(select_query->refWhere());
+        OptimizeDateOrDateTimeConverterWithPreimageVisitor::Data data{tables_with_columns, context};
+        OptimizeDateOrDateTimeConverterWithPreimageVisitor(data).visit(select_query->refWhere());
     }
     if (select_query->prewhere())
     {
-        OptimizeDateFilterInPlaceVisitor::Data data;
-        OptimizeDateFilterInPlaceVisitor(data).visit(select_query->refPrewhere());
+        OptimizeDateOrDateTimeConverterWithPreimageVisitor::Data data{tables_with_columns, context};
+        OptimizeDateOrDateTimeConverterWithPreimageVisitor(data).visit(select_query->refPrewhere());
     }
 }
 
@@ -796,8 +796,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
                 tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
-    /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, toISOWeek, etc.
-    optimizeDateFilters(select_query);
+    /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
+    optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);

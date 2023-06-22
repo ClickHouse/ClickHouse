@@ -348,6 +348,9 @@ The server successfully detected this situation and will download merged part fr
     M(S3PutObject, "Number of S3 API PutObject calls.") \
     M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
+    M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
+    \
     M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
@@ -378,8 +381,26 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
+    M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time") \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
+    \
+    M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
+    M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
+    M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \
+    M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
+    M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time") \
+    M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time") \
+    M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time") \
+    M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time") \
+    M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time") \
+    M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state") \
+    M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache") \
+    M(FileSegmentLockMicroseconds, "Lock file segment time") \
+    M(FileSegmentWriteMicroseconds, "File segment write() time") \
+    M(FileSegmentUseMicroseconds, "File segment use() time") \
+    M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
+    M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -401,7 +422,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
-    M(FileSegmentWriteMicroseconds, "Metric per file segment. Time spend writing cache") \
     M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
     M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
     M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
@@ -429,10 +449,10 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
     \
-    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCachePut, "Number of rocksdb puts (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks (used for merge tree metadata cache)") \
     M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
     M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
     \

@@ -138,11 +138,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                         socket->impl()->error(err); // Throws an exception
 
                     socket->setBlocking(true);
-
-#if USE_SSL
-                    if (static_cast<bool>(secure))
-                        static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->completeHandshake();
-#endif
                 }
                 else
                 {
@@ -190,7 +185,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
 
         sendHello();
-        receiveHello();
+        receiveHello(timeouts.handshake_timeout);
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -321,8 +316,10 @@ void Connection::sendAddendum()
 }
 
 
-void Connection::receiveHello()
+void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
+
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -375,6 +372,10 @@ void Connection::receiveHello()
         receiveException()->rethrow();
     else
     {
+        /// Reset timeout_setter before disconnect,
+        /// because after disconnect socket will be invalid.
+        timeout_setter.reset();
+
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
@@ -587,7 +588,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else

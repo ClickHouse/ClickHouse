@@ -21,6 +21,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
@@ -607,12 +608,30 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
+    const auto follower_preappend = [&](const auto & entry)
+    {
+        if (entry->get_val_type() != nuraft::app_log)
+            return nuraft::cb_func::ReturnCode::Ok;
+
+        try
+        {
+            state_machine->parseRequest(entry->get_buf(), /*final=*/false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to parse request from log entry");
+            throw;
+        }
+        return nuraft::cb_func::ReturnCode::Ok;
+
+    };
+
     if (initialized_flag)
     {
         switch (type)
         {
             // This event is called before a single log is appended to the entry on the leader node
-            case nuraft::cb_func::PreAppendLog:
+            case nuraft::cb_func::PreAppendLogLeader:
             {
                 // we are relying on the fact that request are being processed under a mutex
                 // and not a RW lock
@@ -655,7 +674,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
 
-                WriteBuffer write_buf(buffer_start, write_buffer_header_size);
+                WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
                 if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
@@ -665,7 +684,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
 
-                break;
+                write_buf.finalize();
+
+                return nuraft::cb_func::ReturnCode::Ok;
+            }
+            case nuraft::cb_func::PreAppendLogFollower:
+            {
+                const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+                return follower_preappend(entry);
             }
             case nuraft::cb_func::AppendLogFailed:
             {
@@ -678,13 +704,11 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf, true);
                 state_machine->rollbackRequest(*request_for_session, true);
-                break;
+                return nuraft::cb_func::ReturnCode::Ok;
             }
             default:
-                break;
+                return nuraft::cb_func::ReturnCode::Ok;
         }
-
-        return nuraft::cb_func::ReturnCode::Ok;
     }
 
     size_t last_commited = state_machine->last_commit_index();
@@ -736,6 +760,11 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 set_initialized();
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::PreAppendLogFollower:
+        {
+            const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+            return follower_preappend(entry);
         }
         default: /// ignore other events
             return nuraft::cb_func::ReturnCode::Ok;

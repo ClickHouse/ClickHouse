@@ -1,7 +1,10 @@
 #pragma once
 
+#if USE_CAPNP
+
 #include <Core/Block.h>
 #include <capnp/dynamic.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -23,3 +26,5 @@ private:
 };
 
 }
+
+#endif
