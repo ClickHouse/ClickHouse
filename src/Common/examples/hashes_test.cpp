@@ -94,7 +94,8 @@ int main(int, char **)
         {
             SipHash hash;
             hash.update(strings[i].data(), strings[i].size());
-            hash.get128(&hashes[i * 16]);
+            const auto hashed_value = getSipHash128AsArray(hash);
+            memcpy(&hashes[i * 16], hashed_value.data(), hashed_value.size());
         }
 
         watch.stop();

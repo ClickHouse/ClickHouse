@@ -635,9 +635,7 @@ UInt128 sipHash128(Polygon && polygon)
     for (auto & inner : inners)
         hash_ring(inner);
 
-    UInt128 res;
-    hash.get128(res);
-    return res;
+    return hash.get128();
 }
 
 }

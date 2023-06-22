@@ -229,10 +229,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
     }
 
-    Hash result;
-    hash_state.get128(result);
-
-    return result;
+    return getSipHash128AsLoHi(hash_state);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
