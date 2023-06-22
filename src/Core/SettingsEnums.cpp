@@ -44,35 +44,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
-IMPLEMENT_SETTING_MULTI_ENUM(QueryKind, ErrorCodes::UNKNOWN_QUERY_KIND,
-    {{"None",                   IAST::QueryKind::None},
-     {"Select",                 IAST::QueryKind::Select},
-     {"Insert",                 IAST::QueryKind::Insert},
-     {"Delete",                 IAST::QueryKind::Delete},
-     {"Create",                 IAST::QueryKind::Create},
-     {"Drop",                   IAST::QueryKind::Drop},
-     {"Undrop",                 IAST::QueryKind::Undrop},
-     {"Rename",                 IAST::QueryKind::Rename},
-     {"Optimize",               IAST::QueryKind::Optimize},
-     {"Check",                  IAST::QueryKind::Check},
-     {"Alter",                  IAST::QueryKind::Alter},
-     {"Grant",                  IAST::QueryKind::Grant},
-     {"Revoke",                 IAST::QueryKind::Revoke},
-     {"System",                 IAST::QueryKind::System},
-     {"Set",                    IAST::QueryKind::Set},
-     {"Use",                    IAST::QueryKind::Use},
-     {"Show",                   IAST::QueryKind::Show},
-     {"Exists",                 IAST::QueryKind::Exists},
-     {"Describe",               IAST::QueryKind::Describe},
-     {"Explain",                IAST::QueryKind::Explain},
-     {"Backup",                 IAST::QueryKind::Backup},
-     {"Restore",                IAST::QueryKind::Restore},
-     {"KillQuery",              IAST::QueryKind::KillQuery},
-     {"ExternalDDL",            IAST::QueryKind::ExternalDDL},
-     {"Begin",                  IAST::QueryKind::Begin},
-     {"Commit",                 IAST::QueryKind::Commit},
-     {"Rollback",               IAST::QueryKind::Rollback},
-     {"SetTransactionSnapshot", IAST::QueryKind::SetTransactionSnapshot}})
+IMPLEMENT_SETTING_MULTI_AUTO_ENUM(QueryKind, ErrorCodes::UNKNOWN_QUERY_KIND)
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
