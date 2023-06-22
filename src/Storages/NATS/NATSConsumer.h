@@ -16,7 +16,89 @@ class Logger;
 namespace DB
 {
 
-class NATSConsumer
+class INATSConsumer
+{
+public:
+    struct MessageData
+    {
+        String message;
+        String subject;
+    };
+
+    virtual void subscribe() = 0;
+    virtual void unsubscribe() = 0;
+
+    virtual size_t subjectsCount() = 0;
+
+    virtual bool isConsumerStopped() = 0;
+
+    virtual bool queueEmpty() = 0;
+    virtual size_t queueSize() = 0;
+
+    virtual String getSubject() const = 0;
+
+    /// Return read buffer containing next available message
+    /// or nullptr if there are no messages to process.
+    virtual ReadBufferPtr consume() = 0;
+
+    virtual ~INATSConsumer() = default;
+};
+
+
+class NATSJetStreamConsumer : public INATSConsumer
+{
+public:
+    NATSJetStreamConsumer(
+        std::shared_ptr<NATSConnectionManager> connection_,
+        StorageNATS & storage_,
+        std::vector<String> & subjects_,
+        String & stream_,
+        String & consumer_,
+        Poco::Logger * log_,
+        uint32_t queue_size_,
+        const std::atomic<bool> & stopped_);
+
+    void subscribe() override;
+    void unsubscribe() override;
+
+    size_t subjectsCount() override { return subjects.size(); }
+
+    bool isConsumerStopped() override { return stopped; }
+
+    bool queueEmpty() override { return received.empty(); }
+    size_t queueSize() override { return received.size(); }
+
+    String getSubject() const override { return current.subject; }
+
+    /// Return read buffer containing next available message
+    /// or nullptr if there are no messages to process.
+    ReadBufferPtr consume() override;
+
+private:
+    static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
+
+    std::shared_ptr<NATSConnectionManager> connection;
+    StorageNATS & storage;
+    std::vector<SubscriptionPtr> subscriptions;
+    std::vector<String> subjects;
+
+    String stream;
+    String consumer;
+
+    Poco::Logger * log;
+    const std::atomic<bool> & stopped;
+
+    bool subscribed = false;
+
+    String channel_id;
+    ConcurrentBoundedQueue<MessageData> received;
+    MessageData current;
+
+    std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> js;
+};
+
+
+class NATSConsumer : public INATSConsumer
 {
 public:
     NATSConsumer(
@@ -28,27 +110,21 @@ public:
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
 
-    struct MessageData
-    {
-        String message;
-        String subject;
-    };
+    void subscribe() override;
+    void unsubscribe() override;
 
-    void subscribe();
-    void unsubscribe();
+    size_t subjectsCount() override { return subjects.size(); }
 
-    size_t subjectsCount() { return subjects.size(); }
+    bool isConsumerStopped() override { return stopped; }
 
-    bool isConsumerStopped() { return stopped; }
+    bool queueEmpty() override { return received.empty(); }
+    size_t queueSize() override { return received.size(); }
 
-    bool queueEmpty() { return received.empty(); }
-    size_t queueSize() { return received.size(); }
-
-    auto getSubject() const { return current.subject; }
+    String getSubject() const override { return current.subject; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
-    ReadBufferPtr consume();
+    ReadBufferPtr consume() override;
 
 private:
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);

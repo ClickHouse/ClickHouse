@@ -16,6 +16,10 @@ class ASTStorage;
     M(UInt64, nats_num_consumers, 1, "The number of consumer channels per table.", 0) \
     M(String, nats_queue_group, "", "Name for queue group of NATS subscribers.", 0) \
     M(Bool, nats_secure, false, "Use SSL connection", 0) \
+    M(Bool, nats_js, false, "Use NATS JetStream.", 0) \
+    M(String, nats_js_policy, "new", "Policy for initial connection to stream. Available values: 'new', 'all', 'last'", 0) \
+    M(String, nats_js_stream, false, "A stream for NATS Jetsream", 0) \
+    M(String, nats_js_consumer, false, "Name of a durable consumer for NATS JetStream", 0) \
     M(UInt64, nats_max_reconnect, 5, "Maximum amount of reconnection attempts.", 0) \
     M(UInt64, nats_reconnect_wait, 2000, "Amount of time in milliseconds to sleep between each reconnect attempt.", 0) \
     M(String, nats_server_list, "", "Server list for connection", 0) \

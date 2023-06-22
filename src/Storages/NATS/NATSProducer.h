@@ -52,4 +52,44 @@ private:
     ConcurrentBoundedQueue<String> payloads;
 };
 
+
+class NATSJetStreamProducer : public AsynchronousMessageProducer
+{
+public:
+    NATSJetStreamProducer(
+        const NATSConfiguration & configuration_,
+        const String & subject_,
+        std::atomic<bool> & shutdown_called_,
+        Poco::Logger * log_);
+
+    void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
+
+private:
+    String getProducingTaskName() const override { return "NatsProducingTask"; }
+
+    void initialize() override;
+    void stopProducingTask() override;
+    void finishImpl() override;
+
+    void startProducingTaskLoop() override;
+
+    void iterateEventLoop();
+    void publish();
+
+    static void publishThreadFunc(void * arg);
+
+    NATSConnectionManager connection;
+    const String subject;
+
+    /* false: when shutdown is called
+     * true: in all other cases
+     */
+    std::atomic<bool> & shutdown_called;
+
+    /* payloads.queue:
+     *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once
+     */
+    ConcurrentBoundedQueue<String> payloads;
+};
+
 }
