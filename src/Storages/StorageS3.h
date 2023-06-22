@@ -56,7 +56,6 @@ public:
     public:
         virtual ~IIterator() = default;
         virtual KeyWithInfo next() = 0;
-        virtual size_t getTotalSize() const = 0;
 
         KeyWithInfo operator ()() { return next(); }
     };
@@ -71,10 +70,10 @@ public:
             const Block & virtual_header,
             ContextPtr context,
             KeysWithInfo * read_keys_ = nullptr,
-            const S3Settings::RequestSettings & request_settings_ = {});
+            const S3Settings::RequestSettings & request_settings_ = {},
+            std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfo next() override;
-        size_t getTotalSize() const override;
 
     private:
         class Impl;
@@ -94,11 +93,10 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
-            bool need_total_size = true,
-            KeysWithInfo * read_keys = nullptr);
+            KeysWithInfo * read_keys = nullptr,
+            std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfo next() override;
-        size_t getTotalSize() const override;
 
     private:
         class Impl;
@@ -112,8 +110,6 @@ public:
         explicit ReadTaskIterator(const ReadTaskCallback & callback_) : callback(callback_) {}
 
         KeyWithInfo next() override { return {callback(), {}}; }
-
-        size_t getTotalSize() const override { return 0; }
 
     private:
         ReadTaskCallback callback;
@@ -163,12 +159,10 @@ private:
         ReaderHolder(
             String path_,
             std::unique_ptr<ReadBuffer> read_buf_,
-            std::shared_ptr<IInputFormat> input_format_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
             : path(std::move(path_))
             , read_buf(std::move(read_buf_))
-            , input_format(input_format_)
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -189,15 +183,10 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
-            input_format = std::move(other.input_format);
             read_buf = std::move(other.read_buf);
             path = std::move(other.path);
             return *this;
         }
-
-        const std::unique_ptr<ReadBuffer> & getReadBuffer() const { return read_buf; }
-
-        const std::shared_ptr<IInputFormat> & getFormat() const { return input_format; }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
@@ -207,7 +196,6 @@ private:
     private:
         String path;
         std::unique_ptr<ReadBuffer> read_buf;
-        std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
@@ -223,11 +211,6 @@ private:
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
-
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
-    size_t total_objects_size = 0;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();
@@ -352,8 +335,8 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
-        bool need_total_size = true,
-        KeysWithInfo * read_keys = nullptr);
+        KeysWithInfo * read_keys = nullptr,
+        std::function<void(FileProgress)> progress_callback = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const Configuration & configuration,

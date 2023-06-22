@@ -195,7 +195,8 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization);
+        bool delay_initialization,
+        std::function<void(FileProgress)> file_progress_callback = {});
 
 private:
     using InitializeFunc = std::function<bool()>;
@@ -212,11 +213,6 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    size_t total_size = 0;
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
 };
 
 class StorageURLSink : public SinkToStorage

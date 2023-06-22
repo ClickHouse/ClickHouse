@@ -259,8 +259,13 @@ public:
     {
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
         uris = getPathsList(path_from_uri, uri_without_path, context_);
+        auto file_progress_callback = context_->getFileProgressCallback();
         for (auto & elem : uris)
+        {
             elem.path = uri_without_path + elem.path;
+            if (file_progress_callback && elem.info)
+                file_progress_callback(FileProgress(0, elem.info->size));
+        }
         uris_iter = uris.begin();
     }
 
@@ -281,37 +286,40 @@ private:
     std::vector<StorageHDFS::PathWithInfo>::iterator uris_iter;
 };
 
-class HDFSSource::URISIterator::Impl
+class HDFSSource::URISIterator::Impl : WithContext
 {
 public:
-    explicit Impl(const std::vector<String> & uris_, ContextPtr context)
+    explicit Impl(const std::vector<String> & uris_, ContextPtr context_)
+        : WithContext(context_), uris(uris_), file_progress_callback(context_->getFileProgressCallback())
     {
-        auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
-        HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        auto fs = createHDFSFS(builder.get());
-        for (const auto & uri : uris_)
-        {
-            path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-            if (!hdfsExists(fs.get(), path_and_uri.first.c_str()))
-                uris.push_back(uri);
-        }
-        uris_iter = uris.begin();
     }
 
     StorageHDFS::PathWithInfo next()
     {
-        std::lock_guard lock(mutex);
-        if (uris_iter == uris.end())
+        size_t current_index = index.fetch_add(1);
+        if (current_index >= uris.size())
             return {"", {}};
-        auto key = *uris_iter;
-        ++uris_iter;
-        return {key, {}};
+
+        auto uri = uris[current_index];
+        auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
+        HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", getContext()->getGlobalContext()->getConfigRef());
+        auto fs = createHDFSFS(builder.get());
+        auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
+        std::optional<StorageHDFS::PathInfo> info;
+        if (hdfs_info)
+        {
+            info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
+            if (file_progress_callback && hdfs_info)
+                file_progress_callback(FileProgress(0, hdfs_info->mSize));
+        }
+
+        return {uri, info};
     }
 
 private:
-    std::mutex mutex;
+    std::atomic_size_t index = 0;
     Strings uris;
-    Strings::iterator uris_iter;
+    std::function<void(FileProgress)> file_progress_callback;
 };
 
 HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
@@ -348,7 +356,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_), false)
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -374,13 +382,17 @@ bool HDFSSource::initialize()
             continue;
 
         current_path = path_with_info.path;
+        std::optional<size_t> file_size;
+        if (path_with_info.info)
+            file_size = path_with_info.info->size;
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
         auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
         auto impl = std::make_unique<ReadBufferFromHDFS>(
-            uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
+            uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings(), 0, false, file_size);
         if (!skip_empty_files || !impl->eof())
         {
+            impl->setProgressCallback(getContext());
             const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
             read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
             break;
@@ -389,15 +401,7 @@ bool HDFSSource::initialize()
 
     current_path = path_with_info.path;
 
-    if (path_with_info.info && path_with_info.info->size)
-    {
-        /// Adjust total_rows_approx_accumulated with new total size.
-        if (total_files_size)
-            total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_files_size + path_with_info.info->size) / total_files_size * total_rows_approx_accumulated));
-        total_files_size += path_with_info.info->size;
-    }
-
-    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -434,14 +438,7 @@ Chunk HDFSSource::generate()
         {
             Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
-
-            if (num_rows && total_files_size)
-            {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                if (!chunk_size)
-                    chunk_size = chunk.bytes();
-                updateRowsProgressApprox(*this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-            }
+            progress(num_rows, 0);
 
             for (const auto & virtual_column : requested_virtual_columns)
             {
@@ -465,7 +462,6 @@ Chunk HDFSSource::generate()
 
         reader.reset();
         pipeline.reset();
-        input_format.reset();
         read_buf.reset();
 
         if (!initialize())

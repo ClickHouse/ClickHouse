@@ -191,7 +191,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(), object.remote_path, patchSettings(read_settings), settings_ptr->max_single_read_retries,
-        settings_ptr->max_single_download_retries);
+        settings_ptr->max_single_download_retries, false, false, 0, progress_callback);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOLINT
@@ -216,7 +216,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
             /* restricted_seek */true,
-            read_until_position);
+            read_until_position,
+            progress_callback);
     };
 
     switch (read_settings.remote_fs_method)
@@ -388,6 +389,11 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std
         getAzureBlobContainerClient(config, config_prefix),
         getAzureBlobStorageSettings(config, config_prefix, context)
     );
+}
+
+void AzureObjectStorage::setProgressCallback(const ContextPtr & context)
+{
+    progress_callback = context->getFileProgressCallback();
 }
 
 }

@@ -8,6 +8,7 @@
 #include <Common/Throttler.h>
 #include <base/sleep.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -36,7 +37,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     size_t max_single_download_retries_,
     bool use_external_buffer_,
     bool restricted_seek_,
-    size_t read_until_position_)
+    size_t read_until_position_,
+    std::function<void(FileProgress)> progress_callback_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0)
     , blob_container_client(blob_container_client_)
     , path(path_)
@@ -47,6 +49,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
+    , progress_callback(progress_callback_)
 {
     if (!use_external_buffer)
     {
@@ -126,6 +129,9 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     if (bytes_read == 0)
         return false;
+
+    if (progress_callback)
+        progress_callback(FileProgress(bytes_read));
 
     BufferBase::set(data_ptr, bytes_read, 0);
     offset += bytes_read;

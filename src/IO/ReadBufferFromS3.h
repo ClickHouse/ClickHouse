@@ -77,9 +77,11 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) override;
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & custom_progress_callback) override;
 
     bool supportsReadAt() override { return true; }
+
+    void setProgressCallback(ContextPtr context) override;
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
@@ -100,6 +102,8 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
+
+    std::function<void(FileProgress)> progress_callback;
 };
 
 }
