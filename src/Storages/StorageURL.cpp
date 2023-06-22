@@ -360,6 +360,7 @@ Chunk StorageURLSource::generate()
 
         pipeline->reset();
         reader.reset();
+        input_format.reset();
     }
     return {};
 }
