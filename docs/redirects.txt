@@ -13,8 +13,8 @@ data_types/date.md sql-reference/data-types/date.md
 data_types/datetime.md sql-reference/data-types/datetime.md
 data_types/datetime64.md sql-reference/data-types/datetime64.md
 data_types/decimal.md sql-reference/data-types/decimal.md
-data_types/domains/ipv4.md sql-reference/data-types/domains/ipv4.md
-data_types/domains/ipv6.md sql-reference/data-types/domains/ipv6.md
+data_types/domains/ipv4.md sql-reference/data-types/ipv4.md
+data_types/domains/ipv6.md sql-reference/data-types/ipv6.md
 data_types/domains/overview.md sql-reference/data-types/domains/overview.md
 data_types/enum.md sql-reference/data-types/enum.md
 data_types/fixedstring.md sql-reference/data-types/fixedstring.md
@@ -162,7 +162,7 @@ interfaces/third-party/client_libraries.md interfaces/third-party/client-librari
 interfaces/third-party_client_libraries.md interfaces/third-party/client-libraries.md
 interfaces/third-party_gui.md interfaces/third-party/gui.md
 interfaces/third_party/index.md interfaces/third-party/index.md
-introduction/index.md 
+introduction/index.md
 introduction/distinctive_features.md introduction/distinctive-features.md
 introduction/features_considered_disadvantages.md introduction/distinctive-features.md
 introduction/possible_silly_questions.md faq/general.md
@@ -305,8 +305,8 @@ sql_reference/data_types/datetime.md sql-reference/data-types/datetime.md
 sql_reference/data_types/datetime64.md sql-reference/data-types/datetime64.md
 sql_reference/data_types/decimal.md sql-reference/data-types/decimal.md
 sql_reference/data_types/domains/index.md sql-reference/data-types/domains/index.md
-sql_reference/data_types/domains/ipv4.md sql-reference/data-types/domains/ipv4.md
-sql_reference/data_types/domains/ipv6.md sql-reference/data-types/domains/ipv6.md
+sql_reference/data_types/domains/ipv4.md sql-reference/data-types/ipv4.md
+sql_reference/data_types/domains/ipv6.md sql-reference/data-types/ipv6.md
 sql_reference/data_types/domains/overview.md sql-reference/data-types/domains/overview.md
 sql_reference/data_types/enum.md sql-reference/data-types/enum.md
 sql_reference/data_types/fixedstring.md sql-reference/data-types/fixedstring.md
