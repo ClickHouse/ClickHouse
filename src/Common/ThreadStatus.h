@@ -46,7 +46,6 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
-using ThreadStatusPtr = ThreadStatus *;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
