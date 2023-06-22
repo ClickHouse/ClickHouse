@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <cmath>
 
 namespace ProfileEvents
 {
@@ -126,6 +127,27 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                     .need_to_check_missing_part_in_fetch = true,
                     .part_log_writer = {}
                 };
+            }
+
+            if (storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0 &&
+                estimated_space_for_result >= storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock)
+            {
+                /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
+                /// Here we are trying to metigate the skew of merges execution because of faster/slower replicas.
+                /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
+                /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
+                /// the fast replica is not overloaded because amount of executing merges don't affect the ability to aquite locks for new merges.
+                ///
+                /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
+                /// It can sound too much, but we are trying to aquite these locks in background tasks which can be scheduled each 5 seconds or so.
+                double start_to_sleep_seconds = std::logf(storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value);
+                uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
+                auto time_to_sleep_milliseconds = std::min(10000UL, std::uniform_int_distribution<uint64_t>(1, right_border_to_sleep_ms)(rng));
+
+                LOG_INFO(log, "Mutation size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big mutation",
+                    estimated_space_for_result, storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock, time_to_sleep_milliseconds);
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
             }
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
