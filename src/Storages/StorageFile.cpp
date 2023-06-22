@@ -5,7 +5,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>

@@ -30,7 +30,6 @@
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ReadFromStorageProgress.h>
 #include <Common/parseGlobs.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>

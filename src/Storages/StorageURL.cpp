@@ -3,7 +3,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
