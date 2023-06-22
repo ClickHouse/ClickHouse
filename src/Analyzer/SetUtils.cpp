@@ -118,7 +118,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
 
 }
 
-Block makeSetForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
+Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
 {
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
@@ -134,9 +134,6 @@ Block makeSetForConstantValue(const DataTypePtr & expression_type, const Field &
 
     size_t lhs_type_depth = getCompoundTypeDepth(*expression_type);
     size_t rhs_type_depth = getCompoundTypeDepth(*value_type);
-
-    // SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-    // bool transform_null_in = settings.transform_null_in;
 
     Block result_block;
 
@@ -171,14 +168,6 @@ Block makeSetForConstantValue(const DataTypePtr & expression_type, const Field &
     }
 
     return result_block;
-
-    // auto set = std::make_shared<Set>(size_limits_for_set, true /*fill_set_elements*/, tranform_null_in);
-
-    // set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
-    // set->insertFromBlock(result_block.getColumnsWithTypeAndName());
-    // set->finishInsert();
-
-    // return set;
 }
 
 }

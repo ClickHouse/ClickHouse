@@ -1220,13 +1220,8 @@ static void buildIndexes(
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
-        // minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
-        // if (context->getSettingsRef().allow_experimental_analyzer)
         indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
-        // else
-        //     indexes->minmax_idx_condition.emplace(query_info, context, minmax_columns_names, minmax_expression_actions);
-
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
@@ -1402,31 +1397,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    // storage_snapshot->check(result.column_names_to_read);
-
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
-
-    // if (!key_condition)
-    // {
-    //     if (settings.query_plan_optimize_primary_key)
-    //     {
-    //         NameSet array_join_name_set;
-    //         if (query_info.syntax_analyzer_result)
-    //             array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
-
-    //         key_condition.emplace(query_info.filter_actions_dag,
-    //             context,
-    //             primary_key_column_names,
-    //             primary_key.expression,
-    //             array_join_name_set);
-    //     }
-    //     else
-    //     {
-    //         key_condition.emplace(query_info, context, primary_key_column_names, primary_key.expression);
-    //     }
-    // }
 
     if (!indexes)
         buildIndexes(indexes, query_info.filter_actions_dag, data, context, query_info, metadata_snapshot);

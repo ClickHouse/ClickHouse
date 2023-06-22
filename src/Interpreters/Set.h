@@ -4,6 +4,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
+#include <Interpreters/SetKeys.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
@@ -21,17 +22,6 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class Chunk;
 
-/// Prepared key columns for set which can be added to fill set elements.
-/// Used only to upgrade set from tuple.
-struct SetKeyColumns
-{
-    /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
-    ColumnRawPtrs key_columns;
-    Columns materialized_columns;
-    ColumnPtr null_map_holder;
-    ColumnUInt8::MutablePtr filter;
-};
-
 /** Data structure for implementation of IN expression.
   */
 class Set
@@ -41,13 +31,11 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_, size_t max_elements_to_fill_, bool transform_null_in_)
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
         : log(&Poco::Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_)
+        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_)
     {
     }
-
-    void fillSetElements() { fill_set_elements = true; }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -61,7 +49,7 @@ public:
     bool insertFromColumns(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
-    void initSetElements();
+    void fillSetElements();
     bool insertFromColumns(const Columns & columns, SetKeyColumns & holder);
     void appendSetElements(SetKeyColumns & holder);
 
@@ -129,7 +117,7 @@ private:
     SizeLimits limits;
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
-    bool fill_set_elements;
+    bool fill_set_elements = false;
     size_t max_elements_to_fill;
 
     /// If true, insert NULL values to set.

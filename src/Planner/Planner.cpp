@@ -933,8 +933,6 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     auto subqueries = planner_context->getPreparedSets().getSubqueries();
     std::unordered_set<const FutureSet *> useful_sets;
 
-    //PreparedSets::SubqueriesForSets subqueries_for_sets;
-
     for (const auto & actions_to_execute : result_actions_to_execute)
         collectSetsFromActionsDAG(actions_to_execute, useful_sets);
 
@@ -994,7 +992,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
 
-    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, select_query_options, std::move(fake_name_set));
+    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
     if (!filter_info.actions || !query_plan.isInitialized())
         return;
 
@@ -1225,7 +1223,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     checkStoragesSupportTransactions(planner_context);
-    collectSets(query_tree, *planner_context); //, select_query_options);
+    collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
@@ -1524,10 +1522,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     if (!select_query_options.only_analyze)
-    {
-        //addCreatingSetsStep(query_plan, planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext()), planner_context->getQueryContext());
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
-    }
 }
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const

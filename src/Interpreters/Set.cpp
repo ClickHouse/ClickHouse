@@ -167,19 +167,16 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         extractNestedColumnsAndNullMap(key_columns, null_map);
     }
 
-    if (fill_set_elements)
-    {
-        /// Create empty columns with set values in advance.
-        /// It is needed because set may be empty, so method 'insertFromBlock' will be never called.
-        initSetElements();
-    }
-
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
-void Set::initSetElements()
+void Set::fillSetElements()
 {
+    if (data.getTotalRowCount())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert set to ordered because it is not empty");
+
+    fill_set_elements = true;
     set_elements.reserve(keys_size);
     for (const auto & type : set_elements_types)
         set_elements.emplace_back(type->createColumn());

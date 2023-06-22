@@ -12,18 +12,12 @@ namespace DB
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 
-/** Make set for constant part of IN subquery.
+/** Get set elements for constant part of IN subquery.
   * Throws exception if parameters are not valid for IN function.
   *
   * Example: SELECT id FROM test_table WHERE id IN (1, 2, 3, 4);
   * Example: SELECT id FROM test_table WHERE id IN ((1, 2), (3, 4));
-  *
-  * @param expression_type - type of first argument of function IN.
-  * @param value - constant value of second argument of function IN.
-  * @param value_type - type of second argument of function IN.
-  *
-  * @return SetPtr for constant value.
   */
-Block makeSetForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in);
+Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in);
 
 }

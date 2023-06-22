@@ -26,7 +26,6 @@ public:
         ClusterProxy::SelectStreamFactory::Shards shards_,
         Block header_,
         QueryProcessingStage::Enum stage_,
-        PreparedSetsPtr prepared_sets_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
         ContextMutablePtr context_,
@@ -47,7 +46,6 @@ public:
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
-    PreparedSetsPtr prepared_sets;
     StorageID main_table;
     ASTPtr table_func_ptr;
     ContextMutablePtr context;

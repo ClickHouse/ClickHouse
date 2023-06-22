@@ -323,14 +323,8 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!future_set)
             return;
 
-        //if (!future_set->isReady())
-        future_set->buildOrderedSetInplace(context);
-
-        auto set = future_set->get();
-        if (!set)
-            return;
-
-        if (!set->hasExplicitSetElements())
+        auto set = future_set->buildOrderedSetInplace(context);
+        if (!set || !set->hasExplicitSetElements())
             return;
 
         set->checkColumnsNumber(1);

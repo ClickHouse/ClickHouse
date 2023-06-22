@@ -69,8 +69,7 @@ public:
         const Block & header_,
         const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
-        QueryProcessingStage::Enum processed_stage_,
-        PreparedSetsPtr prepared_sets_);
+        QueryProcessingStage::Enum processed_stage_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -95,7 +94,6 @@ public:
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
-    PreparedSetsPtr prepared_sets;
 };
 
 }

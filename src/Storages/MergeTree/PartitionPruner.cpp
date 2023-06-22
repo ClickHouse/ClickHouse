@@ -29,12 +29,6 @@ PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAG
     , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, {}, true /* single_point */, strict)
     , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
 {
-    // auto description = getKeyCondition().getDescription();
-    // std::cerr << ".... " << description.condition << std::endl;
-    // std::cerr << filter_actions_dag->dumpDAG() << std::endl;
-    // for (const auto & name : partition_key.column_names)
-    //     std::cerr << ". " << name << std::endl;
-    // std::cerr << partition_key.expression->dumpActions() << std::endl;
 }
 
 bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
@@ -52,8 +46,6 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
     else
     {
         const auto & partition_value = part.partition.value;
-        // for (const auto & val : partition_value)
-        //     std::cerr << val.dump() << std::endl;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -64,7 +56,6 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
 
         is_valid = partition_condition.mayBeTrueInRange(
             partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
-        // std::cerr << "may be true " << is_valid << std::endl;
         partition_filter_map.emplace(partition_id, is_valid);
 
         if (!is_valid)

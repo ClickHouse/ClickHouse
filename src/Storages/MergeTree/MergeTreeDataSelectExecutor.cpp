@@ -1839,9 +1839,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
         if (partition_pruner)
         {
-            auto val = partition_pruner->canBePruned(*part);
-            // std::cerr << "... part " << part->getNameWithState() << "  cbp ? " << val << std::endl;
-            if (val)
+            if (partition_pruner->canBePruned(*part))
                 continue;
         }
 

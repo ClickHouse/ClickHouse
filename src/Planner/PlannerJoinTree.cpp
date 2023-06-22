@@ -403,8 +403,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 
 FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
-    PlannerContextPtr & planner_context,
-    const SelectQueryOptions & select_query_options)
+    PlannerContextPtr & planner_context)
 {
     auto storage_id = storage->getStorageID();
     const auto & query_context = planner_context->getQueryContext();
@@ -413,13 +412,12 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     if (!row_policy_filter)
         return {};
 
-    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context, select_query_options);
+    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
 
 FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
-    PlannerContextPtr & planner_context,
-    const SelectQueryOptions & select_query_options)
+    PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -445,15 +443,14 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
             *storage,
             query_context);
 
-    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context, select_query_options);
+    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 /// Apply filters from additional_table_filters setting
 FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
-    PlannerContextPtr & planner_context,
-    const SelectQueryOptions & select_query_options)
+    PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -487,7 +484,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
         return {};
 
     table_expression_query_info.additional_filter_ast = additional_filter_ast;
-    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context, select_query_options);
+    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
@@ -697,14 +694,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 };
 
-                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, select_query_options);
+                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                 add_filter(row_policy_filter_info, "Row-level security filter");
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
                 {
                     if (settings.parallel_replicas_count > 1)
                     {
-                        auto parallel_replicas_custom_key_filter_info = buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context, select_query_options);
+                        auto parallel_replicas_custom_key_filter_info = buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                         add_filter(parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
                     }
                     else
@@ -719,7 +716,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 const auto & table_expression_alias = table_expression->getAlias();
-                auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context, select_query_options);
+                auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
 
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);

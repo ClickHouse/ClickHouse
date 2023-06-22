@@ -18,7 +18,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
-    PreparedSetsPtr prepared_sets,
     size_t shard_num,
     size_t shard_count,
     size_t replica_num,

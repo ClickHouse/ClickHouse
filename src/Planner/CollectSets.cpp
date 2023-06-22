@@ -30,9 +30,8 @@ namespace
 class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
 {
 public:
-    explicit CollectSetsVisitor(PlannerContext & planner_context_) //, const SelectQueryOptions & select_query_options_)
+    explicit CollectSetsVisitor(PlannerContext & planner_context_)
         : planner_context(planner_context_)
-        //, select_query_options(select_query_options_)
     {}
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -60,7 +59,7 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
-            auto set = makeSetForConstantValue(
+            auto set = getSetElementsForConstantValue(
                 in_first_argument->getResultType(),
                 constant_node->getValue(),
                 constant_node->getResultType(),
@@ -72,18 +71,12 @@ public:
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings.transform_null_in);
-
-            // for (auto & element_type : set_element_types)
-            //     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            //         element_type = low_cardinality_type->getDictionaryType();
-
             auto set_key = in_second_argument->getTreeHash();
+
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
             sets.addFromTuple(set_key, std::move(set), settings);
-
-            //planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
@@ -141,14 +134,13 @@ public:
 
 private:
     PlannerContext & planner_context;
-    //const SelectQueryOptions & select_query_options;
 };
 
 }
 
-void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context) //, const SelectQueryOptions & select_query_options)
+void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
 {
-    CollectSetsVisitor visitor(planner_context); //, select_query_options);
+    CollectSetsVisitor visitor(planner_context);
     visitor.visit(node);
 }
 
