@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <string_view>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -371,19 +370,26 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     *this = Traits::fromString(SettingFieldEnumHelpers::readBinary(in));
 }
 
+template <typename Type>
+constexpr auto getEnumValues()
+{
+    std::array<std::pair<std::string_view, Type>, magic_enum::enum_count<Type>()> enum_values{};
+    size_t index = 0;
+    for (auto value : magic_enum::enum_values<Type>())
+        enum_values[index++] = std::pair{magic_enum::enum_name(value), value};
+    return enum_values;
+}
+
 /// NOLINTNEXTLINE
 #define DECLARE_SETTING_ENUM(ENUM_TYPE) \
     DECLARE_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
-
-/// NOLINTNEXTLINE
-#define IMPLEMENT_SETTING_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    IMPLEMENT_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTING_ENUM_WITH_RENAME(NEW_NAME, ENUM_TYPE) \
     struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
+        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
         static const String & toString(EnumType value); \
         static EnumType fromString(std::string_view str); \
     }; \
@@ -391,13 +397,20 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
 /// NOLINTNEXTLINE
-#define IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+#define IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, EnumValuePairs, __VA_ARGS__)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, , getEnumValues<EnumType>())
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
     const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
         static const std::unordered_map<EnumType, String> map = [] { \
             std::unordered_map<EnumType, String> res; \
-            constexpr std::pair<const char *, EnumType> pairs[] = __VA_ARGS__; \
-            for (const auto & [name, val] : pairs) \
+            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(val, name); \
             return res; \
         }(); \
@@ -413,8 +426,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     { \
         static const std::unordered_map<std::string_view, EnumType> map = [] { \
             std::unordered_map<std::string_view, EnumType> res; \
-            constexpr std::pair<const char *, EnumType> pairs[] = __VA_ARGS__; \
-            for (const auto & [name, val] : pairs) \
+            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(name, val); \
             return res; \
         }(); \
@@ -527,6 +539,7 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
+        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
         static size_t getEnumSize(); \
         static const String & toString(EnumType value); \
         static EnumType fromString(std::string_view str); \
@@ -540,9 +553,16 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
+    IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
     size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
         return std::initializer_list<std::pair<const char*, NEW_NAME>> __VA_ARGS__ .size();\
+    }
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME)\
+    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
+        return getEnumValues<EnumType>().size();\
     }
 
 /// Can keep a value of any type. Used for user-defined settings.
