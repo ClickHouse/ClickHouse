@@ -46,6 +46,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
 }
@@ -145,6 +146,19 @@ void updateTTL(
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
 
+}
+
+void MergeTreeDataWriter::TemporaryPart::cancel()
+{
+    try
+    {
+        /// An exception context is needed to proper delete write buffers without finalization
+        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
+    }
+    catch (...)
+    {
+        *this = TemporaryPart{};
+    }
 }
 
 void MergeTreeDataWriter::TemporaryPart::finalize()
