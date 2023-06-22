@@ -53,15 +53,16 @@ KeyMetadata::KeyMetadata(
     const Key & key_,
     const std::string & key_path_,
     CleanupQueue & cleanup_queue_,
+    [[maybe_unused]] Poco::Logger * log_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
     , created_base_directory(created_base_directory_)
 #ifdef ABORT_ON_LOGICAL_ERROR
-    , log(&Poco::Logger::get("LockedKey(" + key.toString() + ")"))
+    , log(&Poco::Logger::get("Key(" + key.toString() + ")"))
 #else
-    , log(&Poco::Logger::get("LockedKey"))
+    , log(log_)
 #endif
 {
     if (created_base_directory)
@@ -195,7 +196,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, is_initial_load)).first;
+                    key, getPathForKey(key), *cleanup_queue, log, is_initial_load)).first;
         }
 
         key_metadata = it->second;
