@@ -70,6 +70,7 @@ private:
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
     std::atomic<bool> created_base_directory = false;
+    Poco::Logger * log;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
@@ -171,7 +172,6 @@ struct LockedKey : private boost::noncopyable
 private:
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
-    Poco::Logger * log;
 };
 
 }
