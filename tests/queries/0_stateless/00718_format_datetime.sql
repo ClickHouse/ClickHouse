@@ -87,6 +87,11 @@ select formatDateTime(toDateTime64('2010-01-04 12:34:56.123456789', 9), '%f') SE
 select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 9, 'UTC'), '%F %T.%f');
 select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 1, 'UTC'), '%F %T.%f');
 select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 0, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('1900-01-01 00:00:00.000', 3, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('1962-12-08 18:11:29.123', 3, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('1969-12-31 23:59:59.999', 3, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('1970-01-01 00:00:00.000', 3, 'UTC'), '%F %T.%f');
+select formatDateTime(toDateTime64('1970-01-01 00:00:00.001', 3, 'UTC'), '%F %T.%f');
 select formatDateTime(toDateTime('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
 select formatDateTime(toDate32('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
 select formatDateTime(toDate('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
