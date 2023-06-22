@@ -5,6 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Check that attaching a database with a large number of tables is not too slow.
 # it is the worst way of making performance test, nevertheless it can detect significant slowdown and some other issues, that usually found by stress test
 
 db="test_01193_$RANDOM"
