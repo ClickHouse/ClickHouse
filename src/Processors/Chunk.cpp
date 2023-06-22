@@ -212,30 +212,13 @@ void convertToFullIfConst(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-void convertToFullIfLowCardinality(Chunk & chunk)
-{
-    size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = recursiveRemoveLowCardinality(column);
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
 void convertToFullIfSparse(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
-
     chunk.setColumns(std::move(columns), num_rows);
-}
-
-void convertToFullIfNeeded(Chunk & chunk)
-{
-    convertToFullIfSparse(chunk);
-    convertToFullIfConst(chunk);
-    convertToFullIfLowCardinality(chunk);
 }
 
 }
