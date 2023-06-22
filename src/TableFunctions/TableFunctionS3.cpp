@@ -306,6 +306,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 
 bool TableFunctionS3::supportsReadingSubsetOfColumns()
 {
+
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
