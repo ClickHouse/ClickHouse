@@ -23,7 +23,7 @@ def test_file_path_escaping(started_cluster):
     node.query(
         """
         CREATE TABLE test.`T.a_b,l-e!` (`~Id` UInt32)
-        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0;
+        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0, replace_long_file_name_to_hash = 0;
         """
     )
     node.query("""INSERT INTO test.`T.a_b,l-e!` VALUES (1);""")

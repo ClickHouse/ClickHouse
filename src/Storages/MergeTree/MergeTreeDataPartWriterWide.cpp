@@ -136,6 +136,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.query_write_settings);
 
         full_name_to_stream_name.emplace(full_stream_name, stream_name);
+        stream_name_to_full_name.emplace(stream_name, full_stream_name);
     };
 
     ISerialization::SubstreamPath path;
@@ -562,7 +563,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
 }
 
-void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove)
 {
     const auto & global_settings = storage.getContext()->getSettingsRef();
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
@@ -598,10 +599,19 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksum
         }
     }
 
-    for (auto & stream : column_streams)
+    for (auto & [stream_name, stream] : column_streams)
     {
-        stream.second->preFinalize();
-        stream.second->addToChecksums(checksums);
+        /// Remove checksums for old stream name if file was
+        /// renamed due to replacing the name to the hash of name.
+        const auto & full_stream_name = stream_name_to_full_name.at(stream_name);
+        if (stream_name != full_stream_name)
+        {
+            checksums_to_remove.insert(full_stream_name + stream->data_file_extension);
+            checksums_to_remove.insert(full_stream_name + stream->marks_file_extension);
+        }
+
+        stream->preFinalize();
+        stream->addToChecksums(checksums);
     }
 }
 
@@ -633,11 +643,11 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 
 }
 
-void MergeTreeDataPartWriterWide::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterWide::fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove)
 {
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
-        fillDataChecksums(checksums);
+        fillDataChecksums(checksums, checksums_to_remove);
 
     if (settings.rewrite_primary_key)
         fillPrimaryIndexChecksums(checksums);

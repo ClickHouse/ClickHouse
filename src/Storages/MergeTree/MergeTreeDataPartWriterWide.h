@@ -29,14 +29,14 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove);
     void finishDataSerialization(bool sync);
 
     /// Write data of one column.
@@ -111,8 +111,11 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
-    /// TODO:
+    /// Some long column names may be replaced to hashes.
+    /// Below are mapping from original stream name to actual
+    /// stream name (probably hash of the stream) and vice versa.
     std::unordered_map<String, String> full_name_to_stream_name;
+    std::unordered_map<String, String> stream_name_to_full_name;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
