@@ -3339,7 +3339,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   UnitTestsReleaseClang:
-    needs: [BuilderBinRelease]
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Set envs
