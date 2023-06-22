@@ -36,6 +36,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -625,7 +626,8 @@ QueryTreeNodePtr removeJoin(
     QueryTreeNodePtr replacement_table_expression)
 {
     auto * query_node = query->as<QueryNode>();
-    auto modified_query = query_node->cloneAndReplace(query_node->getJoinTree(), replacement_table_expression);
+    auto join_tree = query_node->getJoinTree();
+    auto modified_query = query_node->cloneAndReplace(join_tree, replacement_table_expression);
 
     query_node = modified_query->as<QueryNode>();
 
@@ -636,20 +638,23 @@ QueryTreeNodePtr removeJoin(
     query_node->getHaving() = {};
     query_node->getOrderBy().getNodes().clear();
 
-    auto & projection = query_node->getProjection().getNodes();
-    auto projection_columns = query_node->getProjectionColumns();
-    for (size_t i = 0; i < projection.size();)
+    if (join_tree->as<TableNode>() == nullptr && join_tree->as<TableFunctionNode>() == nullptr)
     {
-        if (hasUnknownColumn(projection[i], original_table_expression, replacement_table_expression))
+        auto & projection = query_node->getProjection().getNodes();
+        auto projection_columns = query_node->getProjectionColumns();
+        for (size_t i = 0; i < projection.size();)
         {
-            projection.erase(projection.begin() + i);
-            projection_columns.erase(projection_columns.begin() + i);
-            continue;
+            if (hasUnknownColumn(projection[i], original_table_expression, replacement_table_expression))
+            {
+                projection.erase(projection.begin() + i);
+                projection_columns.erase(projection_columns.begin() + i);
+                continue;
+            }
+            ++i;
         }
-        ++i;
-    }
 
-    query_node->resolveProjectionColumns(std::move(projection_columns));
+        query_node->resolveProjectionColumns(std::move(projection_columns));
+    }
 
     return modified_query;
 }
