@@ -415,7 +415,6 @@ Chunk HDFSSource::generate()
 
         reader.reset();
         pipeline.reset();
-        input_format.reset();
         read_buf.reset();
 
         if (!initialize())
