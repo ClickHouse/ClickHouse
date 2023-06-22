@@ -514,6 +514,14 @@ bool IAccessStorage::areCredentialsValid(
     if (credentials.getUserName() != user.getName())
         return false;
 
+    if (user.valid_until)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        if (now > user.valid_until)
+            return false;
+    }
+
     return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
 }
 
