@@ -1972,7 +1972,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
 }
 
 
-MutableDataPartStoragePtr StorageReplicatedMergeTree::executeFetchShared(
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::executeFetchShared(
     const String & source_replica,
     const String & new_part_name,
     const DiskPtr & disk,
@@ -4444,7 +4444,7 @@ bool StorageReplicatedMergeTree::fetchPart(
 }
 
 
-MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
     const String & part_name,
     const StorageMetadataPtr & metadata_snapshot,
     const String & source_replica_path,
@@ -4550,7 +4550,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
     LOG_DEBUG(log, "Fetched part {} from {}:{}", part_name, zookeeper_name, source_replica_path);
-    return part->getDataPartStoragePtr();
+    return part;
 }
 
 void StorageReplicatedMergeTree::startup()
@@ -8868,7 +8868,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 }
 
 
-MutableDataPartStoragePtr StorageReplicatedMergeTree::tryToFetchIfShared(
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::tryToFetchIfShared(
     const IMergeTreeDataPart & part,
     const DiskPtr & disk,
     const String & path)

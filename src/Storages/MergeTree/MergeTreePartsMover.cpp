@@ -233,9 +233,15 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
         disk->createDirectories(path_to_clone);
 
-        cloned_part_storage = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
 
-        if (!cloned_part_storage)
+        if (zero_copy_part)
+        {
+            /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
+            zero_copy_part->is_temp = false;    /// Do not remove it in dtor
+            cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
+        }
+        else
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, log);
