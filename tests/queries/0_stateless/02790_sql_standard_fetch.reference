@@ -1,0 +1,36 @@
+┌─id─┬─name──┬─department─┬─salary─┐
+│ 25 │ Frank │ it         │    120 │
+│ 23 │ Henry │ it         │    104 │
+│ 24 │ Irene │ it         │    104 │
+│ 33 │ Alice │ sales      │    100 │
+│ 32 │ Dave  │ sales      │     96 │
+└────┴───────┴────────────┴────────┘
+┌─id─┬─name──┬─department─┬─salary─┐
+│ 25 │ Frank │ it         │    120 │
+│ 23 │ Henry │ it         │    104 │
+│ 24 │ Irene │ it         │    104 │
+│ 33 │ Alice │ sales      │    100 │
+│ 32 │ Dave  │ sales      │     96 │
+└────┴───────┴────────────┴────────┘
+┌─id─┬─name──┬─department─┬─salary─┐
+│ 25 │ Frank │ it         │    120 │
+│ 23 │ Henry │ it         │    104 │
+│ 24 │ Irene │ it         │    104 │
+│ 33 │ Alice │ sales      │    100 │
+│ 31 │ Cindy │ sales      │     96 │
+│ 32 │ Dave  │ sales      │     96 │
+└────┴───────┴────────────┴────────┘
+┌─id─┬─name──┬─department─┬─salary─┐
+│ 33 │ Alice │ sales      │    100 │
+│ 31 │ Cindy │ sales      │     96 │
+│ 32 │ Dave  │ sales      │     96 │
+│ 22 │ Grace │ it         │     90 │
+│ 21 │ Emma  │ it         │     84 │
+└────┴───────┴────────────┴────────┘
+┌─id─┬─name──┬─department─┬─salary─┐
+│ 33 │ Alice │ sales      │    100 │
+│ 31 │ Cindy │ sales      │     96 │
+│ 32 │ Dave  │ sales      │     96 │
+│ 22 │ Grace │ it         │     90 │
+│ 21 │ Emma  │ it         │     84 │
+└────┴───────┴────────────┴────────┘
