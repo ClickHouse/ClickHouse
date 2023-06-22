@@ -514,6 +514,10 @@ if (SANITIZE STREQUAL "undefined")
     target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
 endif ()
 
+# Define Thrift version for parquet (we use 0.16.0)
+add_definitions(-DPARQUET_THRIFT_VERSION_MAJOR=0)
+add_definitions(-DPARQUET_THRIFT_VERSION_MINOR=16)
+
 # === tools
 
 set(TOOLS_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet")
