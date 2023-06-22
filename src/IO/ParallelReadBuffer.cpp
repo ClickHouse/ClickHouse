@@ -256,7 +256,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
             return false;
         };
 
-        size_t r = input.readBigAt(read_worker->segment.data(), read_worker->segment.size(), read_worker->start_offset);
+        size_t r = input.readBigAt(read_worker->segment.data(), read_worker->segment.size(), read_worker->start_offset, on_progress);
 
         if (!on_progress(r) && r < read_worker->segment.size())
             throw Exception(
