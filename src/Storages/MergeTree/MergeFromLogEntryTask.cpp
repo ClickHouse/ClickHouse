@@ -227,7 +227,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
                 /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
                 /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-                /// the fast replica is not overloaded because amount of executing merges don't affect the ability to aquite locks for new merges.
+                /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
                 ///
                 /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
                 /// It can sound too much, but we are trying to aquite these locks in background tasks which can be scheduled each 5 seconds or so.
