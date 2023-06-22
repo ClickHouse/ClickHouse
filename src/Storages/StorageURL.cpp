@@ -480,7 +480,7 @@ void StorageURLSink::onCancel()
     cancelled = true;
 }
 
-void StorageURLSink::onException()
+void StorageURLSink::onException(std::exception_ptr /* exception */)
 {
     std::lock_guard lock(cancel_mutex);
     finalize();

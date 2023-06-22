@@ -512,7 +512,7 @@ public:
         cancelled = true;
     }
 
-    void onException() override
+    void onException(std::exception_ptr /* exception */) override
     {
         std::lock_guard lock(cancel_mutex);
         finalize();
