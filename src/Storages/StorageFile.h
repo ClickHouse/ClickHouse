@@ -2,11 +2,10 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
-
+#include <Common/FileRenamer.h>
 
 #include <atomic>
 #include <shared_mutex>
-
 
 namespace DB
 {
@@ -23,6 +22,8 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
+
+        const std::string rename_after_processing;
     };
 
     /// From file descriptor
@@ -140,6 +141,11 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
+
+    // Counts the number of readers
+    std::atomic<int32_t> readers_counter = 0;
+    FileRenamer file_renamer;
+    bool was_renamed = false;
 };
 
 }
