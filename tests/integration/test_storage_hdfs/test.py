@@ -102,7 +102,9 @@ def test_storage_with_multidirectory_glob(started_cluster):
     assert (r == f"File1\t11\nFile2\t22\n") or (r == f"File2\t22\nFile1\t11\n")
 
     try:
-        node1.query("SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p4/path1,p2/path3}/postfix/data{1,2}.nonexist', TSV)")
+        node1.query(
+            "SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p4/path1,p2/path3}/postfix/data{1,2}.nonexist', TSV)"
+        )
         assert False, "Exception have to be thrown"
     except Exception as ex:
         print(ex)
