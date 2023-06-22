@@ -278,4 +278,13 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
+{
+    return fmt::format(
+        "(while reading from part {} in table {} from mark {} with max_rows_to_read = {})",
+        data_part_info_for_read->getDataPartStorage()->getFullPath(),
+        data_part_info_for_read->getTableName(),
+        from_mark, max_rows_to_read);
+}
+
 }

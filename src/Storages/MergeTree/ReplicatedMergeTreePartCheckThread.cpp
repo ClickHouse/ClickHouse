@@ -422,7 +422,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 /// Don't count the part as broken if there is not enough memory to load it.
                 /// In fact, there can be many similar situations.
                 /// But it is OK, because there is a safety guard against deleting too many parts.
-                if (isNotEnoughMemoryErrorCode(e.code()))
+                if (isRetryableException(e))
                     throw;
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
