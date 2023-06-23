@@ -885,15 +885,12 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize(
-    "name,engine,use_metadata_cache",
+    "name,engine",
     [
-        pytest.param("altering_mt", "MergeTree()", "false", id="mt"),
-        pytest.param("altering_mt", "MergeTree()", "true", id="mt_use_metadata_cache"),
-        # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
-        # SYSTEM STOP MERGES doesn't disable merges assignments
+        pytest.param("altering_mt", "MergeTree()", id="mt"),
     ],
 )
-def test_alter_move(start_cluster, name, engine, use_metadata_cache):
+def test_alter_move(start_cluster, name, engine):
     try:
         node1.query(
             """
@@ -903,9 +900,9 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy='jbods_with_external', use_metadata_cache={use_metadata_cache}
+            SETTINGS storage_policy='jbods_with_external'
         """.format(
-                name=name, engine=engine, use_metadata_cache=use_metadata_cache
+                name=name, engine=engine
             )
         )
 
