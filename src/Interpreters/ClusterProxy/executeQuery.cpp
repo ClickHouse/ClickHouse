@@ -35,7 +35,12 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info, Poco::Logger * log)
+ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
+    ContextPtr context,
+    const Settings & settings,
+    const StorageID & main_table,
+    const SelectQueryInfo * query_info,
+    Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -43,7 +48,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
     /// If "secret" (in remote_servers) is not in use,
     /// user on the shard is not the same as the user on the initiator,
     /// hence per-user limits should not be applied.
-    if (cluster.getSecret().empty())
+    if (!interserver_mode)
     {
         /// Does not matter on remote servers, because queries are sent under different user.
         new_settings.max_concurrent_queries_for_user = 0;
@@ -170,7 +175,7 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, main_table, &query_info, log);
+    auto new_context = updateSettingsForCluster(!query_info.getCluster()->getSecret().empty(), context, settings, main_table, &query_info, log);
     new_context->increaseDistributedDepth();
 
     size_t shards = query_info.getCluster()->getShardCount();
