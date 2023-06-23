@@ -355,7 +355,10 @@ def main():
         else:
             logging.info("Run failed")
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    try:
+        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    except subprocess.CalledProcessError:
+        logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
 
     s3_helper = S3Helper()
 

@@ -352,7 +352,11 @@ namespace
                 }
 
                 if (!executor->pull(chunk))
+                {
+                    if (configuration.check_exit_code)
+                        command->wait();
                     return {};
+                }
 
                 current_read_rows += chunk.getNumRows();
             }
