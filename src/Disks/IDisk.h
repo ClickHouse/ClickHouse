@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
+#include <Core/Names.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -20,6 +21,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
+#include <sys/stat.h>
 
 
 namespace fs = std::filesystem;

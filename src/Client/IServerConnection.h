@@ -38,6 +38,8 @@ struct Packet
     ParallelReadRequest request;
     ParallelReadResponse response;
 
+    std::string server_timezone;
+
     Packet() : type(Protocol::Server::Hello) {}
 };
 
