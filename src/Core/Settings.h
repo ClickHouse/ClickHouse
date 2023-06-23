@@ -316,8 +316,8 @@ class IColumn;
     M(Seconds, http_receive_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP receive timeout", 0) \
     M(UInt64, http_max_uri_size, 1048576, "Maximum URI length of HTTP request", 0) \
     M(UInt64, http_max_fields, 1000000, "Maximum number of fields in HTTP header", 0) \
-    M(UInt64, http_max_field_name_size, 1048576, "Maximum length of field name in HTTP header", 0) \
-    M(UInt64, http_max_field_value_size, 1048576, "Maximum length of field value in HTTP header", 0) \
+    M(UInt64, http_max_field_name_size, 128 * 1024, "Maximum length of field name in HTTP header", 0) \
+    M(UInt64, http_max_field_value_size, 128 * 1024, "Maximum length of field value in HTTP header", 0) \
     M(UInt64, http_max_chunk_size, 100_GiB, "Maximum value of a chunk size in HTTP chunked transfer encoding", 0) \
     M(Bool, http_skip_not_found_url_for_globs, true, "Skip url's for globs with HTTP_NOT_FOUND error", 0) \
     M(Bool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown", 0) \
