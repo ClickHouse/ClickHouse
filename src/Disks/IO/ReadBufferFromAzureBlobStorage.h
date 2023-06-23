@@ -25,8 +25,7 @@ public:
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
-        size_t read_until_position_ = 0,
-        std::function<void(FileProgress)> progress_callback_ = {});
+        size_t read_until_position_ = 0);
 
     off_t seek(off_t off, int whence) override;
 
@@ -75,8 +74,6 @@ private:
     size_t data_capacity;
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromAzureBlobStorage");
-
-    std::function<void(FileProgress)> progress_callback;
 };
 
 }

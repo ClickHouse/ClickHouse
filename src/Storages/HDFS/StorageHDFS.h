@@ -164,6 +164,7 @@ private:
     ColumnsDescription columns_description;
 
     std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;

@@ -260,8 +260,7 @@ StorageURLSource::StorageURLSource(
                 credentials,
                 headers,
                 glob_url,
-                current_uri_options.size() == 1,
-                context->getFileProgressCallback());
+                current_uri_options.size() == 1);
 
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
@@ -270,11 +269,11 @@ StorageURLSource::StorageURLSource(
         curr_uri = uri_and_buf.first;
         read_buf = std::move(uri_and_buf.second);
 
-        if (auto progress_callback = context->getFileProgressCallback())
+        if (auto file_progress_callback = context->getFileProgressCallback())
         {
             size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
             LOG_DEBUG(&Poco::Logger::get("URL"), "Send file size {}", file_size);
-            progress_callback(FileProgress(0, file_size));
+            file_progress_callback(FileProgress(0, file_size));
         }
 
         // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
@@ -320,7 +319,8 @@ Chunk StorageURLSource::generate()
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
-            progress(num_rows, 0);
+            size_t chunk_size = input_format->getApproxBytesReadForChunk();
+            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const String & path{curr_uri.getPath()};
 
@@ -343,6 +343,8 @@ Chunk StorageURLSource::generate()
 
         pipeline->reset();
         reader.reset();
+        input_format.reset();
+        read_buf.reset();
     }
     return {};
 }
@@ -358,8 +360,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     Poco::Net::HTTPBasicCredentials & credentials,
     const HTTPHeaderEntries & headers,
     bool glob_url,
-    bool delay_initialization,
-    std::function<void(FileProgress)> file_progress_callback)
+    bool delay_initialization)
 {
     String first_exception_message;
     ReadSettings read_settings = context->getReadSettings();
@@ -401,7 +402,6 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 continue;
             }
 
-            res->setProgressCallback(file_progress_callback);
             return std::make_tuple(request_uri, std::move(res));
         }
         catch (...)

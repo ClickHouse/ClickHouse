@@ -198,11 +198,7 @@ bool ReadBufferFromHDFS::nextImpl()
     auto result = impl->next();
 
     if (result)
-    {
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
-        if (progress_callback)
-            progress_callback(FileProgress(working_buffer.size()));
-    }
 
     return result;
 }
@@ -260,11 +256,6 @@ IAsynchronousReader::Result ReadBufferFromHDFS::readInto(char * data, size_t siz
 String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;
-}
-
-void ReadBufferFromHDFS::setProgressCallback(DB::ContextPtr context)
-{
-    progress_callback = context->getFileProgressCallback();
 }
 
 }

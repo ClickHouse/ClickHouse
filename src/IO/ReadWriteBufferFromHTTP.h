@@ -92,7 +92,6 @@ namespace detail
         HTTPHeaderEntries http_header_entries;
         const RemoteHostFilter * remote_host_filter = nullptr;
         std::function<void(size_t)> next_callback;
-        std::function<void(FileProgress)> progress_callback;
 
         size_t buffer_size;
         bool use_external_buffer;
@@ -177,7 +176,7 @@ namespace detail
 
         bool nextImpl() override;
 
-        size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & custom_progress_callback) override;
+        size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) override;
 
         off_t getPosition() override;
 
@@ -199,8 +198,6 @@ namespace detail
         /// NOTE: parameter on each call is not incremental -- it's all bytes count
         /// passed through the buffer
         void setNextCallback(NextCallback next_callback_);
-
-        void setProgressCallback(std::function<void(FileProgress)> progress_callback_);
 
         const std::string & getCompressionMethod() const;
 
