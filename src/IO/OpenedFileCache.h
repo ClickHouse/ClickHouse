@@ -4,14 +4,17 @@
 #include <mutex>
 
 #include <Core/Types.h>
-#include <Common/ProfileEvents.h>
 #include <IO/OpenedFile.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 
 
 namespace ProfileEvents
 {
     extern const Event OpenedFileCacheHits;
     extern const Event OpenedFileCacheMisses;
+    extern const Event OpenedFileCacheMicroseconds;
 }
 
 namespace DB
@@ -26,50 +29,65 @@ namespace DB
   */
 class OpenedFileCache
 {
-private:
-    using Key = std::pair<std::string /* path */, int /* flags */>;
+    class OpenedFileMap
+    {
+        using Key = std::pair<std::string /* path */, int /* flags */>;
 
-    using OpenedFileWeakPtr = std::weak_ptr<OpenedFile>;
-    using Files = std::map<Key, OpenedFileWeakPtr>;
+        using OpenedFileWeakPtr = std::weak_ptr<OpenedFile>;
+        using Files = std::map<Key, OpenedFileWeakPtr>;
 
-    Files files;
-    std::mutex mutex;
+        Files files;
+        std::mutex mutex;
+
+    public:
+        using OpenedFilePtr = std::shared_ptr<OpenedFile>;
+
+        OpenedFilePtr get(const std::string & path, int flags)
+        {
+            Key key(path, flags);
+
+            std::lock_guard lock(mutex);
+
+            auto [it, inserted] = files.emplace(key, OpenedFilePtr{});
+            if (!inserted)
+            {
+                if (auto res = it->second.lock())
+                {
+                    ProfileEvents::increment(ProfileEvents::OpenedFileCacheHits);
+                    return res;
+                }
+            }
+            ProfileEvents::increment(ProfileEvents::OpenedFileCacheMisses);
+
+            OpenedFilePtr res
+            {
+                new OpenedFile(path, flags),
+                [key, this](auto ptr)
+                {
+                    {
+                        std::lock_guard another_lock(mutex);
+                        files.erase(key);
+                    }
+                    delete ptr;
+                }
+            };
+
+            it->second = res;
+            return res;
+        }
+    };
+
+    static constexpr size_t buckets = 1024;
+    std::vector<OpenedFileMap> impls{buckets};
 
 public:
-    using OpenedFilePtr = std::shared_ptr<OpenedFile>;
+    using OpenedFilePtr = OpenedFileMap::OpenedFilePtr;
 
     OpenedFilePtr get(const std::string & path, int flags)
     {
-        Key key(path, flags);
-
-        std::lock_guard lock(mutex);
-
-        auto [it, inserted] = files.emplace(key, OpenedFilePtr{});
-        if (!inserted)
-        {
-            if (auto res = it->second.lock())
-            {
-                ProfileEvents::increment(ProfileEvents::OpenedFileCacheHits);
-                return res;
-            }
-        }
-        ProfileEvents::increment(ProfileEvents::OpenedFileCacheMisses);
-
-        OpenedFilePtr res
-        {
-            new OpenedFile(path, flags),
-            [key, this](auto ptr)
-            {
-                {
-                    std::lock_guard another_lock(mutex);
-                    files.erase(key);
-                }
-                delete ptr;
-            }
-        };
-
-        it->second = res;
-        return res;
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::OpenedFileCacheMicroseconds);
+        const auto bucket = sipHash64(path) % buckets;
+        return impls[bucket].get(path, flags);
     }
 
     static OpenedFileCache & instance()
@@ -80,7 +98,4 @@ public:
 };
 
 using OpenedFileCachePtr = std::shared_ptr<OpenedFileCache>;
-
 }
-
-
