@@ -44,7 +44,7 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     if (config.has(config_prefix + ".bypass_cache_threashold"))
         bypass_cache_threashold = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".bypass_cache_threashold"));
 
-    do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", true);
+    do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", false);
 
     if (config.has(config_prefix + ".boundary_alignment"))
         boundary_alignment = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".boundary_alignment"));

@@ -49,6 +49,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         const std::string & key_path_,
         CleanupQueue & cleanup_queue_,
         DownloadQueue & download_queue_,
+        Poco::Logger * log_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -76,6 +77,7 @@ private:
     CleanupQueue & cleanup_queue;
     DownloadQueue & download_queue;
     std::atomic<bool> created_base_directory = false;
+    Poco::Logger * log;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
@@ -186,7 +188,6 @@ struct LockedKey : private boost::noncopyable
 private:
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
-    Poco::Logger * log;
 };
 
 }

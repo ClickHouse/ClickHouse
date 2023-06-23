@@ -1,12 +1,12 @@
 ---
-slug: /en/sql-reference/data-types/domains/ipv4
+slug: /en/sql-reference/data-types/ipv4
 sidebar_position: 59
 sidebar_label: IPv4
 ---
 
 ## IPv4
 
-`IPv4` is a domain based on `UInt32` type and serves as a typed replacement for storing IPv4 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
+IPv4 addresses. Stored in 4 bytes as UInt32.
 
 ### Basic Usage
 
@@ -57,25 +57,6 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴───────────┘
 ```
 
-Domain values are not implicitly convertible to types other than `UInt32`.
-If you want to convert `IPv4` value to a string, you have to do that explicitly with `IPv4NumToString()` function:
+**See Also**
 
-``` sql
-SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
-```
-
-    ┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
-    │ String                            │ 183.247.232.58 │
-    └───────────────────────────────────┴────────────────┘
-
-Or cast to a `UInt32` value:
-
-``` sql
-SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
-```
-
-``` text
-┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
-│ UInt32                           │ 3086477370 │
-└──────────────────────────────────┴────────────┘
-```
+- [Functions for Working with IPv4 and IPv6 Addresses](../functions/ip-address-functions.md)
