@@ -1852,7 +1852,6 @@ observability
 odbc
 ok
 omclickhouse
-on-prem
 onstraints
 ontime
 openSSL
@@ -2133,7 +2132,6 @@ scala
 schemas
 seekable
 seektable
-self-managed
 sequenceCount
 sequenceMatch
 sequenceNextNode
