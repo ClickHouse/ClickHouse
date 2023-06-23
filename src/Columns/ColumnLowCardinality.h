@@ -166,7 +166,7 @@ public:
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(idx.getPositionsPtr());
 
@@ -175,7 +175,7 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*idx.getPositionsPtr());
         idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
@@ -340,7 +340,7 @@ private:
         explicit Dictionary(MutableColumnPtr && column_unique, bool is_shared);
         explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
-        const ColumnPtr & getColumnUniquePtr() const { return column_unique; }
+        const WrappedPtr & getColumnUniquePtr() const { return column_unique; }
         WrappedPtr & getColumnUniquePtr() { return column_unique; }
 
         const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
