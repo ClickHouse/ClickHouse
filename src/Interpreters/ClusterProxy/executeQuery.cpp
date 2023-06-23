@@ -176,11 +176,9 @@ void executeQuery(
     size_t shards = query_info.getCluster()->getShardCount();
     for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
     {
-        ASTPtr query_ast_for_shard;
-        if (query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+        ASTPtr query_ast_for_shard = query_ast->clone();
+        if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
         {
-            query_ast_for_shard = query_ast->clone();
-
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
                 sharding_key_expr->getSampleBlock().getByPosition(0).type,
@@ -191,8 +189,6 @@ void executeQuery(
             OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
             visitor.visit(query_ast_for_shard);
         }
-        else
-            query_ast_for_shard = query_ast->clone();
 
         if (shard_filter_generator)
         {
