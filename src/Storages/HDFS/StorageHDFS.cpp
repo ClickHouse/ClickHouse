@@ -291,6 +291,12 @@ public:
     explicit Impl(const std::vector<String> & uris_, ContextPtr context_)
         : WithContext(context_), uris(uris_), file_progress_callback(context_->getFileProgressCallback())
     {
+        if (!uris.empty())
+        {
+            auto path_and_uri = getPathFromUriAndUriWithoutPath(uris[0]);
+            builder = createHDFSBuilder(path_and_uri.second + "/", getContext()->getGlobalContext()->getConfigRef());
+            fs = createHDFSFS(builder.get());
+        }
     }
 
     StorageHDFS::PathWithInfo next()
@@ -301,8 +307,6 @@ public:
 
         auto uri = uris[current_index];
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-        HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", getContext()->getGlobalContext()->getConfigRef());
-        auto fs = createHDFSFS(builder.get());
         auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
         std::optional<StorageHDFS::PathInfo> info;
         if (hdfs_info)
@@ -318,6 +322,8 @@ public:
 private:
     std::atomic_size_t index = 0;
     Strings uris;
+    HDFSBuilderWrapper builder;
+    HDFSFSPtr fs;
     std::function<void(FileProgress)> file_progress_callback;
 };
 

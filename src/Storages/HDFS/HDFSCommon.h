@@ -57,7 +57,9 @@ public:
     ~HDFSBuilderWrapper() { hdfsFreeBuilder(hdfs_builder); }
 
     HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
+    HDFSBuilderWrapper & operator=(const HDFSBuilderWrapper &) = delete;
     HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
+    HDFSBuilderWrapper & operator=(HDFSBuilderWrapper &&) = default;
 
     hdfsBuilder * get() { return hdfs_builder; }
 

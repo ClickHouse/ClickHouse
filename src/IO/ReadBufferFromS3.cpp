@@ -13,7 +13,6 @@
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Interpreters/Context.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -163,6 +162,7 @@ bool ReadBufferFromS3::nextImpl()
     offset += working_buffer.size();
     if (read_settings.remote_throttler)
         read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
     return true;
 }
 
