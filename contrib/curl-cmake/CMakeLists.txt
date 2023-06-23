@@ -166,6 +166,13 @@ target_compile_definitions (_curl PRIVATE
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
+
+if (OS_DARWIN)
+    # don't add this and you'll get the most weird compile errors
+    target_compile_definitions(_curl PRIVATE USE_ARES)
+    target_link_libraries (_curl PRIVATE ch_contrib::c-ares)
+endif()
+
 target_include_directories (_curl SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
