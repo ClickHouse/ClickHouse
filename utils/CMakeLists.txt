@@ -26,5 +26,8 @@ if (ENABLE_UTILS)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
     add_subdirectory (keeper-data-dumper)
+    if (NOT SANITIZE)
+    # relocation R_X86_64_64 cannot be used against local symbol
     add_subdirectory (memcpy-bench)
+    endif ()
 endif ()

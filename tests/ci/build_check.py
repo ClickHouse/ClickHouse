@@ -41,13 +41,15 @@ BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
+    # Export release binaries of clickhouse, tests and utils from release build
+    # and sanitizer builds to run in unit tests
     if build_config["package_type"] != "deb":
         return False
     if build_config["sanitizer"] != "":
         return True
     if build_config["build_type"] != "":
-        return True
-    return False
+        return False
+    return True
 
 
 def get_packager_cmd(
