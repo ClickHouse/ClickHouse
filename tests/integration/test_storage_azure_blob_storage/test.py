@@ -596,6 +596,7 @@ def test_partition_by_tf(cluster):
     assert "3,2,1\n" == get_azure_file_content("test_partition_tf_1.csv")
     assert "78,43,45\n" == get_azure_file_content("test_partition_tf_45.csv")
 
+
 def test_filter_using_file(cluster):
     node = cluster.instances["node"]
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -610,4 +611,3 @@ def test_filter_using_file(cluster):
 
     query = f"select count(*) from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont', 'test_partition_tf_*.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') WHERE _file='test_partition_tf_3.csv'"
     assert azure_query(node, query) == "1\n"
-
