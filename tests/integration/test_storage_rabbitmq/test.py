@@ -858,7 +858,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
         if len(insert_messages) == 50:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -921,7 +921,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
         if len(insert_messages) == 50:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -2991,7 +2991,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
 
     consumer.start_consuming()
     consumer_connection.close()
@@ -3050,7 +3050,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3148,7 +3148,7 @@ def test_row_based_formats(rabbitmq_cluster):
             if insert_messages == 2:
                 channel.stop_consuming()
 
-        consumer.basic_consume(onReceived, queue_name)
+        consumer.basic_consume(queue_name, onReceived)
         consumer.start_consuming()
         consumer_connection.close()
 
@@ -3211,7 +3211,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
         if len(insert_messages) == 3:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3296,7 +3296,7 @@ def test_block_based_formats_2(rabbitmq_cluster):
             if insert_messages == 9:
                 channel.stop_consuming()
 
-        consumer.basic_consume(onReceived, queue_name)
+        consumer.basic_consume(queue_name, onReceived)
         consumer.start_consuming()
         consumer_connection.close()
 
