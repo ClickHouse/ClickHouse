@@ -1841,8 +1841,8 @@ try
             /// Killing only selected queries which are not part of extra wait.
             if (server_settings.shutdown_wait_extra_unfinished_queries)
             {
-                MultiEnum<IAST::QueryKind> shutdown_wait_unfinished_query_kind = server_settings.shutdown_wait_unfinished_query_kind;
-                global_context->getProcessList().killAllQueriesExceptQueryKind(shutdown_wait_unfinished_query_kind);
+                MultiEnum<IAST::QueryKind> shutdown_wait_extra_unfinished_query_kind = server_settings.shutdown_wait_extra_unfinished_query_kind;
+                global_context->getProcessList().killAllQueriesExceptQueryKind(shutdown_wait_extra_unfinished_query_kind);
 
                 // We will extra wait for certain queries (specified in shutdown_wait_extra_unfinished_query_kind) for certain seconds (specified in shutdown_wait_extra_unfinished)
                 if (current_connections)
