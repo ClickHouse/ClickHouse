@@ -57,3 +57,9 @@ Output of a removed comment:
 │         │
 └─────────┘
 ```
+
+**Caveats**
+
+For Replicated tables, the comment can be different on different replicas. Modifying the comment applies to a single replica.
+
+The feature is available since the version 23.6. It does not work in previous ClickHouse versions. 
