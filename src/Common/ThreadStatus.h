@@ -107,6 +107,8 @@ public:
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     void linkThread(UInt64 thread_it);
+    SharedData linkThreadAndGetSharedData(UInt64 thread_it);
+
 
 private:
     mutable std::mutex mutex;

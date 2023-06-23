@@ -68,6 +68,13 @@ void ThreadGroup::linkThread(UInt64 thread_it)
     thread_ids.insert(thread_it);
 }
 
+ThreadGroup::SharedData ThreadGroup::linkThreadAndGetSharedData(UInt64 thread_it)
+{
+    std::lock_guard lock(mutex);
+    thread_ids.insert(thread_it);
+    return shared_data;
+}
+
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
     auto group = std::make_shared<ThreadGroup>(query_context_, std::move(fatal_error_callback_));
@@ -193,7 +200,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
-    thread_group->linkThread(thread_id);
+
+    local_data = thread_group->linkThreadAndGetSharedData(thread_id);
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
@@ -202,8 +210,6 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     global_context = thread_group->global_context;
 
     fatal_error_callback = thread_group->fatal_error_callback;
-
-    local_data = thread_group->getSharedData();
 
     applyQuerySettings();
     initPerformanceCounters();
