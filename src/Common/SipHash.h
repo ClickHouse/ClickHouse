@@ -88,20 +88,6 @@ private:
         SIPROUND;
     }
 
-    /// @brief Retrieves the result in some form with the endianness of the platform taken into account.
-    /// @warning This can only be done once!
-    void get128Impl(char * out)
-    {
-        finalize();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStore<UInt64>(out + 8, v0 ^ v1);
-        unalignedStore<UInt64>(out, v2 ^ v3);
-#else
-        unalignedStore<UInt64>(out, v0 ^ v1);
-        unalignedStore<UInt64>(out + 8, v2 ^ v3);
-#endif
-    }
-
 public:
     /// Arguments - seed.
     SipHash(UInt64 key0 = 0, UInt64 key1 = 0, bool is_reference_128_ = false) /// NOLINT
@@ -305,7 +291,7 @@ inline UInt64 sipHash64(const char * data, const size_t size)
 }
 
 template <typename T>
-UInt64 sipHash64(const T & x)
+inline UInt64 sipHash64(const T & x)
 {
     SipHash hash;
     hash.update(x);
