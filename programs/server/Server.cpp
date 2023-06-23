@@ -1839,21 +1839,21 @@ try
                 LOG_INFO(log, "Closed connections.");
 
             /// Killing only selected queries which are not part of extra wait.
-            if (server_settings.shutdown_wait_unfinished_queries && server_settings.shutdown_wait_extra_unfinished_queries)
+            if (server_settings.shutdown_wait_extra_unfinished_queries)
             {
                 MultiEnum<IAST::QueryKind> shutdown_wait_unfinished_query_kind = server_settings.shutdown_wait_unfinished_query_kind;
                 global_context->getProcessList().killAllQueriesExceptQueryKind(shutdown_wait_unfinished_query_kind);
+
+                // We will extra wait for certain queries (specified in shutdown_wait_extra_unfinished_query_kind) for certain seconds (specified in shutdown_wait_extra_unfinished)
+                if (current_connections)
+                    current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_extra_unfinished", 60));
+
+                if (current_connections)
+                    LOG_WARNING(log, "Closed connections. But {} remain."
+                                     " Tip: To increase extra wait time add to config: <shutdown_wait_extra_unfinished>300</shutdown_wait_extra_unfinished>", current_connections);
+                else
+                    LOG_INFO(log, "Closed connections.");
             }
-
-            // We will extra wait for certain queries (specified in shutdown_wait_extra_unfinished_query_kind) for certain seconds (specified in shutdown_wait_extra_unfinished)
-            if (current_connections)
-                current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_extra_unfinished", 60));
-
-            if (current_connections)
-                LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase extra wait time add to config: <shutdown_wait_extra_unfinished>300</shutdown_wait_extra_unfinished>", current_connections);
-            else
-                LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
 
