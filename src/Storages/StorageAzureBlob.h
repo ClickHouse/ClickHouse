@@ -177,7 +177,7 @@ public:
         ASTPtr filter_ast;
         Block virtual_header;
 
-        std::atomic<size_t> index = 0;
+        size_t index = 0;
         std::atomic<size_t> total_size = 0;
 
         RelativePathsWithMetadata blobs_with_metadata;
@@ -188,8 +188,8 @@ public:
         std::unique_ptr<re2::RE2> matcher;
 
         void createFilterAST(const String & any_key);
-        std::atomic<bool> is_finished = false;
-        std::atomic<bool> is_initialized = false;
+        bool is_finished = false;
+        bool is_initialized = false;
         std::mutex next_mutex;
     };
 
