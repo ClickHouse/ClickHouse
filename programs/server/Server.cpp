@@ -1027,6 +1027,11 @@ try
     /// Initialize merge tree metadata cache
     if (config().has("merge_tree_metadata_cache"))
     {
+        global_context->addWarningMessage("The setting 'merge_tree_metadata_cache' is enabled."
+            " But the feature of 'metadata cache in RocksDB' is experimental and is not ready for production."
+            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production."
+            " See the corresponding report at https://github.com/ClickHouse/ClickHouse/issues/51182");
+
         fs::create_directories(path / "rocksdb/");
         size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
