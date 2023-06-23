@@ -164,6 +164,4 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     )
     assert count_create_multi_part_uploads == 1
     assert count_upload_parts >= 2
-    assert (
-        count_s3_errors >= 2
-    )
+    assert count_s3_errors >= 2
