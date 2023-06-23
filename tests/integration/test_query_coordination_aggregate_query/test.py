@@ -18,11 +18,11 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table(id UInt32, val String) ON CLUSTER test_two_shards ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=1000;"""
+            """CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE distributed_table(id UInt32, val String) ON CLUSTER test_two_shards ENGINE = Distributed(test_two_shards, default, local_table, rund());"""
+            """CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val String) ENGINE = Distributed(test_two_shards, default, local_table, rand());"""
         )
 
         yield cluster
@@ -32,13 +32,46 @@ def started_cluster():
 
 
 def test_aggregate_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT * FROM generateRandom('id Int, val String') LIMIT 20000")
+    node1.query("INSERT INTO distributed_table SELECT * FROM generateRandom('id Int, val String') LIMIT 20")
+
+    node1.query("INSERT INTO distributed_table SELECT id,'111' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'222' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'333' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'444' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'555' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'666' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'777' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'888' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'999' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'100' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'101' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'102' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'103' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'104' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'105' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'106' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'107' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'108' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'109' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'110' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'211' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'212' FROM generateRandom('id Int') LIMIT 203")
+    node1.query("INSERT INTO distributed_table SELECT id,'213' FROM generateRandom('id Int') LIMIT 203")
+
+    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
 
     print("local table select:")
-    r = node1.query("SELECT sum(id),val FROM local_table GROUP BY val SETTINGS allow_experimental_fragment = 1, allow_experimental_analyzer = 0")
+    r = node1.query("SELECT sum(id),val FROM local_table GROUP BY val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
     rr = node1.query("SELECT sum(id),val FROM distributed_table GROUP BY val")
     print(rr)
 
+    print("local table select:")
+    r = node1.query("SELECT uniq(id),val FROM local_table GROUP BY val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT uniq(id),val FROM distributed_table GROUP BY val")
+    print(rr)
