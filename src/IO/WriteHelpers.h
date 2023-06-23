@@ -88,6 +88,13 @@ inline void writePODBinary(const T & x, WriteBuffer & buf)
     buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
 }
 
+inline void writePODBinary(const UUID & x, WriteBuffer & buf)
+{
+    const auto & uuid = x.toUnderType();
+    writePODBinary(uuid.items[1], buf);
+    writePODBinary(uuid.items[0], buf);
+}
+
 template <typename T>
 inline void writeIntBinary(const T & x, WriteBuffer & buf)
 {

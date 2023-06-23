@@ -468,7 +468,12 @@ public:
 
         res_data.resize(src_data.size());
         for (size_t i = 0; i < src_column.size(); ++i)
-            transformUUID(src_data[i], res_data[i], seed);
+        {
+            auto src_copy = src_data[i];
+            UUIDHelpers::changeUnderlyingUUID(src_copy);
+            transformUUID(src_copy, res_data[i], seed);
+            UUIDHelpers::changeUnderlyingUUID(res_data[i]);
+        }
 
         return res_column;
     }

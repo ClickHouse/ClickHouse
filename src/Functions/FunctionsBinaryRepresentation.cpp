@@ -507,8 +507,13 @@ public:
 
                 // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+                Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[1], end, false, false);
+                Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[0], end, false, true);
+#else
                 Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[0], end, false, false);
                 Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[1], end, false, true);
+#endif
 
                 pos += end - begin;
                 out_offsets[i] = pos;

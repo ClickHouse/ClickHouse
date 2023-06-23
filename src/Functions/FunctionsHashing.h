@@ -1126,15 +1126,17 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                ToType hash;
-                if constexpr (std::endian::native == std::endian::little)
-                    hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
-                else
+                // Take a copy to maintain column representation as is.
+                auto value = vec_from[i];
+                transformEndianness<std::endian::little>(value);
+
+                if constexpr (std::is_same_v<FromType, UUID>)
                 {
-                    char tmp_buffer[sizeof(vec_from[i])];
-                    reverseMemcpy(tmp_buffer, &vec_from[i], sizeof(vec_from[i]));
-                    hash = apply(key, reinterpret_cast<const char *>(tmp_buffer), sizeof(vec_from[i]));
+                    UUIDHelpers::changeUnderlyingUUID(value);
                 }
+
+                const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+
                 if constexpr (first)
                     vec_to[i] = hash;
                 else
@@ -1144,16 +1146,15 @@ private:
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
+            transformEndianness<std::endian::little>(value);
 
-            ToType hash;
-            if constexpr (std::endian::native == std::endian::little)
-                hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
-            else
+            if constexpr (std::is_same_v<FromType, UUID>)
             {
-                char tmp_buffer[sizeof(value)];
-                reverseMemcpy(tmp_buffer, &value, sizeof(value));
-                hash = apply(key, reinterpret_cast<const char *>(tmp_buffer), sizeof(value));
+                UUIDHelpers::changeUnderlyingUUID(value);
             }
+
+            const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+
             size_t size = vec_to.size();
             if constexpr (first)
                 vec_to.assign(size, hash);

@@ -116,6 +116,13 @@ inline void readPODBinary(T & x, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
+inline void readPODBinary(UUID & x, ReadBuffer & buf)
+{
+    auto & uuid = x.toUnderType();
+    readPODBinary(uuid.items[1], buf);
+    readPODBinary(uuid.items[0], buf);
+}
+
 template <typename T>
 inline void readIntBinary(T & x, ReadBuffer & buf)
 {
@@ -1093,6 +1100,11 @@ inline void readBinary(bool & x, ReadBuffer & buf)
     Int8 flag = 0;
     readBinary(flag, buf);
     x = (flag != 0);
+}
+
+inline void readBinary(UUID & x, ReadBuffer & buf)
+{
+    readPODBinary(x, buf);
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }

@@ -4,6 +4,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Common/FieldVisitors.h>
+#include <Common/TransformEndianness.hpp>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -84,15 +85,10 @@ namespace
         }
         void operator() (const UUID & x) const
         {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-            auto tmp_x = x.toUnderType();
-            char * start = reinterpret_cast<char *>(&tmp_x);
-            char * end = start + sizeof(tmp_x);
-            std::reverse(start, end);
-            operator()(tmp_x);
-#else
-            operator()(x.toUnderType());
-#endif
+            // Take a copy to modify the underlying components.
+            auto uuid = x;
+            UUIDHelpers::changeUnderlyingUUID(uuid);
+            operator()(uuid.toUnderType());
         }
         void operator() (const IPv4 & x) const
         {

@@ -361,6 +361,13 @@ ColumnPtr fillColumnWithRandomData(
             column->getData().resize(limit);
             /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UUID), rng);
+            std::ranges::for_each(
+                column->getData(),
+                [&](auto & value)
+                {
+                    transformEndianness<std::endian::little>(value);
+                    UUIDHelpers::changeUnderlyingUUID(value);
+                });
             return column;
         }
         case TypeIndex::Int8:

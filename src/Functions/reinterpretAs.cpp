@@ -4,26 +4,29 @@
 
 #include <Core/callOnTypeIndex.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <Common/typeid_cast.h>
+#include <Common/TransformEndianness.hpp>
 #include <Common/memcpySmall.h>
+#include <Common/typeid_cast.h>
 
 #include <base/unaligned.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -196,6 +199,11 @@ public:
                         offset = offsets_from[i];
                     }
 
+                    if constexpr (std::is_same_v<ToType, DataTypeUUID>)
+                    {
+                        std::ranges::for_each(col_res->getData(), UUIDHelpers::changeUnderlyingUUID);
+                    }
+
                     result = std::move(col_res);
 
                     return true;
@@ -232,6 +240,11 @@ public:
                         offset += step;
                     }
 
+                    if constexpr (std::is_same_v<ToType, DataTypeUUID>)
+                    {
+                        std::ranges::for_each(col_res->getData(), UUIDHelpers::changeUnderlyingUUID);
+                    }
+
                     result = std::move(col_res);
 
                     return true;
@@ -255,16 +268,45 @@ public:
 
                     static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
 
-                    for (size_t i = 0; i < size; ++i)
+                    if constexpr (std::is_same_v<FromType, DataTypeUUID>)
                     {
-                        if constexpr (std::endian::native == std::endian::little)
-                            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
-                        else
+                        size_t i = 0;
+                        std::ranges::for_each(
+                            from | toCompatibleFormatUUID,
+                            [&](const auto & value)
+                            {
+                                if constexpr (std::endian::native == std::endian::little)
+                                {
+                                    memcpy(static_cast<void *>(&to[i]), static_cast<const void *>(&value), copy_size);
+                                }
+                                else
+                                {
+                                    // This reverse memcpy is needed to undo the transformEndianness, while still maintaining
+                                    // the proper bytes are copied when going from 128-bit representation to 64-bit or lower.
+                                    size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From) : 0;
+                                    reverseMemcpy(
+                                        reinterpret_cast<char *>(&to[i]) + offset_to, static_cast<const void *>(&value), copy_size);
+                                }
+                                ++i;
+                            });
+                    }
+                    else
+                    {
+                        for (size_t i = 0; i < size; ++i)
                         {
-                            size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From) : 0;
-                            memcpy(reinterpret_cast<char*>(&to[i]) + offset_to, static_cast<const void*>(&from[i]), copy_size);
+                            if constexpr (std::endian::native == std::endian::little)
+                                memcpy(static_cast<void *>(&to[i]), static_cast<const void *>(&from[i]), copy_size);
+                            else
+                            {
+                                size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From) : 0;
+                                memcpy(reinterpret_cast<char *>(&to[i]) + offset_to, static_cast<const void *>(&from[i]), copy_size);
+                            }
                         }
+                    }
 
+                    if constexpr (std::is_same_v<ToType, DataTypeUUID>)
+                    {
+                        std::ranges::for_each(column_to->getData(), UUIDHelpers::changeUnderlyingUUID);
                     }
 
                     result = std::move(column_to);
@@ -304,6 +346,14 @@ private:
             type.isDecimal();
     }
 
+    static constexpr auto toCompatibleFormatUUID = std::views::transform(
+        [](auto value)
+        {
+            transformEndianness<std::endian::little>(value);
+            UUIDHelpers::changeUnderlyingUUID(value);
+            return value;
+        });
+
     static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
         size_t rows = src.size();
@@ -315,7 +365,11 @@ private:
         {
             std::string_view data = src.getDataAt(i).toView();
 
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+#else
+            reverseMemcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+#endif
             offset += n;
         }
     }
@@ -326,7 +380,26 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
-        memcpy(data_to.data(), src.getRawData().data(), data_to.size());
+        if (src.getDataType() == TypeIndex::UUID)
+        {
+            ColumnFixedString::Offset offset = 0;
+            const auto * uuid_src = checkAndGetColumn<ColumnUUID>(src);
+            std::ranges::for_each(
+                uuid_src->getData() | toCompatibleFormatUUID,
+                [&](const auto & value)
+                {
+                    memcpy(&data_to[offset], reinterpret_cast<const char *>(&value), n);
+                    offset += n;
+                });
+        }
+        else
+        {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            memcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#else
+            reverseMemcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#endif
+        }
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
@@ -352,11 +425,26 @@ private:
             data.size -= index;
 #endif
             data_to.resize(offset + data.size + 1);
+
+            if (src.getDataType() == TypeIndex::UUID)
+            {
+                const size_t half_size = data.size / 2;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            memcpy(&data_to[offset], data.data, data.size);
+                memcpy(&data_to[offset], data.data + half_size, half_size);
+                memcpy(&data_to[offset + half_size], data.data, half_size);
 #else
-            reverseMemcpy(&data_to[offset], data.data + index, data.size);
+                reverseMemcpy(&data_to[offset], data.data + index, half_size);
+                reverseMemcpy(&data_to[offset + half_size], data.data + index + half_size, half_size);
 #endif
+            }
+            else
+            {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+                memcpy(&data_to[offset], data.data, data.size);
+#else
+                reverseMemcpy(&data_to[offset], data.data + index, data.size);
+#endif
+            }
             offset += data.size;
             data_to[offset] = 0;
             ++offset;
