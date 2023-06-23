@@ -2134,6 +2134,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+serverTimeZone
+serverTimezone
 serverUUID
 sessionCacheSize
 sessionIdContext

@@ -350,6 +350,7 @@ void TCPHandler::runImpl()
                 /// Send block to the client - input storage structure.
                 state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
+                sendTimezone();
             });
 
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
@@ -763,7 +764,6 @@ void TCPHandler::processInsertQuery()
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
-
         sendLogs();
 
         while (readDataNext())
@@ -1062,6 +1062,20 @@ void TCPHandler::sendInsertProfileEvents()
 
     sendProfileEvents();
 }
+
+void TCPHandler::sendTimezone()
+{
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
+        return;
+
+    const String & tz = query_context->getSettingsRef().session_timezone.value;
+
+    LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
+    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+    writeStringBinary(tz, *out);
+    out->next();
+}
+
 
 bool TCPHandler::receiveProxyHeader()
 {
