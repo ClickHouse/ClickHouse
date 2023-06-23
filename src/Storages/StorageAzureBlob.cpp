@@ -860,7 +860,7 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
             }
         }
 
-        index.store(0, std::memory_order_relaxed);
+        index = 0;
         if (!is_initialized)
         {
             createFilterAST(new_batch.front().relative_path);
@@ -896,7 +896,7 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         }
     }
 
-    size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+    size_t current_index = index++;
     if (current_index >= blobs_with_metadata.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bound for blob metadata");
     return blobs_with_metadata[current_index];
