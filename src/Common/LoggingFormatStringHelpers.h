@@ -191,6 +191,34 @@ public:
     Poco::Logger * getLogger() { return logger; }
 };
 
+/// This wrapper helps to avoid too noisy log messages from similar objects.
+/// For the value logger_name it remembers when such a message was logged the last time.
+class LogSeriesLimiter
+{
+    static std::mutex mutex;
+
+    /// Hash(logger_name) -> (allowed_count, interval_s)
+    static std::unordered_map<UInt64, std::tuple<size_t, time_t>> series_settings TSA_GUARDED_BY(mutex);
+
+    /// Hash(logger_name) -> (last_logged_time_s, accepted, muted)
+    static std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>> series_loggers TSA_GUARDED_BY(mutex);
+
+    Poco::Logger * logger = nullptr;
+    bool accepted = false;
+    String debug_message;
+public:
+    LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_);
+
+    LogSeriesLimiter & operator -> () { return *this; }
+    bool is(Poco::Message::Priority priority) { return logger->is(priority); }
+    LogSeriesLimiter * getChannel() {return this; }
+    const String & name() const { return logger->name(); }
+
+    void log(Poco::Message & message);
+
+    Poco::Logger * getLogger() { return logger; }
+};
+
 /// This wrapper is useful to save formatted message into a String before sending it to a logger
 class LogToStrImpl
 {

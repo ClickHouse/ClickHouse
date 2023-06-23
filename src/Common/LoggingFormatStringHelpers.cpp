@@ -1,3 +1,4 @@
+#include <Common/DateLUT.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -73,4 +74,104 @@ void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
     std::lock_guard lock(mutex);
     std::erase_if(logged_messages, [old](const auto & elem) { return elem.second.first < old; });
     last_cleanup = now;
+}
+
+
+
+std::unordered_map<UInt64, std::tuple<size_t, time_t>> LogSeriesLimiter::series_settings;
+std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>> LogSeriesLimiter::series_loggers;
+std::mutex LogSeriesLimiter::mutex;
+
+LogSeriesLimiter::LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_)
+    : logger(logger_)
+{
+    if (allowed_count_ == 0)
+    {
+        accepted = false;
+        return;
+    }
+
+    if (interval_s_ == 0)
+    {
+        accepted = true;
+        return;
+    }
+
+    time_t now = time(nullptr);
+    UInt128 name_hash = sipHash128(logger->name().c_str(), logger->name().size());
+
+    std::lock_guard lock(mutex);
+
+    if (series_settings.contains(name_hash))
+    {
+        auto & settings = series_settings[name_hash];
+        auto & [allowed_count, interval_s] = settings;
+        chassert(allowed_count_ == allowed_count);
+        chassert(interval_s_ == interval_s);
+    }
+    else
+    {
+        series_settings[name_hash] = std::make_tuple(allowed_count_, interval_s_);
+    }
+
+    auto register_as_first = [&] () TSA_REQUIRES(mutex)
+    {
+        assert(allowed_count_ > 0);
+        accepted = true;
+        series_loggers[name_hash] = std::make_tuple(now, 1, 1);
+    };
+
+
+    if (!series_loggers.contains(name_hash))
+    {
+        register_as_first();
+        return;
+    }
+
+    auto & [last_time, accepted_count, total_count] = series_loggers[name_hash];
+    if (last_time + interval_s_ <= now)
+    {
+        debug_message = fmt::format(
+            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {} : {})",
+            DateLUT::instance().timeToString(last_time),
+            DateLUT::instance().timeToString(now),
+            accepted_count,
+            total_count,
+            logger->name(),
+            double(name_hash));
+
+        register_as_first();
+        return;
+    }
+
+    if (accepted_count < allowed_count_)
+    {
+        accepted = true;
+        ++accepted_count;
+    }
+    ++total_count;
+}
+
+void LogSeriesLimiter::log(Poco::Message & message)
+{
+    std::string_view pattern = message.getFormatString();
+    if (pattern.empty())
+    {
+        /// Do not filter messages without a format string
+        if (auto * channel = logger->getChannel())
+            channel->log(message);
+        return;
+    }
+
+    if (!accepted)
+        return;
+
+    if (!debug_message.empty())
+    {
+        message.appendText(debug_message);
+        debug_message.clear();
+    }
+
+    if (auto * channel = logger->getChannel())
+        channel->log(message);
 }

@@ -12,10 +12,11 @@ namespace ProfileEvents
 namespace DB
 {
 
-WriteBufferFromS3::TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_)
+WriteBufferFromS3::TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
+    , limitedLog(limitedLog_)
 {}
 
 WriteBufferFromS3::TaskTracker::~TaskTracker()
@@ -139,7 +140,7 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
         return;
 
     if (futures.size() >= max_tasks_inflight)
-        LOG_TEST(log, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
+        LOG_TEST(limitedLog, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
 
     Stopwatch watch;
 
