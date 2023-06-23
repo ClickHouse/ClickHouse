@@ -1852,6 +1852,7 @@ observability
 odbc
 ok
 omclickhouse
+on-prem
 onstraints
 ontime
 openSSL
@@ -1936,6 +1937,7 @@ prefertch
 prefetch
 prefetchsize
 preloaded
+prem
 prepend
 prepended
 prepends
@@ -2131,6 +2133,7 @@ scala
 schemas
 seekable
 seektable
+self-managed
 sequenceCount
 sequenceMatch
 sequenceNextNode
