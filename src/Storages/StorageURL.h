@@ -19,6 +19,7 @@ namespace DB
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
 class PullingPipelineExecutor;
@@ -206,6 +207,7 @@ private:
     Poco::URI curr_uri;
 
     std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
