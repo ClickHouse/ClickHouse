@@ -703,21 +703,21 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                                       &freeable_count,
                                       &file_segment,
                                       &cache_lock,
-                                      main_priority = this->main_priority.get(),
-                                      log = this->log]
+                                      my_main_priority = this->main_priority.get(),
+                                      my_log = this->log]
     {
         const bool is_overflow =
             /// size_limit == 0 means unlimited cache size
-            (main_priority_size_limit != 0 && (main_priority->getSize(cache_lock) + size - freeable_space > main_priority_size_limit))
+            (main_priority_size_limit != 0 && (my_main_priority->getSize(cache_lock) + size - freeable_space > main_priority_size_limit))
             /// elements_limit == 0 means unlimited number of cache elements
             || (main_priority_elements_limit != 0 && freeable_count == 0
-                && main_priority->getElementsCount(cache_lock) == main_priority_elements_limit);
+                && my_main_priority->getElementsCount(cache_lock) == main_priority_elements_limit);
 
         LOG_TEST(
-            log, "Overflow: {}, size: {}, ready to remove: {} ({} in number), current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            my_log, "Overflow: {}, size: {}, ready to remove: {} ({} in number), current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
             is_overflow, size, freeable_space, freeable_count,
-            main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
-            main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
+            my_main_priority->getSize(cache_lock), my_main_priority->getSizeLimit(),
+            my_main_priority->getElementsCount(cache_lock), my_main_priority->getElementsLimit(),
             file_segment.key(), file_segment.offset());
 
         return is_overflow;
