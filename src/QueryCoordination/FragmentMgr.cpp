@@ -66,7 +66,7 @@ void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vec
             {
                 auto & request = it->second;
                 final_fragments.emplace_back(FragmentDistributed{
-                    .fragment = all_fragment.fragment, .data_to = request.data_to, .data_from = request.dara_from});
+                    .fragment = all_fragment.fragment, .data_to = request.data_to, .data_from = request.data_from});
             }
         }
         data->fragments_distributed = final_fragments;

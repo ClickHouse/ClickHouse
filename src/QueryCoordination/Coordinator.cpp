@@ -158,7 +158,7 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
 
             /// dest_fragment exchange data_from is current fragment hosts
             auto & dest_request = fragment_requests[dest_fragment_id];
-            auto & exchange_data_from = dest_request.dara_from[dest_exchange_id];
+            auto & exchange_data_from = dest_request.data_from[dest_exchange_id];
             exchange_data_from.insert(exchange_data_from.begin(), hosts.begin(), hosts.end());
         }
 
@@ -172,6 +172,11 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
 void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
 {
     const std::unordered_map<FragmentID, FragmentRequest> & fragment_requests = buildFragmentRequest();
+
+    for (auto & [f_id, request] : fragment_requests)
+    {
+        LOG_INFO(&Poco::Logger::get("Coordinator"), "Fragment id {}, request {}", f_id, request.toString());
+    }
 
     // send
     for (auto [host, fragments_for_send] : host_fragments)

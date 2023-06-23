@@ -27,10 +27,10 @@ public:
             writeStringBinary(to, out);
         }
 
-        size_t from_size = dara_from.size();
+        size_t from_size = data_from.size();
         writeVarUInt(from_size, out);
 
-        for (const auto & [exchange_id, sources] : dara_from)
+        for (const auto & [exchange_id, sources] : data_from)
         {
             writeVarUInt(exchange_id, out);
 
@@ -66,7 +66,7 @@ public:
         {
             UInt32 exchange_id;
             readVarUInt(exchange_id, in);
-            auto & e_sources = dara_from[exchange_id];
+            auto & e_sources = data_from[exchange_id];
 
             size_t e_source_size;
             readVarUInt(e_source_size, in);
@@ -81,9 +81,33 @@ public:
         }
     }
 
+    String toString() const
+    {
+        String fragment = "Fragment id " + std::to_string(fragment_id) + ". ";
+        String data_to_str = " Data to: ";
+        for (auto & to : data_to)
+        {
+            data_to_str += (to + ", ");
+        }
+
+        String data_from_str = " Data from: ";
+
+        for (auto & [exchange_id, froms] : data_from)
+        {
+            data_from_str += ("exchange_id " + std::to_string(exchange_id)) + ": froms ";
+
+            for (auto & from : froms)
+            {
+                data_from_str += (from + ", ");
+            }
+        }
+
+        return fragment + data_to_str + data_from_str;
+    }
+
     Int64 fragment_id;
     Destinations data_to;
-    Sources dara_from;
+    Sources data_from;
 };
 
 }
