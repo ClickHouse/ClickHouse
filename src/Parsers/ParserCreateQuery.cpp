@@ -449,6 +449,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         break;
     }
+
     // If any part of storage definition is found create storage node
     if (!storage_like)
         return false;
