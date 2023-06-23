@@ -53,11 +53,13 @@ KeyMetadata::KeyMetadata(
     const Key & key_,
     const std::string & key_path_,
     CleanupQueue & cleanup_queue_,
+    Poco::Logger * log_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
     , created_base_directory(created_base_directory_)
+    , log(log_)
 {
     if (created_base_directory)
         chassert(fs::exists(key_path));
@@ -190,7 +192,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, is_initial_load)).first;
+                    key, getPathForKey(key), *cleanup_queue, log, is_initial_load)).first;
         }
 
         key_metadata = it->second;
@@ -324,11 +326,6 @@ void CacheMetadata::doCleanup()
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
     : key_metadata(key_metadata_)
     , lock(key_metadata->guard.lock())
-#ifdef ABORT_ON_LOGICAL_ERROR
-    , log(&Poco::Logger::get("LockedKey(" + key_metadata_->key.toString() + ")"))
-#else
-    , log(&Poco::Logger::get("LockedKey"))
-#endif
 {
 }
 
@@ -338,7 +335,7 @@ LockedKey::~LockedKey()
         return;
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_DEBUG(log, "Submitting key {} for removal", getKey());
+    LOG_DEBUG(key_metadata->log, "Submitting key {} for removal", getKey());
     key_metadata->cleanup_queue.add(getKey());
 }
 
@@ -396,7 +393,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
     auto file_segment = it->second->file_segment;
 
     LOG_DEBUG(
-        log, "Remove from cache. Key: {}, offset: {}, size: {}",
+        key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
         getKey(), offset, file_segment->reserved_size);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
@@ -409,7 +406,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
     if (exists)
     {
         fs::remove(path);
-        LOG_TEST(log, "Removed file segment at path: {}", path);
+        LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
     }
     else if (file_segment->downloaded_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
