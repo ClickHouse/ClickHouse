@@ -2819,7 +2819,7 @@ MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
     auto cache = tryGetMergeTreeMetadataCache();
     if (!cache)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::BAD_ARGUMENTS,
             "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
     return cache;
 }
