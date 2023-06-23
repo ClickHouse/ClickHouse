@@ -1022,6 +1022,11 @@ Packet Connection::receivePacket()
                 res.block = receiveProfileEvents();
                 return res;
 
+            case Protocol::Server::TimezoneUpdate:
+                readStringBinary(server_timezone, *in);
+                res.server_timezone = server_timezone;
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
