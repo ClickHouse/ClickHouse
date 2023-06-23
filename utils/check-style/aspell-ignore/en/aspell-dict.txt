@@ -772,6 +772,7 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
+SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
