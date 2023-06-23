@@ -22,7 +22,7 @@ def run_command_in_container(cmd, *args):
             "run",
             "--rm",
             *args,
-            "ubuntu:20.04",
+            "ubuntu:22.04",
             "sh",
             "-c",
             cmd,
