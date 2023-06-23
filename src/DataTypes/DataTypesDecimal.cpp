@@ -28,6 +28,11 @@ std::string DataTypeDecimal<T>::doGetName() const
     return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
+template <is_decimal T>
+std::string DataTypeDecimal<T>::getSQLCompatibleName() const
+{
+    return fmt::format("DECIMAL({}, {})", this->precision, this->scale);
+}
 
 template <is_decimal T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
