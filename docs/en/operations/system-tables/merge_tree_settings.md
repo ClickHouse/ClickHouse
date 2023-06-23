@@ -25,9 +25,9 @@ SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
 ```
 
 ```response
-Row 1:                                                                                                                                                                                  
-──────                                                                                                                                                                                  
-name:        min_compress_block_size                                                                                                                                                    
+Row 1:
+──────
+name:        min_compress_block_size
 value:       0
 changed:     0
 description: When granule is written, compress the data in buffer if the size of pending uncompressed data is larger or equal than the specified threshold. If this setting is not set, the corresponding global setting is used.
@@ -73,5 +73,5 @@ readonly:    0
 type:        UInt64
 is_obsolete: 0
 
-4 rows in set. Elapsed: 0.009 sec. 
+4 rows in set. Elapsed: 0.009 sec.
 ```
