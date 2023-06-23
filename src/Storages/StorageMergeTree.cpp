@@ -326,6 +326,11 @@ void StorageMergeTree::alter(
         changeSettings(new_metadata.settings_changes, table_lock_holder);
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
+    else if (commands.isCommentAlter())
+    {
+        setInMemoryMetadata(new_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    }
     else
     {
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
