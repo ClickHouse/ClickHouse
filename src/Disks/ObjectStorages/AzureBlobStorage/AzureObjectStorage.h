@@ -123,9 +123,6 @@ public:
 
     bool isRemote() const override { return true; }
 
-    /// Set progress callback to read buffer while reading from storage.
-    void setProgressCallback(const ContextPtr & context);
-
 private:
     const String name;
     /// client used to access the files in the Blob Storage cloud
@@ -135,8 +132,6 @@ private:
     Poco::Logger * log;
 
     DataSourceDescription data_source_description;
-
-    std::function<void(FileProgress)> progress_callback;
 };
 
 }

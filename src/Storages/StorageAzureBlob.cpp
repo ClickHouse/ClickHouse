@@ -1001,7 +1001,8 @@ Chunk StorageAzureBlobSource::generate()
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
-            progress(num_rows, 0);
+            size_t chunk_size = reader.getInputFormat()->getApproxBytesReadForChunk();
+            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & file_path = reader.getPath();
             for (const auto & virtual_column : requested_virtual_columns)
@@ -1118,7 +1119,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(input_format), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageAzureBlobSource::ReaderHolder> StorageAzureBlobSource::createReaderAsync()
@@ -1132,7 +1133,6 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAzureReadBuffer(const 
     read_settings.enable_filesystem_cache = false;
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     const bool object_too_small = object_size <= 2 * download_buffer_size;
-    object_storage->setProgressCallback(getContext());
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.

@@ -48,12 +48,9 @@ public:
 
     String getFileName() const override;
 
-    void setProgressCallback(ContextPtr context) override;
-
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
     bool use_external_buffer;
-    std::function<void(FileProgress)> progress_callback;
 };
 }
 

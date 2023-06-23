@@ -587,13 +587,11 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
     internal_buffer = impl->buffer();
     working_buffer = internal_buffer;
     offset_from_begin_pos += working_buffer.size();
-    if (progress_callback)
-        progress_callback(FileProgress(working_buffer.size()));
     return true;
 }
 
 template <typename UpdatableSessionPtr>
-size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & custom_progress_callback)
+size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback)
 {
     /// Caller must have checked supportsReadAt().
     /// This ensures we've sent at least one HTTP request and populated saved_uri_redirect.
@@ -635,9 +633,7 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
                     toString(response.getStatus()), uri_.toString(), offset, offset + n);
 
             bool cancelled;
-            size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, custom_progress_callback, &cancelled);
-            if (progress_callback)
-                progress_callback(FileProgress(r));
+            size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
             return r;
         }
         catch (const Poco::Exception & e)
@@ -781,12 +777,6 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::setNextCallback(NextCallb
     next_callback = next_callback_;
     /// Some data maybe already read
     next_callback(count());
-}
-
-template <typename UpdatableSessionPtr>
-void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::setProgressCallback(std::function<void(FileProgress)> file_progress_callback_)
-{
-    progress_callback = file_progress_callback_;
 }
 
 template <typename UpdatableSessionPtr>

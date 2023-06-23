@@ -195,8 +195,7 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization,
-        std::function<void(FileProgress)> file_progress_callback = {});
+        bool delay_initialization);
 
 private:
     using InitializeFunc = std::function<bool()>;

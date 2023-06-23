@@ -99,6 +99,8 @@ size_t MMapReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t o
 
     n = std::min(n, mapped.getLength() - offset);
     memcpy(to, mapped.getData() + offset, n);
+    if (profile_callback)
+        profile_callback(ProfileInfo{.bytes_read = n});
     return n;
 }
 

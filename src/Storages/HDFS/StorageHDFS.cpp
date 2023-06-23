@@ -400,7 +400,7 @@ bool HDFSSource::initialize()
 
     current_path = path_with_info.path;
 
-    auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -437,7 +437,8 @@ Chunk HDFSSource::generate()
         {
             Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
-            progress(num_rows, 0);
+            size_t chunk_size = input_format->getApproxBytesReadForChunk();
+            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             for (const auto & virtual_column : requested_virtual_columns)
             {
@@ -461,6 +462,7 @@ Chunk HDFSSource::generate()
 
         reader.reset();
         pipeline.reset();
+        input_format.reset();
         read_buf.reset();
 
         if (!initialize())

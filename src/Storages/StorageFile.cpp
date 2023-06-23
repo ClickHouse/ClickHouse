@@ -294,9 +294,6 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
-    auto & in = static_cast<ReadBufferFromFileBase &>(*nested_buffer);
-    in.setProgressCallback(context);
-
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
@@ -741,7 +738,8 @@ public:
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
-                progress(num_rows, 0);
+                size_t chunk_size = input_format->getApproxBytesReadForChunk();
+                progress(num_rows, chunk_size);
 
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)

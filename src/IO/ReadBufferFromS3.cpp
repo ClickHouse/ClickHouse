@@ -163,13 +163,11 @@ bool ReadBufferFromS3::nextImpl()
     offset += working_buffer.size();
     if (read_settings.remote_throttler)
         read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
-    if (progress_callback)
-        progress_callback(FileProgress(working_buffer.size()));
     return true;
 }
 
 
-size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & custom_progress_callback)
+size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback)
 {
     if (n == 0)
         return 0;
@@ -186,9 +184,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             auto result = sendRequest(range_begin, range_begin + n - 1);
             std::istream & istr = result.GetBody();
 
-            size_t bytes = copyFromIStreamWithProgressCallback(istr, to, n, custom_progress_callback);
-            if (progress_callback)
-                progress_callback(FileProgress(bytes, 0));
+            size_t bytes = copyFromIStreamWithProgressCallback(istr, to, n, progress_callback);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes);
 
@@ -417,11 +413,6 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t range_begin
         const auto & error = outcome.GetError();
         throw S3Exception(error.GetMessage(), error.GetErrorType());
     }
-}
-
-void ReadBufferFromS3::setProgressCallback(DB::ContextPtr context)
-{
-    progress_callback = context->getFileProgressCallback();
 }
 
 }
