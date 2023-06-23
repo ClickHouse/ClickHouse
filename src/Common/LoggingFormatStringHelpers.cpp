@@ -77,7 +77,6 @@ void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
 }
 
 
-
 std::unordered_map<UInt64, std::tuple<size_t, time_t>> LogSeriesLimiter::series_settings;
 std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>> LogSeriesLimiter::series_loggers;
 std::mutex LogSeriesLimiter::mutex;
