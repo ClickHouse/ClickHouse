@@ -57,7 +57,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (!canUseReadThroughCache())
+    if (!canUseReadThroughCache(read_settings))
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     return object_storage->patchSettings(modified_settings);
@@ -97,13 +97,12 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     const StoredObject & object,
     WriteMode mode, // Cached doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
-    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
+    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
@@ -139,6 +138,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
+    removeCacheIfExists(object.remote_path);
     object_storage->removeObject(object);
 }
 
@@ -202,9 +202,9 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
 {
-    object_storage->findAllFiles(path, children, max_keys);
+    object_storage->listObjects(path, children, max_keys);
 }
 
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
@@ -228,8 +228,11 @@ String CachedObjectStorage::getObjectsNamespace() const
     return object_storage->getObjectsNamespace();
 }
 
-bool CachedObjectStorage::canUseReadThroughCache()
+bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
 {
+    if (!settings.avoid_readthrough_cache_outside_query_context)
+        return true;
+
     return CurrentThread::isInitialized()
         && CurrentThread::get().getQueryContext()
         && !CurrentThread::getQueryId().empty();

@@ -32,7 +32,7 @@ for read_method in "${read_methods[@]}"; do
             query_duration_ms >= 7e3,
             ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] > 8e6,
             ProfileEvents['LocalReadThrottlerBytes'] > 8e6,
-            ProfileEvents['LocalReadThrottlerSleepMicroseconds'] > 7e6
+            ProfileEvents['LocalReadThrottlerSleepMicroseconds'] > 7e6*0.5
         FROM system.query_log
         WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
     "

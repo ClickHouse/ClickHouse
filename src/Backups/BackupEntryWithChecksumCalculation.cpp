@@ -8,15 +8,32 @@ namespace DB
 template <typename Base>
 UInt128 BackupEntryWithChecksumCalculation<Base>::getChecksum() const
 {
-    std::lock_guard lock{checksum_calculation_mutex};
-    if (!calculated_checksum)
     {
-        auto read_buffer = this->getReadBuffer(ReadSettings{}.adjustBufferSize(this->getSize()));
-        HashingReadBuffer hashing_read_buffer(*read_buffer);
-        hashing_read_buffer.ignoreAll();
-        calculated_checksum = hashing_read_buffer.getHash();
+        std::lock_guard lock{checksum_calculation_mutex};
+        if (calculated_checksum)
+            return *calculated_checksum;
     }
-    return *calculated_checksum;
+
+    size_t size = this->getSize();
+
+    {
+        std::lock_guard lock{checksum_calculation_mutex};
+        if (!calculated_checksum)
+        {
+            if (size == 0)
+            {
+                calculated_checksum = 0;
+            }
+            else
+            {
+                auto read_buffer = this->getReadBuffer(ReadSettings{}.adjustBufferSize(size));
+                HashingReadBuffer hashing_read_buffer(*read_buffer);
+                hashing_read_buffer.ignoreAll();
+                calculated_checksum = hashing_read_buffer.getHash();
+            }
+        }
+        return *calculated_checksum;
+    }
 }
 
 template <typename Base>
