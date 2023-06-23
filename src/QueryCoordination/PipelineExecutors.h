@@ -37,6 +37,8 @@ public:
         {
             if (thread.joinable())
                 thread.join();
+
+            finish_call_back();
         }
 
         void rethrowExceptionIfHas()

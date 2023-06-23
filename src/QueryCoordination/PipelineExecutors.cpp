@@ -54,13 +54,15 @@ void PipelineExecutors::cleanerThread()
 {
     while (!shutdown)
     {
+        std::vector<std::unique_ptr<Data>> to_erase;
         {
             std::lock_guard lock(data_queue_mutex);
+
             for (auto it = executors.begin(); it != executors.end();)
             {
                 if ((*it)->is_finished)
                 {
-                    (*it)->finish_call_back();
+                    to_erase.emplace_back(std::move(*it));
                     it = executors.erase(it);
                 }
                 else

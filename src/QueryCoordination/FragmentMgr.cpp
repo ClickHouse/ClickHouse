@@ -104,6 +104,7 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
             {
                 if (std::count(fragments_distributed.data_to.begin(), fragments_distributed.data_to.end(), connection->getDescription()))
                 {
+                    LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
                     channels.emplace_back(DataSink::Channel{.connection = connection, .is_local = is_local});
                     break;
                 }
@@ -162,6 +163,8 @@ void FragmentMgr::executeQueryPipelines(const String & query_id)
             {
                 onFinish(query_id, fragment_id);
             };
+
+            LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Fragment {} begin execute", fragment->getFragmentId());
             executors.execute(data->query_pipelines[i], call_back);
         }
     }

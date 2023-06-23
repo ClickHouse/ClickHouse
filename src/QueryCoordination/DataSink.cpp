@@ -25,6 +25,7 @@ void DataSink::onStart()
 {
     if (!was_begin_sent)
     {
+        LOG_DEBUG(&Poco::Logger::get("DataSink"), "DataSink start for request {}", request.toString());
         for (auto & channel : channels)
             channel.prepareSendData(request);
 

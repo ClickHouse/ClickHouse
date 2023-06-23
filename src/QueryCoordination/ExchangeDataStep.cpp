@@ -13,6 +13,7 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
 
     for (const auto & source : sources)
     {
+        LOG_DEBUG(&Poco::Logger::get("ExchangeDataStep"), "Create ExchangeDataReceiver for {} fragment_id {} exchange_id {}", source, fragment_id, plan_id);
         auto receiver = std::make_shared<ExchangeDataReceiver>(output_stream.value(), fragment_id, plan_id, source);
         pipes.emplace_back(receiver);
     }
