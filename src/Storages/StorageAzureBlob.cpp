@@ -804,15 +804,15 @@ StorageAzureBlobSource::Iterator::Iterator(
     , outer_blobs(outer_blobs_)
     , file_progress_callback(file_progress_callback_)
 {
-    if (keys.has_value() && blob_path_with_globs.has_value())
+    if (keys_.has_value() && blob_path_with_globs.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify keys and glob simultaneously it's a bug");
 
-    if (!keys.has_value() && !blob_path_with_globs.has_value())
+    if (!keys_.has_value() && !blob_path_with_globs.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Both keys and glob mask are not specified");
 
     if (keys_)
     {
-        Strings all_keys = *keys;
+        Strings all_keys = *keys_;
 
         /// Create a virtual block with one row to construct filter
         if (query && virtual_header && !all_keys.empty())
