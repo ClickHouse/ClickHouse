@@ -130,8 +130,6 @@ void WriteBufferFromS3::TaskTracker::add(Callback && func)
     /// this move is nothrow
     *future_placeholder = scheduler(std::move(func_with_notification), Priority{});
 
-    LOG_TEST(log, "add ended, in queue {}, limit {}", futures.size(), max_tasks_inflight);
-
     waitTilInflightShrink();
 }
 
@@ -139,6 +137,9 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
 {
     if (!max_tasks_inflight)
         return;
+
+    if (futures.size() >= max_tasks_inflight)
+        LOG_TEST(log, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
 
     Stopwatch watch;
 

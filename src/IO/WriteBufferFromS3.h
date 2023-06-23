@@ -59,7 +59,8 @@ private:
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
-    String getLogDetails() const;
+    String getVerboseLogDetails() const;
+    String getShortLogDetails() const;
 
     struct PartData;
     void hidePartialData();
