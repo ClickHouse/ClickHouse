@@ -634,6 +634,7 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
 
             bool cancelled;
             size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
+
             return r;
         }
         catch (const Poco::Exception & e)
