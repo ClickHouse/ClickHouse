@@ -418,7 +418,7 @@ private:
             SentryWriter::onFault(sig, error_message, stack_trace);
 
             /// Advice the user to send it manually.
-            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if (String(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
