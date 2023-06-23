@@ -237,7 +237,7 @@ Result:
 └────────────────────────────┘
 ```
 
-L2SquaredDistance
+## L2SquaredDistance
 
 Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
 
