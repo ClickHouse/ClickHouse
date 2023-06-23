@@ -218,8 +218,8 @@ private:
     bool internal_thread = false;
 
     /// This is helpful for cut linking dependencies for clickhouse_common_io
-    using Deleter = std::function<void()>;
-    Deleter deleter;
+    typedef void DeleterFunc();
+    DeleterFunc * deleter = nullptr;
 
     Poco::Logger * log = nullptr;
 

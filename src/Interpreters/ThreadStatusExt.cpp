@@ -270,12 +270,7 @@ void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool chec
     if (!deleter)
     {
         // deleter = [this]() { detachFromGroup(); };
-        deleter = [] ()
-        {
-            if (unlikely(!current_thread))
-                return;
-            current_thread->detachFromGroup();
-        };
+        deleter = CurrentThread::detachFromGroupIfNotDetached;
     }
 
     attachToGroupImpl(thread_group_);
