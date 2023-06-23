@@ -33,7 +33,7 @@ struct ExchangeDataRequest
 
     String toString() const
     {
-        return query_id + ", " + from_host + ", " + std::to_string(fragment_id) + ", " + std::to_string(exchange_id);
+        return query_id + ", from " + from_host + ", fragment_id " + std::to_string(fragment_id) + ", exchange_id " + std::to_string(exchange_id);
     }
 };
 

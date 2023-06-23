@@ -874,9 +874,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             }
         }
 
-        if (query_context->getSettingsRef().allow_experimental_query_coordination && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-            FragmentMgr::getInstance().rootQueryPipelineFinish(state.query_id);
-
         /// This lock wasn't acquired before and we make .lock() call here
         /// so everything under this line is covered even together
         /// with sendProgress() out of the scope

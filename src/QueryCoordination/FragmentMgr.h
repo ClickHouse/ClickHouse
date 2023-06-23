@@ -43,8 +43,6 @@ public:
 
     void executeQueryPipelines(const String & query_id);
 
-    void receiveData(const ExchangeDataRequest & exchange_data_request, Block block);
-
     std::shared_ptr<ExchangeDataReceiver> findReceiver(const ExchangeDataRequest & exchange_data_request) const;
 
     void rootQueryPipelineFinish(const String & query_id);
@@ -72,9 +70,13 @@ private:
         std::vector<QueryPipeline> query_pipelines;
 
         ContextMutablePtr query_context;
+
+        mutable std::mutex mutex;
     };
 
-    using QueryFragment = std::unordered_map<String, std::unique_ptr<Data>>;
+    std::shared_ptr<Data> find(const String & query_id) const;
+
+    using QueryFragment = std::unordered_map<String, std::shared_ptr<Data>>;
 
     std::unique_ptr<ThreadFromGlobalPool> cleaner;
 

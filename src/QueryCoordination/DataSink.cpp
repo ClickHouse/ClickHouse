@@ -21,6 +21,17 @@ void DataSink::Channel::sendData(Block block)
         connection->sendData(block, "", false);
 }
 
+void DataSink::onStart()
+{
+    if (!was_begin_sent)
+    {
+        for (auto & channel : channels)
+            channel.prepareSendData(request);
+
+        was_begin_sent = true;
+    }
+}
+
 void DataSink::calculateKeysPositions()
 {
     const auto & sample = getPort().getHeader();
@@ -42,14 +53,6 @@ void DataSink::consume(Chunk chunk)
             block.info.bucket_num = agg_info->bucket_num;
             block.info.is_overflows = agg_info->is_overflows;
         }
-    }
-
-    if (!was_begin_sent)
-    {
-        for (auto & channel : channels)
-            channel.prepareSendData(request);
-
-        was_begin_sent = true;
     }
 
     if (output_partition.type == PartitionType::UNPARTITIONED)
@@ -110,6 +113,7 @@ void DataSink::consume(Chunk chunk)
 void DataSink::onFinish()
 {
     LOG_DEBUG(&Poco::Logger::get("DataSink"), "DataSink finish for request {}", request.toString());
+
     for (auto & channel : channels)
     {
         channel.sendData(Block());

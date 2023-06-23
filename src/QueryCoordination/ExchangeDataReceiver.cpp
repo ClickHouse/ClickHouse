@@ -28,10 +28,13 @@ std::optional<Chunk> ExchangeDataReceiver::tryGenerate()
     block_list.pop_front();
 
     if (!block)
+    {
+        LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Receive empty block from {} fragment {} exchange id {}", source, fragment_id, plan_id);
         return {};
+    }
 
     size_t rows = block.rows();
-    LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Receive {} rows from {}", rows, source);
+    LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Receive {} rows from {} fragment {} exchange id {}", rows, source, fragment_id, plan_id);
     num_rows += rows;
 
     Chunk chunk(block.getColumns(), rows);

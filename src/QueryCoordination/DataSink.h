@@ -51,6 +51,8 @@ protected:
 
     void onFinish() override;
 
+    void onStart() override;
+
     void calculateKeysPositions();
 
 private:

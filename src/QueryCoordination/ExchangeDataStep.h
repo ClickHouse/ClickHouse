@@ -24,6 +24,11 @@ public:
         plan_id = plan_id_;
     }
 
+    void setFragmentID(Int32 fragment_id_)
+    {
+        fragment_id = fragment_id_;
+    }
+
     void setSources(const std::vector<String> & sources_)
     {
         sources = sources_;
@@ -35,6 +40,8 @@ private:
     std::vector<String> sources;
 
     Int32 plan_id;
+
+    Int32 fragment_id;
 };
 
 }

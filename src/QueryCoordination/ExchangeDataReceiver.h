@@ -16,8 +16,8 @@ namespace DB
 class ExchangeDataReceiver final : public ISource, public std::enable_shared_from_this<ExchangeDataReceiver>
 {
 public:
-    ExchangeDataReceiver(const DataStream & data_stream, UInt32 plan_id_, const String & source_)
-        : ISource(data_stream.header), plan_id(plan_id_), source(source_)
+    ExchangeDataReceiver(const DataStream & data_stream, Int32 fragment_id_, Int32 plan_id_, const String & source_)
+        : ISource(data_stream.header), fragment_id(fragment_id_), plan_id(plan_id_), source(source_)
     {
         const auto & sample = getPort().getHeader();
         for (auto & type : sample.getDataTypes())
@@ -72,6 +72,8 @@ private:
     std::mutex mutex;
 
     BlocksList block_list;
+
+    Int32 fragment_id;
 
     Int32 plan_id;
 

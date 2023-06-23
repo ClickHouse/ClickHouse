@@ -410,7 +410,29 @@ public:
 
     void setCluster(std::shared_ptr<Cluster> cluster_) { cluster = cluster_; }
 
-    void setFragmentId(UInt32 id) { fragment_id = id; }
+    void setFragmentID(Node * node)
+    {
+        if (!node || !node->step)
+        {
+            return;
+        }
+
+        if (auto * exchange_step = dynamic_cast<ExchangeDataStep *>(node->step.get()))
+        {
+            exchange_step->setFragmentID(getFragmentId());
+            return;
+        }
+
+        for (Node * child : node->children)
+        {
+            setFragmentID(child);
+        }
+    }
+
+    void setFragmentID(UInt32 id)
+    {
+        fragment_id = id;
+    }
 
     Int32 getFragmentId() const { return fragment_id; }
 

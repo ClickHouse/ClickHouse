@@ -13,7 +13,7 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
 
     for (const auto & source : sources)
     {
-        auto receiver = std::make_shared<ExchangeDataReceiver>(output_stream.value(), plan_id, source);
+        auto receiver = std::make_shared<ExchangeDataReceiver>(output_stream.value(), fragment_id, plan_id, source);
         pipes.emplace_back(receiver);
     }
 

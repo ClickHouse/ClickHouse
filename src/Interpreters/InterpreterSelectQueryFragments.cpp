@@ -923,7 +923,9 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(Node & sin
 
     for (UInt32 i = 0; i < res_fragments.size(); ++i)
     {
-        res_fragments[i]->setFragmentId(i);
+        res_fragments[i]->setFragmentID(i);
+
+        res_fragments[i]->setFragmentID(res_fragments[i]->getRootNode());
     }
     return res_fragments;
 }

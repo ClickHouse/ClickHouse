@@ -59,10 +59,21 @@ String Coordinator::assignFragmentToHost()
                 //                try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, scan_step->getTable()->getStorageID().getQualifiedName());
                 try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
 
-                if (shard_info.isLocal())
-                    local_shard_connection = try_results[0];
-
                 PoolBase<DB::Connection>::Entry connection =  try_results[0]; /// TODO random ?
+
+                if (shard_info.isLocal())
+                {
+                    auto & local_address = shard_info.local_addresses[0];
+                    for (auto & connect : try_results)
+                    {
+                        if (local_address.toString() == connect->getDescription())
+                        {
+                            connection = connect;
+                            local_shard_connection = connection;
+                        }
+                    }
+                }
+
                 host_connection[connection->getDescription()] = connection;
 
                 scan_fragment_hosts[fragment_id].emplace_back(connection->getDescription());

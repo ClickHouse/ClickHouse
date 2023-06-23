@@ -59,6 +59,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <QueryCoordination/FragmentMgr.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -1062,6 +1063,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
                     query_span->finish();
                 }
+
+                if (context->getSettingsRef().allow_experimental_query_coordination && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+                    FragmentMgr::getInstance().rootQueryPipelineFinish(elem.client_info.current_query_id);
             };
 
             auto exception_callback = [start_watch,
@@ -1139,6 +1143,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
                     query_span->finish();
                 }
+
+                if (context->getSettingsRef().allow_experimental_query_coordination && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+                    FragmentMgr::getInstance().rootQueryPipelineFinish(elem.client_info.current_query_id);
             };
 
             res.finish_callback = std::move(finish_callback);
