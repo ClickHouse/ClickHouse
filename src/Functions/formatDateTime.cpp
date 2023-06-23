@@ -947,8 +947,8 @@ public:
 
                 if (vec[i].value < 0 && c.fractional)
                 {
-                    c.fractional = DecimalUtils::scaleMultiplier<DataType::FieldType>(scale) 
-                        + (c.whole ? DataType::FieldType(-1) : DataType::FieldType(1)) * c.fractional;
+                    using F = typename DataType::FieldType;
+                    c.fractional = DecimalUtils::scaleMultiplier<F>(scale) + (c.whole ? F(-1) : F(1)) * c.fractional;
                     --c.whole;
                 }
 
