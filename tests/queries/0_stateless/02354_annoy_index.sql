@@ -36,12 +36,12 @@ CREATE TABLE tab(id Int32, vector Nullable(Float32), INDEX annoy_index vector TY
 SELECT '--- Test default GRANULARITY (should be 100 mio. for annoy)---';
 
 CREATE TABLE tab (id Int32, vector Array(Float32), INDEX annoy_index(vector) TYPE annoy) ENGINE=MergeTree ORDER BY id;
-SELECT granularity FROM system.data_skipping_indices WHERE table = 'tab' AND name = 'annoy_index';
+SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab' AND name = 'annoy_index';
 DROP TABLE tab;
 
 CREATE TABLE tab (id Int32, vector Array(Float32)) ENGINE=MergeTree ORDER BY id;
 ALTER TABLE tab ADD INDEX annoy_index(vector) TYPE annoy;
-SELECT granularity FROM system.data_skipping_indices WHERE table = 'tab' AND name = 'annoy_index';
+SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab' AND name = 'annoy_index';
 DROP TABLE tab;
 
 SELECT '--- Test with Array, GRANULARITY = 1, index_granularity = 5 ---';
