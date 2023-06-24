@@ -10,3 +10,5 @@ SELECT transform(toString(number), ['3', '5', '7'], [null, 222, 333], materializ
 SELECT transform(toString(number), ['3', '5', '7'], [null, null, null], materialize(1)) FROM system.numbers LIMIT 10;
 SELECT transform(1, [2, 3], ['Meta.ua', null], materialize('Остальные')) AS title;
 SELECT transform(2, [2, 3], [null, 'Google'], materialize('Остальные')) AS title;
+
+SELECT transform(number % 3 = 1 ? NULL : number, [2, 5, NULL], ['Hello', 'World', 'xyz'], '-') FROM numbers(10);
