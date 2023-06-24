@@ -403,7 +403,7 @@ private:
                 }
             }
         );
-        
+
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
