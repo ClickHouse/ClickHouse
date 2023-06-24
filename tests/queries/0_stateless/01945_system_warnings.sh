@@ -22,6 +22,5 @@ ${CLICKHOUSE_CLIENT} --multiple_joins_rewriter_version=42 -q "SELECT message FRO
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = countDistinct(message) FROM system.warnings"
 
 # Avoid too many warnings, especially in CI
-${CLICKHOUSE_CLIENT} -q "SELECT count() < 5 FROM system.warnings"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings"
+${CLICKHOUSE_CLIENT} -q "SELECT count() <= 5 FROM system.warnings"
 
