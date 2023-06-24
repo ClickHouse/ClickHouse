@@ -259,34 +259,39 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     return res;
 }
 
-std::unique_ptr<ReadBuffer> createReadBuffer(
-    const String & current_path,
-    bool use_table_fd,
-    const String & storage_name,
-    int table_fd,
-    const String & compression_method,
-    ContextPtr context)
+struct stat getFileStat(const String & current_path, bool use_table_fd, int table_fd, const String & storage_name)
 {
-    CompressionMethod method;
-
     struct stat file_stat{};
-
     if (use_table_fd)
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != fstat(table_fd, &file_stat))
             throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
-
-        method = chooseCompressionMethod("", compression_method);
     }
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != stat(current_path.c_str(), &file_stat))
             throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
-
-        method = chooseCompressionMethod(current_path, compression_method);
     }
+
+    return file_stat;
+}
+
+std::unique_ptr<ReadBuffer> createReadBuffer(
+    const String & current_path,
+    const struct stat & file_stat,
+    bool use_table_fd,
+    int table_fd,
+    const String & compression_method,
+    ContextPtr context)
+{
+    CompressionMethod method;
+
+    if (use_table_fd)
+        method = chooseCompressionMethod("", compression_method);
+    else
+        method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
@@ -357,7 +362,8 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
+        auto file_stat = getFileStat("", true, table_fd, getName());
+        read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -398,12 +404,29 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == paths.end())
-            return nullptr;
+        String path;
+        struct stat file_stat;
+        do
+        {
+            if (it == paths.end())
+            {
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
+                        format);
+                return nullptr;
+            }
 
-        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
+            path = *it++;
+            file_stat = getFileStat(path, false, -1, "File");
+        }
+        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
+
+        first = false;
+        return createReadBuffer(path, file_stat, false, -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -692,22 +715,32 @@ public:
                 }
 
                 if (!read_buf)
-                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
+                {
+                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                        continue;
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
+                }
+
+                size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
+                /// Adjust total_rows_approx_accumulated with new total size.
+                if (total_files_size)
+                    total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_files_size + file_size) / total_files_size * total_rows_approx_accumulated));
+                total_files_size += file_size;
 
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
 
                 QueryPipelineBuilder builder;
-                builder.init(Pipe(format));
+                builder.init(Pipe(input_format));
 
                 if (columns_description.hasDefaults())
                 {
                     builder.addSimpleTransform([&](const Block & header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
                     });
                 }
 
@@ -737,10 +770,13 @@ public:
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
-                if (num_rows)
+                if (num_rows && total_files_size)
                 {
+                    size_t chunk_size = input_format->getApproxBytesReadForChunk();
+                    if (!chunk_size)
+                        chunk_size = chunk.bytes();
                     updateRowsProgressApprox(
-                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                        *this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
                 }
                 return chunk;
             }
@@ -752,6 +788,7 @@ public:
             /// Close file prematurely if stream was ended.
             reader.reset();
             pipeline.reset();
+            input_format.reset();
             read_buf.reset();
         }
 
@@ -766,6 +803,7 @@ private:
     String current_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
+    InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
@@ -782,6 +820,8 @@ private:
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
     UInt64 total_rows_approx_max = 0;
+
+    size_t total_files_size = 0;
 };
 
 
@@ -991,10 +1031,18 @@ public:
         cancelled = true;
     }
 
-    void onException() override
+    void onException(std::exception_ptr exception) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            release();
+        }
     }
 
     void onFinish() override
@@ -1018,10 +1066,15 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            writer.reset();
-            write_buf->finalize();
+            release();
             throw;
         }
+    }
+
+    void release()
+    {
+        writer.reset();
+        write_buf->finalize();
     }
 
     StorageMetadataPtr metadata_snapshot;

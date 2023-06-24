@@ -399,7 +399,8 @@ public:
     /// default will be stored in this file.
     static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
 
-    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+    /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
@@ -474,8 +475,10 @@ public:
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
-    void writeDeleteOnDestroyMarker();
+    /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
+    /// TODO: remove this method after some time.
     void removeDeleteOnDestroyMarker();
+
     /// It may look like a stupid joke. but these two methods are absolutely unrelated.
     /// This one is about removing file with metadata about part version (for transactions)
     void removeVersionMetadata();
@@ -624,6 +627,9 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    void incrementStateMetric(MergeTreeDataPartState state) const;
+    void decrementStateMetric(MergeTreeDataPartState state) const;
 
     mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
