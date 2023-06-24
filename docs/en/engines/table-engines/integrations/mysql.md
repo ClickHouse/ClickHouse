@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/mysql
-sidebar_position: 4
+sidebar_position: 138
 sidebar_label: MySQL
 ---
 
