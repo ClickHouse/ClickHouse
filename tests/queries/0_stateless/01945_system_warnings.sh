@@ -23,4 +23,5 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() = countDistinct(message) FROM system.war
 
 # Avoid too many warnings, especially in CI
 ${CLICKHOUSE_CLIENT} -q "SELECT count() < 5 FROM system.warnings"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings"
 
