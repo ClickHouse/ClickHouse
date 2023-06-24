@@ -695,6 +695,12 @@ namespace
 
             const DataTypePtr & from_type = arguments[0].type;
 
+            if (from_type->onlyNull())
+            {
+                cache.is_empty = true;
+                return;
+            }
+
             const ColumnArray * array_from = checkAndGetColumnConstData<ColumnArray>(arguments[1].column.get());
             const ColumnArray * array_to = checkAndGetColumnConstData<ColumnArray>(arguments[2].column.get());
 
