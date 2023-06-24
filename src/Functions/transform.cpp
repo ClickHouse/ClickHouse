@@ -92,7 +92,10 @@ namespace
             const auto type_arr_from_nested = type_arr_from->getNestedType();
 
             auto src = tryGetLeastSupertype(DataTypes{type_x, type_arr_from_nested});
-            if (!src)
+            if (!src
+                /// Compatibility with previous versions, that allowed even UInt64 with Int64,
+                /// regardless of ambiguous conversions.
+                && !isNativeNumber(type_x) && !isNativeNumber(type_arr_from_nested))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
