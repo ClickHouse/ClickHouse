@@ -163,7 +163,13 @@ namespace
                 default_non_const = castColumn(arguments[3], result_type);
 
             auto column_result = result_type->createColumn();
-            if (cache.table_num_to_idx)
+            if (cache.is_empty)
+            {
+                return default_non_const
+                    ? default_non_const
+                    : castColumn(arguments[0], result_type);
+            }
+            else if (cache.table_num_to_idx)
             {
                 if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const)
                     && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const)
@@ -645,6 +651,8 @@ namespace
             std::unique_ptr<StringToIdx> table_string_to_idx;
             std::unique_ptr<AnythingToIdx> table_anything_to_idx;
 
+            bool is_empty = false;
+
             ColumnPtr from_column;
             ColumnPtr to_column;
             ColumnPtr default_column;
@@ -716,7 +724,10 @@ namespace
 
             const size_t size = cache.from_column->size();
             if (0 == size)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty arrays are illegal in function {}", getName());
+            {
+                cache.is_empty = true;
+                return;
+            }
 
             if (cache.to_column->size() != size)
                 throw Exception(
