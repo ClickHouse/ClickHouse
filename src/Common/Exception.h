@@ -42,6 +42,7 @@ public:
         message_format_string = msg.format_string;
     }
 
+    /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
 
 protected:
@@ -140,6 +141,7 @@ private:
 
 protected:
     std::string_view message_format_string;
+    /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
