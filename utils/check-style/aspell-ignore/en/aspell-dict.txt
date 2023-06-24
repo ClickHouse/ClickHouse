@@ -772,6 +772,7 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
+SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
@@ -1936,6 +1937,7 @@ prefertch
 prefetch
 prefetchsize
 preloaded
+prem
 prepend
 prepended
 prepends
