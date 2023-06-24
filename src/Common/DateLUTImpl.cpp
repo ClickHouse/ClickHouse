@@ -79,10 +79,13 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     offset_is_whole_number_of_minutes_during_epoch = true;
 
     cctz::civil_day date = lut_start;
-    cctz::time_point<cctz::seconds> start_of_day_time_point = lookupTz(cctz_time_zone, date);
+    cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(cctz_time_zone, date);
 
     auto next_transition_date = date;
 
+    /// Fill the lookup table:
+    /// Adjustments only occur at the dates of transitions. We save next_transition_date and add 24h to the
+    /// previous value until we reach the it. Then we do the adjustment and get the new next_transition_date.
     UInt32 i = 0;
     do
     {
@@ -93,12 +96,12 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
         if (date >= next_transition_date)
         {
-            start_of_day_time_point = lookupTz(cctz_time_zone, date);
+            start_of_day_time_point_if_no_transitions = lookupTz(cctz_time_zone, date);
 
             /// If UTC offset was changed this day.
             /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
             cctz::time_zone::civil_transition transition{};
-            if (cctz_time_zone.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition)
+            if (cctz_time_zone.next_transition(start_of_day_time_point_if_no_transitions - std::chrono::seconds(1), &transition)
                 && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
                 && transition.from != transition.to)
             {
@@ -120,7 +123,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
             next_transition_date = std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from));
         }
 
-        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
+        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point_if_no_transitions);
 
         values.year = date.year();
         values.month = date.month();
@@ -148,7 +151,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
             offset_is_whole_number_of_minutes_during_epoch = false;
 
         /// Going to next day.
-        start_of_day_time_point += std::chrono::hours(24);
+        start_of_day_time_point_if_no_transitions += std::chrono::hours(24);
         ++date;
         ++i;
     }
