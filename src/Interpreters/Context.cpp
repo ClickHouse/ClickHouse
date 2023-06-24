@@ -777,20 +777,27 @@ Strings Context::getWarnings() const
         auto lock = getLock();
         common_warnings = shared->warnings;
     }
-    String res = "Obsolete settings [";
-    size_t obsolete_settings_count = 0;
+    /// Make setting's name ordered
+    std::set<String> obsolete_settings;
     for (const auto & setting : settings)
     {
         if (setting.isValueChanged() && setting.isObsolete())
-        {
-            res += (obsolete_settings_count ? ", '" : "'") + setting.getName() + "'";
-            ++obsolete_settings_count;
-        }
+            obsolete_settings.emplace(setting.getName());
     }
 
-    if (obsolete_settings_count)
+    if (!obsolete_settings.empty())
     {
-        res = res + "]" + (obsolete_settings_count == 1 ? " is" : " are")
+        bool single_element = obsolete_settings.size() == 1;
+        String res = single_element ? "Obsolete setting [" : "Obsolete settings [";
+
+        bool first = true;
+        for (const auto & setting : obsolete_settings)
+        {
+            res += first ? "" : ", ";
+            res += "'" + setting + "'";
+            first = false;
+        }
+        res = res + "]" + (single_element ? " is" : " are")
             + " changed. "
               "Please check 'select * from system.settings where changed and is_obsolete' and read the changelog.";
         common_warnings.emplace_back(res);
@@ -2156,9 +2163,9 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     const auto & config = getConfigRef();
-    const auto & settings_ = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings_.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings_.restore_threads);
+    const auto & settings_ref = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
@@ -4296,10 +4303,10 @@ ReadSettings Context::getReadSettings() const
 
 ReadSettings Context::getBackupReadSettings() const
 {
-    ReadSettings settings_ = getReadSettings();
-    settings_.remote_throttler = getBackupsThrottler();
-    settings_.local_throttler = getBackupsThrottler();
-    return settings_;
+    ReadSettings read_settings = getReadSettings();
+    read_settings.remote_throttler = getBackupsThrottler();
+    read_settings.local_throttler = getBackupsThrottler();
+    return read_settings;
 }
 
 WriteSettings Context::getWriteSettings() const
@@ -4328,14 +4335,13 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 
 Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 {
-    const auto & settings_ = getSettingsRef();
+    const auto & settings_ref = getSettingsRef();
 
     using enum Context::ParallelReplicasMode;
-    if (!settings_.parallel_replicas_custom_key.value.empty())
+    if (!settings_ref.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
-        && !settings_.use_hedged_requests)
+    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0 && !settings_ref.use_hedged_requests)
         return READ_TASKS;
 
     return SAMPLE_KEY;
@@ -4343,17 +4349,15 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    const auto & settings_ = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings_.max_parallel_replicas > 1
+    const auto & settings_ref = getSettingsRef();
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings_ = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings_.max_parallel_replicas > 1
+    const auto & settings_ref = getSettingsRef();
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
         && getClientInfo().collaborate_with_initiator;
 }
 
