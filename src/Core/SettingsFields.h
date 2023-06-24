@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>
+#include <cctz/time_zone.h>
 #include <chrono>
 #include <unordered_map>
 #include <string_view>
@@ -564,6 +565,42 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
         return getEnumValues<EnumType>().size();\
     }
+
+/// Setting field for specifying user-defined timezone. It is basically a string, but it needs validation.
+struct SettingFieldTimezone
+{
+    String value;
+    bool changed = false;
+
+    explicit SettingFieldTimezone(std::string_view str = {}) { validateTimezone(std::string(str)); value = str; }
+    explicit SettingFieldTimezone(const String & str) { validateTimezone(str); value = str; }
+    explicit SettingFieldTimezone(String && str) { validateTimezone(str); value = std::move(str); }
+    explicit SettingFieldTimezone(const char * str) { validateTimezone(str); value = str; }
+    explicit SettingFieldTimezone(const Field & f) { const String & str = f.safeGet<const String &>(); validateTimezone(str); value = str; }
+
+    SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(std::string(str)); value = str; changed = true; return *this; }
+    SettingFieldTimezone & operator =(const String & str) { *this = std::string_view{str}; return *this; }
+    SettingFieldTimezone & operator =(String && str) { validateTimezone(str); value = std::move(str); changed = true; return *this; }
+    SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
+    SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
+
+    operator const String &() const { return value; } /// NOLINT
+    explicit operator Field() const { return value; }
+
+    const String & toString() const { return value; }
+    void parseFromString(const String & str) { *this = str; }
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+
+private:
+    void validateTimezone(const std::string & tz_str)
+    {
+        cctz::time_zone validated_tz;
+        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
+    }
+};
 
 /// Can keep a value of any type. Used for user-defined settings.
 struct SettingFieldCustom
