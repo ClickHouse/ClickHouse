@@ -14,10 +14,8 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorToString.h>
 
 
 namespace DB
@@ -28,6 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -260,14 +259,14 @@ namespace
             out_offs.resize(size);
             auto & out_chars = out->getChars();
 
-            const auto * to_col = reinterpret_cast<const ColumnString *>(cache.to_column.get());
+            const auto * to_col = assert_cast<const ColumnString *>(cache.to_column.get());
             const auto & to_chars = to_col->getChars();
             const auto & to_offs = to_col->getOffsets();
             const auto & table = *cache.table_num_to_idx;
 
             if (cache.default_column)
             {
-                const auto * def = reinterpret_cast<const ColumnString *>(cache.default_column.get());
+                const auto * def = assert_cast<const ColumnString *>(cache.default_column.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
                 const auto * def_data = def_chars.data();
@@ -276,7 +275,7 @@ namespace
             }
             else
             {
-                const auto * def = reinterpret_cast<const ColumnString *>(default_non_const.get());
+                const auto * def = assert_cast<const ColumnString *>(default_non_const.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
                 executeNumToStringHelper(table, pod, out_chars, out_offs, to_chars, to_offs, def_chars, def_offs, size);
@@ -341,16 +340,16 @@ namespace
             if constexpr (std::is_same_v<ColumnDecimal<Decimal32>, T> || std::is_same_v<ColumnDecimal<Decimal64>, T>)
                 out_scale = out->getScale();
 
-            const auto & to_pod = reinterpret_cast<const T *>(cache.to_column.get())->getData();
+            const auto & to_pod = assert_cast<const T *>(cache.to_column.get())->getData();
             const auto & table = *cache.table_num_to_idx;
             if (cache.default_column)
             {
-                const auto const_def = reinterpret_cast<const T *>(cache.default_column.get())->getData()[0];
+                const auto const_def = assert_cast<const T *>(cache.default_column.get())->getData()[0];
                 executeNumToNumHelper(table, pod, out_pod, to_pod, const_def, size, out_scale, out_scale);
             }
             else if (default_non_const)
             {
-                const auto & nconst_def = reinterpret_cast<const T *>(default_non_const.get())->getData();
+                const auto & nconst_def = assert_cast<const T *>(default_non_const.get())->getData();
                 executeNumToNumHelper(table, pod, out_pod, to_pod, nconst_def, size, out_scale, out_scale);
             }
             else
@@ -424,7 +423,7 @@ namespace
                 ColumnString::Offset current_offset = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                    const StringRef ref{&data[current_offset], offsets[i] - current_offset - 1};
                     current_offset = offsets[i];
                     const auto * it = table.find(ref);
                     if (it)
@@ -454,14 +453,14 @@ namespace
             out_offs.resize(size);
             auto & out_chars = out->getChars();
 
-            const auto * to_col = reinterpret_cast<const ColumnString *>(cache.to_column.get());
+            const auto * to_col = assert_cast<const ColumnString *>(cache.to_column.get());
             const auto & to_chars = to_col->getChars();
             const auto & to_offs = to_col->getOffsets();
 
             const auto & table = *cache.table_string_to_idx;
             if (cache.default_column)
             {
-                const auto * def = reinterpret_cast<const ColumnString *>(cache.default_column.get());
+                const auto * def = assert_cast<const ColumnString *>(cache.default_column.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
                 const auto * def_data = def_chars.data();
@@ -470,7 +469,7 @@ namespace
             }
             else if (default_non_const)
             {
-                const auto * def = reinterpret_cast<const ColumnString *>(default_non_const.get());
+                const auto * def = assert_cast<const ColumnString *>(default_non_const.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
                 executeStringToStringHelper(table, data, offsets, out_chars, out_offs, to_chars, to_offs, def_chars, def_offs, size);
@@ -501,7 +500,7 @@ namespace
             {
                 const char8_t * to = nullptr;
                 size_t to_size = 0;
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                const StringRef ref{&data[current_offset], offsets[i] - current_offset - 1};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -543,16 +542,16 @@ namespace
             const size_t size = offsets.size();
             out_pod.resize(size);
 
-            const auto & to_pod = reinterpret_cast<const T *>(cache.to_column.get())->getData();
+            const auto & to_pod = assert_cast<const T *>(cache.to_column.get())->getData();
             const auto & table = *cache.table_string_to_idx;
             if (cache.default_column)
             {
-                const auto const_def = reinterpret_cast<const T *>(cache.default_column.get())->getData()[0];
+                const auto const_def = assert_cast<const T *>(cache.default_column.get())->getData()[0];
                 executeStringToNumHelper(table, data, offsets, out_pod, to_pod, const_def, size);
             }
             else
             {
-                const auto & nconst_def = reinterpret_cast<const T *>(default_non_const.get())->getData();
+                const auto & nconst_def = assert_cast<const T *>(default_non_const.get())->getData();
                 executeStringToNumHelper(table, data, offsets, out_pod, to_pod, nconst_def, size);
             }
             return true;
@@ -571,7 +570,7 @@ namespace
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                const StringRef ref{&data[current_offset], offsets[i] - current_offset - 1};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -697,7 +696,7 @@ namespace
 
             /// Note: Doesn't check the duplicates in the `from` array.
 
-            if (isNativeInteger(from_type))
+            if (from_type->isValueRepresentedByNumber())
             {
                 cache.table_num_to_idx = std::make_unique<Cache::NumToIdx>();
                 auto & table = *cache.table_num_to_idx;
@@ -713,7 +712,7 @@ namespace
                     }
                 }
             }
-            else
+            else if (from_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             {
                 cache.table_string_to_idx = std::make_unique<Cache::StringToIdx>();
                 auto & table = *cache.table_string_to_idx;
@@ -726,6 +725,8 @@ namespace
                     }
                 }
             }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type {} as the first argument in function `transform`", from_type->getName());
 
             cache.initialized = true;
         }
