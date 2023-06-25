@@ -3438,9 +3438,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merge_pred.emplace(queue.getMergePredicate(zookeeper, partitions_to_merge_in));
         }
 
+        String out_reason;
         if (can_assign_merge &&
             merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, *merge_pred,
-                                              merge_with_ttl_allowed, NO_TRANSACTION_PTR, nullptr, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
+                merge_with_ttl_allowed, NO_TRANSACTION_PTR, out_reason, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
         {
             create_result = createLogEntryToMergeParts(
                 zookeeper,
@@ -5169,13 +5170,13 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 select_decision = merger_mutator.selectPartsToMerge(
                     future_merged_part, /* aggressive */ true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool,
-                    can_merge, /* merge_with_ttl_allowed */ false, NO_TRANSACTION_PTR, &disable_reason);
+                    can_merge, /* merge_with_ttl_allowed */ false, NO_TRANSACTION_PTR, disable_reason);
             }
             else
             {
                 select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, can_merge, partition_id, final, metadata_snapshot, NO_TRANSACTION_PTR,
-                    &disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
+                    disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
             }
 
             /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
@@ -7711,7 +7712,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
         String out_reason;
-        if (!merge_pred.canMergeSinglePart(part, &out_reason))
+        if (!merge_pred.canMergeSinglePart(part, out_reason))
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason);
     }
 
@@ -7959,14 +7960,14 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
         /// finished the merge.
         String out_reason;
-        if (!merge_pred.canMergeSinglePart(part, &out_reason))
+        if (!merge_pred.canMergeSinglePart(part, out_reason))
         {
             if (throw_if_noop)
                 throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 
-        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
+        if (merge_pred.partParticipatesInReplaceRange(part, out_reason))
         {
             if (throw_if_noop)
                 throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);

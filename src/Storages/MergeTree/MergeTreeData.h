@@ -1494,7 +1494,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     std::mutex write_ahead_log_mutex;
     WriteAheadLogPtr write_ahead_log;

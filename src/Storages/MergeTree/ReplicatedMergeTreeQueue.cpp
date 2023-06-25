@@ -2197,7 +2197,7 @@ bool LocalMergePredicate::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     const MergeTreeTransaction *,
-    String * out_reason) const
+    String & out_reason) const
 {
     if (left)
         return canMergeTwoParts(left, right, out_reason);
@@ -2209,7 +2209,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     const MergeTreeTransaction *,
-    String * out_reason) const
+    String & out_reason) const
 {
     if (left)
         return canMergeTwoParts(left, right, out_reason);
@@ -2221,7 +2221,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
-    String * out_reason) const
+    String & out_reason) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -2265,22 +2265,19 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
     {
         if (pinned_part_uuids.part_uuids.contains(part->uuid))
         {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
+            out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
             return false;
         }
 
         if (part->name == inprogress_quorum_part)
         {
-            if (out_reason)
-                *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+            out_reason = "Quorum insert for part " + part->name + " is currently in progress";
             return false;
         }
 
         if (prev_virtual_parts.getContainingPart(part->info).empty())
         {
-            if (out_reason)
-                *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+            out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
             return false;
         }
     }
@@ -2294,8 +2291,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
     {
         if (partition_ids_hint && !partition_ids_hint->contains(left->info.partition_id))
         {
-            if (out_reason)
-                *out_reason = fmt::format("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
+            out_reason = fmt::format("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
             return false;
         }
 
@@ -2307,10 +2303,8 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
             auto block_it = block_numbers.upper_bound(left_max_block);
             if (block_it != block_numbers.end() && *block_it < right_min_block)
             {
-                if (out_reason)
-                    *out_reason = "Block number " + toString(*block_it) + " is still being inserted between parts "
-                        + left->name + " and " + right->name;
-
+                out_reason = "Block number " + toString(*block_it) + " is still being inserted between parts "
+                    + left->name + " and " + right->name;
                 return false;
             }
         }
@@ -2322,7 +2316,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 bool LocalMergePredicate::canMergeTwoParts(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
-    String * out_reason) const
+    String & out_reason) const
 {
     Int64 left_max_block = left->info.max_block;
     Int64 right_min_block = right->info.min_block;
@@ -2336,8 +2330,7 @@ bool LocalMergePredicate::canMergeTwoParts(
         String containing_part = queue.virtual_parts.getContainingPart(part->info);
         if (containing_part != part->name)
         {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
+            out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
             return false;
         }
     }
@@ -2354,10 +2347,9 @@ bool LocalMergePredicate::canMergeTwoParts(
         Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
         {
-            if (out_reason)
-                *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present or being processed by "
-                    + " other background process on this replica between " + left->name + " and " + right->name;
+            out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
+                + " to " + covered.back() + ") that are still not present or being processed by "
+                + " other background process on this replica between " + left->name + " and " + right->name;
             return false;
         }
     }
@@ -2370,9 +2362,8 @@ bool LocalMergePredicate::canMergeTwoParts(
 
     if (left_mutation_ver != right_mutation_ver)
     {
-        if (out_reason)
-            *out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
-                + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
+        out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
+            + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
         return false;
     }
 
@@ -2381,33 +2372,30 @@ bool LocalMergePredicate::canMergeTwoParts(
 
 bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
-    String * out_reason) const
+    String & out_reason) const
 {
     if (pinned_part_uuids.part_uuids.contains(part->uuid))
     {
-        if (out_reason)
-            *out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
+        out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
         return false;
     }
 
     if (part->name == inprogress_quorum_part)
     {
-        if (out_reason)
-            *out_reason = fmt::format("Quorum insert for part {} is currently in progress", part->name);
+        out_reason = fmt::format("Quorum insert for part {} is currently in progress", part->name);
         return false;
     }
 
     if (prev_virtual_parts.getContainingPart(part->info).empty())
     {
-        if (out_reason)
-            *out_reason = fmt::format("Entry for part {} hasn't been read from the replication log yet", part->name);
+        out_reason = fmt::format("Entry for part {} hasn't been read from the replication log yet", part->name);
         return false;
     }
 
     return nested_pred.canMergeSinglePart(part, out_reason);
 }
 
-bool LocalMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+bool LocalMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String & out_reason) const
 {
     std::lock_guard lock(queue.state_mutex);
 
@@ -2416,8 +2404,7 @@ bool LocalMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & 
     String containing_part = queue.virtual_parts.getContainingPart(part->info);
     if (containing_part != part->name)
     {
-        if (out_reason)
-            *out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
+        out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
         return false;
     }
 
@@ -2425,7 +2412,7 @@ bool LocalMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & 
 }
 
 
-bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const
 {
     std::lock_guard lock(queue.state_mutex);
     for (const auto & entry : queue.queue)
@@ -2438,9 +2425,7 @@ bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const Mer
             if (part->info.isDisjoint(MergeTreePartInfo::fromPartName(part_name, queue.format_version)))
                 continue;
 
-            if (out_reason)
-                *out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
-
+            out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
             return true;
         }
     }
