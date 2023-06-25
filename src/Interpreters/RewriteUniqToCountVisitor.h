@@ -17,7 +17,7 @@ class ASTFunction;
 ///     'SELECT count() FROM (SELECT x ... GROUP BY x)'
 ///
 /// Note we can rewrite all uniq variants except uniqUpTo.
-class RewriteUinqToCountMatcher
+class RewriteUniqToCountMatcher
 {
 public:
     struct Data {};
@@ -25,5 +25,5 @@ public:
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 };
 
-using RewriteUinqToCountVisitor = InDepthNodeVisitor<RewriteUinqToCountMatcher, true>;
+using RewriteUniqToCountVisitor = InDepthNodeVisitor<RewriteUniqToCountMatcher, true>;
 }
