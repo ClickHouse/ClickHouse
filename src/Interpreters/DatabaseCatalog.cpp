@@ -420,8 +420,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 }
                 else
                 {
-                    std::string suggested_name = names[0];
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(suggested_name)));
+                    exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
                 }
             }
             return {};
