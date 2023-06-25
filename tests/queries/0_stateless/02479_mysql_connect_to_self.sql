@@ -8,28 +8,28 @@ INSERT INTO foo VALUES (1, 'one', -1, 'een'), (2, 'two', -2, 'twee'), (3, 'three
 SET allow_experimental_analyzer = 1;
 
 SELECT '---';
-SELECT * FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '') ORDER BY key;
+SELECT * FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100) ORDER BY key;
 
 SELECT '---';
-SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '');
+SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100);
 
 SELECT '---';
-SELECT 1 FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '');
+SELECT 1 FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100);
 
 SELECT '---';
-SELECT key FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '') ORDER BY key;
+SELECT key FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100) ORDER BY key;
 
 SELECT '---';
-SELECT b, a FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '') ORDER BY a;
+SELECT b, a FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100) ORDER BY a;
 
 SELECT '---';
-SELECT b, a FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '') ORDER BY c;
+SELECT b, a FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100) ORDER BY c;
 
 SELECT '---';
-SELECT b FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '') WHERE c != 'twee' ORDER BY b;
+SELECT b FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100) WHERE c != 'twee' ORDER BY b;
 
 SELECT '---';
-SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '') WHERE c != 'twee';
+SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100) WHERE c != 'twee';
 
 EXPLAIN QUERY TREE dump_ast = 1
 SELECT * FROM mysql(
@@ -38,5 +38,5 @@ SELECT * FROM mysql(
 );
 
 SELECT '---';
-SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connection_pool_size = 1);
+SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connection_pool_size = 1, connect_timeout = 100, connection_wait_timeout = 100);
 SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '', SETTINGS connection_pool_size = 0); -- { serverError BAD_ARGUMENTS }
