@@ -1,8 +1,11 @@
+#include <memory>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
-#include "Core/UUID.h"
+#include <Core/UUID.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/InnerShuffleStep.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -29,6 +32,11 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/ProcessorsProfileLog.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -455,7 +463,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
-
     std::vector<OutputPort *> joined_output_ports;
     std::vector<OutputPort *> delayed_root_output_ports;
 
@@ -566,6 +573,188 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    return left;
+}
+
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeftByShuffle(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        JoinPtr join,
+        const Block & output_header,
+        size_t max_block_size,
+        size_t max_streams,
+        Processors * collected_processors)
+{
+    left->checkInitializedAndNotCompleted();
+    right->checkInitializedAndNotCompleted();
+
+    left->pipe.dropExtremes();
+    right->pipe.dropExtremes();
+
+    left->pipe.collected_processors = collected_processors;
+
+    QueryPipelineProcessorsCollector collector(*right);
+
+    IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
+
+    size_t original_num_strems = left->getNumStreams();
+    size_t num_streams = original_num_strems;
+    size_t default_max_shuffle_parts = 32;
+    size_t max_shuffle_parts = InnerShuffleStep::alignStreamsNum(static_cast<UInt32>(max_streams));
+    if (max_shuffle_parts > max_streams &&  max_streams != 1)
+    {
+        max_shuffle_parts /= 2;
+    }
+    max_shuffle_parts = std::min(default_max_shuffle_parts, max_shuffle_parts);
+    if (num_streams != max_shuffle_parts)
+    {
+        left->resize(max_shuffle_parts);
+        num_streams = max_shuffle_parts;
+    }
+    right->resize(num_streams);
+
+    // Clone joins for different streams.
+    std::vector<JoinPtr> stream_joins;
+    stream_joins.push_back(join);
+    for (size_t i = 1; i < num_streams; ++i)
+    {
+        stream_joins.push_back(join->clone());
+    }
+
+    // make shuffle for left and right, make sure that each stream handle rows which have the same hash key
+    // from both side.
+    DataStream right_datestream;
+    right_datestream.header = right->getHeader();
+    InnerShuffleStep right_shuffle_step(right_datestream, join->getTableJoin().getOnlyClause().key_names_right);
+    right_shuffle_step.transformPipeline(*right, BuildQueryPipelineSettings());
+    DataStream left_datastream;
+    left_datastream.header = left->getHeader();
+    InnerShuffleStep left_shuffle_step(left_datastream, join->getTableJoin().getOnlyClause().key_names_left);
+    left_shuffle_step.transformPipeline(*left, BuildQueryPipelineSettings());
+
+
+    auto right_filling_transform = [&](OutputPortRawPtrs outports)
+    {
+        // Different stream has different join instance.
+        Processors processors;
+        for (size_t i = 0; i < outports.size(); ++i)
+        {
+            auto & outport = outports[i];
+            auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), stream_joins[i]);
+            connect(*outport, adding_joined->getInputs().front());
+            processors.emplace_back(adding_joined);
+        }
+        return processors;
+    };
+    right->transform(right_filling_transform);
+
+    auto collect_processor = [&](ProcessorPtr p)
+    {
+        if (collected_processors)
+            collected_processors->push_back(p);
+        left->pipe.processors->push_back(p);
+    };
+
+    // Eache stream has its own delayed root
+    Processors stream_delayed_roots;
+    if (join->hasDelayedBlocks())
+    {
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            auto delayed_root = std::make_shared<DelayedJoinedBlocksTransform>(1, stream_joins[i]);
+            if (!delayed_root->getInputs().empty() || delayed_root->getOutputs().size() != 1)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "DelayedJoinedBlocksTransform should have no inputs and {} outputs, "
+                    "but has {} inputs and {} outputs",
+                    1,
+                    delayed_root->getInputs().size(),
+                    delayed_root->getOutputs().size());
+            }
+            stream_delayed_roots.push_back(delayed_root);
+            collect_processor(delayed_root);
+        }
+    }
+
+    auto lit = left->pipe.output_ports.begin();
+    auto rit = right->pipe.output_ports.begin();
+    auto left_header = left->getHeader();
+    Block joined_header = JoiningTransform::transformHeader(left_header, join);
+    Processors stream_delay_workers;
+    Processors stream_joinings;
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        // Each stream has it own finish_counter, so we let the count to be 1
+        auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(1);
+        auto joining
+            = std::make_shared<JoiningTransform>(left_header, output_header, stream_joins[i], max_block_size, false, false, finish_counter);
+        connect(**lit, joining->getInputs().front());
+        connect(**rit, joining->getInputs().back());
+        stream_joinings.push_back(joining);
+        collect_processor(joining);
+
+        if (!stream_delayed_roots.empty())
+        {
+            auto & delayed_root = stream_delayed_roots[i];
+            auto delayed_worker = std::make_shared<DelayedJoinedBlocksWorkerTransform>(joined_header);
+            if (delayed_worker->getInputs().size() != 1 || delayed_worker->getOutputs().size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
+            connect(delayed_root->getOutputs().front(), delayed_worker->getInputs().front());
+            collect_processor(delayed_worker);
+            stream_delay_workers.push_back(delayed_worker);
+        }
+        else
+        {
+            // overwrite the output ports on left.
+            *lit = &joining->getOutputs().front();
+        }
+        ++lit;
+        ++rit;
+    }
+
+    if (!stream_delay_workers.empty())
+    {
+        Processors stream_delayed_processors;
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            // Each stream has two inputs for DelayedPortsProcessor. the 1th input port
+            // is the delayed stream;
+            DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
+            delayed_ports_numbers.push_back(1);
+            auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2, delayed_ports_numbers);
+            collect_processor(delayed_processor);
+            stream_delayed_processors.push_back(delayed_processor);
+
+            auto port_it = delayed_processor->getInputs().begin();
+            connect(stream_joinings[i]->getOutputs().front(), *port_it);
+            port_it++;
+            connect(stream_delay_workers[i]->getOutputs().front(), *port_it);
+        }
+
+        // overwrite the output ports on left.
+        left->pipe.output_ports.clear();
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            left->pipe.output_ports.push_back(&stream_delayed_processors[i]->getOutputs().front());
+        }
+        left->pipe.header = joined_header;
+        left->resize(num_streams);
+    }
+
+    Processors processors = collector.detachProcessors();
+    if (step)
+    {
+        step->appendExtraProcessors(processors);
+    }
+    left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
+    left->resources = std::move(right->resources);
+    left->pipe.header = left->pipe.output_ports.front()->getHeader();
+    left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+
+    // FIXME, mess up the streams here, otherwise the executing graph will be hungup with MergingSortedTransform.
+    left->resize(1);
+    left->resize(original_num_strems);
     return left;
 }
 

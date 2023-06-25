@@ -681,10 +681,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         table_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
         table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
-        if (table_join->allowParallelHashJoin())
+        if (ConcurrentHashJoin::isSupported(table_join))
         {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
+            return std::make_shared<ConcurrentHashJoin>(table_join, right_table_expression_header);
         }
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);

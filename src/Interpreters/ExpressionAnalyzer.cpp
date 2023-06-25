@@ -79,6 +79,9 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <Poco/Logger.h>
+#include <Core/Joins.h>
+
 namespace DB
 {
 
@@ -1094,8 +1097,10 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
-        if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
+        if (ConcurrentHashJoin::isSupported(analyzed_join))
+        {
+            return std::make_shared<ConcurrentHashJoin>(analyzed_join, right_sample_block);
+        }
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
