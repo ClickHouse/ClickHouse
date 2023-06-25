@@ -1303,8 +1303,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
         auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(), mutate_entry, shared_lock, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
-        return true;
+        return assignee.scheduleMergeMutateTask(task);
     }
     if (has_mutations)
     {
@@ -1358,7 +1357,7 @@ size_t StorageMergeTree::getNumberOfUnfinishedMutations() const
     size_t count = 0;
     for (const auto & [version, _] : current_mutations_by_version | std::views::reverse)
     {
-        auto status = getIncompleteMutationsStatusUnlocked(version, lock);
+        auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, true);
         if (!status)
             continue;
 
@@ -2160,7 +2159,10 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
 
-    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, backup_settings, local_context));
+    auto parts_backup_entries = backupParts(data_parts, data_path_in_backup, backup_settings, local_context);
+    for (auto & part_backup_entries : parts_backup_entries)
+        backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
+
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
 }
 
