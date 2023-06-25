@@ -15,9 +15,6 @@ insert into bloom_filter select number+3000, 'abcdefzzz' from numbers(1024);
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'abc,def,zzz'); -- { serverError BAD_ARGUMENTS }
 SELECT max(id) FROM bloom_filter WHERE hasTokenCaseInsensitive(s, 'abc,def,zzz'); -- { serverError BAD_ARGUMENTS }
 
-SELECT max(id) FROM bloom_filter WHERE hasTokenOrNull(s, 'abc,def,zzz');
-SELECT max(id) FROM bloom_filter WHERE hasTokenCaseInsensitiveOrNull(s, 'abc,def,zzz');
-
 -- as table "bloom_filter" but w/o index_granularity_bytes
 drop table if exists bloom_filter2;
 create table bloom_filter2
@@ -35,10 +32,8 @@ insert into bloom_filter2 select number+3000, 'abcdefzzz' from numbers(1024);
 set max_rows_to_read = 16;
 
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'abc');
-SELECT max(id) FROM bloom_filter WHERE hasTokenOrNull(s, 'abc');
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'ABC');
 select max(id) from bloom_filter where hasTokenCaseInsensitive(s, 'ABC');
-select max(id) from bloom_filter where hasTokenCaseInsensitiveOrNull(s, 'ABC');
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'def');
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'zzz');
 select max(id) from bloom_filter where hasTokenCaseInsensitive(s, 'zZz');

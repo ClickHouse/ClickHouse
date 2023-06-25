@@ -36,12 +36,8 @@ struct CountSubstringsImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
@@ -108,12 +104,8 @@ struct CountSubstringsImpl
         std::string haystack,
         std::string needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         Impl::toLowerIfNeed(haystack);
         Impl::toLowerIfNeed(needle);
 
@@ -146,12 +138,8 @@ struct CountSubstringsImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
 
@@ -203,13 +191,10 @@ struct CountSubstringsImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         /// NOTE You could use haystack indexing. But this is a rare case.
+
         ColumnString::Offset prev_needle_offset = 0;
 
         size_t size = needle_offsets.size();

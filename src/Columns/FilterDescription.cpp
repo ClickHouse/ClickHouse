@@ -79,8 +79,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         const NullMap & null_map = nullable_column->getNullMapData();
         IColumn::Filter & res = concrete_column->getData();
 
-        const auto size = res.size();
-        assert(size == null_map.size());
+        size_t size = res.size();
         for (size_t i = 0; i < size; ++i)
         {
             auto has_val = static_cast<UInt8>(!!res[i]);
