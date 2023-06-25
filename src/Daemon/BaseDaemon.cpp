@@ -417,6 +417,8 @@ private:
         {
             SentryWriter::onFault(sig, error_message, stack_trace);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
             if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
