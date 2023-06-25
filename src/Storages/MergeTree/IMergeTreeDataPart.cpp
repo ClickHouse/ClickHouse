@@ -227,7 +227,6 @@ void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) con
             CurrentMetrics::add(CurrentMetrics::PartsCommitted);
             return;
         case MergeTreeDataPartState::Outdated:
-            storage.total_outdated_parts_count.fetch_add(1, std::memory_order_relaxed);
             CurrentMetrics::add(CurrentMetrics::PartsOutdated);
             return;
         case MergeTreeDataPartState::Deleting:
@@ -255,7 +254,6 @@ void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) con
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
             return;
         case MergeTreeDataPartState::Outdated:
-            storage.total_outdated_parts_count.fetch_sub(1, std::memory_order_relaxed);
             CurrentMetrics::sub(CurrentMetrics::PartsOutdated);
             return;
         case MergeTreeDataPartState::Deleting:

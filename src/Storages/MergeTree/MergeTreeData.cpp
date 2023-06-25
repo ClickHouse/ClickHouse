@@ -4260,11 +4260,6 @@ size_t MergeTreeData::getActivePartsCount() const
 }
 
 
-size_t MergeTreeData::getOutdatedPartsCount() const
-{
-    return total_outdated_parts_count.load(std::memory_order_relaxed);
-}
-
 size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
 {
     size_t res = 0;

@@ -533,8 +533,6 @@ public:
 
     size_t getActivePartsCount() const;
 
-    size_t getOutdatedPartsCount() const;
-
     size_t getNumberOfOutdatedPartsWithExpiredRemovalTime() const;
 
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
@@ -1512,8 +1510,6 @@ private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
-
-    mutable std::atomic<size_t> total_outdated_parts_count = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);

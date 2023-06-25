@@ -97,12 +97,6 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
     if (!storage_settings->cleanup_thread_preferred_points_per_iteration)
         return;
 
-    /// The number of other objects (logs, blocks, etc) is usually correlated with the number of Outdated parts.
-    /// Do not wake up unless we have too many.
-    size_t number_of_outdated_objects = storage.getOutdatedPartsCount();
-    if (number_of_outdated_objects < storage_settings->cleanup_thread_preferred_points_per_iteration * 2)
-        return;
-
     /// A race condition is possible here, but it's okay
     if (is_running.load(std::memory_order_relaxed))
         return;
@@ -120,14 +114,6 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
     UInt64 seconds_passed = (now_ms - prev_run_timestamp_ms) / 1000;
     if (seconds_passed < storage_settings->cleanup_delay_period)
         return;
-
-    /// Do not count parts that cannot be removed anyway. Do not wake up unless we have too many.
-    number_of_outdated_objects = storage.getNumberOfOutdatedPartsWithExpiredRemovalTime();
-    if (number_of_outdated_objects < storage_settings->cleanup_thread_preferred_points_per_iteration * 2)
-        return;
-
-    LOG_TRACE(log, "Waking up cleanup thread because there are {} outdated objects and previous cleanup finished {}s ago",
-              number_of_outdated_objects, seconds_passed);
 
     wakeup();
 }
