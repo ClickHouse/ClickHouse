@@ -22,6 +22,7 @@
 
 #include <base/sort.h>
 
+#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
@@ -75,20 +76,23 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 
+#include <Planner/Utils.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/JoinedTables.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/JoinedTables.h>
 
 
 #include <Backups/BackupEntriesCollector.h>
@@ -288,7 +292,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool has_force_restore_data_flag,
-    RenamingRestrictions renaming_restrictions_)
+    RenamingRestrictions renaming_restrictions_,
+    bool need_check_structure)
     : MergeTreeData(table_id_,
                     metadata_,
                     context_,
@@ -488,11 +493,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             /// information in /replica/metadata.
             other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
-            checkTableStructure(zookeeper_path, metadata_snapshot);
+            /// Allow structure mismatch for secondary queries from Replicated database.
+            /// It may happen if the table was altered just after creation.
+            /// Metadata will be updated in cloneMetadataIfNeeded(...), metadata_version will be 0 for a while.
+            bool same_structure = checkTableStructure(zookeeper_path, metadata_snapshot, need_check_structure);
 
-            Coordination::Stat metadata_stat;
-            current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-            setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
+            if (same_structure)
+            {
+                Coordination::Stat metadata_stat;
+                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+                setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
+            }
         }
         catch (Coordination::Exception & e)
         {
@@ -1182,7 +1193,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 /** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/metadata).
   * If not, throw an exception.
   */
-void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
+bool StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, bool strict_check)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1197,12 +1208,20 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
-    if (columns_from_zk != old_columns)
+    if (columns_from_zk == old_columns)
+        return true;
+
+    if (!strict_check && metadata_stat.version != 0)
     {
-        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
-            "Table columns structure in ZooKeeper is different from local table structure. Local columns:\n"
-            "{}\nZookeeper columns:\n{}", old_columns.toString(), columns_from_zk.toString());
+        LOG_WARNING(log, "Table columns structure in ZooKeeper is different from local table structure. "
+                    "Assuming it's because the table was altered concurrently. Metadata version: {}. Local columns:\n"
+                    "{}\nZookeeper columns:\n{}", metadata_stat.version, old_columns.toString(), columns_from_zk.toString());
+        return false;
     }
+
+    throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+        "Table columns structure in ZooKeeper is different from local table structure. Local columns:\n"
+        "{}\nZookeeper columns:\n{}", old_columns.toString(), columns_from_zk.toString());
 }
 
 void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
@@ -2989,7 +3008,9 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
     dummy_alter.alter_version = source_metadata_version;
     dummy_alter.create_time = time(nullptr);
 
-    zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
+    String path_created = zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
+    LOG_INFO(log, "Created an ALTER_METADATA entry {} to force metadata update after cloning replica from {}. Entry: {}",
+             path_created, source_replica, dummy_alter.toString());
 
     /// We don't need to do anything with mutation_pointer, because mutation log cleanup process is different from
     /// replication log cleanup. A mutation is removed from ZooKeeper only if all replicas had executed the mutation,
@@ -4835,14 +4856,27 @@ void StorageReplicatedMergeTree::read(
     {
         auto table_id = getStorageID();
 
-        const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
-            local_context, query_info.query,
-            table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+        ASTPtr modified_query_ast;
+
+        Block header;
+
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        {
+            auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
+
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+            modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
+        }
+        else
+        {
+            modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
+                table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+            header
+                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        }
 
         auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
-
-        Block header =
-            InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
         ClusterProxy::SelectStreamFactory select_stream_factory =
             ClusterProxy::SelectStreamFactory(
@@ -5574,7 +5608,7 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// The date range is all month long.
-        const auto & lut = DateLUT::instance();
+        const auto & lut = DateLUT::serverTimezoneInstance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.partition_id + "01"));
         DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
         DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
