@@ -399,7 +399,7 @@ private:
 
                     LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
 
-                    StackTrace::toStringEveryLine(const_cast<void **>(&frame_pointers[0]), 0, size, [this](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
+                    StackTrace::toStringEveryLine(const_cast<void **>(frame_pointers.data()), 0, size, [this](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
                 }
             }
         );
