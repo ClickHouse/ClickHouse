@@ -24,7 +24,7 @@ struct HasTokenImpl
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2}; }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
