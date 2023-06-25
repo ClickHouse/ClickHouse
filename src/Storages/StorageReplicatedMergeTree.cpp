@@ -2891,8 +2891,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
                 desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
             }
 
-            const auto [lo, hi] = desired_checksums.hash_of_all_files;
-            log_entry.part_checksum = getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
+            log_entry.part_checksum = getHexUIntUppercase(desired_checksums.hash_of_all_files);
         }
         else
         {
