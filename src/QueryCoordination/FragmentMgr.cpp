@@ -95,6 +95,12 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
         String local_host;
         for (const auto & shard_info : fragments_distributed.fragment->getCluster()->getShardsInfo())
         {
+            bool is_local = shard_info.isLocal();
+            if (is_local)
+            {
+                local_host = shard_info.local_addresses[0].toString();
+            }
+
             /// find target host_port for this shard
             String target_host_port;
             for (const auto & address : shard_info.all_addresses)
@@ -115,11 +121,6 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
                                     current_settings.max_execution_time);
 
             auto connection = shard_info.pool->getOne(timeouts, &current_settings, target_host_port);
-            bool is_local = shard_info.isLocal();
-            if (is_local)
-            {
-                local_host = shard_info.local_addresses[0].toString();
-            }
 
             LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "2Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
             channels.emplace_back(DataSink::Channel{.connection = connection, .is_local = is_local});

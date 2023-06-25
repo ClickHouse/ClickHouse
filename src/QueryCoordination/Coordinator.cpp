@@ -49,12 +49,6 @@ String Coordinator::assignFragmentToHost()
             {
                 for (const auto & shard_info : fragment->getCluster()->getShardsInfo())
                 {
-                    auto current_settings = context->getSettingsRef();
-                    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                                        current_settings).getSaturated(
-                                            current_settings.max_execution_time);
-                    std::vector<ConnectionPoolWithFailover::TryResult> try_results;
-
                     const auto & table_name = read_step->getStorageSnapshot()->storage.getStorageID().getQualifiedName();
 
                     String host_port;
@@ -78,7 +72,12 @@ String Coordinator::assignFragmentToHost()
                     PoolBase<DB::Connection>::Entry connection;
                     if (need_get_connect)
                     {
-                        try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, table_name);
+                        auto current_settings = context->getSettingsRef();
+                        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
+                                            current_settings).getSaturated(
+                                                current_settings.max_execution_time);
+                        std::vector<ConnectionPoolWithFailover::TryResult> try_results
+                            = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, table_name);
                         connection =  try_results[0].entry; /// TODO random ?
                         host_port = connection->getDescription();
                     }
