@@ -192,7 +192,10 @@ public:
 };
 
 /// This wrapper helps to avoid too noisy log messages from similar objects.
-/// For the value logger_name it remembers when such a message was logged the last time.
+/// Once an instance of LogSeriesLimiter type is created the decision is done
+/// All followed message which use this instance is either printed or muted all together.
+/// LogSeriesLimiter differs from LogFrequencyLimiterIml in a way that
+/// LogSeriesLimiter is useful for accept or mute series of logs when LogFrequencyLimiterIml works for each line independently.
 class LogSeriesLimiter
 {
     static std::mutex mutex;
