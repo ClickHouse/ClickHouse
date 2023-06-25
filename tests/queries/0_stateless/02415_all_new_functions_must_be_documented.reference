@@ -345,8 +345,6 @@ hasAny
 hasColumnInTable
 hasSubstr
 hasThreadFuzzer
-hasToken
-hasTokenCaseInsensitive
 hashid
 hex
 hiveHash

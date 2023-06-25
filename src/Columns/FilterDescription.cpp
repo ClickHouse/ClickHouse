@@ -80,6 +80,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         IColumn::Filter & res = concrete_column->getData();
 
         size_t size = res.size();
+        chassert(size == null_map.size());
         for (size_t i = 0; i < size; ++i)
         {
             auto has_val = static_cast<UInt8>(!!res[i]);
