@@ -1,5 +1,4 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
