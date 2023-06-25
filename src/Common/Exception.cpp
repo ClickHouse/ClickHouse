@@ -164,7 +164,7 @@ std::string Exception::getStackTraceString() const
         {
             thread_stack_trace +=
                 "\nJob's origin stack trace:\n" +
-                StackTrace::toString(&frame_pointers[0], 0, std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin());
+                StackTrace::toString(frame_pointers.data(), 0, std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin());
         }
     );
 
