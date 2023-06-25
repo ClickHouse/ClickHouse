@@ -6,16 +6,16 @@ DROP ROW POLICY IF EXISTS 02763_filter_1 ON 02763_merge_log_1;
 DROP ROW POLICY IF EXISTS 02763_filter_2 ON 02763_merge_merge_1;
 
 
-CREATE TABLE 02763_merge_log_1 (x UInt8) ENGINE = Log;
-CREATE TABLE 02763_merge_log_2 (x UInt8) ENGINE = Log;
+CREATE TABLE 02763_merge_log_1 (x UInt8, y UInt64) ENGINE = Log;
+CREATE TABLE 02763_merge_log_2 (x UInt8, y UInt64) ENGINE = Log;
 
-CREATE TABLE 02763_merge_merge_1 (x UInt8) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE 02763_merge_merge_2 (x UInt8) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE 02763_merge_merge_1 (x UInt8, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE 02763_merge_merge_2 (x UInt8, y UInt64) ENGINE = MergeTree ORDER BY x;
 
-INSERT INTO 02763_merge_log_1 VALUES (1), (2), (3), (4);
-INSERT INTO 02763_merge_log_2 VALUES (1), (2), (3), (4);
-INSERT INTO 02763_merge_merge_1 VALUES (1), (2), (3), (4);
-INSERT INTO 02763_merge_merge_2 VALUES (1), (2), (3), (4);
+INSERT INTO 02763_merge_log_1 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+INSERT INTO 02763_merge_log_2 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+INSERT INTO 02763_merge_merge_1 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+INSERT INTO 02763_merge_merge_2 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
 
 SELECT * FROM merge(currentDatabase(), '02763_merge') ORDER BY x;
 
@@ -41,7 +41,7 @@ CREATE ROW POLICY 02763_filter_2 ON 02763_merge_merge_1 USING x=4 AS permissive 
 
 SELECT 'SELECT * FROM 02763_merge_merge_1';
 SELECT * FROM 02763_merge_merge_1 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
-SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1';
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1)';
 SELECT * FROM merge(currentDatabase(), '02763_merge_merge_1') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge)';
 SELECT * FROM merge(currentDatabase(), '02763_merge_merge') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
@@ -54,8 +54,32 @@ SELECT * FROM merge(currentDatabase(), '02763_merge') ORDER BY x SETTINGS optimi
 SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge) WHERE x>2';
 SELECT * FROM merge(currentDatabase(), '02763_merge') WHERE x>2 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 
-SELECT 'aaa', x*2 as x_2 FROM merge(currentDatabase(), '02763_merge') WHERE x>2 ORDER BY x_2 SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'aaa', x*2 as x_2, y*3 as y_3 FROM merge(currentDatabase(), '02763_merge') WHERE x>2 ORDER BY x_2 SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT x FROM (SELECT * FROM merge(currentDatabase(), '02763_merge') WHERE x IN (3,4)) ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT * FROM merge(...) LEFT JOIN merge(...)';
+SELECT * FROM merge(currentDatabase(), '02763_merge.*1') as a
+LEFT JOIN
+merge(currentDatabase(), '02763_merge.*2') as b
+USING (x)
+ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT * FROM merge(...) UNION ALL SELECT * FROM merge(...)';
+SELECT * FROM
+(
+SELECT * FROM merge(currentDatabase(), '02763_merge.*1')
+UNION ALL
+SELECT * FROM merge(currentDatabase(), '02763_merge.*2')
+)
+ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT x, SUM(x) FROM (SELECT * FROM merge(...) UNION ALL ...) GROUP BY x';
+SELECT x, SUM(y) FROM
+(SELECT * FROM merge(currentDatabase(), '02763_merge.*1')
+UNION ALL
+SELECT * FROM merge(currentDatabase(), '02763_merge.*2'))
+GROUP BY x
+ORDER BY x;
 
 DROP ROW POLICY 02763_filter_1 ON 02763_merge_log_1;
 DROP ROW POLICY 02763_filter_2 ON 02763_merge_merge_1;
