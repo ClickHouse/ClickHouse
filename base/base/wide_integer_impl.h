@@ -15,8 +15,6 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/math/special_functions/fpclassify.hpp>
 
-#include <city.h>
-
 // NOLINTBEGIN(*)
 
 /// Use same extended double for all platforms
@@ -28,6 +26,8 @@ using FromDoubleIntermediateType = long double;
 #define CONSTEXPR_FROM_DOUBLE
 using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_extended;
 #endif
+
+namespace CityHash_v1_0_2 { struct uint128; }
 
 namespace wide
 {
@@ -283,8 +283,11 @@ struct integer<Bits, Signed>::_impl
         }
     }
 
-    constexpr static void wide_integer_from_cityhash_uint128(integer<Bits, Signed> & self, const CityHash_v1_0_2::uint128 & value) noexcept
+    template <typename CityHashUInt128 = CityHash_v1_0_2::uint128>
+    constexpr static void wide_integer_from_cityhash_uint128(integer<Bits, Signed> & self, const CityHashUInt128 & value) noexcept
     {
+        static_assert(sizeof(item_count) >= 2);
+
         if constexpr (std::endian::native == std::endian::little)
             wide_integer_from_tuple_like(self, std::make_pair(value.low64, value.high64));
         else
