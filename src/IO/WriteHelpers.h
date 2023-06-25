@@ -13,6 +13,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
+#include <Common/TransformEndianness.hpp>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
@@ -696,15 +697,15 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(DayNum date, WriteBuffer & buf)
+inline void writeDateText(DayNum date, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    writeDateText<delimiter>(LocalDate(date), buf);
+    writeDateText<delimiter>(LocalDate(date, time_zone), buf);
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf)
+inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    writeDateText<delimiter>(LocalDate(date), buf);
+    writeDateText<delimiter>(LocalDate(date, time_zone), buf);
 }
 
 /// In the format YYYY-MM-DD HH:MM:SS
@@ -885,7 +886,7 @@ inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum:
 
 inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
 
-inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
+inline void writeText(const DayNum & x, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { writeDateText(LocalDate(x, time_zone), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
@@ -1174,30 +1175,11 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-
 template <std::endian endian, typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
-    if constexpr (std::endian::native != endian)
-        x = std::byteswap(x);
+    transformEndianness<endian>(x);
     writePODBinary(x, buf);
-}
-
-template <std::endian endian, typename T>
-requires is_big_int_v<T>
-inline void writeBinaryEndian(const T & x, WriteBuffer & buf)
-{
-    if constexpr (std::endian::native == endian)
-    {
-        for (size_t i = 0; i != std::size(x.items); ++i)
-            writeBinaryEndian<endian>(x.items[i], buf);
-    }
-    else
-    {
-        for (size_t i = 0; i != std::size(x.items); ++i)
-            writeBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
-    }
 }
 
 template <typename T>
