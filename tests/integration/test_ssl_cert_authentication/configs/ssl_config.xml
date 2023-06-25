@@ -18,10 +18,6 @@
             <privateKeyFile>/etc/clickhouse-server/config.d/server-key.pem</privateKeyFile>
             <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
             <verificationMode>relaxed</verificationMode>
-            <invalidCertificateHandler>
-                <!-- Server cannot ask about the certificate in the terminal. Reject instead. -->
-                <name>RejectCertificateHandler</name>
-            </invalidCertificateHandler>
         </server>
 
         <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
