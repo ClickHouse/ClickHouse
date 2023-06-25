@@ -86,7 +86,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;

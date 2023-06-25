@@ -49,7 +49,15 @@ namespace DB
 
         /** Write the date in text form 'YYYY-MM-DD' to a buffer.
           */
-        void write(WriteBuffer & buf) const;
+        void write(WriteBuffer & buf) const
+        {
+            writeImpl<void>(buf);
+        }
+
+        bool tryWrite(WriteBuffer & buf) const
+        {
+            return writeImpl<bool>(buf);
+        }
 
         /** Convert to a string in text form 'YYYY-MM-DD'.
           */
@@ -65,15 +73,18 @@ namespace DB
             return month_;
         }
 
-        uint8_t day_of_month() const noexcept /// NOLINT
+        uint8_t dayOfMonth() const noexcept
         {
             return day_of_month_;
         }
 
     private:
-        YearT year_; /// NOLINT
-        uint8_t month_; /// NOLINT
-        uint8_t day_of_month_; /// NOLINT
+        YearT year_ = 0;
+        uint8_t month_ = 0;
+        uint8_t day_of_month_ = 0;
+
+        template <typename ReturnType>
+        ReturnType writeImpl(WriteBuffer & buf) const;
     };
 
     /** ISO 8601 Ordinal Date. YearT is an integral type which should
@@ -110,8 +121,8 @@ namespace DB
         }
 
     private:
-        YearT year_; /// NOLINT
-        uint16_t day_of_year_; /// NOLINT
+        YearT year_ = 0;
+        uint16_t day_of_year_ = 0;
     };
 
     class MonthDay
@@ -135,18 +146,17 @@ namespace DB
             return month_;
         }
 
-        uint8_t day_of_month() const noexcept /// NOLINT
+        uint8_t dayOfMonth() const noexcept
         {
             return day_of_month_;
         }
 
     private:
-        uint8_t month_; /// NOLINT
-        uint8_t day_of_month_; /// NOLINT
+        uint8_t month_ = 0;
+        uint8_t day_of_month_ = 0;
     };
 }
 
-/* Implementation */
 
 namespace gd
 {
@@ -258,9 +268,10 @@ namespace DB
     {
         const OrdinalDate<YearT> ord(modified_julian_day);
         const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
+
         year_       = ord.year();
         month_      = md.month();
-        day_of_month_ = md.day_of_month();
+        day_of_month_ = md.dayOfMonth();
     }
 
     template <typename YearT>
@@ -274,12 +285,16 @@ namespace DB
     }
 
     template <typename YearT>
-    void GregorianDate<YearT>::write(WriteBuffer & buf) const
+    template <typename ReturnType>
+    ReturnType GregorianDate<YearT>::writeImpl(WriteBuffer & buf) const
     {
         if (year_ < 0 || year_ > 9999)
         {
-            throw Exception(ErrorCodes::CANNOT_FORMAT_DATETIME,
-                "Impossible to stringify: year too big or small: {}", DB::toString(year_));
+            if constexpr (std::is_same_v<ReturnType, void>)
+                throw Exception(ErrorCodes::CANNOT_FORMAT_DATETIME,
+                    "Impossible to stringify: year too big or small: {}", DB::toString(year_));
+            else
+                return false;
         }
         else
         {
@@ -301,6 +316,8 @@ namespace DB
             writeChar('0' + d / 10, buf); d %= 10;
             writeChar('0' + d     , buf);
         }
+
+        return ReturnType();
     }
 
     template <typename YearT>

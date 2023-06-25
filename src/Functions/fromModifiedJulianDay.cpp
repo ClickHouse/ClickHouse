@@ -56,19 +56,8 @@ namespace DB
             {
                 if constexpr (nullOnErrors)
                 {
-                    try
-                    {
-                        const GregorianDate<> gd(vec_from[i]);
-                        gd.write(write_buffer);
-                        (*vec_null_map_to)[i] = false;
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::CANNOT_FORMAT_DATETIME)
-                            (*vec_null_map_to)[i] = true;
-                        else
-                            throw;
-                    }
+                    const GregorianDate<> gd(vec_from[i]);
+                    (*vec_null_map_to)[i] = gd.tryWrite(write_buffer);
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }

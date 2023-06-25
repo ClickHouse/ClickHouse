@@ -1178,15 +1178,9 @@ public:
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
-            try
-            {
-                getLeastSupertype(arguments);
-            }
-            catch (const Exception &)
-            {
+            if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
-            }
         }
 
         if (left_tuple && right_tuple)
