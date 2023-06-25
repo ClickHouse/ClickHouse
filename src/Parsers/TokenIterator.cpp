@@ -44,9 +44,16 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
 
     /// We have to iterate through all tokens until the end to avoid false positive "Unmatched parentheses" error
     /// when parser failed in the middle of the query.
+    bool inside_kql = false;
     for (TokenIterator it = begin; !it->isEnd(); ++it)
     {
-        if (!it.isValid()) // allow kql negative operators
+        TokenIterator it_prev = it;
+        if (it != begin)
+            --it_prev;
+        if (it != begin && it->type == TokenType::OpeningRoundBracket && String(it_prev.get().begin, it_prev.get().end) == "kql")
+            inside_kql = true;
+
+        if (!it.isValid() && inside_kql) // allow negative operators inside kql table function
         {
             if (it->type == TokenType::ErrorSingleExclamationMark)
             {
@@ -64,10 +71,8 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
             {
                 if (String(it.get().begin, it.get().end) == "~")
                 {
-                    --it;
-                    if (const auto prev = String(it.get().begin, it.get().end); prev != "!" && prev != "=" && prev != "in")
+                    if (const auto prev = String(it_prev.get().begin, it_prev.get().end); prev != "!" && prev != "=" && prev != "in")
                         break;
-                    ++it;
                 }
                 else
                     break;
