@@ -28,6 +28,8 @@ public:
 private:
     String assignFragmentToHost();
 
+    bool isUpToDate(const QualifiedTableName & table_name);
+
     void sendFragmentToDistributed(const String & local_shard_host);
 
     void sendExecuteQueryPipelines(const String & local_shard_host);

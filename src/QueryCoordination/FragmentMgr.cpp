@@ -50,6 +50,7 @@ void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vec
     std::unordered_map<FragmentID, FragmentRequest> need_execute_fragments;
     for (const auto & request : need_execute_plan_fragments)
     {
+        LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Need execute fragment {} request {}", request.fragment_id, request.toString());
         need_execute_fragments.emplace(request.fragment_id, request);
     }
 
@@ -84,31 +85,44 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
     /// build query pipeline, find connections by dests list
     for (FragmentDistributed & fragments_distributed : data->fragments_distributed)
     {
+        for (auto & to : fragments_distributed.data_to)
+        {
+            LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "1Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), to);
+        }
+
         /// for data sink
         std::vector<DataSink::Channel> channels;
         String local_host;
         for (const auto & shard_info : fragments_distributed.fragment->getCluster()->getShardsInfo())
         {
+            /// find target host_port for this shard
+            String target_host_port;
+            for (const auto & address : shard_info.all_addresses)
+            {
+                if (std::count(fragments_distributed.data_to.begin(), fragments_distributed.data_to.end(), address.toString()))
+                {
+                    target_host_port = address.toString();
+                    break;
+                }
+            }
+
+            if (target_host_port.empty())
+                continue;
+
             auto current_settings = context->getSettingsRef();
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
                                 current_settings).getSaturated(
                                     current_settings.max_execution_time);
 
+            auto connection = shard_info.pool->getOne(timeouts, &current_settings, target_host_port);
             bool is_local = shard_info.isLocal();
             if (is_local)
-                local_host = shard_info.local_addresses.begin()->readableString();
-
-            auto connections = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
-
-            for (auto connection : connections)
             {
-                if (std::count(fragments_distributed.data_to.begin(), fragments_distributed.data_to.end(), connection->getDescription()))
-                {
-                    LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
-                    channels.emplace_back(DataSink::Channel{.connection = connection, .is_local = is_local});
-                    break;
-                }
+                local_host = shard_info.local_addresses[0].toString();
             }
+
+            LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "2Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
+            channels.emplace_back(DataSink::Channel{.connection = connection, .is_local = is_local});
         }
 
         /// for exchange node
