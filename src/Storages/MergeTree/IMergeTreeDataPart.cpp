@@ -138,7 +138,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
-        out_hashing.next();
+        out_hashing.finalize();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
         out->preFinalize();
@@ -211,9 +211,9 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
 }
 
 
-static void incrementStateMetric(MergeTreeDataPartState state)
+void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
-    switch (state)
+    switch (state_)
     {
         case MergeTreeDataPartState::Temporary:
             CurrentMetrics::add(CurrentMetrics::PartsTemporary);
@@ -227,6 +227,7 @@ static void incrementStateMetric(MergeTreeDataPartState state)
             CurrentMetrics::add(CurrentMetrics::PartsCommitted);
             return;
         case MergeTreeDataPartState::Outdated:
+            storage.total_outdated_parts_count.fetch_add(1, std::memory_order_relaxed);
             CurrentMetrics::add(CurrentMetrics::PartsOutdated);
             return;
         case MergeTreeDataPartState::Deleting:
@@ -238,9 +239,9 @@ static void incrementStateMetric(MergeTreeDataPartState state)
     }
 }
 
-static void decrementStateMetric(MergeTreeDataPartState state)
+void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) const
 {
-    switch (state)
+    switch (state_)
     {
         case MergeTreeDataPartState::Temporary:
             CurrentMetrics::sub(CurrentMetrics::PartsTemporary);
@@ -254,6 +255,7 @@ static void decrementStateMetric(MergeTreeDataPartState state)
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
             return;
         case MergeTreeDataPartState::Outdated:
+            storage.total_outdated_parts_count.fetch_sub(1, std::memory_order_relaxed);
             CurrentMetrics::sub(CurrentMetrics::PartsOutdated);
             return;
         case MergeTreeDataPartState::Deleting:
@@ -492,13 +494,17 @@ void IMergeTreeDataPart::removeIfNeeded()
 
         if (is_temp)
         {
-            String file_name = fileName(getDataPartStorage().getPartDirectory());
+            const auto & part_directory = getDataPartStorage().getPartDirectory();
+
+            String file_name = fileName(part_directory);
 
             if (file_name.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
+            const auto part_parent_directory = directoryPath(part_directory);
+            bool is_moving_part = part_parent_directory.ends_with("moving/");
+            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
                     storage.log,
@@ -506,6 +512,11 @@ void IMergeTreeDataPart::removeIfNeeded()
                     "suspicious, keeping the part.",
                     path);
                 return;
+            }
+
+            if (is_moving_part)
+            {
+                LOG_TRACE(storage.log, "Removing unneeded moved part from {}", path);
             }
         }
 
@@ -962,24 +973,9 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
     }
 }
 
-void IMergeTreeDataPart::writeDeleteOnDestroyMarker()
-{
-    static constexpr auto marker_path = "delete-on-destroy.txt";
-
-    try
-    {
-        getDataPartStorage().createFile(marker_path);
-    }
-    catch (Poco::Exception & e)
-    {
-        LOG_ERROR(storage.log, "{} (while creating DeleteOnDestroy marker: {})",
-            e.what(), (fs::path(getDataPartStorage().getFullPath()) / marker_path).string());
-    }
-}
-
 void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 {
-    getDataPartStorage().removeFileIfExists("delete-on-destroy.txt");
+    getDataPartStorage().removeFileIfExists(DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED);
 }
 
 void IMergeTreeDataPart::removeVersionMetadata()
@@ -1057,7 +1053,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
         partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
         minmax_idx = std::make_shared<MinMaxIndex>(min_date, max_date);
     }
