@@ -141,6 +141,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql}})
 
+
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
