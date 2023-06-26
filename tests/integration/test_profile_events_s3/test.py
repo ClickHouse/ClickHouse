@@ -163,7 +163,7 @@ def test_profile_events(cluster):
     stat2 = get_query_stat(instance, query2)
 
     for metric in stat2:
-        assert stat2[metric] == metrics2.get(metric, 0)- metrics1.get(metric, 0)
+        assert stat2[metric] == metrics2.get(metric, 0) - metrics1.get(metric, 0)
 
     assert (
         metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
