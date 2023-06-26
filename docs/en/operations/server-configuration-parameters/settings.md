@@ -1975,6 +1975,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 <timezone>Asia/Istanbul</timezone>
 ```
 
+**See also**
+
+- [session_timezone](../settings/settings.md#session_timezone)
+
 ## tcp_port {#server_configuration_parameters-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
