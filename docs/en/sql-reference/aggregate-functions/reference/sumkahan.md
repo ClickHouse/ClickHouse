@@ -4,6 +4,8 @@ sidebar_position: 145
 title: sumKahan
 ---
 
+# sumKahan
+
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm)
 Slower than [sum](./sum.md) function.
 The compensation works only for [Float](../../../sql-reference/data-types/float.md) types.
