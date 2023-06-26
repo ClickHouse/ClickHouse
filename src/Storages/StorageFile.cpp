@@ -722,20 +722,25 @@ public:
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
                 }
 
+                size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
+                /// Adjust total_rows_approx_accumulated with new total size.
+                if (total_files_size)
+                    total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_files_size + file_size) / total_files_size * total_rows_approx_accumulated));
+                total_files_size += file_size;
+
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
 
                 QueryPipelineBuilder builder;
-                builder.init(Pipe(format));
+                builder.init(Pipe(input_format));
 
                 if (columns_description.hasDefaults())
                 {
                     builder.addSimpleTransform([&](const Block & header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
                     });
                 }
 
@@ -765,10 +770,13 @@ public:
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
-                if (num_rows)
+                if (num_rows && total_files_size)
                 {
+                    size_t chunk_size = input_format->getApproxBytesReadForChunk();
+                    if (!chunk_size)
+                        chunk_size = chunk.bytes();
                     updateRowsProgressApprox(
-                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                        *this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
                 }
                 return chunk;
             }
@@ -780,6 +788,7 @@ public:
             /// Close file prematurely if stream was ended.
             reader.reset();
             pipeline.reset();
+            input_format.reset();
             read_buf.reset();
         }
 
@@ -794,6 +803,7 @@ private:
     String current_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
+    InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
@@ -810,6 +820,8 @@ private:
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
     UInt64 total_rows_approx_max = 0;
+
+    size_t total_files_size = 0;
 };
 
 
@@ -1019,10 +1031,18 @@ public:
         cancelled = true;
     }
 
-    void onException() override
+    void onException(std::exception_ptr exception) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            release();
+        }
     }
 
     void onFinish() override
@@ -1046,10 +1066,15 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            writer.reset();
-            write_buf->finalize();
+            release();
             throw;
         }
+    }
+
+    void release()
+    {
+        writer.reset();
+        write_buf->finalize();
     }
 
     StorageMetadataPtr metadata_snapshot;
