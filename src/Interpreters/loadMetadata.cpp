@@ -238,25 +238,22 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
 
+    // Schedule all the jobs.
+    // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
+    // All startup jobs are assigned to pool with lower priority than load jobs pool.
+    // So all tables will finish loading before the first table startup if there are no queries (or dependencies).
+    // Query waiting for a table boosts its priority by moving jobs into `AsyncLoaderPoolId::Foreground` pool
+    // to finish table startup faster than load of the other tables.
+    scheduleLoadAll(load_tasks, startup_tasks);
+
     if (!async_load_databases)
     {
-        // First, load all tables
-        scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, load_tasks);
-
-        // Then, startup all tables. This is done to postpone merges and mutations
-        scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, startup_tasks);
+        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize and wait all the load table tasks
+        waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize and wait all the startup tasks
         return {};
     }
     else
     {
-        // Schedule all the jobs.
-        // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
-        // All startup jobs are assigned to pool with lower priority than load jobs pool.
-        // So all tables will finish loading before the first table startup if there are no queries.
-        // Query waiting for a table boosts its priority by moving jobs into `AsyncLoaderPoolId::Foreground` pool
-        // to finish table startup faster than load of the other tables.
-        scheduleLoadAll(load_tasks, startup_tasks);
-
         // Do NOT wait, just return tasks for continuation or later wait.
         return joinTasks(load_tasks, startup_tasks);
     }

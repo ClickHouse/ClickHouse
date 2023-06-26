@@ -326,8 +326,9 @@ public:
     // Schedule all tasks atomically. To ensure only highest priority jobs among all tasks are run first.
     void schedule(const LoadTaskPtrs & tasks);
 
-    // Increase priority of a job and all its dependencies recursively.
-    // Jobs from higher (than `new_pool`) priority pools are not changed.
+    // Increase priority of a scheduled job and all its dependencies recursively.
+    // Jobs from higher (than `new_pool`) priority pools are not changed. Finished jobs are also not changed.
+    // WARNING: it does nothing for assigned jobs, caller must make sure that job has been scheduled.
     void prioritize(const LoadJobPtr & job, size_t new_pool);
 
     // Remove finished jobs, cancel scheduled jobs, wait for executing jobs to finish and remove them.
@@ -399,8 +400,11 @@ inline void scheduleLoad(const LoadTaskPtr & task)
 
 inline void scheduleLoad(const LoadTaskPtrs & tasks)
 {
-    for (const auto & task : tasks)
-        task->schedule();
+    if (tasks.empty())
+        return;
+    // NOTE: it is assumed that all tasks use the same `AsyncLoader`
+    AsyncLoader & async_loader = tasks.front()->loader;
+    async_loader.schedule(tasks);
 }
 
 template <class... Args>

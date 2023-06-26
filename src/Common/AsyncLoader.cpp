@@ -71,9 +71,14 @@ void LoadJob::waitNoThrow() const
 }
 
 // Keep track of currently executing load jobs to be able to:
-// 1) Detect "wait dependent" deadlocks (when job A function waits for job B that depends on job A)
-// 2) Detect "priority inversion" deadlocks (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
-// 3) Resolve "blocked pool" deadlocks (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
+// 1) Detect "wait dependent" deadlocks
+//    (when job A function waits for job B that depends on job A)
+// 2) Detect "priority inversion" deadlocks
+//    (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
+// 3) Resolve "blocked pool" deadlocks
+//    (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
+// 4) Note that there is "wait not scheduled" deadlock type possible, that is NOT possible to detected
+//    (thread T is waiting on an assigned job A, but job A is only scheduled after the wait by T)
 thread_local AsyncLoader * current_async_loader = nullptr;
 thread_local LoadJob * current_load_job = nullptr;
 
