@@ -43,6 +43,8 @@ def test_drop_wrong_database_name(start):
     node.query(
         """
         CREATE DATABASE test;
+        CREATE TABLE test.table_test (i Int64) ENGINE=Memory;
+        INSERT INTO test.table_test SELECT 1;
         """
     )
 
@@ -55,7 +57,7 @@ def test_drop_wrong_database_name(start):
     node.query("DROP DATABASE test;")
 
 
-def test_wrong_table_name(started_cluster):
+def test_wrong_table_name(start):
     node.query(
         """
         CREATE DATABASE test;
@@ -88,6 +90,7 @@ def test_drop_wrong_table_name(start):
         """
         CREATE DATABASE test;
         CREATE TABLE test.table_test (i Int64) ENGINE=Memory;
+        INSERT INTO test.table_test SELECT 1;
         """
     )
 
