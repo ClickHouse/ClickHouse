@@ -451,6 +451,28 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
+std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
+{
+    if (key_metadata->empty())
+        return {};
+
+    auto it = key_metadata->lower_bound(range.left);
+    if (it == key_metadata->end())
+    {
+        auto check_range = std::prev(it)->second->file_segment->range();
+        return check_range < range ? std::nullopt : std::optional<FileSegment::Range>(check_range);
+    }
+
+    std::optional<FileSegment::Range> check_range;
+    if (range < (check_range = it->second->file_segment->range())
+        && (it == key_metadata->begin() || (check_range = std::prev(it)->second->file_segment->range()) < range))
+    {
+        return {};
+    }
+
+    return check_range;
+}
+
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
 {
     auto it = key_metadata->find(offset);
