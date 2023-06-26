@@ -1,6 +1,5 @@
 #include <memory>
 #include <Parsers/ASTFunction.h>
-#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
 #include <Storages/MeiliSearch/StorageMeiliSearch.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMeiliSearch.h>
@@ -9,19 +8,15 @@
 namespace DB
 {
 StoragePtr TableFunctionMeiliSearch::executeImpl(
-    const ASTPtr & /* ast_function */, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /* ast_function */, ContextPtr /*context*/, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context);
-
     return std::make_shared<StorageMeiliSearch>(
-        StorageID(getDatabaseName(), table_name), configuration.value(), columns, ConstraintsDescription{}, String{});
+        StorageID(getDatabaseName(), table_name), configuration.value(), ColumnsDescription{}, ConstraintsDescription{}, String{});
 }
 
 ColumnsDescription TableFunctionMeiliSearch::getActualTableStructure(ContextPtr /* context */) const
 {
-    MeiliSearchColumnDescriptionFetcher fetcher(configuration.value());
-    fetcher.addParam(doubleQuoteString("limit"), "1");
-    return fetcher.fetchColumnsDescription();
+    return StorageMeiliSearch::getTableStructureFromData(configuration.value());
 }
 
 

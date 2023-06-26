@@ -1,10 +1,11 @@
 #pragma once
 
+#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -48,30 +49,38 @@ public:
             }
             else
             {
-                auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
-
-                auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup()]()
+                try
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("UniqExactMerger");
+                    auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    while (true)
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup()]()
                     {
-                        const auto bucket = next_bucket_to_merge->fetch_add(1);
-                        if (bucket >= rhs.NUM_BUCKETS)
-                            return;
-                        lhs.impls[bucket].merge(rhs.impls[bucket]);
-                    }
-                };
+                        SCOPE_EXIT_SAFE(
+                            if (thread_group)
+                                CurrentThread::detachFromGroupIfNotDetached();
+                        );
+                        if (thread_group)
+                            CurrentThread::attachToGroupIfDetached(thread_group);
+                        setThreadName("UniqExactMerger");
 
-                for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                    thread_pool->scheduleOrThrowOnError(thread_func);
-                thread_pool->wait();
+                        while (true)
+                        {
+                            const auto bucket = next_bucket_to_merge->fetch_add(1);
+                            if (bucket >= rhs.NUM_BUCKETS)
+                                return;
+                            lhs.impls[bucket].merge(rhs.impls[bucket]);
+                        }
+                    };
+
+                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
+                        thread_pool->scheduleOrThrowOnError(thread_func);
+                    thread_pool->wait();
+                }
+                catch (...)
+                {
+                    thread_pool->wait();
+                    throw;
+                }
             }
         }
     }

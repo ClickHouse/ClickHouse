@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Core/Defines.h>
 
@@ -68,6 +69,9 @@ public:
             shards_queues[shard].emplace(backlog);
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
+                /// Do not account memory that was occupied by the dictionaries for the query/user context.
+                MemoryTrackerBlockerInThread memory_blocker;
+
                 if (thread_group)
                     CurrentThread::attachToGroupIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
@@ -226,6 +230,9 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
+            /// Do not account memory that was occupied by the dictionaries for the query/user context.
+            MemoryTrackerBlockerInThread memory_blocker;
+
             if (thread_group)
                 CurrentThread::attachToGroupIfDetached(thread_group);
             setThreadName("HashedDictDtor");
@@ -1163,7 +1170,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
         float max_load_factor = static_cast<float>(config.getDouble(config_prefix + dictionary_layout_prefix + ".max_load_factor", 0.5));
-        if (max_load_factor < 0.5 || max_load_factor > 0.99)
+        if (max_load_factor < 0.5f || max_load_factor > 0.99f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: max_load_factor parameter should be within [0.5, 0.99], got {}", full_name, max_load_factor);
 
         HashedDictionaryConfiguration configuration{
