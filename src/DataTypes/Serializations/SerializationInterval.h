@@ -1,12 +1,26 @@
 #pragma once
 
 #include "ISerialization.h"
+#include "SerializationCustomSimpleText.h"
 
+#include <DataTypes/DataTypeInterval.h>
 #include <Formats/FormatSettings.h>
 #include <Common/IntervalKind.h>
 
 namespace DB
 {
+class SerializationKustoInterval : public SerializationCustomSimpleText
+{
+public:
+    explicit SerializationKustoInterval(IntervalKind kind_) : SerializationCustomSimpleText(nullptr), kind(kind_) { }
+
+    void serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
+
+private:
+    IntervalKind kind;
+};
+
 class SerializationInterval : public ISerialization
 {
 public:
@@ -49,6 +63,23 @@ public:
     void serializeTextRaw(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
-    std::array<std::unique_ptr<const ISerialization>, magic_enum::enum_count<FormatSettings::IntervalFormat>()> serializations;
+    template <typename... Args, std::invocable<const ISerialization *, Args...> Method>
+    void dispatch(const Method method, const FormatSettings::IntervalOutputFormat format, Args &&... args) const
+    {
+        const ISerialization * serialization = nullptr;
+        if (format == FormatSettings::IntervalOutputFormat::Kusto)
+            serialization = &serialization_kusto;
+        else if (format == FormatSettings::IntervalOutputFormat::Numeric)
+            serialization = &serialization_numeric;
+
+        if (!serialization)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option {} is not implemented", magic_enum::enum_name(format));
+
+        (serialization->*method)(std::forward<Args>(args)...);
+    }
+
+    IntervalKind interval_kind;
+    SerializationKustoInterval serialization_kusto{interval_kind};
+    SerializationNumber<typename DataTypeInterval::FieldType> serialization_numeric;
 };
 }

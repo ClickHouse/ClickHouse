@@ -77,15 +77,15 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
-    enum class IntervalFormat
+    enum class IntervalOutputFormat
     {
-        KQL,
+        Kusto,
         Numeric
     };
 
     struct
     {
-        IntervalFormat format = IntervalFormat::Numeric;
+        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
     } interval;
 
     bool input_format_ipv4_default_on_conversion_error = false;

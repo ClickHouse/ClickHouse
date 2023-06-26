@@ -1,6 +1,8 @@
-{% for dialect in ['clickhouse', 'kusto_auto'] -%}
-select '{{ dialect }}';
-set dialect = '{{ dialect }}';
+select value from system.settings where name = 'interval_output_format';
+
+{% for format in ['kusto', 'numeric'] -%}
+select '{{ format }}';
+set interval_output_format = '{{ format }}';
 select toIntervalNanosecond(99);
 select toIntervalNanosecond(100);
 select toIntervalMillisecond(1);
