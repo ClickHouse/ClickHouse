@@ -139,7 +139,7 @@ def test_profile_events(cluster):
     )
     stat1 = get_query_stat(instance, query1)
     for metric in stat1:
-        assert stat1[metric] == metrics1[metric] - metrics0[metric]
+        assert stat1[metric] == metrics1.get(metric, 0) - metrics0.get(metric, 0)
     assert (
         metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
     )
@@ -163,7 +163,7 @@ def test_profile_events(cluster):
     stat2 = get_query_stat(instance, query2)
 
     for metric in stat2:
-        assert stat2[metric] == metrics2[metric] - metrics1[metric]
+        assert stat2[metric] == metrics2.get(metric, 0)- metrics1.get(metric, 0)
 
     assert (
         metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
@@ -189,4 +189,4 @@ def test_profile_events(cluster):
     # With async reads profile events are not updated fully because reads are done in a separate thread.
     # for metric in stat3:
     #    print(metric)
-    #    assert stat3[metric] == metrics3[metric] - metrics2[metric]
+    #    assert stat3[metric] == metrics3.get(metric, 0) - metrics2.get(metric, 0)
