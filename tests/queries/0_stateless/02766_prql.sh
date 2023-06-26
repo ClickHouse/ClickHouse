@@ -52,18 +52,7 @@ from aboba
 select [ user_id, message, metric ]
 derive creation_date = s\"toTimeZone(creation_date, 'Europe/Amsterdam')\"
 select [ user_id, message, creation_date, metric];
+
+from s\"SELECT * FROM system.users\" | select non_existent_column; # {serverError UNKNOWN_IDENTIFIER}
+from non_existent_table; # {serverError UNKNOWN_TABLE}
 "
-
-function check_error_code()
-{
-    if $CLICKHOUSE_CLIENT --dialect="prql" -q "$1" 2>&1 | grep -q "$2"
-    then
-        echo "OK"
-    else
-        echo "FAIL"
-    fi
-}
-
-check_error_code "from s\"SELECT * FROM system.users\" | select non_existent_column" "UNKNOWN_IDENTIFIER"
-
-check_error_code "from non_existent_table" "UNKNOWN_TABLE"
