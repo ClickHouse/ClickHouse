@@ -66,7 +66,7 @@ def test_host_regexp_multiple_ptr_v4_fails_with_wrong_resolution(started_cluster
 
     endpoint = build_endpoint_v4(server_ip)
 
-    assert "1\n" != client.exec_in_container((["bash", "-c", f"curl {endpoint}"]))
+    assert "1\n" != client.exec_in_container(["bash", "-c", f"curl {endpoint}"])
 
 
 def test_host_regexp_multiple_ptr_v4(started_cluster):
@@ -79,7 +79,7 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
 
     endpoint = build_endpoint_v4(server_ip)
 
-    assert "1\n" == client.exec_in_container((["bash", "-c", f"curl {endpoint}"]))
+    assert "1\n" == client.exec_in_container(["bash", "-c", f"curl {endpoint}"])
 
 
 def test_host_regexp_multiple_ptr_v6(started_cluster):
@@ -88,4 +88,4 @@ def test_host_regexp_multiple_ptr_v6(started_cluster):
 
     endpoint = build_endpoint_v6(ch_server.ipv6_address)
 
-    assert "1\n" == client.exec_in_container((["bash", "-c", f"curl -6 {endpoint}"]))
+    assert "1\n" == client.exec_in_container(["bash", "-c", f"curl -6 {endpoint}"])
