@@ -2340,27 +2340,24 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    Int64 min_data_version = std::numeric_limits<Int64>::max();
-    for (const auto & data_part : data_parts)
-        min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
-
     auto parts_backup_entries = backupParts(data_parts, data_path_in_backup, backup_settings, read_settings, local_context);
     for (auto & part_backup_entries : parts_backup_entries)
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
     if (backup_entries_collector.getBackupSettings().mutations)
-        backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
+        backup_entries_collector.addBackupEntries(backupMutations(data_path_in_backup));
 }
 
 
-BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & data_path_in_backup) const
+BackupEntries StorageMergeTree::backupMutations(const String & data_path_in_backup) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
     BackupEntries backup_entries;
-    for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
+    for (const auto & [_, mutation_entry] : current_mutations_by_version)
     {
-        auto backup_entry = std::make_shared<BackupEntryFromMemory>(it->second.toString());
-        backup_entries.emplace_back(fs::path{data_path_in_backup} / it->second.file_name, backup_entry);
+        const auto & file_name = mutation_entry.file_name;
+        auto backup_entry = std::make_shared<BackupEntryFromMemory>(mutation_entry.toString());
+        backup_entries.emplace_back(fs::path{data_path_in_backup} / file_name, backup_entry);
     }
     return backup_entries;
 }
