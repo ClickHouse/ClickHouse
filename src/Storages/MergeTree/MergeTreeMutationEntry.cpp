@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
-#include <Backups/BackupEntryFromMemory.h>
 
 #include <utility>
 
@@ -53,28 +52,17 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
-    , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
+    , file_name("tmp_mutation_" + std::to_string(tmp_number) + ".txt")
     , is_temp(true)
     , tid(tid_)
 {
+    if (tid.isPrehistoric())
+        csn = Tx::PrehistoricCSN;
+
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 1\n"
-            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
-        *out << "commands: ";
-        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
-        *out << "\n";
-        if (tid.isPrehistoric())
-        {
-            csn = Tx::PrehistoricCSN;
-        }
-        else
-        {
-            *out << "tid: ";
-            TransactionID::write(tid, *out);
-            *out << "\n";
-        }
+        writeText(*out);
         out->finalize();
         out->sync();
     }
@@ -83,6 +71,28 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         removeFile();
         throw;
     }
+}
+
+void MergeTreeMutationEntry::writeText(WriteBuffer & out) const
+{
+    out << "format version: 1\n"
+        << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
+    out << "commands: ";
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    out << "\n";
+    if (!tid.isPrehistoric())
+    {
+        out << "tid: ";
+        TransactionID::write(tid, out);
+        out << "\n";
+    }
+}
+
+String MergeTreeMutationEntry::toString() const
+{
+    WriteBufferFromOwnString out;
+    writeText(out);
+    return out.str();
 }
 
 void MergeTreeMutationEntry::commit(UInt64 block_number_)
@@ -118,42 +128,47 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
     : disk(std::move(disk_))
     , path_prefix(path_prefix_)
-    , file_name(file_name_)
     , is_temp(false)
 {
-    block_number = parseFileName(file_name);
-    auto buf = disk->readFile(path_prefix + file_name);
+    auto buf = disk->readFile(path_prefix + file_name_);
+    readText(*buf, file_name_);
+}
 
-    *buf >> "format version: 1\n";
+void MergeTreeMutationEntry::readText(ReadBuffer & in, const String & file_name_)
+{
+    file_name = file_name_;
+    block_number = parseFileName(file_name);
+
+    in >> "format version: 1\n";
 
     LocalDateTime create_time_dt;
-    *buf >> "create time: " >> create_time_dt >> "\n";
+    in >> "create time: " >> create_time_dt >> "\n";
     create_time = DateLUT::serverTimezoneInstance().makeDateTime(
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
-    *buf >> "commands: ";
-    commands.readText(*buf);
-    *buf >> "\n";
+    in >> "commands: ";
+    commands.readText(in);
+    in >> "\n";
 
-    if (buf->eof())
+    if (in.eof())
     {
         tid = Tx::PrehistoricTID;
         csn = Tx::PrehistoricCSN;
     }
     else
     {
-        *buf >> "tid: ";
-        tid = TransactionID::read(*buf);
-        *buf >> "\n";
+        in >> "tid: ";
+        tid = TransactionID::read(in);
+        in >> "\n";
 
-        if (!buf->eof())
+        if (!in.eof())
         {
-            *buf >> "csn: " >> csn >> "\n";
+            in >> "csn: " >> csn >> "\n";
         }
     }
 
-    assertEOF(*buf);
+    assertEOF(in);
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
@@ -169,18 +184,6 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-}
-
-std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
-{
-    WriteBufferFromOwnString out;
-    out << "block number: " << block_number << "\n";
-
-    out << "commands: ";
-    commands.writeText(out, /* with_pure_metadata_commands = */ false);
-    out << "\n";
-
-    return std::make_shared<BackupEntryFromMemory>(out.str());
 }
 
 }

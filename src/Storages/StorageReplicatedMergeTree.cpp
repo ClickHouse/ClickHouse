@@ -99,6 +99,7 @@
 
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntry.h>
@@ -10184,9 +10185,10 @@ void StorageReplicatedMergeTree::backupData(
         auto mutation_infos = coordination->getReplicatedMutations(shared_id, my_replica_name);
         for (const auto & mutation_info : mutation_infos)
         {
-            auto backup_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_info.entry, mutation_info.id).backup();
+            auto file_name = fmt::format("mutation_{}.txt", parseFromString<Int64>(mutation_info.id));
+            auto backup_entry = std::make_shared<BackupEntryFromMemory>(mutation_info.entry);
             for (const auto & data_path : data_paths_fs)
-                backup_entries_collector.addBackupEntry(data_path / "mutations" / (mutation_info.id + ".txt"), backup_entry);
+                backup_entries_collector.addBackupEntry(data_path / file_name, backup_entry);
         }
     };
 

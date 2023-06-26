@@ -56,6 +56,8 @@ void MutationInfoFromBackup::write(WriteBuffer & out, bool one_line) const
 
 void MutationInfoFromBackup::read(ReadBuffer & in, const String & filename)
 {
+    /// The function can read a mutation info from either the format of MutationInfoFromBackup::write()
+    /// or MergeTreeMutationEntry::writeText() or ReplicatedMergeTreeMutationEntry::writeText().
     try
     {
         fs::path filename_fs = fs::path{filename};
@@ -67,51 +69,106 @@ void MutationInfoFromBackup::read(ReadBuffer & in, const String & filename)
             number_as_string = number_as_string.substr(mutation_prefix.length());
         number = ::DB::parseFromString<Int64>(number_as_string);
 
-        auto skip_separators = [&] { ignoreCharsWhile<' ', '\t', '\n'>(in); };
+        auto skip_whitespace = [&] { ignoreCharsWhile<' ', '\t', '\n'>(in); };
 
         auto next_token = [&]
         {
-            skip_separators();
+            skip_whitespace();
             String tkn;
             readStringUntilCharsInto<' ', '\t', '\n'>(tkn, in);
             return tkn;
         };
 
-        auto expect_token = [&](const char * expected)
+        auto assert_token = [&](const char * expected)
         {
-            skip_separators();
+            skip_whitespace();
             assertString(expected, in);
         };
 
-        expect_token("block");
-
         auto token = next_token();
-        if (token == "number:")
+        if (token == "format")
         {
-            /// block numbers:
-            block_number = ::DB::parseFromString<Int64>(next_token());
+            /// format version: 1
+            assert_token("version:");
+            assert_token("1");
+
+            token = next_token();
         }
-        else if (token == "numbers")
+
+        if (token == "create")
         {
-            /// block numbers count:
-            expect_token("count:");
-            size_t count = ::DB::parseFromString<size_t>(next_token());
-            block_numbers.emplace();
-            for (size_t i = 0; i < count; ++i)
+            /// create time: *
+            assert_token("time:");
+
+            LocalDateTime create_time_dt;
+            skip_whitespace();
+            readText(create_time_dt, in);
+
+            token = next_token();
+        }
+
+        if (token == "source")
+        {
+            /// source replica: *
+            assert_token("replica:");
+
+            String source_replica;
+            skip_whitespace();
+            readString(source_replica, in);
+
+            token = next_token();
+        }
+
+        if (token == "block")
+        {
+            token = next_token();
+            if (token == "number:")
             {
-                String partition_id = next_token();
-                Int64 block_num = ::DB::parseFromString<Int64>(next_token());
-                (*block_numbers)[partition_id] = block_num;
+                /// block number: <num>
+                Int64 num;
+                skip_whitespace();
+                readText(num, in);
+                block_number = num;
+
+                token = next_token();
+            }
+            else if (token == "numbers")
+            {
+                /// block numbers count: <count>
+                /// <partition_id> <num>
+                /// ...
+                assert_token("count:");
+
+                size_t count;
+                skip_whitespace();
+                readText(count, in);
+
+                block_numbers.emplace();
+                for (size_t i = 0; i < count; ++i)
+                {
+                    String partition_id = next_token();
+                    Int64 num;
+                    skip_whitespace();
+                    readText(num, in);
+                    (*block_numbers)[partition_id] = num;
+                }
+
+                token = next_token();
+            }
+            else
+            {
+                throwAtAssertionFailed("'block number:' or 'block numbers count:'", in);
             }
         }
-        else
-        {
-            throwAtAssertionFailed("'block number:' or 'block numbers count:'", in);
-        }
 
-        expect_token("commands:");
+        if (!block_number && !block_numbers)
+            block_number = number;
 
-        skip_separators();
+        /// commands: *
+        if (token != "commands:")
+            throwAtAssertionFailed("commands:", in);
+
+        skip_whitespace();
         commands.readText(in);
     }
     catch (Exception & e)
@@ -121,22 +178,40 @@ void MutationInfoFromBackup::read(ReadBuffer & in, const String & filename)
     }
 }
 
-std::vector<MutationInfoFromBackup> readMutationsFromBackup(const IBackup & backup, const String & mutations_dir_path_in_backup)
+namespace
 {
-    fs::path dir = mutations_dir_path_in_backup;
-    Strings filenames = backup.listFiles(dir);
+    void appendMutationsFromBackup(const IBackup & backup, const String & dir_in_backup, const String & file_name_in_backup,
+                                   std::vector<MutationInfoFromBackup> & result)
+    {
+        fs::path full_path = fs::path{dir_in_backup} / file_name_in_backup;
+        if (file_name_in_backup == "mutations")
+        {
+            Strings names_in_subdir = backup.listFiles(full_path);
+            for (const auto & name_in_subdir : names_in_subdir)
+                appendMutationsFromBackup(backup, full_path, name_in_subdir, result);
+        }
+        else
+        {
+            auto in = backup.readFile(full_path);
+            MutationInfoFromBackup mutation_info;
+            mutation_info.read(*in, file_name_in_backup);
+            result.emplace_back(std::move(mutation_info));
+        }
+    }
+}
+
+std::vector<MutationInfoFromBackup> readMutationsFromBackup(const IBackup & backup, const String & dir_in_backup, Strings & file_names_in_backup)
+{
+    if (file_names_in_backup.empty())
+        return {};
 
     std::vector<MutationInfoFromBackup> res;
-    res.reserve(filenames.size());
+    for (const String & file_name : file_names_in_backup)
+        appendMutationsFromBackup(backup, dir_in_backup, file_name, res);
 
-    for (const auto & filename : filenames)
-    {
-        auto mutation_path = dir /  filename;
-        auto in = backup.readFile(mutation_path);
-        MutationInfoFromBackup mutation_info;
-        mutation_info.read(*in, mutation_path);
-        res.emplace_back(std::move(mutation_info));
-    }
+    file_names_in_backup.resize(res.size());
+    for (size_t i = 0; i != res.size(); ++i)
+        file_names_in_backup[i] = res[i].name;
 
     return res;
 }

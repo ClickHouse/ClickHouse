@@ -82,11 +82,11 @@ def new_session_id():
     return "Session #" + str(session_id_counter)
 
 
-def has_mutation_in_backup(mutation_id, backup_name, database, table):
+def has_mutation_in_backup(mutation_name, backup_name, database, table):
     return os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            f"data/{database}/{table}/mutations/{mutation_id}.txt",
+            f"data/{database}/{table}/{mutation_name}",
         )
     )
 
@@ -1406,7 +1406,7 @@ def test_mutation():
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    mutation_name_in_backup = "0000000021"
+    mutation_name_in_backup = "mutation_21.txt"
     assert has_mutation_in_backup(mutation_name_in_backup, backup_name, "test", "table")
 
     instance.query("DROP TABLE test.table")

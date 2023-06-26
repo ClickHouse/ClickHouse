@@ -5163,31 +5163,35 @@ namespace
                                                            const String & data_path_in_backup,
                                                            MergeTreeDataFormatVersion format_version,
                                                            const std::optional<std::unordered_set<String>> & partition_ids,
-                                                           Strings & part_names_in_backup)
+                                                           Strings & part_names_in_backup,
+                                                           Strings & mutation_names_in_backup)
     {
-        Strings part_names = backup.listFiles(data_path_in_backup);
-        boost::remove_erase(part_names, "mutations"); /// Mutations will be read separately.
-
-        fs::path data_path_in_backup_fs = data_path_in_backup;
+        Strings file_names = backup.listFiles(data_path_in_backup);
 
         std::vector<MergeTreePartInfo> part_infos;
-        part_infos.reserve(part_names.size());
-        part_names_in_backup.reserve(part_names.size());
+        part_infos.reserve(file_names.size());
+        part_names_in_backup.reserve(file_names.size());
 
-        for (const auto & part_name : part_names)
+        for (const auto & file_name : file_names)
         {
-            auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+            if (file_name.starts_with("mutation_") || (file_name == "mutations"))
+            {
+                mutation_names_in_backup.emplace_back(file_name);
+                continue;
+            }
+
+            auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
             if (!part_info)
             {
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} is not a part's name",
-                                String{data_path_in_backup_fs / part_name});
+                                String{fs::path{data_path_in_backup} / file_name});
             }
 
             if (partition_ids && !partition_ids->contains(part_info->partition_id))
                 continue;
 
             part_infos.emplace_back(*std::move(part_info));
-            part_names_in_backup.emplace_back(part_name);
+            part_names_in_backup.emplace_back(file_name);
         }
 
         return part_infos;
@@ -5370,18 +5374,16 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
 
     /// Read part infos from backup.
     Strings part_names_in_backup;
-    auto part_infos = readPartInfosFromBackup(*backup, data_path_in_backup, format_version, partition_ids, part_names_in_backup);
+    Strings mutation_names_in_backup;
+    auto part_infos = readPartInfosFromBackup(*backup, data_path_in_backup, format_version, partition_ids, part_names_in_backup, mutation_names_in_backup);
 
     /// Read mutations from backup.
+    if (!restorer.getRestoreSettings().mutations)
+        mutation_names_in_backup.clear();
+
     std::vector<MutationInfoFromBackup> mutation_infos;
-    Strings mutation_names_in_backup;
-    if (restorer.getRestoreSettings().mutations)
-    {
-        mutation_infos = readMutationsFromBackup(*backup, fs::path{data_path_in_backup} / "mutations");
-        mutation_names_in_backup.reserve(mutation_infos.size());
-        for (const auto & mutation_info : mutation_infos)
-            mutation_names_in_backup.emplace_back(mutation_info.name);
-    }
+    if (!mutation_names_in_backup.empty())
+        mutation_infos = readMutationsFromBackup(*backup, data_path_in_backup, mutation_names_in_backup);
 
     /// Allocate block numbers and recalculate part infos extracted from backup.
     auto unlock_block_numbers = allocateBlockNumbersForRestoringFromBackup(

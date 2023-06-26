@@ -909,30 +909,30 @@ def test_table_in_replicated_database_with_not_synced_def():
     ) == TSV([["x", "String"], ["y", "String"]])
 
 
-def has_mutation_in_backup(mutation_id, backup_name, database, table):
+def has_mutation_in_backup(mutation_name, backup_name, database, table):
     return (
         os.path.exists(
             os.path.join(
                 get_path_to_backup(backup_name),
-                f"data/{database}/{table}/mutations/{mutation_id}.txt",
+                f"data/{database}/{table}/{mutation_name}",
             )
         )
         or os.path.exists(
             os.path.join(
                 get_path_to_backup(backup_name),
-                f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
+                f"shards/1/replicas/1/data/{database}/{table}/{mutation_name}",
             )
         )
         or os.path.exists(
             os.path.join(
                 get_path_to_backup(backup_name),
-                f"shards/1/replicas/2/data/{database}/{table}/mutations/{mutation_id}.txt",
+                f"shards/1/replicas/2/data/{database}/{table}/{mutation_name}",
             )
         )
         or os.path.exists(
             os.path.join(
                 get_path_to_backup(backup_name),
-                f"shards/1/replicas/3/data/{database}/{table}/mutations/{mutation_id}.txt",
+                f"shards/1/replicas/3/data/{database}/{table}/{mutation_name}",
             )
         )
     )
@@ -966,7 +966,7 @@ def test_mutation(src_engine):
     node1.query(f"BACKUP TABLE tbl {src_on_cluster} TO {backup_name}")
 
     mutation_name_in_backup = (
-        "0000000010" if src_engine == "ReplicatedMergeTree" else "0000000021"
+        "mutation_10.txt" if src_engine == "ReplicatedMergeTree" else "mutation_21.txt"
     )
     assert has_mutation_in_backup(
         mutation_name_in_backup, backup_name, "default", "tbl"

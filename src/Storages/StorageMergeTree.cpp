@@ -7,6 +7,7 @@
 
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Databases/IDatabase.h>
@@ -2355,11 +2356,12 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
 BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & data_path_in_backup) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-
-    fs::path mutations_path_in_backup = fs::path{data_path_in_backup} / "mutations";
     BackupEntries backup_entries;
     for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
-        backup_entries.emplace_back(mutations_path_in_backup / fmt::format("{:010}.txt", it->first), it->second.backup());
+    {
+        auto backup_entry = std::make_shared<BackupEntryFromMemory>(it->second.toString());
+        backup_entries.emplace_back(fs::path{data_path_in_backup} / it->second.file_name, backup_entry);
+    }
     return backup_entries;
 }
 

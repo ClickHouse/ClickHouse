@@ -36,6 +36,6 @@ struct MutationInfoFromBackup
 };
 
 /// Reads information about all mutations from a backup.
-std::vector<MutationInfoFromBackup> readMutationsFromBackup(const IBackup & backup, const String & mutations_dir_path_in_backup);
+std::vector<MutationInfoFromBackup> readMutationsFromBackup(const IBackup & backup, const String & dir_in_backup, Strings & file_names_in_backup);
 
 }
