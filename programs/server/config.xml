@@ -1550,12 +1550,12 @@
     -->
 
     <!-- Configuration for the query cache -->
-    <!-- <query_cache> -->
-    <!--     <max_size_in_bytes>1073741824</max_size_in_bytes> -->
-    <!--     <max_entries>1024</max_entries> -->
-    <!--     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes> -->
-    <!--     <max_entry_size_in_rows>30000000</max_entry_size_in_rows> -->
-    <!-- </query_cache> -->
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    </query_cache>
 
     <!-- Uncomment if enable merge tree metadata cache -->
     <!--merge_tree_metadata_cache>

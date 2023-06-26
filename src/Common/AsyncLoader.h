@@ -373,6 +373,7 @@ private:
     void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> &);
     void spawn(Pool & pool, std::unique_lock<std::mutex> &);
     void worker(Pool & pool);
+    bool hasWorker(std::unique_lock<std::mutex> &) const;
 
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.

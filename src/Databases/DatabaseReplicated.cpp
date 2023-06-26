@@ -713,8 +713,9 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.find("ReplicatedMergeTree") != std::string::npos;
-    if (!looks_like_replicated)
+    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
+    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
+    if (!looks_like_replicated || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -987,7 +988,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
-            assert(create_query_string == readMetadataFile(table_name));
+            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
             continue;
         }
 
@@ -1183,7 +1184,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn && !txn->isCreateOrReplaceQuery())
+    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
@@ -1237,7 +1238,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         new_digest -= DB::getMetadataHash(to_table_name, statement_to);
         new_digest += DB::getMetadataHash(table_name, statement_to);
     }
-    if (txn)
+    if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
@@ -1263,7 +1264,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest += DB::getMetadataHash(query.getTable(), statement);
-    if (txn && !txn->isCreateOrReplaceQuery())
+    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
@@ -1276,7 +1277,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -1287,7 +1288,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_id.table_name);
     new_digest += DB::getMetadataHash(table_id.table_name, statement);
-    if (txn)
+    if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
@@ -1310,7 +1311,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn)
+    if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::detachTablePermanently(local_context, table_name);
@@ -1334,7 +1335,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     if (attach)
     {
         new_digest += getMetadataHash(table_name);
-        if (txn)
+        if (txn && !is_recovering)
             txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
     }
 

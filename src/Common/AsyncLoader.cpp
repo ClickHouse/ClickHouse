@@ -263,9 +263,11 @@ void AsyncLoader::start()
 
 void AsyncLoader::wait()
 {
-    // Because job can create new jobs in other pools we have to recheck in cycle
+    // Because job can create new jobs in other pools we have to recheck in cycle.
+    // Also wait for all workers to finish to avoid races on `pool.workers`,
+    // which can decrease even after all jobs are already finished.
     std::unique_lock lock{mutex};
-    while (!scheduled_jobs.empty())
+    while (!scheduled_jobs.empty() || hasWorker(lock))
     {
         lock.unlock();
         for (auto & p : pools)
@@ -809,6 +811,16 @@ void AsyncLoader::worker(Pool & pool)
             });
         }
     }
+}
+
+bool AsyncLoader::hasWorker(std::unique_lock<std::mutex> &) const
+{
+    for (const Pool & pool : pools)
+    {
+        if (pool.workers > 0)
+            return true;
+    }
+    return false;
 }
 
 }
