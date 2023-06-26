@@ -31,6 +31,8 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
 
 void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_access_check);
 
+void registerDiskEncryptedOS(DiskFactory & factory, bool global_skip_access_check);
+
 
 #ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
 
@@ -61,6 +63,8 @@ void registerDisks(bool global_skip_access_check)
     registerDiskCache(factory, global_skip_access_check);
 
     registerDiskLocalObjectStorage(factory, global_skip_access_check);
+
+    registerDiskEncryptedOS(factory, global_skip_access_check);
 }
 
 #else

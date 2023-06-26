@@ -5,6 +5,9 @@
 #include <iostream>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/Encrypted/EncryptedObjectStorage.h>
+#include <IO/FileEncryptionCommon.h>
+#include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -73,7 +76,31 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     const auto & object_path = object.remote_path;
 
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
-    auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
+    std::function<std::unique_ptr<ReadBufferFromFileBase>()> current_read_buffer_creator;
+    current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
+
+    if (settings.encryption_settings)
+    {
+        current_read_until_position += FileEncryption::Header::kSize;
+        current_read_buffer_creator = [=, this]()
+        {
+            FileEncryption::Header header;
+            {
+                Memory<> buffer;
+                auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position);
+                if (implementation_buffer->internalBuffer().size() < FileEncryption::Header::kSize)
+                {
+                    buffer.resize(FileEncryption::Header::kSize);
+                    implementation_buffer->set(buffer.data(), buffer.size());
+                }
+                header = FileEncryption::readHeader(*implementation_buffer);
+            }
+            String key = settings.encryption_settings->findKeyByFingerprint(header.key_fingerprint, object_path);
+            auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position);
+            return std::make_unique<ReadBufferFromEncryptedFile>(
+                settings.remote_fs_buffer_size, std::move(implementation_buffer), key, header);
+        };
+    }
 
 #ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
     if (with_cache)

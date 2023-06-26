@@ -12,6 +12,11 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
+void DiskObjectStorage::wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name)
+{
+    object_storage = std::make_shared<EncryptedObjectStorage>(object_storage, enc_settings, layer_name);
+}
+
 NameSet DiskObjectStorage::getOverlaysNames() const
 {
     NameSet layers;

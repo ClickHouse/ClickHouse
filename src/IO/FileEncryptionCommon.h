@@ -15,6 +15,9 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+struct EncryptedObjectStorageSettings;
+using EncryptedObjectStorageSettingsPtr = std::shared_ptr<EncryptedObjectStorageSettings>;
+
 namespace FileEncryption
 {
 

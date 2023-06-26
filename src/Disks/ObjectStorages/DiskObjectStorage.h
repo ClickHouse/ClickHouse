@@ -7,6 +7,8 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <re2/re2.h>
 
+#include "Encrypted/EncryptedObjectStorage.h"
+
 namespace CurrentMetrics
 {
     extern const Metric DiskSpaceReservedForMerge;
@@ -196,6 +198,9 @@ public:
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
     void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+
+    /// Add an encryption layer.
+    void wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name);
 
     /// Get names of all layers. Name is how the layer is defined in configuration file.
     NameSet getOverlaysNames() const override;
