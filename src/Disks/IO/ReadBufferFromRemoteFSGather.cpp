@@ -85,6 +85,26 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
         current_read_buffer_creator = [=, this]()
         {
             FileEncryption::Header header;
+            if (settings.encryption_settings->header_cache && settings.enable_filesystem_cache
+                && (!query_id.empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+                    || !settings.avoid_readthrough_cache_outside_query_context))
+            {
+                auto cache_key = settings.encryption_settings->header_cache->createKeyForPath(object_path);
+                CachedOnDiskReadBufferFromFile cached_buffer(
+                    object_path,
+                    cache_key,
+                    settings.encryption_settings->header_cache,
+                    current_read_buffer_creator,
+                    settings,
+                    query_id,
+                    FileEncryption::Header::kSize,
+                    /* allow_seeks */ false,
+                    /* use_external_buffer */ false,
+                    FileEncryption::Header::kSize,
+                    cache_log);
+                header = FileEncryption::readHeader(cached_buffer);
+            }
+            else
             {
                 Memory<> buffer;
                 auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position);

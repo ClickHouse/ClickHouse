@@ -1,6 +1,7 @@
 #include "EncryptedObjectStorage.h"
 
 #include <filesystem>
+#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -97,26 +98,48 @@ std::unique_ptr<WriteBufferFromFileBase> EncryptedObjectStorage::writeObject( //
     header.algorithm = enc_settings->current_algorithm;
     header.key_fingerprint = enc_settings->current_key_fingerprint;
     header.init_vector = FileEncryption::InitVector::random();
+    removeCacheIfExists(object.remote_path);
+    if (enc_settings->cache_header_on_write && enc_settings->header_cache
+        && modified_write_settings.enable_filesystem_cache_on_write_operations && fs::path(object.remote_path).extension() != ".tmp")
+    {
+        auto cache_key = enc_settings->header_cache->createKeyForPath(object.remote_path);
+        auto out = std::make_unique<WriteBufferFromOwnString>();
+        CachedOnDiskWriteBufferFromFile cache(
+            std::move(out),
+            enc_settings->header_cache,
+            implementation_buffer->getFileName(),
+            cache_key,
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            modified_write_settings);
+        header.write(cache);
+        cache.finalize();
+    }
     return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(implementation_buffer), enc_settings->current_key, header, 0);
 }
 
 void EncryptedObjectStorage::removeObject(const StoredObject & object)
 {
+    removeCacheIfExists(object.remote_path);
     object_storage->removeObject(object);
 }
 
 void EncryptedObjectStorage::removeObjects(const StoredObjects & objects)
 {
+    for (const auto & object : objects)
+        removeCacheIfExists(object.remote_path);
     object_storage->removeObjects(objects);
 }
 
 void EncryptedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
+    removeCacheIfExists(object.remote_path);
     object_storage->removeObjectIfExists(object);
 }
 
 void EncryptedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
+    for (const auto & object : objects)
+        removeCacheIfExists(object.remote_path);
     object_storage->removeObjectsIfExist(objects);
 }
 
@@ -161,6 +184,15 @@ void EncryptedObjectStorage::applyNewSettings(
 String EncryptedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
+}
+
+void EncryptedObjectStorage::removeCacheIfExists(const std::string & path)
+{
+    if (enc_settings->header_cache)
+    {
+        auto cache_key = enc_settings->header_cache->createKeyForPath(path);
+        enc_settings->header_cache->removeKeyIfExists(cache_key);
+    }
 }
 
 }

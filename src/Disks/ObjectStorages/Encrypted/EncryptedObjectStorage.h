@@ -3,6 +3,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/FileEncryptionCommon.h>
+#include <Interpreters/Cache/FileCache.h>
 
 namespace Poco
 {
@@ -20,6 +21,8 @@ struct EncryptedObjectStorageSettings
     FileEncryption::Algorithm current_algorithm;
     std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
     String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    FileCachePtr header_cache;
+    bool cache_header_on_write = false;
 };
 
 /**
@@ -112,6 +115,7 @@ public:
 
 private:
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
+    void removeCacheIfExists(const std::string & path) override;
 
     ObjectStoragePtr object_storage;
     EncryptedObjectStorageSettingsPtr enc_settings;

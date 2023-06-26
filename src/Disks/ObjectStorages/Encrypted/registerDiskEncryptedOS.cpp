@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 
 #include "EncryptedObjectStorage.h"
+#include "IO/FileEncryptionCommon.h"
 
 namespace DB
 {
@@ -74,6 +75,24 @@ static EncryptedObjectStorageSettingsPtr parseDiskEncryptedOSSettings(
                 wrapped_disk_name,
                 disk_name);
 
+        auto header_cache_path = config.getString(config_prefix + ".header_cache_path", "");
+        if (!header_cache_path.empty())
+        {
+            FileCacheSettings file_cache_settings;
+            file_cache_settings.base_path = header_cache_path;
+
+            if (!config.has(config_prefix + ".header_cache_max_size"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected header cache size (`header_cache_max_size`) in configuration");
+            if (config.has(config_prefix + ".header_cache_max_size"))
+                file_cache_settings.max_size = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".header_cache_max_size"));
+            if (file_cache_settings.max_size == 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected non-zero size for header cache configuration");
+            file_cache_settings.cache_on_write_operations = config.getUInt64(config_prefix + ".cache_header_on_write", false);
+            ret->cache_header_on_write = file_cache_settings.cache_on_write_operations;
+            file_cache_settings.max_file_segment_size = FileEncryption::Header::kSize;
+            ret->header_cache = FileCacheFactory::instance().getOrCreate(disk_name + "_header_cache", file_cache_settings);
+            ret->header_cache->initialize();
+        }
         return ret;
     }
     catch (Exception & e)
