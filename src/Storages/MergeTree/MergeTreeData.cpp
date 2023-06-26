@@ -83,6 +83,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
+#include <base/interpolate.h>
 
 #include <algorithm>
 #include <atomic>
@@ -178,8 +179,6 @@ namespace ErrorCodes
     extern const int ZERO_COPY_REPLICATION_ERROR;
     extern const int NOT_INITIALIZED;
     extern const int SERIALIZATION_ERROR;
-    extern const int NETWORK_ERROR;
-    extern const int SOCKET_TIMEOUT;
     extern const int TOO_MANY_MUTATIONS;
 }
 
@@ -1173,25 +1172,6 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     }
 }
 
-static bool isRetryableException(const Exception & e)
-{
-    if (isNotEnoughMemoryErrorCode(e.code()))
-        return true;
-
-    if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
-        return true;
-
-#if USE_AWS_S3
-    const auto * s3_exception = dynamic_cast<const S3Exception *>(&e);
-    if (s3_exception && s3_exception->isRetryableError())
-        return true;
-#endif
-
-    /// In fact, there can be other similar situations.
-    /// But it is OK, because there is a safety guard against deleting too many parts.
-    return false;
-}
-
 static constexpr size_t loading_parts_initial_backoff_ms = 100;
 static constexpr size_t loading_parts_max_backoff_ms = 5000;
 static constexpr size_t loading_parts_max_tries = 3;
@@ -1210,7 +1190,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
 
     String part_path = fs::path(relative_data_path) / part_name;
-    String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
+    String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED;
 
     /// Ignore broken parts that can appear as a result of hard server restart.
     auto mark_broken = [&]
@@ -1452,7 +1432,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 {
     const size_t num_parts = parts_to_load.size();
 
-    LOG_DEBUG(log, "Will load {} number of parts using {} threads", num_parts, getActivePartsLoadingThreadPool().get().getMaxThreads());
+    LOG_TRACE(log, "Will load {} parts using up to {} threads", num_parts, getActivePartsLoadingThreadPool().get().getMaxThreads());
 
     /// Shuffle all the parts randomly to possible speed up loading them from JBOD.
     std::shuffle(parts_to_load.begin(), parts_to_load.end(), thread_local_rng);
@@ -4280,6 +4260,29 @@ size_t MergeTreeData::getActivePartsCount() const
 }
 
 
+size_t MergeTreeData::getOutdatedPartsCount() const
+{
+    return total_outdated_parts_count.load(std::memory_order_relaxed);
+}
+
+size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
+{
+    size_t res = 0;
+
+    auto time_now = time(nullptr);
+
+    auto parts_lock = lockParts();
+    auto outdated_parts_range = getDataPartsStateRange(DataPartState::Outdated);
+    for (const auto & part : outdated_parts_range)
+    {
+        auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
+        if (part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds() && part.unique())
+            ++res;
+    }
+
+    return res;
+}
+
 std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const
 {
     auto lock = lockParts();
@@ -4341,14 +4344,14 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
 
-    /// check if have too many parts in total
-    if (parts_count_in_total >= settings->max_parts_in_total)
+    /// Check if we have too many parts in total
+    if (allow_throw && parts_count_in_total >= settings->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
@@ -4364,7 +4367,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
             outdated_parts_count_in_partition = getMaxOutdatedPartsCountForPartition();
 
-        if (settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        if (allow_throw && settings->inactive_parts_to_throw_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -4388,7 +4391,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         bool parts_are_large_enough_in_average
             = settings->max_avg_part_size_for_too_many_parts && average_part_size > settings->max_avg_part_size_for_too_many_parts;
 
-        if (parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
+        if (allow_throw && parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -4426,18 +4429,17 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
                 allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
         }
 
-        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold) [[unlikely]]
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Incorrect calculation of {} parts over threshold: allowed_parts_over_threshold={}, parts_over_threshold={}",
-                (use_active_parts_threshold ? "active" : "inactive"),
-                allowed_parts_over_threshold,
-                parts_over_threshold);
-
         const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
-        double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
-        const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
-        delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold)
+        {
+            delay_milliseconds = max_delay_milliseconds;
+        }
+        else
+        {
+            double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+            const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
+            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
@@ -4488,7 +4490,7 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
         size_t allowed_mutations_over_threshold = num_mutations_to_throw - num_mutations_to_delay;
 
         double delay_factor = std::min(static_cast<double>(mutations_over_threshold) / allowed_mutations_over_threshold, 1.0);
-        size_t delay_milliseconds = static_cast<size_t>(std::lerp(settings->min_delay_to_mutate_ms, settings->max_delay_to_mutate_ms, delay_factor));
+        size_t delay_milliseconds = static_cast<size_t>(interpolateLinear(settings->min_delay_to_mutate_ms, settings->max_delay_to_mutate_ms, delay_factor));
 
         ProfileEvents::increment(ProfileEvents::DelayedMutations);
         ProfileEvents::increment(ProfileEvents::DelayedMutationsMilliseconds, delay_milliseconds);
@@ -4566,7 +4568,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// All other locks are taken in StorageReplicatedMergeTree
             lockSharedData(*part_copy);
 
-            asMutableDeletingPart(original_active_part)->writeDeleteOnDestroyMarker();
             return;
         }
     }
@@ -7371,7 +7372,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (!files_to_copy_instead_of_hardlinks.contains(it->name())
-                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                 && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
             {
                 hardlinked_files->hardlinks_from_source_part.insert(it->name());
@@ -7386,7 +7387,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             {
                 auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
                 if (!files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
-                    && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                    && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                     && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
                 {
                     hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
