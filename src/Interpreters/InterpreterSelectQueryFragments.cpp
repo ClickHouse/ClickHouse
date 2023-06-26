@@ -972,12 +972,12 @@ UnionStep (DB)
  *
  * */
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root_node, PlanFragmentPtrs & tmp_fragments)
+PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root_node, PlanFragmentPtrs & all_fragments)
 {
     PlanFragmentPtrs childFragments;
     for (Node * child : root_node.children)
     {
-        childFragments.emplace_back(createPlanFragments(*child, tmp_fragments));
+        childFragments.emplace_back(createPlanFragments(*child, all_fragments));
     }
 
     PlanFragmentPtr result;
@@ -985,7 +985,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     if (dynamic_cast<ReadFromMergeTree *>(root_node.step.get()))
     {
         result = createScanFragment(root_node.step);
-        tmp_fragments.emplace_back(result);
+        all_fragments.emplace_back(result);
         //    } else if (root instanceof TableFunctionNode) {
         //        result = createTableFunctionFragment(root, childFragments.get(0));
         //    } else if (root instanceof HashJoinNode) {
@@ -1005,10 +1005,12 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     {
         /// push down partial aggregating to lower level fragment
         result = createAggregationFragment(childFragments[0]);
-        tmp_fragments.emplace_back(result);
+        all_fragments.emplace_back(result);
     }
     else if (dynamic_cast<ExpressionStep *>(root_node.step.get()) && root_node.step->getStepDescription() != "Projection")
     {
+        /// not Projection ExpressionStep push it to childFragments[0]
+
         childFragments[0]->addStep(root_node.step);
         result = childFragments[0];
     }
@@ -1025,7 +1027,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
 
             result = createParentFragment(childFragments[0], partition);
             result->addStep(root_node.step);
-            tmp_fragments.emplace_back(result);
+            all_fragments.emplace_back(result);
         }
     }
         //    } else if (root instanceof SortNode) {
@@ -1057,6 +1059,29 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
         //    }
 
     return result;
+}
+
+
+PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
+{
+    childFragment->addStep(step);
+    if (!childFragment->isPartitioned()) {
+        return childFragment;
+    }
+
+    /// Create a new fragment for a sort-merging exchange.
+    PlanFragmentPtr merge_fragment = createParentFragment(childFragment, DataPartition{.type = PartitionType::UNPARTITIONED});
+    auto * exchange_node = merge_fragment->getRootNode(); /// exchange node
+    ExchangeNode exchNode = (ExchangeNode) merge_fragment.getPlanRoot();
+
+    // Set limit, offset and merge parameters in the exchange node.
+    exchNode.unsetLimit();
+    if (hasLimit) {
+        exchNode.setLimit(limit);
+    }
+    exchNode.setMergeInfo(node.getSortInfo());
+    exchNode.setOffset(offset);
+
 }
 
 
@@ -1125,7 +1150,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
     return merge_fragment;
 }
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createParentFragment(PlanFragmentPtr child_fragment, DataPartition & partition)
+PlanFragmentPtr InterpreterSelectQueryFragments::createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition)
 {
     std::shared_ptr<ExchangeDataStep> exchange_step = std::make_shared<ExchangeDataStep>(child_fragment->getCurrentDataStream(), storage_limits);
 
@@ -2934,7 +2959,7 @@ void InterpreterSelectQueryFragments::executeOrder(QueryPlan & query_plan, Input
 
     SortingStep::Settings sort_settings(*context);
 
-    /// Merge the sorted blocks.
+    /// Full sort
     auto sorting_step = std::make_shared<SortingStep>(
         query_plan.getCurrentDataStream(),
         output_order_descr,

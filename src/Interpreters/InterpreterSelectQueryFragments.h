@@ -170,10 +170,11 @@ private:
     PlanFragmentPtrs executeDistributedPlan(QueryPlan & query_plan);
 
     PlanFragmentPtrs createPlanFragments(Node & single_node_plan);
-    PlanFragmentPtr createPlanFragments(Node & root_node, PlanFragmentPtrs & fragments);
+    PlanFragmentPtr createPlanFragments(Node & root_node, PlanFragmentPtrs & all_fragments);
+    PlanFragmentPtr createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment);
     PlanFragmentPtr createScanFragment(QueryPlanStepPtr step);
     PlanFragmentPtr createAggregationFragment(PlanFragmentPtr childFragment);
-    PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, DataPartition & partition);
+    PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition);
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryPlan & query_plan);

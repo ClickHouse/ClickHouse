@@ -299,7 +299,7 @@ class PlanFragment : public std::enable_shared_from_this<PlanFragment>
 public:
     using Node = QueryPlan::Node;
 
-    explicit PlanFragment(ContextMutablePtr & context_, DataPartition & partition)
+    explicit PlanFragment(ContextMutablePtr & context_, const DataPartition & partition)
         : context(context_), data_partition(partition)
     {
     }
