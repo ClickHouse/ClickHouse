@@ -55,6 +55,7 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         throw Exception(ErrorCodes::SYNTAX_ERROR, "PRQL syntax error: '{}'", sql_query_char_ptr);
     }
+    chassert(sql_query_size > 0);
 
     ParserQuery query_p(end, false);
     String error_message;
