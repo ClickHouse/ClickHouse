@@ -2,7 +2,6 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 
