@@ -23,6 +23,7 @@ public:
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
+    size_t getFileOffsetOfBufferEnd() const override;
 
     std::string getFileName() const override { return in->getFileName(); }
 

@@ -67,8 +67,20 @@ off_t ReadBufferFromEncryptedFile::getPosition()
     return offset - available();
 }
 
+size_t ReadBufferFromEncryptedFile::getFileOffsetOfBufferEnd() const
+{
+    return offset;
+}
+
 bool ReadBufferFromEncryptedFile::nextImpl()
 {
+    Memory<> external_buffer;
+    if (in->internalBuffer().empty())
+    {
+        external_buffer.resize(encrypted_buffer.size());
+        in->set(external_buffer.data(), external_buffer.size());
+    }
+
     if (need_seek)
     {
         off_t raw_offset = offset + FileEncryption::Header::kSize;
