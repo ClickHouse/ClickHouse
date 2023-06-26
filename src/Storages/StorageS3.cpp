@@ -564,7 +564,8 @@ StorageS3Source::StorageS3Source(
     reader = createReader();
     if (reader)
     {
-        total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+        if (reader.getReadBuffer())
+            total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
         reader_future = createReaderAsync();
     }
 }
@@ -742,12 +743,15 @@ Chunk StorageS3Source::generate()
         if (!reader)
             break;
 
-        size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
-        /// Adjust total_rows_approx_accumulated with new total size.
-        if (total_objects_size)
-            total_rows_approx_accumulated = static_cast<size_t>(
-                std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
-        total_objects_size += object_size;
+        if (reader.getReadBuffer())
+        {
+            size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+            /// Adjust total_rows_approx_accumulated with new total size.
+            if (total_objects_size)
+                total_rows_approx_accumulated = static_cast<size_t>(
+                    std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
+            total_objects_size += object_size;
+        }
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
