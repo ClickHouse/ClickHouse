@@ -224,8 +224,8 @@ def approve_run(workflow_description: WorkflowDescription, token: str) -> None:
 
 
 def label_manual_approve(pull_request, token):
-    url = f"{pull_request['url']}/labels"
-    data = {"labels": "manual approve"}
+    url = f"{pull_request['issue_url']}/labels"
+    data = {"labels": ["manual approve"]}
 
     _exec_post_with_retry(url, token, data)
 
