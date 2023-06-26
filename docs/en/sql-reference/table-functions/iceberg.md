@@ -1,6 +1,7 @@
 ---
 slug: /en/sql-reference/table-functions/iceberg
-sidebar_label: Iceberg
+sidebar_position: 90
+sidebar_label: iceberg
 ---
 
 # iceberg Table Function

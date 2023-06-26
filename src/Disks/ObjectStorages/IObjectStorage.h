@@ -12,12 +12,17 @@
 #include <Common/Exception.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/copyData.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Disks/WriteMode.h>
+#include <Interpreters/Context_fwd.h>
+#include <Core/Types.h>
+#include <Disks/DirectoryIterator.h>
+#include <Common/ThreadPool.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 namespace DB
@@ -28,25 +33,29 @@ class WriteBufferFromFileBase;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-struct RelativePathWithSize
-{
-    String relative_path;
-    size_t bytes_size;
-
-    RelativePathWithSize() = default;
-
-    RelativePathWithSize(const String & relative_path_, size_t bytes_size_)
-        : relative_path(relative_path_), bytes_size(bytes_size_) {}
-};
-using RelativePathsWithSize = std::vector<RelativePathWithSize>;
-
-
 struct ObjectMetadata
 {
     uint64_t size_bytes;
     std::optional<Poco::Timestamp> last_modified;
     std::optional<ObjectAttributes> attributes;
 };
+
+struct RelativePathWithMetadata
+{
+    String relative_path;
+    ObjectMetadata metadata{};
+
+    RelativePathWithMetadata() = default;
+
+    RelativePathWithMetadata(const String & relative_path_, const ObjectMetadata & metadata_)
+        : relative_path(relative_path_), metadata(metadata_)
+    {}
+};
+
+using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
+
+class IObjectStorageIterator;
+using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
@@ -63,36 +72,19 @@ public:
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 
-    /// List all objects with specific prefix.
-    ///
-    /// For example if you do this over filesystem, you should skip folders and
-    /// return files only, so something like on local filesystem:
-    ///
-    ///     find . -type f
-    ///
-    /// @param children - out files (relative paths) with their sizes.
-    /// @param max_keys - return not more then max_keys children
-    /// NOTE: max_keys is not the same as list_object_keys_size (disk property)
-    /// - if max_keys is set not more then max_keys keys should be returned
-    /// - however list_object_keys_size determine the size of the batch and should return all keys
-    ///
-    /// NOTE: It makes sense only for real object storages (S3, Azure), since
-    /// it is used only for one of the following:
-    /// - send_metadata (to restore metadata)
-    ///   - see DiskObjectStorage::restoreMetadataIfNeeded()
-    /// - MetadataStorageFromPlainObjectStorage - only for s3_plain disk
-    virtual void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const;
+    /// Object exists or any child on the specified path exists.
+    /// We have this method because object storages are flat for example
+    /// /a/b/c/d may exist but /a/b/c may not. So this method will return true for
+    /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
+    virtual bool existsOrHasAnyChild(const std::string & path) const;
 
-    /// Analog of directory content for object storage (object storage does not
-    /// have "directory" definition, but it can be emulated with usage of
-    /// "delimiter"), so this is analog of:
-    ///
-    ///     find . -maxdepth 1 $path
-    ///
-    /// Return files in @files and directories in @directories
-    virtual void getDirectoryContents(const std::string & path,
-        RelativePathsWithSize & files,
-        std::vector<std::string> & directories) const;
+    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const;
+
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const;
+
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object

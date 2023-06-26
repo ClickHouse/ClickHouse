@@ -26,12 +26,12 @@ class PriorityPolicy : public ISchedulerNode
     struct Item
     {
         ISchedulerNode * child = nullptr;
-        Int64 priority = 0; // higher value means higher priority
+        Priority priority; // lower value means higher priority
 
         /// For max-heap by priority
         bool operator<(const Item& rhs) const noexcept
         {
-            return priority < rhs.priority;
+            return priority > rhs.priority; // Reversed for heap top to yield highest priority (lowest value) child first
         }
     };
 
