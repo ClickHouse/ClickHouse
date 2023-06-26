@@ -376,11 +376,10 @@ def main(event):
     changed_files = get_changed_files_for_pull_request(pull_request, token)
     print(f"Totally have {len(changed_files)} changed files in PR:", changed_files)
     if check_suspicious_changed_files(changed_files):
-        print(
-            f"Pull Request {pull_request['number']} has suspicious changes, "
-            "label it for manuall approve"
-        )
-        label_manual_approve(pull_request, token)
+        print(f"Pull Request {pull_request['number']} has suspicious changes")
+        if "manual approve" not in labels:
+            print("Label the PR as needed for manuall approve")
+            label_manual_approve(pull_request, token)
     else:
         print(f"Pull Request {pull_request['number']} has no suspicious changes")
         approve_run(workflow_description, token)
