@@ -438,6 +438,8 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
+#pragma clang diagnostic pop
+
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.
@@ -1044,7 +1046,7 @@ void BaseDaemon::shouldSetupWatchdog(char * argv0_)
 void BaseDaemon::setupWatchdog()
 {
     /// Initialize in advance to avoid double initialization in forked processes.
-    DateLUT::instance();
+    DateLUT::serverTimezoneInstance();
 
     std::string original_process_name;
     if (argv0)
