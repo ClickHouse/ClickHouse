@@ -316,16 +316,19 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
     if (configuration.is_connection_string)
     {
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
-        result->CreateIfNotExists();
     }
     else
     {
         std::shared_ptr<Azure::Storage::StorageSharedKeyCredential> storage_shared_key_credential;
-        std::unique_ptr<BlobServiceClient> blob_service_client;
         if (configuration.account_name.has_value() && configuration.account_key.has_value())
         {
             storage_shared_key_credential
                 = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
+        }
+
+        std::unique_ptr<BlobServiceClient> blob_service_client;
+        if (storage_shared_key_credential)
+        {
             blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
         }
         else
@@ -333,40 +336,45 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
         }
 
+        Azure::Storage::Blobs::ListBlobContainersOptions options;
+        options.Prefix = configuration.container;
+        options.PageSizeHint = 1;
 
-        try
+        auto containers_list_response = blob_service_client->ListBlobContainers(options);
+        auto containers_list = containers_list_response.BlobContainers;
+
+        bool container_exists = false;
+        for (const auto & container : containers_list)
         {
-            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
-            result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-        }
-        catch (const Azure::Storage::StorageException & e)
-        {
-            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+            if (configuration.container == container.Name)
             {
-                std::string final_url;
-                size_t pos = configuration.connection_url.find('?');
-                if (pos != std::string::npos)
-                {
-                    auto url_without_sas = configuration.connection_url.substr(0, pos);
-                    final_url = url_without_sas
-                        + (url_without_sas.back() == '/' ? "" : "/")
-                        + configuration.container
-                        + configuration.connection_url.substr(pos);
-                }
-                else
-                    final_url = configuration.connection_url
-                    + (configuration.connection_url.back() == '/' ? "" : "/")
-                    + configuration.container;
+                container_exists = true;
+                break;
+            }
+        }
 
-                if (storage_shared_key_credential)
-                    result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-                else
-                    result = std::make_unique<BlobContainerClient>(final_url);
+        if (container_exists)
+        {
+            std::string final_url;
+            size_t pos = configuration.connection_url.find('?');
+            if (pos != std::string::npos)
+            {
+                auto url_without_sas = configuration.connection_url.substr(0, pos);
+                final_url = url_without_sas + (url_without_sas.back() == '/' ? "" : "/") + configuration.container
+                    + configuration.connection_url.substr(pos);
             }
             else
-            {
-                throw;
-            }
+                final_url
+                    = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
+
+            if (storage_shared_key_credential)
+                result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+            else
+                result = std::make_unique<BlobContainerClient>(final_url);
+        }
+        else
+        {
+            result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
         }
     }
 
