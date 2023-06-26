@@ -1593,15 +1593,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (delegate && disk->getPath() == delegate->getPath())
                 defined_disk_names.insert(delegate->getName());
 
-            if (disk->supportsCache())
+            if (disk->supportsOverlays())
             {
-                /// As cache is implemented on object storage layer, not on disk level, e.g.
+                /// As cache and encryption can be implemented on object storage layer, not on disk level, e.g.
                 /// we have such structure:
-                /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
+                /// DiskObjectStorage(CachedObjectStorage(EncryptedObjectStorage(...(CachedObjectStored(ObjectStorage)...))))
                 /// and disk_ptr->getName() here is the name of last delegate - ObjectStorage.
                 /// So now we need to add cache layers to defined disk names.
-                auto caches = disk->getCacheLayersNames();
-                defined_disk_names.insert(caches.begin(), caches.end());
+                auto layers = disk->getOverlaysNames();
+                defined_disk_names.insert(layers.begin(), layers.end());
             }
         }
 

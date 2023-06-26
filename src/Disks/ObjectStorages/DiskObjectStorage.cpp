@@ -457,6 +457,11 @@ bool DiskObjectStorage::supportsCache() const
     return object_storage->supportsCache();
 }
 
+bool DiskObjectStorage::supportsOverlays() const
+{
+    return object_storage->supportsOverlays();
+}
+
 bool DiskObjectStorage::isReadOnly() const
 {
     return object_storage->isReadOnly();

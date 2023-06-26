@@ -104,7 +104,7 @@ public:
 
     const std::string & getCacheConfigName() const { return cache_config_name; }
 
-    ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
+    ObjectStoragePtr getWrappedObjectStorage() override { return object_storage; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
