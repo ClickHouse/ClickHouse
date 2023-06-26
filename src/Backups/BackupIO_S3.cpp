@@ -161,7 +161,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 /* dest_key= */ blob_path[0],
                 request_settings,
                 object_attributes,
-                threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3"),
+                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
                 /* for_disk_s3= */ true);
 
             return file_size;
@@ -212,7 +212,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 fs::path(s3_uri.key) / path_in_backup,
                 request_settings,
                 {},
-                threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
+                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
             return; /// copied!
         }
     }
@@ -224,7 +224,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, request_settings, {},
-                     threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
+                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
@@ -255,9 +255,10 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         client,
         s3_uri.bucket,
         fs::path(s3_uri.key) / file_name,
+        DBMS_DEFAULT_BUFFER_SIZE,
         request_settings,
         std::nullopt,
-        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"),
+        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
         write_settings);
 }
 

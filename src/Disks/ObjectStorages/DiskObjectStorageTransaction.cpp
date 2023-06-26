@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Common/checkStackSize.h>
 #include <ranges>
 #include <Common/logger_useful.h>
@@ -658,14 +659,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     operations_to_execute.emplace_back(std::move(write_operation));
 
-    /// We always use mode Rewrite because we simulate append using metadata and different files
-    return object_storage.writeObject(
+    auto impl = object_storage.writeObject(
         object,
+        /// We always use mode Rewrite because we simulate append using metadata and different files
         WriteMode::Rewrite,
         object_attributes,
-        std::move(create_metadata_callback),
         buf_size,
         settings);
+
+    return std::make_unique<WriteBufferWithFinalizeCallback>(
+        std::move(impl), std::move(create_metadata_callback), object.remote_path);
 }
 
 
@@ -707,8 +710,6 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
         metadata_transaction->createMetadataFile(path, blob_name, object_size);
     else
         metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
-
-    metadata_transaction->commit();
 }
 
 
