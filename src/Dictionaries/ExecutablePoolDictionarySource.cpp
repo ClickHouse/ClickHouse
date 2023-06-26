@@ -132,6 +132,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
     ShellCommandSourceConfiguration command_configuration;
     command_configuration.read_fixed_number_of_rows = true;
     command_configuration.number_of_rows_to_read = block.rows();
+    command_configuration.check_exit_code = true;
 
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));

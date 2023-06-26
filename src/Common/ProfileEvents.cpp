@@ -392,6 +392,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
     M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time") \
     M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time") \
+    M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time") \
     M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time") \
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time") \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state") \
