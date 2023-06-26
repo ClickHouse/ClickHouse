@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -57,6 +58,14 @@ private:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} needs 1..3 arguments; passed {}.",
                 getName(), arguments.size());
+        }
+
+        for (size_t i = 0, size = arguments.size(); i < size; ++i)
+        {
+            if (arguments[i]->onlyNull())
+            {
+                return makeNullable(std::make_shared<DataTypeNothing>());
+            }
         }
 
         DataTypes arg_types;
@@ -382,6 +391,12 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        NullPresence null_presence = getNullPresense(arguments);
+        if (null_presence.has_null_constant)
+        {
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+
         DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
         WhichDataType which(elem_type);
 
@@ -400,7 +415,6 @@ private:
             }
             const auto & nullable_col = assert_cast<const ColumnNullable &>(*col.column);
             const auto & null_map = nullable_col.getNullMapData();
-
             if (!memoryIsZero(null_map.data(), 0, null_map.size()))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal (null) value column {} of argument of function {}", col.column->getName(), getName());
