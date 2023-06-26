@@ -315,7 +315,31 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
 
     if (configuration.is_connection_string)
     {
+        std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(configuration.connection_url));
+
+        Azure::Storage::Blobs::ListBlobContainersOptions options;
+        options.Prefix = configuration.container;
+        options.PageSizeHint = 1;
+
+        auto containers_list_response = blob_service_client->ListBlobContainers(options);
+        auto containers_list = containers_list_response.BlobContainers;
+
+        bool container_exists = false;
+        for (const auto & container : containers_list)
+        {
+            if (configuration.container == container.Name)
+            {
+                container_exists = true;
+                break;
+            }
+        }
+
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
+
+        if (!container_exists)
+        {
+            result->CreateIfNotExists();
+        }
     }
     else
     {
