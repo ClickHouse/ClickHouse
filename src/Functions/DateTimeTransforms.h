@@ -19,8 +19,8 @@
 namespace DB
 {
 
-static constexpr auto microsecond_scale = 6;
-static constexpr auto millisecond_scale = 3;
+static constexpr auto microsecond_multiplier = 1000000;
+static constexpr auto millisecond_multiplier = 1000;
 
 namespace ErrorCodes
 {
@@ -1387,6 +1387,7 @@ struct ToRelativeSubsecondNumImpl
 
     static inline Int64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
     {
+        static_assert(scale_multiplier == 1000 || scale_multiplier == 1000000);
         if (scale == scale_multiplier)
             return t.value;
         if (scale > scale_multiplier)
@@ -1521,7 +1522,6 @@ struct ToDateTimeComponentsImpl
     static inline DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
         auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-        constexpr auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(microsecond_scale);
 
         if (t.value < 0 && components.fractional)
         {
@@ -1529,12 +1529,12 @@ struct ToDateTimeComponentsImpl
             --components.whole;
         }
         Int64 fractional = components.fractional;
-        if (scale_multiplier > multiplier)
-            fractional = fractional / (scale_multiplier / multiplier);
-        else if (scale_multiplier < multiplier)
-            fractional = fractional * (multiplier / scale_multiplier);
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
 
-        constexpr auto divider = DecimalUtils::scaleMultiplier<DateTime64>(microsecond_scale - millisecond_scale);
+        constexpr Int64 divider = microsecond_multiplier/ millisecond_multiplier;
         UInt16 millisecond = static_cast<UInt16>(fractional / divider);
         UInt16 microsecond = static_cast<UInt16>(fractional % divider);
         return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond};

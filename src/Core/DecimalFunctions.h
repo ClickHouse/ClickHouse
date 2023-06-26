@@ -33,7 +33,7 @@ template <> inline constexpr size_t max_precision<Decimal128> = 38;
 template <> inline constexpr size_t max_precision<Decimal256> = 76;
 
 template <typename T>
-constexpr inline auto scaleMultiplier(UInt32 scale)
+inline auto scaleMultiplier(UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int32> || std::is_same_v<T, Decimal32>)
         return common::exp10_i32(scale);
