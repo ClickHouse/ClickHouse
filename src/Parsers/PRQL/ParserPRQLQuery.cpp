@@ -76,7 +76,7 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             "Error while parsing the SQL query generated from PRQL query :'{}'.\nPRQL Query:'{}'\nSQL query: '{}'",
             error_message,
             std::string_view{begin, end},
-            std::string(original_sql_query_ptr, sql_query_size));
+            std::string_view(original_sql_query_ptr, original_sql_query_ptr + sql_query_size));
 
 
     return true;
