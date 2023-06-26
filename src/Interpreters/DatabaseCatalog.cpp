@@ -404,15 +404,16 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     DatabasePtr database;
     {
-        DatabaseNameHints hints(*this);
-        auto registered_databases = hints.getAllRegisteredNames();
         std::lock_guard lock{databases_mutex};
         auto it = databases.find(table_id.getDatabaseName());
-        if (databases.end() == it)
+        if (databases.end() != it)
+            database = it->second;
+        if (!database)
         {
             if (exception)
             {
-                std::vector<String> names = hints.getHints(table_id.getDatabaseName(), registered_databases);
+                DatabaseNameHints hints(*this);
+                std::vector<String> names = hints.getHints(table_id.getDatabaseName(), hints.getAllRegisteredNames());
                 if (names.empty())
                 {
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
