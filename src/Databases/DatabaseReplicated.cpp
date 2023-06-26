@@ -985,7 +985,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
-            assert(create_query_string == readMetadataFile(table_name));
+            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
             continue;
         }
 
@@ -1274,7 +1274,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);

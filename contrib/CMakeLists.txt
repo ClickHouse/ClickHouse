@@ -146,7 +146,7 @@ add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 if (NOT OS_DARWIN)
     add_contrib (curl-cmake curl)
-    add_contrib (azure-cmake azure)
+    add_contrib (azure-cmake azure) # requires: curl
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
 add_contrib (fmtlib-cmake fmtlib)
@@ -157,7 +157,7 @@ add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
 add_contrib (nats-io-cmake nats-io)
 add_contrib (isa-l-cmake isa-l)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
-add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
+add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arrow, libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
