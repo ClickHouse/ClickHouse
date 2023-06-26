@@ -64,6 +64,6 @@ function check_error_code()
     fi
 }
 
-check_error_code "from s\"SELECT system.users\" | select non_existent_column" "UNKNOWN_IDENTIFIER"
+check_error_code "from s\"SELECT * FROM system.users\" | select non_existent_column" "UNKNOWN_IDENTIFIER"
 
 check_error_code "from non_existent_table" "UNKNOWN_TABLE"
