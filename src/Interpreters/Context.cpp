@@ -2434,11 +2434,10 @@ void Context::dropCaches() const
     if (shared->index_mark_cache)
         shared->index_mark_cache->reset();
 
-    if (shared->query_cache)
-        shared->query_cache->reset();
-
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
+
+    /// Intentionally not dropping the query cache which is transactionally inconsistent by design.
 }
 
 ThreadPool & Context::getPrefetchThreadpool() const
