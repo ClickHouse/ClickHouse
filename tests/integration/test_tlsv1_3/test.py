@@ -204,7 +204,9 @@ def test_https_non_ssl_auth():
         err_str = str(err.value)
         if count < MAX_RETRY and "Broken pipe" in err_str:
             count = count + 1
-            logging.warning(f"Failed attempt with wrong cert, user: peter, err: {err_str}")
+            logging.warning(
+                f"Failed attempt with wrong cert, user: peter, err: {err_str}"
+            )
             continue
         assert "unknown ca" in err_str
         break
@@ -222,7 +224,9 @@ def test_https_non_ssl_auth():
         err_str = str(err.value)
         if count < MAX_RETRY and "Broken pipe" in err_str:
             count = count + 1
-            logging.warning(f"Failed attempt with wrong cert, user: jane, err: {err_str}")
+            logging.warning(
+                f"Failed attempt with wrong cert, user: jane, err: {err_str}"
+            )
             continue
         assert "unknown ca" in err_str
         break
