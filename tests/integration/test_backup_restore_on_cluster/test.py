@@ -1010,6 +1010,49 @@ def test_mutation(src_engine):
     assert first_res != TSV(final_res)
 
 
+@pytest.mark.parametrize(
+    "backup_file_name",
+    [
+        "old_custom_mutation_format_for_merge_tree",
+        "old_custom_mutation_format_for_replicated_merge_tree",
+        "standard_mutation_format_for_merge_tree",
+        "standard_mutation_format_for_replicated_merge_tree",
+    ],
+)
+def test_old_mutation_format(backup_file_name):
+    current_dir = os.path.dirname(__file__)
+    node1.copy_file_to_container(
+        os.path.join(current_dir, "old_mutation_formats", backup_file_name + ".zip"),
+        f"/backups/{backup_file_name}.zip",
+    )
+
+    node1.query(f"RESTORE TABLE tbl FROM Disk('backups', '{backup_file_name}.zip')")
+
+    node1.query(f"ALTER TABLE tbl UPDATE b = concat(b, toString(length(b))) WHERE 1")
+
+    select_query = "SELECT * FROM tbl ORDER BY a"
+    first_res = node1.query(select_query)
+
+    final_res = [
+        [1, "ABCDEFGHIJK11"],
+        [2, "BCDEFGHIJK10"],
+        [3, "CDEFGHIJK9"],
+        [4, "DEFGHIJK8"],
+        [5, "EFGHIJK7"],
+        [6, "FGHIJK6"],
+        [7, "GHIJK5"],
+        [8, "HIJK4"],
+        [9, "IJK3"],
+        [10, "JK2"],
+        [11, "K1"],
+    ]
+
+    assert_eq_with_retry(
+        node1, select_query, TSV(final_res), sleep_time=5, retry_count=20
+    )
+    assert first_res != TSV(final_res)
+
+
 def test_tables_dependency():
     node1.query("CREATE DATABASE mydb ON CLUSTER 'cluster3'")
 
