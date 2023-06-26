@@ -85,16 +85,16 @@ template <char not_case_lower_bound,
 struct LowerUpperUTF8Impl
 {
     static void vector(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        if (data.empty())
+        if (src_data.empty())
             return;
-        res_data.resize(data.size());
-        res_offsets.assign(offsets);
-        array(data.data(), data.data() + data.size(), offsets, res_data.data());
+        res_data.resize(src_data.size());
+        res_offsets.assign(src_offsets);
+        array(src_data.data(), src_data.data() + src_data.size(), src_offsets, res_data.data());
     }
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
@@ -176,12 +176,17 @@ private:
 
     static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
-        auto offset_it = offsets.begin();
+        const auto * offset_it = offsets.begin();
         const UInt8 * begin = src;
 
 #ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
-        const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
+        const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse; /// round down to multiple of sse register size
+
+        /// The non-ASCII logic below limits the number of processed bytes to the end of the current row. As a result, src may move in
+        /// increments smaller than 16 bytes. This will cause _mm_loadu_si128 to read potentially invalid memory. Prevent that by processing
+        /// the last 16 bytes always sequentially.
+        src_end_sse = std::max(src, src_end_sse - bytes_sse);
 
         /// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
         const auto v_zero = _mm_setzero_si128();
@@ -193,15 +198,15 @@ private:
         {
             const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
 
-            /// check for ASCII
+            /// Check for ASCII
             const auto is_not_ascii = _mm_cmplt_epi8(chars, v_zero);
             const auto mask_is_not_ascii = _mm_movemask_epi8(is_not_ascii);
 
-            /// ASCII
             if (mask_is_not_ascii == 0)
             {
-                const auto is_not_case
-                    = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound), _mm_cmplt_epi8(chars, v_not_case_upper_bound));
+                /// All codepoints are ASCII
+
+                const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound), _mm_cmplt_epi8(chars, v_not_case_upper_bound));
                 const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
 
                 /// everything in correct case ASCII
@@ -225,7 +230,7 @@ private:
             }
             else
             {
-                /// UTF-8
+                /// At least one non-ASCII codepoint
 
                 size_t offset_from_begin = src - begin;
                 while (offset_from_begin >= *offset_it)

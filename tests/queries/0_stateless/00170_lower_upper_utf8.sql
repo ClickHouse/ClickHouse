@@ -27,3 +27,11 @@ select sum(lower(materialize('aaaaАБВГAAAAaaAA')) = materialize('aaaaАБВ�
 select sum(upper(materialize('aaaaАБВГAAAAaaAA')) = materialize('AAAAАБВГAAAAAAAA')) = count() from system.one array join range(16384) as n;
 select sum(lowerUTF8(materialize('aaaaАБВГAAAAaaAA')) = materialize('aaaaабвгaaaaaaaa')) = count() from system.one array join range(16384) as n;
 select sum(upperUTF8(materialize('aaaaАБВГAAAAaaAA')) = materialize('AAAAАБВГAAAAAAAA')) = count() from system.one array join range(16384) as n;
+
+
+-- Test for msan issue # 51314
+drop table if exists test;
+create table test (c String) engine = MergeTree order by c;
+insert into test values ('a') ('b');
+select lowerUTF8(materialize('abcdАБВГefghijklmnopАБВГstuvwxyz')) from test;
+
