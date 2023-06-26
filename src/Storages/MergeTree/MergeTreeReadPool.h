@@ -194,8 +194,9 @@ public:
             actions_settings, reader_settings, per_part_params);
 
         extension.all_callback({
-            .description = parts_ranges.getDescriptions(),
-            .replica_num = extension.number_of_current_replica
+            CoordinationMode::Default,
+            parts_ranges.getDescriptions(),
+            extension.number_of_current_replica
         });
     }
 
@@ -254,8 +255,9 @@ public:
             buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
 
         extension.all_callback({
-            .description = parts_ranges.getDescriptions(),
-            .replica_num = extension.number_of_current_replica
+            CoordinationMode::Default,
+            parts_ranges.getDescriptions(),
+            extension.number_of_current_replica
         });
     }
 
