@@ -101,12 +101,13 @@ namespace
 
 
 BackupReaderS3::BackupReaderS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
+    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy_, const ContextPtr & context_)
     : BackupReaderDefault(&Poco::Logger::get("BackupReaderS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
+    , native_copy(native_copy_)
 {
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
@@ -138,7 +139,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
-    if (destination_data_source_description.sameKind(data_source_description)
+    if (native_copy && destination_data_source_description.sameKind(data_source_description)
         && (destination_data_source_description.is_encrypted == encrypted_in_backup))
     {
         /// Use native copy, the more optimal way.
@@ -177,12 +178,13 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
 
 BackupWriterS3::BackupWriterS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
+    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy_, const ContextPtr & context_)
     : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
+    , native_copy(native_copy_)
 {
     request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
@@ -194,7 +196,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto source_data_source_description = src_disk->getDataSourceDescription();
-    if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
+    if (native_copy && source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
     {
         /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in S3 bucket.
         /// In this case we can't use the native copy.
