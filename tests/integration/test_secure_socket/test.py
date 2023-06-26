@@ -59,9 +59,7 @@ def test(started_cluster):
     )
 
     if NODES["node1"].is_built_with_thread_sanitizer():
-        pytest.skip(
-            "Hedged requests don't work under Thread Sanitizer"
-        )
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
     attempts = 0
     while attempts < 1000:
