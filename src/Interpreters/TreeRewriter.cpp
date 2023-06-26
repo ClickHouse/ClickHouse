@@ -1191,6 +1191,26 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings.optimize_normalize_count_variants)
         TreeOptimizer::optimizeCountConstantAndSumOne(query, getContext());
 
+    /** Qualifiers from joined columns will be removed with duplicated columns.
+      * Example:
+      *   SELECT 1 as c, t2.b, t2.c, t2.d
+      *   FROM Values('a Int32, b Int32') AS t1
+      *   JOIN Values('a Int32, b Int32, c Int32, d Int32') AS t2
+      *   USING (a)
+      * Result column names should be "c", "t2.b", "t2.c", "d"
+      *   column "b" is present in both tables "t2.b" clashes with "t1.b"
+      *   column "c" is clashed with top level "c" and "t2.c".
+      */
+    NameSet names_to_deduplicate = source_columns_set;
+    {
+        ASTs & elements = select_query->select()->children;
+        for (auto & expr : elements)
+        {
+            if (const auto & top_level_alias = expr->tryGetAlias(); !top_level_alias.empty())
+                names_to_deduplicate.insert(top_level_alias);
+        }
+    }
+
     if (tables_with_columns.size() > 1)
     {
         const auto & right_table = tables_with_columns[1];
@@ -1198,10 +1218,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
         columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
+        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), names_to_deduplicate, right_table.table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns, parameter_values, parameter_types);
+    translateQualifiedNames(query, *select_query, names_to_deduplicate, tables_with_columns, parameter_values, parameter_types);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, tables_with_columns, settings.optimize_min_equality_disjunction_chain_length.value).perform();
