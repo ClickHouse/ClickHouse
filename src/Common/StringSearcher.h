@@ -810,7 +810,7 @@ public:
     requires (sizeof(CharT) == 1)
     static bool isValidNeedle(const CharT * needle_, size_t needle_size_)
     {
-        return std::none_of(needle_, needle_ + needle_size_, isTokenSeparator));
+        return std::none_of(needle_, needle_ + needle_size_, isTokenSeparator);
     }
 
     template <typename CharT>
