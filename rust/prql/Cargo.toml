@@ -17,4 +17,4 @@ debug = true
 
 [profile.release-thinlto]
 inherits = "release"
-lto = "thin"
+lto = true
