@@ -44,4 +44,18 @@ timeout $TIMEOUT bash -c thread2 >/dev/null &
 wait
 
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%' SYNC" >/dev/null
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'"
+
+# After this moment, the server can still run another query.
+# For example, the 'timeout' command killed all threads of thread1,
+# and the 'timeout' itself has finished, and we have successfully 'wait'-ed for it,
+# but just before that, one of the threads successfully sent a query to the server,
+# but the server didn't start to run this query yet,
+# and even when the KILL QUERY was run, the query from the thread didn't start,
+# but only started after the KILL QUERY has been already processed.
+
+# That's why we have to run the next command in a loop.
+
+for _ in {1..10}
+do
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'" | rg '^0$' && break
+done
