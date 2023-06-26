@@ -284,6 +284,8 @@ RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Uti
 
         if (generator_key.starts_with("create"))
             request_generator = std::make_unique<CreateRequestGenerator>();
+        else if (generator_key.starts_with("check"))
+            request_generator = std::make_unique<CheckRequestGenerator>();
         else if (generator_key.starts_with("set"))
             request_generator = std::make_unique<SetRequestGenerator>();
         else if (generator_key.starts_with("get"))
@@ -469,6 +471,35 @@ Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coo
         request->data = data->getString();
 
     return request;
+}
+
+void CheckRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+{
+    path = PathGetter::fromConfig(key, config);
+    not_exists = config.getBool(key + ".not_exists", false);
+}
+
+std::string CheckRequestGenerator::descriptionImpl()
+{
+    return fmt::format(
+        "Check Request Generator\n"
+        "- path(s) to get: {}\n"
+        "- not exists: {}",
+        path.description(), not_exists);
+
+}
+
+Coordination::ZooKeeperRequestPtr CheckRequestGenerator::generateImpl(const Coordination::ACLs &)
+{
+    auto request = std::make_shared<ZooKeeperCheckRequest>();
+    request->path = path.getPath();
+    request->not_exists = not_exists;
+    return request;
+}
+
+void CheckRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+{
+    path.initialize(zookeeper);
 }
 
 void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)

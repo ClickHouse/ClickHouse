@@ -102,6 +102,18 @@ private:
     std::unordered_set<std::string> paths_created;
 };
 
+struct CheckRequestGenerator final : public RequestGenerator
+{
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    std::string descriptionImpl() override;
+    Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+
+    PathGetter path;
+    bool not_exists = false;
+};
+
 struct SetRequestGenerator final : public RequestGenerator
 {
 private:
