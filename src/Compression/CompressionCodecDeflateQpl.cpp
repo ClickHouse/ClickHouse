@@ -8,6 +8,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
+#include <Common/MemorySanitizer.h>
 
 namespace DB
 {
@@ -382,6 +383,11 @@ UInt32 CompressionCodecDeflateQpl::getMaxCompressedDataSize(UInt32 uncompressed_
 
 UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+/// QPL library is using AVX-512 with some shuffle operations.
+/// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+#if defined(MEMORY_SANITIZER)
+    __msan_unpoison(dest, getMaxCompressedDataSize(source_size));
+#endif
     Int32 res = HardwareCodecDeflateQpl::RET_ERROR;
     if (DeflateQplJobHWPool::instance().isJobPoolReady())
         res = hw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
@@ -392,6 +398,11 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
 
 void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+/// QPL library is using AVX-512 with some shuffle operations.
+/// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+#if defined(MEMORY_SANITIZER)
+    __msan_unpoison(dest, uncompressed_size);
+#endif
     switch (getDecompressMode())
     {
         case CodecMode::Synchronous:
