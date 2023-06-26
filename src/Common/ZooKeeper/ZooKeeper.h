@@ -527,6 +527,7 @@ public:
     String getConnectedZooKeeperHost() const { return connected_zk_host; }
     UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
     size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
+    UInt64 getConnectedTime() const { return connected_time; }
 
 private:
     void init(ZooKeeperArgs args_);
@@ -594,6 +595,7 @@ private:
     String connected_zk_host;
     UInt16 connected_zk_port;
     size_t connected_zk_index;
+    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 

@@ -224,12 +224,12 @@ struct Keeper::KeeperHTTPContext : public IHTTPContext
 
     uint64_t getMaxFieldNameSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 1048576);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
     }
 
     uint64_t getMaxFieldValueSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 1048576);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
     uint64_t getMaxChunkSize() const override
@@ -306,8 +306,8 @@ try
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
-    DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
+    DateLUT::serverTimezoneInstance();
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
