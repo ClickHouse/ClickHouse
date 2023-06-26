@@ -3,8 +3,12 @@
 #include "config.h"
 
 #if USE_SSL
-#include <Core/Types.h>
-#include <openssl/evp.h>
+#    include <map>
+
+#    include <Core/Types.h>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <openssl/evp.h>
+#    include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -148,6 +152,25 @@ UInt128 calculateKeyFingerprint(const String & key);
 /// Calculates kind of the fingerprint of a passed encryption key & key ID as it was implemented in version 1.
 UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id);
 
+/// Reads encryption keys from the configuration.
+void getKeysFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    std::map<UInt64, String> & out_keys_by_id,
+    Strings & out_keys_without_id);
+
+/// Reads the current encryption key from the configuration.
+String getCurrentKeyFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    const std::map<UInt64, String> & keys_by_id,
+    const Strings & keys_without_id);
+
+/// Reads the current encryption algorithm from the configuration.
+Algorithm getCurrentAlgorithmFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// Reads header from file
+Header readHeader(ReadBufferFromFileBase & read_buffer);
 }
 }
 
