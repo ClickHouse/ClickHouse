@@ -593,10 +593,13 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    if (get_settings && getContext())
+    if (get_settings)
     {
-        res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
-        res.current_database = getContext()->getCurrentDatabase();
+        if (auto ctx = context.lock())
+        {
+            res.query_settings = std::make_shared<Settings>(ctx->getSettings());
+            res.current_database = ctx->getCurrentDatabase();
+        }
     }
 
     return res;
