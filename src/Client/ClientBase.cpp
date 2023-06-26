@@ -102,6 +102,7 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 }
@@ -567,30 +568,17 @@ try
                 CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
                 UInt64 compression_level = 3;
 
-                if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
-                }
-
                 if (query_with_output->compression_level)
                 {
                     const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
-                    bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
-                    auto range = getCompressionLevelRange(compression_method);
-
-                    if (!res || compression_level < range.first || compression_level > range.second)
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid compression level, must be positive integer in range {}-{}",
-                            range.first,
-                            range.second);
+                    compression_level_node.value.tryGet<UInt64>(compression_level);
                 }
 
                 auto flags = O_WRONLY | O_EXCL;
                 if (query_with_output->is_outfile_append)
                     flags |= O_APPEND;
+                else if (query_with_output->is_outfile_truncate)
+                    flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
 
@@ -868,6 +856,67 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
 
             query = serializeAST(*parsed_query);
+        }
+    }
+
+    // Run some local checks to make sure queries into output file will work before sending to server.
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
+    {
+        String out_file;
+        if (query_with_output->out_file)
+        {
+            const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
+            out_file = out_file_node.value.safeGet<std::string>();
+
+            std::string compression_method_string;
+
+            if (query_with_output->compression)
+            {
+                const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                compression_method_string = compression_method_node.value.safeGet<std::string>();
+            }
+
+            CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
+            UInt64 compression_level = 3;
+
+            if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
+            }
+
+            if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
+            }
+
+            if (query_with_output->compression_level)
+            {
+                const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
+                bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
+                auto range = getCompressionLevelRange(compression_method);
+
+                if (!res || compression_level < range.first || compression_level > range.second)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid compression level, must be positive integer in range {}-{}",
+                        range.first,
+                        range.second);
+            }
+
+            if (fs::exists(out_file))
+            {
+                if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
+                {
+                    throw Exception(
+                        ErrorCodes::FILE_ALREADY_EXISTS,
+                        "File {} exists, consider using APPEND or TRUNCATE.",
+                        out_file);
+                }
+            }
         }
     }
 
