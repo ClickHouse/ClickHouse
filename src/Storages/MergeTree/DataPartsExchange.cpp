@@ -325,6 +325,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         auto file_in = desc.input_buffer_getter();
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
+        hashing_out.finalize();
 
         if (blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
@@ -365,10 +366,11 @@ Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
     , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Fetcher)"))
 {}
 
-MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
+    const String & zookeeper_name,
     const String & replica_path,
     const String & host,
     int port,
@@ -401,13 +403,18 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     /// Validation of the input that may come from malicious replica.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
+    String endpoint_id = getEndpointId(
+        data_settings->enable_the_endpoint_id_with_zookeeper_name_prefix ?
+        zookeeper_name + ":" + replica_path :
+        replica_path);
+
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
     uri.setPort(port);
     uri.setQueryParameters(
     {
-        {"endpoint",                getEndpointId(replica_path)},
+        {"endpoint",                endpoint_id},
         {"part",                    part_name},
         {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
         {"compress",                "false"}
@@ -595,7 +602,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
                 return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
-            return downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync);
+            return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));
         }
         catch (const Exception & e)
         {
@@ -630,7 +637,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             temporary_directory_lock = {};
 
             /// Try again but without zero-copy
-            return fetchSelectedPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+            return fetchSelectedPart(
+                metadata_snapshot,
+                context,
+                part_name,
+                zookeeper_name,
+                replica_path,
+                host,
+                port,
+                timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
@@ -653,11 +668,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             data.getRelativeDataPath(),
             part_name);
 
-        return downloadPartToMemory(
+        return std::make_pair(downloadPartToMemory(
             data_part_storage, part_name,
             MergeTreePartInfo::fromPartName(part_name, data.format_version),
             part_uuid, metadata_snapshot, context, *in,
-            projections, false, throttler);
+            projections, false, throttler), std::move(temporary_directory_lock));
     }
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
@@ -665,10 +680,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         return part_storage.writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
     };
 
-    return downloadPartToDisk(
+    return std::make_pair(downloadPartToDisk(
         part_name, replica_path, to_detached, tmp_prefix,
         disk, false, *in, output_buffer_getter,
-        projections, throttler, sync);
+        projections, throttler, sync),std::move(temporary_directory_lock));
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -765,6 +780,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
         HashingWriteBuffer hashing_out(*written_files.back());
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
+        hashing_out.finalize();
 
         if (blocker.isCancelled())
         {

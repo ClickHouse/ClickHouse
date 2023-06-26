@@ -59,9 +59,10 @@ Columns:
 - `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 - `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 - `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.
-- `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the (materialized or live) views present in the query.
 - `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the columns present in the query.
+- `partitions` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the partitions present in the query.
 - `projections` ([String](../../sql-reference/data-types/string.md)) — Names of the projections used during the query execution.
+- `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the (materialized or live) views present in the query.
 - `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 - `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
@@ -70,11 +71,11 @@ Columns:
     - 0 — Query was initiated by another query as part of distributed query execution.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
-- `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the query.
+- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
 - `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the query.
 - `initial_user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
 - `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
-- `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that the parent query was launched from.
+- `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that the parent query was launched from.
 - `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the parent query.
 - `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Initial query starting time (for distributed query execution).
 - `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Initial query starting time with microseconds precision (for distributed query execution).

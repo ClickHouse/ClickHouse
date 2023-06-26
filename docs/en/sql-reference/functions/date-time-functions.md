@@ -139,8 +139,8 @@ makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, t
 
 ## timeZone
 
-Returns the timezone of the server.
-If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
+Returns the timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
 
 **Syntax**
 
@@ -155,6 +155,33 @@ Alias: `timezone`.
 - Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [serverTimeZone](#serverTimeZone)
+
+## serverTimeZone
+
+Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
+
+**Syntax**
+
+``` sql
+serverTimeZone()
+```
+
+Alias: `serverTimezone`.
+
+**Returned value**
+
+-   Timezone.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [timeZone](#timeZone)
 
 ## toTimeZone
 
@@ -403,12 +430,14 @@ from_date32:     1509840000
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
+The return type of `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
 
 Behavior for
-* `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+* `enable_extended_results_for_datetime_functions = 0`:
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`.
+  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
 * `enable_extended_results_for_datetime_functions = 1`:
-  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
   * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
 :::
 
@@ -461,6 +490,18 @@ The mode argument works exactly like the mode argument in function `toWeek()`. I
 
 ``` sql
 toStartOfWeek(t[, mode[, timezone]])
+```
+
+## toLastDayOfWeek
+
+Rounds a date or date with time up to the nearest Saturday or Sunday.
+Returns the date.
+The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
+
+**Syntax**
+
+``` sql
+toLastDayOfWeek(t[, mode[, timezone]])
 ```
 
 ## toStartOfDay
