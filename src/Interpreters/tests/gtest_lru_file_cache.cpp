@@ -893,7 +893,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings.boundary_alignment = 1;
 
     ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = 1;
+    read_settings.enable_filesystem_cache = true;
     read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     std::string file_path = fs::current_path() / "test";
