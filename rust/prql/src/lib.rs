@@ -13,17 +13,6 @@ fn set_output(result: String, out: *mut *mut u8, out_size: *mut u64) {
     *out_ptr = CString::new(result).unwrap().into_raw() as *mut u8;
 }
 
-/// Converts a PRQL query to an SQL query.
-///
-/// Returns zero on success and non-zero on failure.
-///
-/// # Arguments
-///
-/// * `name` - A string slice that holds the name of the person
-/// * `query` - A pointer to the beginning of the PRQL query.
-/// * `size` - The size of the PRQL query.
-/// * `out` - A pointer to a uint64_t pointer which will be set to the beginning of the null terminated SQL query or the error message.
-/// * `out_size` - The size of the string pointed by `out`.
 #[no_mangle]
 pub unsafe extern "C" fn prql_to_sql(
     query: *const u8,
@@ -53,7 +42,6 @@ pub unsafe extern "C" fn prql_to_sql(
     }
 }
 
-/// Freeing memory according to docs: https://doc.rust-lang.org/std/ffi/struct.CString.html#method.into_raw
 #[no_mangle]
 pub unsafe extern "C" fn prql_free_pointer(ptr_to_free: *mut u8) {
     std::mem::drop(CString::from_raw(ptr_to_free as *mut c_char));
