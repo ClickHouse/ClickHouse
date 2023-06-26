@@ -154,20 +154,6 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
         }
         return StringRef(pos, memory_size);
     }
-    else if (getNestedColumn().valuesHaveFixedSize())
-    {
-        auto col = getNestedColumnPtr();
-        auto data = col->getDataAt(n);
-        auto size = col->sizeOfValueIfFixed();
-        auto memory_size = is_null ? s : s + size;
-        pos = arena.allocContinue(memory_size, begin);
-        memcpy(pos, &arr[n], s);
-        if (!is_null)
-        {
-            memcpy(pos + s, data.data, size);
-        }
-        return StringRef(pos, memory_size);
-    }
     else
     {
         pos = arena.allocContinue(s, begin);
