@@ -41,7 +41,6 @@ struct Packet
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;
     std::optional<ParallelReadRequest> request;
-    std::optional<ParallelReadResponse> response;
 
     std::string server_timezone;
 
