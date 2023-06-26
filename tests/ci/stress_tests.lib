@@ -9,7 +9,7 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=300
 
-source attach_gdb.lib
+source $(dirname "$0")/attach_gdb.lib
 
 function escaped()
 {
