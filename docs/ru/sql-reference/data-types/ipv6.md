@@ -1,14 +1,14 @@
 ---
-slug: /en/sql-reference/data-types/domains/ipv6
+slug: /ru/sql-reference/data-types/ipv6
 sidebar_position: 60
 sidebar_label: IPv6
 ---
 
-## IPv6
+## IPv6 {#ipv6}
 
-`IPv6` is a domain based on `FixedString(16)` type and serves as a typed replacement for storing IPv6 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
+`IPv6` — это домен, базирующийся на типе данных `FixedString(16)`, предназначенный для хранения адресов IPv6. Он обеспечивает компактное хранение данных с удобным для человека форматом ввода-вывода, и явно отображаемым типом данных в структуре таблицы.
 
-### Basic Usage
+### Применение {#primenenie}
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
@@ -23,13 +23,13 @@ DESCRIBE TABLE hits;
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-OR you can use `IPv6` domain as a key:
+Или вы можете использовать домен `IPv6` в качестве ключа:
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv6` domain supports custom input as IPv6-strings:
+`IPv6` поддерживает вставку в виде строк с текстовым представлением IPv6 адреса:
 
 ``` sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.com', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.com/docs/en/', '2a02:e980:1e::1');
@@ -45,7 +45,7 @@ SELECT * FROM hits;
 └────────────────────────────────────┴───────────────────────────────┘
 ```
 
-Values are stored in compact binary form:
+Значения хранятся в компактной бинарной форме:
 
 ``` sql
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
@@ -57,11 +57,11 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴──────────────────────────────────┘
 ```
 
-Domain values are not implicitly convertible to types other than `FixedString(16)`.
-If you want to convert `IPv6` value to a string, you have to do that explicitly with `IPv6NumToString()` function:
+Значения с доменным типом данных не преобразуются неявно в другие типы данных, кроме `FixedString(16)`.
+Если необходимо преобразовать значение типа `IPv6` в строку, то это необходимо делать явно с помощью функции `IPv6NumToString()`:
 
 ``` sql
-SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
+SELECT toTypeName(s), IPv6NumToString(from) AS s FROM hits LIMIT 1;
 ```
 
 ``` text
@@ -70,10 +70,10 @@ SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
 └───────────────────────────────────┴───────────────────────────────┘
 ```
 
-Or cast to a `FixedString(16)` value:
+Или приводить к типу данных `FixedString(16)`:
 
 ``` sql
-SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
+SELECT toTypeName(i), CAST(from AS FixedString(16)) AS i FROM hits LIMIT 1;
 ```
 
 ``` text
