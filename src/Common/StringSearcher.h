@@ -21,12 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-
 /** Variants for searching a substring in a string.
   * In most cases, performance is less than Volnitsky (see Volnitsky.h).
   */
