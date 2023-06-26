@@ -457,20 +457,21 @@ std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegm
         return {};
 
     auto it = key_metadata->lower_bound(range.left);
-    if (it == key_metadata->end())
+    if (it != key_metadata->end()) /// has next range
     {
-        auto check_range = std::prev(it)->second->file_segment->range();
-        return check_range < range ? std::nullopt : std::optional<FileSegment::Range>(check_range);
+        auto next_range = it->second->file_segment->range();
+        if (!(range < next_range))
+            return next_range;
+
+        if (it == key_metadata->begin())
+            return {};
     }
 
-    std::optional<FileSegment::Range> check_range;
-    if (range < (check_range = it->second->file_segment->range())
-        && (it == key_metadata->begin() || (check_range = std::prev(it)->second->file_segment->range()) < range))
-    {
-        return {};
-    }
+    auto prev_range = std::prev(it)->second->file_segment->range();
+    if (!(prev_range < range))
+        return prev_range;
 
-    return check_range;
+    return {};
 }
 
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
