@@ -227,7 +227,7 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
 {
     const std::unordered_map<FragmentID, FragmentRequest> & fragment_requests = buildFragmentRequest();
 
-    for (auto & [f_id, request] : fragment_requests)
+    for (const auto & [f_id, request] : fragment_requests)
     {
         LOG_INFO(&Poco::Logger::get("Coordinator"), "Fragment id {}, request {}", f_id, request.toString());
     }

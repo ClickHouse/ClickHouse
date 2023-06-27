@@ -394,7 +394,8 @@ public:
     {
         PlanFragment::ExplainPlanOptions settings;
         buffer.write('\n');
-        std::string str("Fragment " + std::to_string(fragment_id));
+        std::string str("Fragment " + std::to_string(fragment_id) + ", ");
+        str += data_partition.toString();
         buffer.write(str.c_str(), str.size());
         buffer.write('\n');
 

@@ -930,6 +930,34 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(Node & sin
     return res_fragments;
 }
 
+bool needPushDownChild(QueryPlanStepPtr step)
+{
+    if (dynamic_cast<ExpressionStep *>(step.get()))
+    {
+        return step->getStepDescription() != "Projection" && step->getStepDescription() != "Before LIMIT BY";
+    }
+
+    return false;
+}
+
+bool isLimitRelated(QueryPlanStepPtr step)
+{
+    if (dynamic_cast<ExpressionStep *>(step.get()))
+    {
+        return step->getStepDescription() == "Before LIMIT BY";
+    }
+    else if (dynamic_cast<LimitByStep *>(step.get()))
+    {
+        return true;
+    }
+    else if (dynamic_cast<LimitStep *>(step.get()))
+    {
+        return true;
+    }
+
+    return false;
+}
+
 /* all extends IQueryPlanStep
 AggregatingProjectionStep (DB)
 CreatingSetsStep (DB)
@@ -1007,7 +1035,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
         result = createAggregationFragment(childFragments[0]);
         all_fragments.emplace_back(result);
     }
-    else if (dynamic_cast<ExpressionStep *>(root_node.step.get()) && root_node.step->getStepDescription() != "Projection")
+    else if (needPushDownChild(root_node.step))
     {
         /// not Projection ExpressionStep push it to childFragments[0]
 
@@ -1034,6 +1062,15 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     {
         result = createOrderByFragment(root_node.step, childFragments[0]);
         all_fragments.emplace_back(result);
+    }
+    else if (isLimitRelated(root_node.step))
+    {
+        processLimitRelated(root_node.step, childFragments[0]);
+        result = childFragments[0];
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unprocessed step {}", root_node.step->getName());
     }
         //    } else if (root instanceof SortNode) {
         //        if (((SortNode) root).isAnalyticSort()) {
@@ -1066,11 +1103,43 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     return result;
 }
 
+void InterpreterSelectQueryFragments::processLimitRelated(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
+{
+    childFragment->addStep(step);
+
+    if (childFragment->getChildren().empty())
+        return;
+
+    if (!childFragment->getChildren()[0]->isPartitioned())
+        return;
+
+    auto fragment = childFragment->getChildren()[0];
+    if (auto * expression_step = dynamic_cast<ExpressionStep *>(step.get()))
+    {
+        auto actions_dag = expression_step->getExpression()->clone();
+
+        auto clone_expression_step = std::make_shared<ExpressionStep>(fragment->getCurrentDataStream(), actions_dag);
+
+        clone_expression_step->setStepDescription("Before LIMIT BY");
+        fragment->addStep(std::move(clone_expression_step));
+    }
+    else if (auto * limit_by_step = dynamic_cast<LimitByStep *>(step.get()))
+    {
+        executeLimitBy(fragment);
+    }
+    else if (auto * limit_step = dynamic_cast<LimitStep *>(step.get()))
+    {
+        executePreLimit(fragment, true);
+    }
+    else
+        throw;
+}
 
 PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
 {
     childFragment->addStep(step);
-    if (!childFragment->isPartitioned()) {
+    if (!childFragment->isPartitioned())
+    {
         return childFragment;
     }
 
@@ -3075,6 +3144,52 @@ void InterpreterSelectQueryFragments::executePreLimit(QueryPlan & query_plan, bo
     }
 }
 
+void InterpreterSelectQueryFragments::executePreLimit(PlanFragmentPtr fragment, bool do_not_skip_offset)
+{
+    auto & query = getSelectQuery();
+    /// If there is LIMIT
+    if (query.limitLength())
+    {
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+
+        if (do_not_skip_offset)
+        {
+            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+                return;
+
+            limit_length += limit_offset;
+            limit_offset = 0;
+        }
+
+        const Settings & settings = context->getSettingsRef();
+
+        auto limit = std::make_shared<LimitStep>(fragment->getCurrentDataStream(), limit_length, limit_offset, settings.exact_rows_before_limit);
+        if (do_not_skip_offset)
+            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+        else
+            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+
+        fragment->addStep(std::move(limit));
+    }
+}
+
+
+void InterpreterSelectQueryFragments::executeLimitBy(PlanFragmentPtr fragment)
+{
+    auto & query = getSelectQuery();
+    if (!query.limitByLength() || !query.limitBy())
+        return;
+
+    Names columns;
+    for (const auto & elem : query.limitBy()->children)
+        columns.emplace_back(elem->getColumnName());
+
+    UInt64 length = getLimitUIntValue(query.limitByLength(), context, "LIMIT");
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
+
+    auto limit_by = std::make_shared<LimitByStep>(fragment->getCurrentDataStream(), length, offset, columns);
+    fragment->addStep(std::move(limit_by));
+}
 
 void InterpreterSelectQueryFragments::executeLimitBy(QueryPlan & query_plan)
 {
