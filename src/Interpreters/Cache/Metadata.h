@@ -164,6 +164,8 @@ struct LockedKey : private boost::noncopyable
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
+    std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
+
     void removeFromCleanupQueue();
 
     void markAsRemoved();
