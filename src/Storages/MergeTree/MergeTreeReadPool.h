@@ -254,7 +254,7 @@ public:
         for (const auto & part : parts_ranges)
             buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
 
-        extension.all_callback({
+        extension.all_callback(InitialAllRangesAnnouncement{
             mode,
             parts_ranges.getDescriptions(),
             extension.number_of_current_replica
