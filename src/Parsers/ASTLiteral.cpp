@@ -86,8 +86,17 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        String column_name = applyVisitor(FieldVisitorToString(), value);
-        writeString(column_name, ostr);
+        /// Special case for huge AST. The `FieldVisitorToString` becomes expensive
+        /// for tons of literals.
+        if (value.getType() == Field::Types::String)
+        {
+            writeQuoted(value.get<String>(), ostr);
+        }
+        else
+        {
+            String column_name = applyVisitor(FieldVisitorToString(), value);
+            writeString(column_name, ostr);
+        }
     }
 }
 
