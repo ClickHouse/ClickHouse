@@ -1362,6 +1362,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+        old_part_with_no_metadata_version_on_disk = true;
     }
 
     setColumns(loaded_columns, infos, loaded_metadata_version);
