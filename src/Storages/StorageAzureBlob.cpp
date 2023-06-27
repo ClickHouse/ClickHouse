@@ -1209,7 +1209,7 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
         file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx ,
             ctx->getReadTaskCallback());
     }
-    else (configuration.withGlobs())
+    else if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             object_storage, configuration.container, configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
