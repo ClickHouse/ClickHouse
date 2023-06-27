@@ -69,7 +69,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
-    , is_persistent(settings_.is_file_cache_persistent)
     , cache_log(cache_log_)
 {
 }
@@ -125,7 +124,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     }
     else
     {
-        CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
+        CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         file_segments = cache->getOrSet(cache_key, offset, size, file_size.value(), create_settings);
     }
 
@@ -149,8 +148,6 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
-    /// Use is_persistent flag from in-memory state of the filesegment,
-    /// because it is consistent with what is written on disk.
     auto path = file_segment.getPathInLocalCache();
 
     ReadSettings local_read_settings{settings};
