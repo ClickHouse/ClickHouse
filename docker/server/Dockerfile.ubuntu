@@ -22,7 +22,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         /tmp/*
 
 ARG REPO_CHANNEL="stable"
-ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
+ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
 ARG VERSION="23.5.3.24"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
@@ -77,8 +77,13 @@ RUN if ! clickhouse local -q "SELECT ''" > /dev/null; then \
             dirmngr \
             gnupg2 \
         && mkdir -p /etc/apt/sources.list.d \
-        && apt-key adv --keyserver keyserver.ubuntu.com --recv 8919F6BD2B48D754 \
-        && echo ${REPOSITORY} > /etc/apt/sources.list.d/clickhouse.list \
+        && GNUPGHOME=$(mktemp -d) \
+        && GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754 \
+        && rm -r "$GNUPGHOME" \
+        && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
+        && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
         && echo "installing from repository: ${REPOSITORY}" \
         && apt-get update \
         && for package in ${PACKAGES}; do \
