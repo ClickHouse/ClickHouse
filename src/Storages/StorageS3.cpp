@@ -573,7 +573,10 @@ StorageS3Source::StorageS3Source(
 {
     reader = createReader();
     if (reader)
+    {
+        total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
         reader_future = createReaderAsync();
+    }
 }
 
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
@@ -611,7 +614,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(bucket) / key_with_info.key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(bucket) / key_with_info.key, std::move(read_buf), input_format, std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
@@ -712,11 +715,13 @@ Chunk StorageS3Source::generate()
             UInt64 num_rows = chunk.getNumRows();
 
             const auto & file_path = reader.getPath();
-            size_t total_size = file_iterator->getTotalSize();
-            if (num_rows && total_size)
+
+            if (num_rows && total_objects_size)
             {
-                updateRowsProgressApprox(
-                    *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
+                if (!chunk_size)
+                    chunk_size = chunk.bytes();
+                updateRowsProgressApprox(*this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)
@@ -742,6 +747,13 @@ Chunk StorageS3Source::generate()
 
         if (!reader)
             break;
+
+        size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+        /// Adjust total_rows_approx_accumulated with new total size.
+        if (total_objects_size)
+            total_rows_approx_accumulated = static_cast<size_t>(
+                std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
+        total_objects_size += object_size;
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -801,10 +813,18 @@ public:
         cancelled = true;
     }
 
-    void onException() override
+    void onException(std::exception_ptr exception) override
     {
         std::lock_guard lock(cancel_mutex);
-        finalize();
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            release();
+        }
     }
 
     void onFinish() override
@@ -828,10 +848,15 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            writer.reset();
-            write_buf->finalize();
+            release();
             throw;
         }
+    }
+
+    void release()
+    {
+        writer.reset();
+        write_buf.reset();
     }
 
     Block sample_block;
