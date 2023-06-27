@@ -544,7 +544,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
-    fs::path temp_dir = temp_dir_owner->getPath();
+    fs::path temp_dir = temp_dir_owner->getRelativePath();
     disk->createDirectories(temp_dir);
 
     bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;

@@ -54,7 +54,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file name is empty");
 }
 
-String TemporaryFileOnDisk::getPath() const
+String TemporaryFileOnDisk::getAbsolutePath() const
 {
     return std::filesystem::path(disk->getPath()) / relative_path;
 }
