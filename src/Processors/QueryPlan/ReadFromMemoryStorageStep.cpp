@@ -144,9 +144,9 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
+            [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = static_cast<const StorageMemory &>(*storage).data.get();
+                data_to_initialize = assert_cast<const StorageMemory &>(*my_storage).data.get();
             }));
     }
 
