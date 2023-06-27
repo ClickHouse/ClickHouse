@@ -467,8 +467,6 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
 
     auto delta_it = deltas.rbegin();
 
-    absl::flat_hash_set<std::string_view> rollbacked_nodes;
-
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
@@ -496,7 +494,13 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                 },
                 delta_it->operation);
 
-            rollbacked_nodes.insert(delta_it->path);
+            auto & path_deltas = deltas_for_path.at(delta_it->path);
+            if (path_deltas.back() == &*delta_it)
+            {
+                path_deltas.pop_back();
+                if (path_deltas.empty())
+                    deltas_for_path.erase(delta_it->path);
+            }
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta_it->operation))
         {
@@ -510,49 +514,36 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
         }
     }
 
-    absl::flat_hash_set<std::string_view> recalculation_nodes;
-    for (const auto node_path : rollbacked_nodes)
-    {
-        auto it = deltas_for_path.find(node_path);
-        auto & path_deltas = it->second;
-        auto path_delta_it = path_deltas.rbegin();
-        while (path_delta_it != path_deltas.rend())
-        {
-            const auto & delta = *path_delta_it;
-            if (delta->zxid != rollback_zxid)
-                break;
-
-            ++path_delta_it;
-        }
-
-        if (path_delta_it == path_deltas.rend())
-        {
-            deltas_for_path.erase(it);
-            nodes.erase(nodes.find(node_path));
-        }
-        else
-        {
-            recalculation_nodes.emplace(node_path);
-            path_deltas.erase(path_delta_it.base(), path_deltas.end());
-        }
-    }
-
-    // recalculate all the uncommitted deleted nodes
-    for (const auto & node : recalculation_nodes)
-    {
-        auto path_delta_it = deltas_for_path.find(node);
-        if (path_delta_it != deltas_for_path.end())
-        {
-            for (const auto & delta : path_delta_it->second)
-                applyDelta(*delta);
-        }
-    }
-
     if (delta_it == deltas.rend())
         deltas.clear();
     else
         deltas.erase(delta_it.base(), deltas.end());
 
+    absl::flat_hash_set<std::string> deleted_nodes;
+    std::erase_if(
+        nodes,
+        [&, rollback_zxid](const auto & node)
+        {
+            if (node.second.zxid == rollback_zxid)
+            {
+                deleted_nodes.emplace(std::move(node.first));
+                return true;
+            }
+            return false;
+        });
+
+    // recalculate all the uncommitted deleted nodes
+    for (const auto & deleted_node : deleted_nodes)
+    {
+        auto path_delta_it = deltas_for_path.find(deleted_node);
+        if (path_delta_it != deltas_for_path.end())
+        {
+            for (const auto & delta : path_delta_it->second)
+            {
+                applyDelta(*delta);
+            }
+        }
+    }
 }
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(StringRef path) const
