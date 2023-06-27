@@ -2171,6 +2171,7 @@ snowflakeToDateTime
 socketcache
 soundex
 sparkbar
+sparkBar
 sparsehash
 speedscope
 splitByChar

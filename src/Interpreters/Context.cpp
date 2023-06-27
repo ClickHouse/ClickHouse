@@ -1328,6 +1328,21 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
+std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    std::shared_ptr<TemporaryTableHolder> holder;
+    {
+        auto lock = getLock();
+        auto iter = external_tables_mapping.find(table_name);
+        if (iter == external_tables_mapping.end())
+            return {};
+        holder = iter->second;
+    }
+    return holder;
+}
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {

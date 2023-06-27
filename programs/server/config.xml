@@ -282,6 +282,13 @@
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
+
+            <invalidCertificateHandler>
+                <!-- The server, in contrast to the client, cannot ask about the certificate interactively.
+                     The only reasonable option is to reject.
+                -->
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
         </server>
 
         <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
