@@ -41,8 +41,6 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/logger_useful.h>
 
->>>>>>> master
-
 namespace DB
 {
 
