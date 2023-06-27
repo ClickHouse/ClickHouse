@@ -81,7 +81,6 @@ RUN if ! clickhouse local -q "SELECT ''" > /dev/null; then \
         && echo ${REPOSITORY} > /etc/apt/sources.list.d/clickhouse.list \
         && echo "installing from repository: ${REPOSITORY}" \
         && apt-get update \
-        && apt-get --yes -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" upgrade \
         && for package in ${PACKAGES}; do \
             packages="${packages} ${package}=${VERSION}" \
         ; done \
