@@ -73,6 +73,10 @@ protected:
 
     mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
+
+private:
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
 
 }
