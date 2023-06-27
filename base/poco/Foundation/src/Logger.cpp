@@ -479,6 +479,10 @@ void Logger::add(Logger* pLogger)
 	if (!_pLoggerMap)
 		_pLoggerMap = new LoggerMap;
 	_pLoggerMap->insert(LoggerMap::value_type(pLogger->name(), pLogger));
+	if (_pLoggerMap->size() > 1000000)
+	{
+		throw LogicException("Too many loggers when adding " + pLogger->name());
+	}
 }
 
 
