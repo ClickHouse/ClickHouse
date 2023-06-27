@@ -1,9 +1,18 @@
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperFeatureFlags.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+
+extern const int BAD_ARGUMENTS;
+
+}
 
 KeeperContext::KeeperContext()
 {
@@ -29,12 +38,17 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
         config.keys(feature_flags_key, keys);
         for (const auto & key : keys)
         {
-            auto feature_flag = SettingFieldKeeperFeatureFlagTraits::fromString(key);
+            auto feature_flag_string = boost::to_upper_copy(key);
+            auto feature_flag = magic_enum::enum_cast<KeeperFeatureFlag>(feature_flag_string);
+
+            if (!feature_flag.has_value())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid feature flag defined in config for Keeper: {}", key);
+
             auto is_enabled = config.getBool(feature_flags_key + "." + key);
             if (is_enabled)
-                feature_flags.enableFeatureFlag(feature_flag);
+                feature_flags.enableFeatureFlag(feature_flag.value());
             else
-                feature_flags.disableFeatureFlag(feature_flag);
+                feature_flags.disableFeatureFlag(feature_flag.value());
         }
 
         system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();

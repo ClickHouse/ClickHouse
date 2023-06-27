@@ -529,6 +529,8 @@ public:
     size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
     UInt64 getConnectedTime() const { return connected_time; }
 
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
+
 private:
     void init(ZooKeeperArgs args_);
 

@@ -23,15 +23,10 @@ std::pair<size_t, size_t> getByteAndBitIndex(size_t num)
 
 }
 
-IMPLEMENT_SETTING_ENUM(KeeperFeatureFlag, ErrorCodes::BAD_ARGUMENTS,
-     {{"filtered_list", KeeperFeatureFlag::FILTERED_LIST},
-     {"multi_read", KeeperFeatureFlag::MULTI_READ},
-     {"check_not_exists", KeeperFeatureFlag::CHECK_NOT_EXISTS}});
-
 KeeperFeatureFlags::KeeperFeatureFlags()
 {
     /// get byte idx of largest value
-    auto [byte_idx, _] = getByteAndBitIndex(all_keeper_feature_flags.size() - 1);
+    auto [byte_idx, _] = getByteAndBitIndex(magic_enum::enum_count<KeeperFeatureFlag>() - 1);
     feature_flags = std::string(byte_idx + 1, 0);
 }
 
@@ -56,7 +51,7 @@ void KeeperFeatureFlags::fromApiVersion(KeeperApiVersion keeper_api_version)
 
 bool KeeperFeatureFlags::isEnabled(KeeperFeatureFlag feature_flag) const
 {
-    auto [byte_idx, bit_idx] = getByteAndBitIndex(feature_flag);
+    auto [byte_idx, bit_idx] = getByteAndBitIndex(magic_enum::enum_integer(feature_flag));
 
     if (byte_idx > feature_flags.size())
         return false;
@@ -71,7 +66,7 @@ void KeeperFeatureFlags::setFeatureFlags(std::string feature_flags_)
 
 void KeeperFeatureFlags::enableFeatureFlag(KeeperFeatureFlag feature_flag)
 {
-    auto [byte_idx, bit_idx] = getByteAndBitIndex(feature_flag);
+    auto [byte_idx, bit_idx] = getByteAndBitIndex(magic_enum::enum_integer(feature_flag));
     chassert(byte_idx < feature_flags.size());
 
     feature_flags[byte_idx] |= (1 << bit_idx);
@@ -79,7 +74,7 @@ void KeeperFeatureFlags::enableFeatureFlag(KeeperFeatureFlag feature_flag)
 
 void KeeperFeatureFlags::disableFeatureFlag(KeeperFeatureFlag feature_flag)
 {
-    auto [byte_idx, bit_idx] = getByteAndBitIndex(feature_flag);
+    auto [byte_idx, bit_idx] = getByteAndBitIndex(magic_enum::enum_integer(feature_flag));
     chassert(byte_idx < feature_flags.size());
 
     feature_flags[byte_idx] &= ~(1 << bit_idx);
@@ -92,10 +87,10 @@ const std::string & KeeperFeatureFlags::getFeatureFlags() const
 
 void KeeperFeatureFlags::logFlags(Poco::Logger * log) const
 {
-    for (const auto & feature_flag : all_keeper_feature_flags)
+    for (const auto & [feature_flag, feature_flag_name] : magic_enum::enum_entries<KeeperFeatureFlag>())
     {
         auto is_enabled = isEnabled(feature_flag);
-        LOG_INFO(log, "Keeper feature flag {}: {}", SettingFieldKeeperFeatureFlagTraits::toString(feature_flag), is_enabled ? "enabled" : "disabled");
+        LOG_INFO(log, "Keeper feature flag {}: {}", feature_flag_name, is_enabled ? "enabled" : "disabled");
     }
 }
 
