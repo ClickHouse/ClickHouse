@@ -1530,7 +1530,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
 
 Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(
-    const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const
+    const String & partition_id, Int64 data_version) const
 {
     auto in_partition = mutations_by_partition.find(partition_id);
     if (in_partition == mutations_by_partition.end())
@@ -2108,24 +2108,19 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 }
 
 LocalMergePredicate::LocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
-    : queue(queue_)
 {
+    /// Use only information that can be quickly accessed locally without querying ZooKeeper
+    virtual_parts_ = &queue_.virtual_parts;
+    mutations_state_ = &queue_;
+    virtual_parts_mutex = &queue_.state_mutex;
 }
 
-ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
-    : nested_pred(queue_)
-    , queue(queue_)
-    , partition_ids_hint(std::move(partition_ids_hint_))
-    , prev_virtual_parts(queue.format_version)
-{
-    {
-        std::lock_guard lock(queue.state_mutex);
-        prev_virtual_parts = queue.virtual_parts;
-    }
 
-    /// Load current quorum status.
-    auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
+template<typename VirtualPartsT, typename MutationsStateT>
+CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommittingBlocks(
+    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_)
+{
+    CommittingBlocks committing_blocks;
 
     /// Load current inserts
     /// Hint avoids listing partitions that we don't really need.
@@ -2133,14 +2128,14 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     /// so without hint it can do a few thousands requests (if not using MultiRead).
     Strings partitions;
     if (!partition_ids_hint)
-        partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
+        partitions = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
     else
         std::copy(partition_ids_hint->begin(), partition_ids_hint->end(), std::back_inserter(partitions));
 
     std::vector<std::string> paths;
     paths.reserve(partitions.size());
     for (const String & partition : partitions)
-        paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
+        paths.push_back(fs::path(zookeeper_path) / "block_numbers" / partition);
 
     auto locks_children = zookeeper->tryGetChildren(paths);
 
@@ -2153,21 +2148,39 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         if (response.error != Coordination::Error::ZOK)
         {
             /// Probably a wrong hint was provided (it's ok if a user passed non-existing partition to OPTIMIZE)
-            LOG_WARNING(queue.log, "Partition id '{}' was provided as a hint, but there's not such partition in ZooKeeper", partitions[i]);
+            LOG_WARNING(log_, "Partition id '{}' was provided as a hint, but there's not such partition in ZooKeeper", partitions[i]);
             partition_ids_hint->erase(partitions[i]);
             continue;
         }
 
-        Strings partition_block_numbers = response.names;
+        Strings partition_block_numbers = locks_children[i].names;
         for (const String & entry : partition_block_numbers)
         {
             if (!startsWith(entry, "block-"))
                 continue;
+
             Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-            String zk_path = fs::path(queue.zookeeper_path) / "block_numbers" / partitions[i] / entry;
             committing_blocks[partitions[i]].insert(block_number);
         }
     }
+
+    return committing_blocks;
+}
+
+ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
+    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
+    : BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>(std::move(partition_ids_hint_))
+    , queue(queue_)
+{
+    {
+        std::lock_guard lock(queue.state_mutex);
+        prev_virtual_parts = std::make_shared<ActiveDataPartSet>(queue.virtual_parts);
+    }
+
+    /// Load current quorum status.
+    auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
+
+    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, queue.log));
 
     merges_version = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
@@ -2179,7 +2192,8 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         ///
         /// If pinned parts are fetched after logs are pulled then we can safely say that it contains all locks up to `merges_version`.
         String s = zookeeper->get(queue.zookeeper_path + "/pinned_part_uuids");
-        pinned_part_uuids.fromString(s);
+        pinned_part_uuids = std::make_shared<PinnedPartUUIDs>();
+        pinned_part_uuids->fromString(s);
     }
 
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
@@ -2187,13 +2201,21 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     {
         ReplicatedMergeTreeQuorumEntry quorum_status;
         quorum_status.fromString(quorum_status_response.data);
-        inprogress_quorum_part = quorum_status.part_name;
+        inprogress_quorum_part = std::make_shared<String>(quorum_status.part_name);
     }
-    else
-        inprogress_quorum_part.clear();
+
+    /// Use all information about parts
+    prev_virtual_parts_ = prev_virtual_parts.get();
+    virtual_parts_ = &queue.virtual_parts;
+    committing_blocks_ = committing_blocks.get();
+    pinned_part_uuids_ = pinned_part_uuids.get();
+    inprogress_quorum_part_ = inprogress_quorum_part.get();
+    mutations_state_ = &queue;
+    virtual_parts_mutex = &queue.state_mutex;
 }
 
-bool LocalMergePredicate::operator()(
+template<typename VirtualPartsT, typename MutationsStateT>
+bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     const MergeTreeTransaction *,
@@ -2205,20 +2227,8 @@ bool LocalMergePredicate::operator()(
         return canMergeSinglePart(right, out_reason);
 }
 
-bool ReplicatedMergeTreeMergePredicate::operator()(
-    const MergeTreeData::DataPartPtr & left,
-    const MergeTreeData::DataPartPtr & right,
-    const MergeTreeTransaction *,
-    String * out_reason) const
-{
-    if (left)
-        return canMergeTwoParts(left, right, out_reason);
-    else
-        return canMergeSinglePart(right, out_reason);
-}
-
-
-bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
+template<typename VirtualPartsT, typename MutationsStateT>
+bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     String * out_reason) const
@@ -2263,21 +2273,21 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (pinned_part_uuids.part_uuids.contains(part->uuid))
+        if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
         {
             if (out_reason)
                 *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
             return false;
         }
 
-        if (part->name == inprogress_quorum_part)
+        if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
         {
             if (out_reason)
                 *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
             return false;
         }
 
-        if (prev_virtual_parts.getContainingPart(part->info).empty())
+        if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
         {
             if (out_reason)
                 *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
@@ -2290,7 +2300,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
     if (left_max_block > right_min_block)
         std::swap(left_max_block, right_min_block);
 
-    if (left_max_block + 1 < right_min_block)
+    if (committing_blocks_ && left_max_block + 1 < right_min_block)
     {
         if (partition_ids_hint && !partition_ids_hint->contains(left->info.partition_id))
         {
@@ -2299,8 +2309,8 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
             return false;
         }
 
-        auto committing_blocks_in_partition = committing_blocks.find(left->info.partition_id);
-        if (committing_blocks_in_partition != committing_blocks.end())
+        auto committing_blocks_in_partition = committing_blocks_->find(left->info.partition_id);
+        if (committing_blocks_in_partition != committing_blocks_->end())
         {
             const std::set<Int64> & block_numbers = committing_blocks_in_partition->second;
 
@@ -2316,109 +2326,107 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         }
     }
 
-    return nested_pred.canMergeTwoParts(left, right, out_reason);
-}
+    std::unique_lock<std::mutex> lock;
+    if (virtual_parts_mutex)
+        lock = std::unique_lock(*virtual_parts_mutex);
 
-bool LocalMergePredicate::canMergeTwoParts(
-    const MergeTreeData::DataPartPtr & left,
-    const MergeTreeData::DataPartPtr & right,
-    String * out_reason) const
-{
-    Int64 left_max_block = left->info.max_block;
-    Int64 right_min_block = right->info.min_block;
-
-    std::lock_guard lock(queue.state_mutex);
-
-    for (const MergeTreeData::DataPartPtr & part : {left, right})
+    if (virtual_parts_)
     {
-        /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
-        /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-        String containing_part = queue.virtual_parts.getContainingPart(part->info);
-        if (containing_part != part->name)
+        for (const MergeTreeData::DataPartPtr & part : {left, right})
         {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
-            return false;
+            /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+            /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+            String containing_part = virtual_parts_->getContainingPart(part->info);
+            if (containing_part != part->name)
+            {
+                if (out_reason)
+                    *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
+                return false;
+            }
+        }
+
+        if (left_max_block + 1 < right_min_block)
+        {
+            /// Fake part which will appear as merge result
+            MergeTreePartInfo gap_part_info(
+                left->info.partition_id, left_max_block + 1, right_min_block - 1,
+                MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
+
+            /// We don't select parts if any smaller part covered by our merge must exist after
+            /// processing replication log up to log_pointer.
+            Strings covered = virtual_parts_->getPartsCoveredBy(gap_part_info);
+            if (!covered.empty())
+            {
+                if (out_reason)
+                    *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
+                        + " to " + covered.back() + ") that are still not present or being processed by "
+                        + " other background process on this replica between " + left->name + " and " + right->name;
+                return false;
+            }
         }
     }
 
-    if (left_max_block + 1 < right_min_block)
+    if (mutations_state_)
     {
-        /// Fake part which will appear as merge result
-        MergeTreePartInfo gap_part_info(
-            left->info.partition_id, left_max_block + 1, right_min_block - 1,
-            MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
+        Int64 left_mutation_ver = mutations_state_->getCurrentMutationVersion(
+            left->info.partition_id, left->info.getDataVersion());
 
-        /// We don't select parts if any smaller part covered by our merge must exist after
-        /// processing replication log up to log_pointer.
-        Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
-        if (!covered.empty())
+        Int64 right_mutation_ver = mutations_state_->getCurrentMutationVersion(
+            left->info.partition_id, right->info.getDataVersion());
+
+        if (left_mutation_ver != right_mutation_ver)
         {
             if (out_reason)
-                *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present or being processed by "
-                    + " other background process on this replica between " + left->name + " and " + right->name;
+                *out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
+                    + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
             return false;
         }
-    }
-
-    Int64 left_mutation_ver = queue.getCurrentMutationVersion(
-        left->info.partition_id, left->info.getDataVersion(), lock);
-
-    Int64 right_mutation_ver = queue.getCurrentMutationVersion(
-        left->info.partition_id, right->info.getDataVersion(), lock);
-
-    if (left_mutation_ver != right_mutation_ver)
-    {
-        if (out_reason)
-            *out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
-                + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
-        return false;
     }
 
     return MergeTreeData::partsContainSameProjections(left, right);
 }
 
-bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
+template<typename VirtualPartsT, typename MutationsStateT>
+bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
-    if (pinned_part_uuids.part_uuids.contains(part->uuid))
+    if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
     {
         if (out_reason)
             *out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
         return false;
     }
 
-    if (part->name == inprogress_quorum_part)
+    if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
     {
         if (out_reason)
             *out_reason = fmt::format("Quorum insert for part {} is currently in progress", part->name);
         return false;
     }
 
-    if (prev_virtual_parts.getContainingPart(part->info).empty())
+    if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
     {
         if (out_reason)
             *out_reason = fmt::format("Entry for part {} hasn't been read from the replication log yet", part->name);
         return false;
     }
 
-    return nested_pred.canMergeSinglePart(part, out_reason);
-}
+    std::unique_lock<std::mutex> lock;
+    if (virtual_parts_mutex)
+        lock = std::unique_lock(*virtual_parts_mutex);
 
-bool LocalMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
-{
-    std::lock_guard lock(queue.state_mutex);
-
-    /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
-    /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-    String containing_part = queue.virtual_parts.getContainingPart(part->info);
-    if (containing_part != part->name)
+    if (virtual_parts_)
     {
-        if (out_reason)
-            *out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
-        return false;
+        /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+        /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+        String containing_part = virtual_parts_->getContainingPart(part->info);
+        if (containing_part != part->name)
+        {
+            if (out_reason)
+                *out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
+            return false;
+        }
     }
 
     return true;
@@ -2459,7 +2467,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
 
     /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
-    if (part->name == inprogress_quorum_part)
+    if (inprogress_quorum_part && part->name == *inprogress_quorum_part)
         return {};
 
     std::lock_guard lock(queue.state_mutex);
@@ -2474,7 +2482,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     UInt64 mutations_limit = queue.storage.getSettings()->replicated_max_mutations_in_one_entry;
     UInt64 mutations_count = 0;
 
-    Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion(), lock);
+    Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion());
     Int64 max_version = in_partition->second.begin()->first;
 
     int alter_version = -1;
@@ -2548,8 +2556,8 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
         if (partition_ids_hint && !partition_ids_hint->contains(partition_id))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition id {} was not provided as hint, it's a bug", partition_id);
 
-        auto partition_it = committing_blocks.find(partition_id);
-        if (partition_it != committing_blocks.end())
+        auto partition_it = committing_blocks->find(partition_id);
+        if (partition_it != committing_blocks->end())
         {
             size_t blocks_count = std::distance(
                 partition_it->second.begin(), partition_it->second.lower_bound(block_num));
@@ -2670,5 +2678,7 @@ void ReplicatedMergeTreeQueue::removeCurrentPartsFromMutations()
     for (const auto & part_name : current_parts.getParts())
         removeCoveredPartsFromMutations(part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
 }
+
+template class BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
 
 }

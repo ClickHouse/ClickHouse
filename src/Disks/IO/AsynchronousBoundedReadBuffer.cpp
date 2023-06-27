@@ -42,18 +42,23 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+static size_t chooseBufferSize(const ReadSettings & settings, size_t file_size)
+{
+    /// Buffers used for prefetch or pre-download better to have enough size, but not bigger than the whole file.
+    return std::min<size_t>(std::max<size_t>(settings.prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE), file_size);
+}
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
-        ImplPtr impl_,
-        IAsynchronousReader & reader_,
-        const ReadSettings & settings_,
-        AsyncReadCountersPtr async_read_counters_,
-        FilesystemReadPrefetchesLogPtr prefetches_log_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
+    ImplPtr impl_,
+    IAsynchronousReader & reader_,
+    const ReadSettings & settings_,
+    AsyncReadCountersPtr async_read_counters_,
+    FilesystemReadPrefetchesLogPtr prefetches_log_)
+    : ReadBufferFromFileBase(chooseBufferSize(settings_, impl_->getFileSize()), nullptr, 0)
     , impl(std::move(impl_))
     , read_settings(settings_)
     , reader(reader_)
-    , prefetch_buffer(settings_.prefetch_buffer_size)
+    , prefetch_buffer(chooseBufferSize(settings_, impl->getFileSize()))
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
     , log(&Poco::Logger::get("AsynchronousBoundedReadBuffer"))
@@ -103,12 +108,10 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     if (!hasPendingDataToRead())
         return;
 
-    last_prefetch_info.submit_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
-    chassert(prefetch_buffer.size() == read_settings.prefetch_buffer_size
-             || prefetch_buffer.size() == read_settings.remote_fs_buffer_size);
+    chassert(prefetch_buffer.size() == chooseBufferSize(read_settings, impl->getFileSize()));
     prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size(), priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -187,7 +190,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
 
-        chassert(memory.size() == read_settings.prefetch_buffer_size || memory.size() == read_settings.remote_fs_buffer_size);
+        chassert(memory.size() == chooseBufferSize(read_settings, impl->getFileSize()));
         std::tie(size, offset) = impl->readInto(memory.data(), memory.size(), file_offset_of_buffer_end, bytes_to_ignore);
 
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
@@ -298,9 +301,8 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
-    if (read_until_position && new_pos < *read_until_position
-        && new_pos > file_offset_of_buffer_end
-        && new_pos < file_offset_of_buffer_end + read_settings.remote_read_min_bytes_for_seek)
+    if (!impl->seekIsCheap() && file_offset_of_buffer_end && read_until_position && new_pos < *read_until_position
+        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + read_settings.remote_read_min_bytes_for_seek)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
         bytes_to_ignore = new_pos - file_offset_of_buffer_end;

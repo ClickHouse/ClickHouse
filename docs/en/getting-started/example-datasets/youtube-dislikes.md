@@ -22,7 +22,7 @@ The steps below will easily work on a local install of ClickHouse too. The only 
 
 ## Step-by-step instructions
 
-1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the reult:
+1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the result:
 
 ```sql
 DESCRIBE s3Cluster(
@@ -322,7 +322,7 @@ ORDER BY month ASC;
 A spike of uploaders [around covid is noticeable](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
 
-### More subtitiles over time and when
+### More subtitles over time and when
 
 With advances in speech recognition, it’s easier than ever to create subtitles for video with youtube adding auto-captioning in late 2009 - was the jump then?
 

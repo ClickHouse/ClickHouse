@@ -367,6 +367,9 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 {
+    if (num_blocks_processed > 0)
+        storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
+
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     const auto & settings = context->getSettingsRef();
@@ -512,6 +515,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     /// TODO: we can also delay commit if there is no MVs.
     if (!settings.deduplicate_blocks_in_dependent_materialized_views)
         finishDelayedChunk(zookeeper);
+
+    ++num_blocks_processed;
 }
 
 template<>
@@ -532,12 +537,12 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false);
+            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false).second;
 
-            last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
+            last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
             /// Set a special error code if the block is duplicate
-            int error = (deduplicate && part->is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+            int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
             storage.incrementInsertedPartsProfileEvent(part->getType());
@@ -567,6 +572,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         {
             LOG_TRACE(log, "found duplicated inserts in the block");
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
+            partition.temp_part.cancel();
             partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
         }
 
@@ -575,7 +581,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         while (true)
         {
             partition.temp_part.finalize();
-            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false);
+            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false).first;
             if (conflict_block_ids.empty())
                 break;
             ++retry_times;
@@ -585,6 +591,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             if (partition.block_id.empty())
                 break;
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
+            /// partition.temp_part is already finalized, no need to call cancel
             partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
         }
     }
@@ -620,7 +627,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData:
 }
 
 template<bool async_insert>
-std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
+std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const BlockIDsType & block_id,
@@ -644,6 +651,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
     /// for retries due to keeper error
     bool part_committed_locally_but_zookeeper = false;
+    bool part_was_deduplicated = false;
     Coordination::Error write_part_info_keeper_error = Coordination::Error::ZOK;
     std::vector<String> conflict_block_ids;
 
@@ -844,7 +852,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             /// If it exists on our replica, ignore it.
             if (storage.getActiveContainingPart(existing_part_name))
             {
-                part->is_duplicate = true;
+                part_was_deduplicated = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                 if (isQuorumEnabled())
                 {
@@ -1040,7 +1048,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                 ++loop_counter;
                 if (loop_counter == max_iterations)
                 {
-                    part->is_duplicate = true; /// Part is duplicate, just remove it from local FS
+                    part_was_deduplicated = true; /// Part is duplicate, just remove it from local FS
                     throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Too many transaction retries - it may indicate an error");
                 }
                 retries_ctl.requestUnconditionalRetry(); /// we want one more iteration w/o counting it as a try and timeout
@@ -1093,7 +1101,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
 
     if (!conflict_block_ids.empty())
-        return conflict_block_ids;
+        return {conflict_block_ids, part_was_deduplicated};
 
     if (isQuorumEnabled())
     {
@@ -1129,15 +1137,15 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                 return;
         });
     }
-    return {};
+    return {conflict_block_ids, part_was_deduplicated};
 }
 
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 {
-    /// Only check "too many parts" before write,
+    /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context);
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
 }
 
 template<bool async_insert>

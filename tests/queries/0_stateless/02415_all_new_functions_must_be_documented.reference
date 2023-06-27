@@ -266,7 +266,6 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
-entropyLearnedHash
 equals
 erf
 erfc
@@ -559,7 +558,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-prepareTrainEntropyLearnedHash
 proportionsZTest
 protocol
 queryID
@@ -688,7 +686,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezone
 timezoneOf
 timezoneOffset
 toBool
@@ -786,6 +783,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay
@@ -864,7 +862,6 @@ toYear
 toYearWeek
 today
 tokens
-trainEntropyLearnedHash
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot

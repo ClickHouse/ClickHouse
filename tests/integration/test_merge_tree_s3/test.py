@@ -4,12 +4,11 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers
+from helpers.mock_servers import start_s3_mock, start_mock_servers
 from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 from helpers.wait_for_helpers import wait_for_merges
-from helpers.test_tools import assert_eq_with_retry
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -76,6 +75,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "s3",
         "old_parts_lifetime": 0,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
@@ -94,6 +94,17 @@ def create_table(node, table_name, **additional_settings):
     node.query(create_table_statement)
 
 
+@pytest.fixture(scope="module")
+def init_broken_s3(cluster):
+    yield start_s3_mock(cluster, "broken_s3", "8083")
+
+
+@pytest.fixture(scope="function")
+def broken_s3(init_broken_s3):
+    init_broken_s3.reset()
+    yield init_broken_s3
+
+
 def run_s3_mocks(cluster):
     script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
     start_mock_servers(
@@ -102,7 +113,6 @@ def run_s3_mocks(cluster):
         [
             ("unstable_proxy.py", "resolver", "8081"),
             ("no_delete_objects.py", "resolver", "8082"),
-            ("broken_s3.py", "resolver", "8083"),
         ],
     )
 
@@ -138,80 +148,6 @@ def clear_minio(cluster):
     except:
         # Remove extra objects to prevent tests cascade failing
         remove_all_s3_objects(cluster)
-
-    yield
-
-
-class BrokenS3:
-    @staticmethod
-    def reset(cluster):
-        response = cluster.exec_in_container(
-            cluster.get_container_id("resolver"),
-            [
-                "curl",
-                "-s",
-                f"http://localhost:8083/mock_settings/reset",
-            ],
-            nothrow=True,
-        )
-        assert response == "OK"
-
-    @staticmethod
-    def setup_fail_upload(cluster, part_length):
-        response = cluster.exec_in_container(
-            cluster.get_container_id("resolver"),
-            [
-                "curl",
-                "-s",
-                f"http://localhost:8083/mock_settings/error_at_put?when_length_bigger={part_length}",
-            ],
-            nothrow=True,
-        )
-        assert response == "OK"
-
-    @staticmethod
-    def setup_fake_upload(cluster, part_length):
-        response = cluster.exec_in_container(
-            cluster.get_container_id("resolver"),
-            [
-                "curl",
-                "-s",
-                f"http://localhost:8083/mock_settings/fake_put?when_length_bigger={part_length}",
-            ],
-            nothrow=True,
-        )
-        assert response == "OK"
-
-    @staticmethod
-    def setup_slow_answers(
-        cluster, minimal_length=0, timeout=None, probability=None, count=None
-    ):
-        url = (
-            f"http://localhost:8083/"
-            f"mock_settings/slow_put"
-            f"?minimal_length={minimal_length}"
-        )
-
-        if timeout is not None:
-            url += f"&timeout={timeout}"
-
-        if probability is not None:
-            url += f"&probability={probability}"
-
-        if count is not None:
-            url += f"&count={count}"
-
-        response = cluster.exec_in_container(
-            cluster.get_container_id("resolver"),
-            ["curl", "-s", url],
-            nothrow=True,
-        )
-        assert response == "OK"
-
-
-@pytest.fixture(autouse=True, scope="function")
-def reset_broken_s3(cluster):
-    BrokenS3.reset(cluster)
 
     yield
 
@@ -805,109 +741,6 @@ def test_cache_with_full_disk_space(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_store_cleanup_disk_s3(cluster, node_name):
-    node = cluster.instances[node_name]
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
-    node.query(
-        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
-    )
-    node.query("INSERT INTO s3_test SELECT 1")
-
-    node.stop_clickhouse(kill=True)
-    path_to_data = "/var/lib/clickhouse/"
-    node.exec_in_container(["rm", f"{path_to_data}/metadata/default/s3_test.sql"])
-    node.start_clickhouse()
-
-    node.wait_for_log_line(
-        "Removing unused directory", timeout=90, look_behind_lines=1000
-    )
-    node.wait_for_log_line("directories from store")
-    node.query(
-        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
-    )
-    node.query("INSERT INTO s3_test SELECT 1")
-    check_no_objects_after_drop(cluster)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
-def test_cache_setting_compatibility(cluster, node_name):
-    node = cluster.instances[node_name]
-
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
-
-    node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r', compress_marks=false, compress_primary_key=false;"
-    )
-    node.query(
-        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500"
-    )
-
-    result = node.query("SYSTEM DROP FILESYSTEM CACHE")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) == 0
-
-    node.query("SELECT * FROM s3_test")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        f"./{cluster.instances_dir_name}/node/configs/config.d/storage_conf.xml",
-    )
-
-    replace_config(
-        config_path,
-        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
-        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
-    )
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("1")
-
-    node.restart_clickhouse()
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("0")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    node.query("SELECT * FROM s3_test FORMAT Null")
-
-    assert not node.contains_in_log("No such file or directory: Cache info:")
-
-    replace_config(
-        config_path,
-        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
-        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
-    )
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    node.restart_clickhouse()
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("1")
-
-    node.query("SELECT * FROM s3_test FORMAT Null")
-
-    assert not node.contains_in_log("No such file or directory: Cache info:")
-
-    check_no_objects_after_drop(cluster)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_drop(cluster, node_name):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_drop NO DELAY")
@@ -932,7 +765,7 @@ def test_merge_canceled_by_drop(cluster, node_name):
 
 @pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])
 @pytest.mark.parametrize("node_name", ["node"])
-def test_merge_canceled_by_s3_errors(cluster, node_name, storage_policy):
+def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_policy):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_s3_errors NO DELAY")
     node.query(
@@ -952,7 +785,9 @@ def test_merge_canceled_by_s3_errors(cluster, node_name, storage_policy):
     min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
     assert int(min_key) == 0, min_key
 
-    BrokenS3.setup_fail_upload(cluster, 50000)
+    broken_s3.setup_error_at_object_upload()
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_error_at_part_upload()
 
     node.query("SYSTEM START MERGES test_merge_canceled_by_s3_errors")
 
@@ -969,7 +804,7 @@ def test_merge_canceled_by_s3_errors(cluster, node_name, storage_policy):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_merge_canceled_by_s3_errors_when_move(cluster, node_name):
+def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
     node = cluster.instances[node_name]
     settings = {
         "storage_policy": "external_broken_s3",
@@ -995,7 +830,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, node_name):
         settings={"materialize_ttl_after_modify": 0},
     )
 
-    BrokenS3.setup_fail_upload(cluster, 10000)
+    broken_s3.setup_error_at_object_upload(count=1, after=1)
 
     node.query("SYSTEM START MERGES merge_canceled_by_s3_errors_when_move")
 
@@ -1015,7 +850,9 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, node_name):
 @pytest.mark.parametrize(
     "in_flight_memory", [(10, 245918115), (5, 156786752), (1, 106426187)]
 )
-def test_s3_engine_heavy_write_check_mem(cluster, node_name, in_flight_memory):
+def test_s3_engine_heavy_write_check_mem(
+    cluster, broken_s3, node_name, in_flight_memory
+):
     in_flight = in_flight_memory[0]
     memory = in_flight_memory[1]
 
@@ -1029,8 +866,8 @@ def test_s3_engine_heavy_write_check_mem(cluster, node_name, in_flight_memory):
         " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', 'minio123', 'CSV')",
     )
 
-    BrokenS3.setup_fake_upload(cluster, 1000)
-    BrokenS3.setup_slow_answers(cluster, 10 * 1024 * 1024, timeout=15, count=10)
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=15, count=10)
 
     query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
     node.query(
@@ -1058,7 +895,7 @@ def test_s3_engine_heavy_write_check_mem(cluster, node_name, in_flight_memory):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_s3_disk_heavy_write_check_mem(cluster, node_name):
+def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     memory = 2279055040
 
     node = cluster.instances[node_name]
@@ -1075,8 +912,8 @@ def test_s3_disk_heavy_write_check_mem(cluster, node_name):
     )
     node.query("SYSTEM STOP MERGES s3_test")
 
-    BrokenS3.setup_fake_upload(cluster, 1000)
-    BrokenS3.setup_slow_answers(cluster, 10 * 1024 * 1024, timeout=10, count=50)
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=10, count=50)
 
     query_id = f"INSERT_INTO_S3_DISK_QUERY_ID"
     node.query(
@@ -1101,3 +938,215 @@ def test_s3_disk_heavy_write_check_mem(cluster, node_name):
     assert int(result) > 0.8 * memory
 
     check_no_objects_after_drop(cluster, node_name=node_name)
+
+
+def get_memory_usage(node, query_id):
+    node.query("SYSTEM FLUSH LOGS")
+    memory_usage = node.query(
+        "SELECT memory_usage"
+        " FROM system.query_log"
+        f" WHERE query_id='{query_id}'"
+        "   AND type='QueryFinish'"
+    )
+    return int(memory_usage)
+
+
+def get_memory_usages(node, query_ids):
+    node.query("SYSTEM FLUSH LOGS")
+    result = []
+    for query_id in query_ids:
+        memory_usage = node.query(
+            "SELECT memory_usage"
+            " FROM system.query_log"
+            f" WHERE query_id='{query_id}'"
+            "   AND type='QueryFinish'"
+        )
+        result.append(int(memory_usage))
+    return result
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_heavy_insert_select_check_memory(cluster, broken_s3, node_name):
+    node = cluster.instances[node_name]
+
+    node.query(
+        """
+        CREATE TABLE central_query_log
+        (
+            control_plane_id UUID,
+            pod_id LowCardinality(String),
+            scrape_ts_microseconds DateTime64(6) CODEC(Delta(8), LZ4),
+            event_date Date,
+            event_time DateTime,
+            payload Array(String),
+            payload_01 String,
+            payload_02 String,
+            payload_03 String,
+            payload_04 String,
+            payload_05 String,
+            payload_06 String,
+            payload_07 String,
+            payload_08 String,
+            payload_09 String,
+            payload_10 String,
+            payload_11 String,
+            payload_12 String,
+            payload_13 String,
+            payload_14 String,
+            payload_15 String,
+            payload_16 String,
+            payload_17 String,
+            payload_18 String,
+            payload_19 String
+        )
+        ENGINE=MergeTree()
+        PARTITION BY toYYYYMM(event_date)
+        ORDER BY (control_plane_id, event_date, pod_id)
+        SETTINGS
+            storage_policy='s3'
+        """
+    )
+
+    node.query("SYSTEM STOP MERGES central_query_log")
+
+    write_count = 2
+    write_query_ids = []
+    for x in range(write_count):
+        query_id = f"INSERT_INTO_TABLE_RANDOM_DATA_QUERY_ID_{x}"
+        write_query_ids.append(query_id)
+        node.query(
+            """
+            INSERT INTO central_query_log
+            SELECT
+                control_plane_id,
+                pod_id,
+                toStartOfHour(event_time) + toIntervalSecond(randUniform(0,60)) as scrape_ts_microseconds,
+                toDate(event_time) as event_date,
+                event_time,
+                payload,
+                payload[1] as payload_01,
+                payload[2] as payload_02,
+                payload[3] as payload_03,
+                payload[4] as payload_04,
+                payload[5] as payload_05,
+                payload[6] as payload_06,
+                payload[7] as payload_07,
+                payload[8] as payload_08,
+                payload[9] as payload_09,
+                payload[10] as payload_10,
+                payload[11] as payload_11,
+                payload[12] as payload_12,
+                payload[13] as payload_13,
+                payload[14] as payload_14,
+                payload[15] as payload_15,
+                payload[16] as payload_16,
+                payload[17] as payload_17,
+                payload[18] as payload_18,
+                payload[19] as payload_19
+            FROM
+            (
+                SELECT
+                    control_plane_id,
+                    substring(payload[1], 1, 5) as pod_id,
+                    toDateTime('2022-12-12 00:00:00')
+                        + toIntervalDay(floor(randUniform(0,3)))
+                        + toIntervalHour(floor(randUniform(0,24)))
+                        + toIntervalSecond(floor(randUniform(0,60)))
+                        as event_time,
+                    payload
+                FROM
+                    generateRandom(
+                        'control_plane_id UUID, payload Array(String)',
+                        NULL,
+                        100,
+                        100
+                    )
+                LIMIT 10000
+            )
+            SETTINGS
+                max_insert_block_size=256000000,
+                min_insert_block_size_rows=1000000,
+                min_insert_block_size_bytes=256000000
+            """,
+            query_id=query_id,
+        )
+
+    memory = 845346116
+    for memory_usage, query_id in zip(
+        get_memory_usages(node, write_query_ids), write_query_ids
+    ):
+        assert int(memory_usage) < 1.2 * memory, f"{memory_usage} : {query_id}"
+        assert int(memory_usage) > 0.8 * memory, f"{memory_usage} : {query_id}"
+
+    broken_s3.setup_slow_answers(minimal_length=1000, timeout=5, count=20)
+    broken_s3.setup_fake_multpartuploads()
+
+    insert_query_id = f"INSERT_INTO_S3_FUNCTION_QUERY_ID"
+    node.query(
+        """
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test-upload_{_partition_id}.csv.gz',
+                'minio', 'minio123',
+                'CSV', auto, 'gzip'
+            )
+        PARTITION BY formatDateTime(subtractHours(toDateTime('2022-12-13 00:00:00'), 1),'%Y-%m-%d_%H:00')
+        WITH toDateTime('2022-12-13 00:00:00') as time_point
+        SELECT
+            *
+        FROM central_query_log
+        WHERE
+            event_date >= subtractDays(toDate(time_point), 1)
+            AND scrape_ts_microseconds >= subtractHours(toStartOfHour(time_point), 12)
+            AND scrape_ts_microseconds < toStartOfDay(time_point)
+        SETTINGS
+            s3_max_inflight_parts_for_one_file=1
+        """,
+        query_id=insert_query_id,
+    )
+
+    query_id = f"SELECT_QUERY_ID"
+    total = node.query(
+        """
+        SELECT
+            count()
+        FROM central_query_log
+        """,
+        query_id=query_id,
+    )
+    assert int(total) == 10000 * write_count
+
+    query_id = f"SELECT_WHERE_QUERY_ID"
+    selected = node.query(
+        """
+        WITH toDateTime('2022-12-13 00:00:00') as time_point
+        SELECT
+            count()
+        FROM central_query_log
+        WHERE
+            event_date >= subtractDays(toDate(time_point), 1)
+            AND scrape_ts_microseconds >= subtractHours(toStartOfHour(time_point), 12)
+            AND scrape_ts_microseconds < toStartOfDay(time_point)
+        """,
+        query_id=query_id,
+    )
+    assert int(selected) < 4500, selected
+    assert int(selected) > 2500, selected
+
+    node.query("SYSTEM FLUSH LOGS")
+    profile_events = node.query(
+        f"""
+        SELECT ProfileEvents
+            FROM system.query_log
+            WHERE query_id='{insert_query_id}'
+            AND type='QueryFinish'
+        """
+    )
+
+    memory_usage = get_memory_usage(node, insert_query_id)
+    memory = 123507857
+    assert int(memory_usage) < 1.2 * memory, f"{memory_usage} {profile_events}"
+    assert int(memory_usage) > 0.8 * memory, f"{memory_usage} {profile_events}"
+
+    node.query(f"DROP TABLE IF EXISTS central_query_log SYNC")
+    remove_all_s3_objects(cluster)
