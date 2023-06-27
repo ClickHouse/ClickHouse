@@ -98,16 +98,16 @@ String Coordinator::assignFragmentToHost()
         = [this, &local_host_port](
               std::unordered_map<FragmentID, std::vector<String>> & fragment_hosts_) -> std::unordered_map<FragmentID, std::vector<String>>
     {
-        std::unordered_map<FragmentID, std::vector<String>> tmp_fragment_hosts;
+        std::unordered_map<FragmentID, std::vector<String>> this_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts_)
         {
             auto dest_fragment = fragments[fragment_id]->getDestFragment();
 
             if (!dest_fragment)
-                return tmp_fragment_hosts;
+                return this_fragment_hosts;
 
             if (fragment_hosts_.contains(dest_fragment->getFragmentId()))
-                return tmp_fragment_hosts;
+                return this_fragment_hosts;
 
             if (!dest_fragment->isPartitioned())
             {
@@ -115,14 +115,14 @@ String Coordinator::assignFragmentToHost()
                 {
                     host_fragments[local_host_port].emplace_back(dest_fragment);
                     fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_host_port);
-                    tmp_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_host_port);
+                    this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_host_port);
                 }
                 else
                 {
                     const auto & host = hosts[0];
                     host_fragments[host].emplace_back(dest_fragment);
                     fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
-                    tmp_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                    this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
                 }
 
                 continue;
@@ -132,10 +132,10 @@ String Coordinator::assignFragmentToHost()
             {
                 host_fragments[host].emplace_back(dest_fragment);
                 fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
-                tmp_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
             }
         }
-        return tmp_fragment_hosts;
+        return this_fragment_hosts;
     };
 
     std::optional<std::unordered_map<FragmentID, std::vector<String>>> fragment_hosts_(scan_fragment_hosts);
