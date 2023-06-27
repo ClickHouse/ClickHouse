@@ -875,10 +875,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current read type: {}, read offset: {}, impl offset: {}, file segment: {}",
+        "Current read type: {}, read offset: {}, impl offset: {}, impl position: {}, file segment: {}",
         toString(read_type),
         file_offset_of_buffer_end,
         implementation_buffer->getFileOffsetOfBufferEnd(),
+        implementation_buffer->getPosition(),
         file_segment.getInfoForLog());
 
     chassert(current_read_range.left <= file_offset_of_buffer_end);
@@ -937,7 +938,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         // We don't support implementation_buffer implementations that use nextimpl_working_buffer_offset.
         chassert(implementation_buffer->position() == implementation_buffer->buffer().begin());
 
-        size = implementation_buffer->buffer().size();
+        if (result)
+            size = implementation_buffer->buffer().size();
 
         LOG_TEST(
             log,
@@ -951,15 +953,21 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-            const size_t new_file_offset = file_offset_of_buffer_end + size;
-            const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
-            if (new_file_offset > file_segment.range().right + 1 || new_file_offset > file_segment_write_offset)
+            if (result)
             {
-                auto file_segment_path = file_segment.getPathInLocalCache();
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Read unexpected size. File size: {}, file path: {}, file segment info: {}",
-                    fs::file_size(file_segment_path), file_segment_path, file_segment.getInfoForLog());
+                const size_t new_file_offset = file_offset_of_buffer_end + size;
+                const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
+                if (new_file_offset > file_segment.range().right + 1 || new_file_offset > file_segment_write_offset)
+                {
+                    auto file_segment_path = file_segment.getPathInLocalCache();
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Read unexpected size. "
+                        "File size: {}, file segment path: {}, impl size: {}, impl path: {}"
+                        "file segment info: {}",
+                        fs::file_size(file_segment_path), file_segment_path,
+                        implementation_buffer->getFileSize(), implementation_buffer->getFileName(),
+                        file_segment.getInfoForLog());
+                }
             }
         }
         else
