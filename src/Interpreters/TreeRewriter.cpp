@@ -1194,8 +1194,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /** Qualifiers from joined columns will be removed with duplicated columns.
       * Example:
       *   SELECT 1 as c, t2.b, t2.c, t2.d
-      *   FROM Values('a Int32, b Int32') AS t1
-      *   JOIN Values('a Int32, b Int32, c Int32, d Int32') AS t2
+      *   FROM Values('a Int32, b Int32', (1, 1)) AS t1
+      *   JOIN Values('a Int32, b Int32, c Int32, d Int32', (1, 1, 1, 1)) AS t2
       *   USING (a)
       * Result column names should be "c", "t2.b", "t2.c", "d"
       *   column "b" is present in both tables "t2.b" clashes with "t1.b"
@@ -1206,8 +1206,24 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         ASTs & elements = select_query->select()->children;
         for (auto & expr : elements)
         {
-            if (const auto & top_level_alias = expr->tryGetAlias(); !top_level_alias.empty())
+            const auto & top_level_alias = expr->tryGetAlias();
+            if (!top_level_alias.empty() && !names_to_deduplicate.contains(top_level_alias))
+            {
                 names_to_deduplicate.insert(top_level_alias);
+
+                /** When identifier is present in only one table it can be used without qualifiers.
+                  * Meanwhile if top level alias with the same name is present we will deduplicate it, as described above.
+                  * But in scope where alias is not yet defined we still can refer to column from joined table without qualifiers.
+                  * Example:
+                  * SELECT a + 1 as a, a + 2 FROM (SELECT 1 as key, 1 as a) AS t1 JOIN (SELECT 1 as key) AS t2 USING (key)
+                  *        ^           ^ - refer to alias (t1.a + 1)
+                  *        | - refer to column from joined table (t1.a)
+                  * In that case we replace select list with `t1.a + 1 as a, a + 2`.
+                  */
+                RestoreQualifiedAliasedIdentifierVisitor::Data visitor_data{names_to_deduplicate, tables_with_columns, top_level_alias};
+                RestoreQualifiedAliasedIdentifierVisitor visitor(visitor_data);
+                visitor.visit(expr);
+            }
         }
     }
 

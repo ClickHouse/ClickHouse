@@ -397,4 +397,34 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
     }
 }
 
+
+bool RestoreQualifiedAliasedIdentifierMatcher::needChildVisit(ASTPtr &, const ASTPtr &)
+{
+    return true;
+}
+
+void RestoreQualifiedAliasedIdentifierMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (auto * t = ast->as<ASTIdentifier>())
+        visit(*t, ast, data);
+}
+
+void RestoreQualifiedAliasedIdentifierMatcher::visit(ASTIdentifier & identifier, ASTPtr &, Data & data)
+{
+    if (data.current_node_alias == identifier.name() && IdentifierSemantic::getColumnName(identifier))
+    {
+        String short_name = identifier.shortName();
+        if (auto best_pos = IdentifierSemantic::chooseTableColumnMatch(identifier, data.tables))
+        {
+            size_t table_pos = *best_pos;
+
+            IdentifierSemantic::setMembership(identifier, table_pos);
+
+            const auto & table = data.tables[table_pos].table;
+            if (table_pos && (data.hasColumn(short_name) || !isValidIdentifierBegin(short_name.at(0))))
+                IdentifierSemantic::setColumnLongName(identifier, table);
+        }
+    }
+}
+
 }

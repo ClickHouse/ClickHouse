@@ -84,4 +84,26 @@ struct RestoreQualifiedNamesMatcher
 
 using RestoreQualifiedNamesVisitor = InDepthNodeVisitor<RestoreQualifiedNamesMatcher, true>;
 
+/// Restore ASTIdentifier to long form, similar to RestoreQualifiedNamesMatcher, but without distributed table and works for one particular identifier.
+/// It handles the case `SELECT a + 1 as a, a FROM t1 JOIN t2` where we need to replace first `a` with `t1.a`.
+class RestoreQualifiedAliasedIdentifierMatcher
+{
+public:
+    using Visitor = InDepthNodeVisitor<RestoreQualifiedAliasedIdentifierMatcher, true>;
+    struct Data
+    {
+        const NameSet & source_columns;
+        const TablesWithColumns & tables;
+        String current_node_alias;
+
+        bool hasColumn(const String & name) const { return source_columns.count(name); }
+    };
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
+    static void visit(ASTPtr & ast, Data & data);
+    static void visit(ASTIdentifier & identifier, ASTPtr & ast, Data & data);
+};
+
+using RestoreQualifiedAliasedIdentifierVisitor = RestoreQualifiedAliasedIdentifierMatcher::Visitor;
+
 }
