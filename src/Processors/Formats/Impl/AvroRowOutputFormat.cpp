@@ -329,8 +329,9 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
-                const auto serialized_uuid = formatUUID(uuid);
-                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
+                std::array<UInt8, 36> s;
+                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), s.data());
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
         case TypeIndex::Array:

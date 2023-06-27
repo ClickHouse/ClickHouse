@@ -71,9 +71,8 @@ private:
         /// For array on stack, see below.
         if (arguments.size() > 10000)
         {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                            "Number of arguments of function {} is too large (maximum: 10000).",
-                            getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Number of arguments of function {} is too large.",
+                getName());
         }
 
         for (const auto arg_idx : collections::range(0, arguments.size()))

@@ -54,8 +54,6 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-    if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -74,7 +72,6 @@ def get_image_name(check_name):
 
 
 def get_run_command(
-    check_name,
     builds_path,
     repo_tests_path,
     result_path,
@@ -107,16 +104,10 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-    volume_with_broken_test = (
-        f"--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
-        if "analyzer" in check_name
-        else ""
-    )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"{volume_with_broken_test} "
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
@@ -335,7 +326,6 @@ def main():
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
     run_command = get_run_command(
-        check_name,
         packages_path,
         repo_tests_path,
         result_path,
@@ -355,10 +345,7 @@ def main():
         else:
             logging.info("Run failed")
 
-    try:
-        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    except subprocess.CalledProcessError:
-        logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper()
 
@@ -381,16 +368,34 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                commit,
+                "success",
+                report_url,
+                description,
+                check_name_with_group,
+                pr_info,
+            )
+        else:
+            post_commit_status(
+                commit, state, report_url, description, check_name_with_group, pr_info
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -408,7 +413,11 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

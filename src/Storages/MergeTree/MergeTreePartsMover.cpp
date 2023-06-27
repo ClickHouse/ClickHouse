@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Common/logger_useful.h>
 
 #include <set>
 #include <boost/algorithm/string/join.hpp>

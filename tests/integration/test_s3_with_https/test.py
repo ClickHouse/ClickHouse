@@ -56,7 +56,7 @@ def test_s3_with_https(cluster, policy):
         == "(0,'data'),(1,'data')"
     )
 
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
     if policy.find("proxy") != -1:
         check_proxy_logs(cluster, "proxy1")

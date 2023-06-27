@@ -8,21 +8,18 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LiveView/LiveViewCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/StorageKeeperMap.h>
 #include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -42,8 +39,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
     extern const int TABLE_IS_READ_ONLY;
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -69,6 +64,7 @@ BlockIO InterpreterAlterQuery::execute()
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown alter object type");
 }
 
+
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     BlockIO res;
@@ -76,21 +72,16 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
-    auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
-    query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        if (table && table->as<StorageKeeperMap>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
-
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess());
+    auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
+    query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -100,9 +91,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
-    if (!table)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
-
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
@@ -157,8 +146,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (mutation_commands.hasNonEmptyMutationCommands())
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter::Settings settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
         table->mutate(mutation_commands, getContext());
     }
 
@@ -238,7 +226,6 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 
     return res;
 }
-
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
 {
     AccessRightsElements required_access;

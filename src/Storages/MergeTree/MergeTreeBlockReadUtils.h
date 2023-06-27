@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/AlterConversions.h>
 
 
 namespace DB
@@ -36,6 +35,7 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+
 struct MergeTreeReadTaskColumns
 {
     /// column names to read during WHERE
@@ -49,10 +49,8 @@ struct MergeTreeReadTaskColumns
 /// A batch of work for MergeTreeThreadSelectProcessor
 struct MergeTreeReadTask
 {
-    /// Data part which should be read while performing this task
+    /// data part which should be read while performing this task
     DataPartPtr data_part;
-    /// Alter converversionss that should be applied on-fly for part.
-    AlterConversionsPtr alter_conversions;
     /// Ranges to read from `data_part`.
     MarkRanges mark_ranges;
     /// for virtual `part_index` virtual column
@@ -66,26 +64,29 @@ struct MergeTreeReadTask
     /// Used to save current range processing status
     MergeTreeRangeReader range_reader;
     /// Range readers for multiple filtering steps: row level security, PREWHERE etc.
-    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but not a vector
+    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but noit a vector
     std::deque<MergeTreeRangeReader> pre_range_readers;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     std::future<MergeTreeReaderPtr> reader;
     std::vector<std::future<MergeTreeReaderPtr>> pre_reader_for_step;
 
-    Priority priority;
+    int64_t priority = 0; /// Priority of the task. Bigger value, bigger priority.
+    bool operator <(const MergeTreeReadTask & rhs) const
+    {
+        return priority < rhs.priority;
+    }
 
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
         const DataPartPtr & data_part_,
-        const AlterConversionsPtr & alter_conversions_,
         const MarkRanges & mark_ranges_,
         size_t part_index_in_query_,
         const NameSet & column_name_set_,
         const MergeTreeReadTaskColumns & task_columns_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
-        Priority priority_ = {},
+        int64_t priority_ = 0,
         std::future<MergeTreeReaderPtr> reader_ = {},
         std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
 

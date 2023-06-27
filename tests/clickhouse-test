@@ -11,7 +11,6 @@ import shutil
 import sys
 import os
 import os.path
-import platform
 import signal
 import re
 import copy
@@ -145,7 +144,7 @@ def clickhouse_execute_http(
         except Exception as ex:
             if i == max_http_retries - 1:
                 raise ex
-            client.close()
+
             sleep(i + 1)
 
     if res.status != 200:
@@ -279,44 +278,44 @@ def need_retry(args, stdout, stderr, total_time):
 def get_processlist_with_stacktraces(args):
     try:
         if args.replicated_database:
-            return clickhouse_execute(
+            return clickhouse_execute_json(
                 args,
                 """
             SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
-                    p.*,
                     arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
-                    )) AS stacktraces
+                    )) AS stacktraces,
+                    p.*
                 FROM system.processes p
                 JOIN system.stack_trace s USING (query_id)
                 WHERE query NOT LIKE '%system.processes%'
                 GROUP BY p.*
             ))
-            ORDER BY elapsed DESC FORMAT Vertical
+            ORDER BY elapsed DESC
             """,
                 settings={
                     "allow_introspection_functions": 1,
                 },
             )
         else:
-            return clickhouse_execute(
+            return clickhouse_execute_json(
                 args,
                 """
             SELECT
-                p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces
+                )) AS stacktraces,
+                p.*
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
             GROUP BY p.*
-            ORDER BY elapsed DESC FORMAT Vertical
+            ORDER BY elapsed DESC
             """,
                 settings={
                     "allow_introspection_functions": 1,
@@ -340,28 +339,9 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def kill_gdb_if_any():
-    # Check if we have running gdb.
-    code = subprocess.call("pidof gdb", shell=True)
-    if code != 0:
-        return
-
-    for i in range(5):
-        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
-        if code != 0:
-            sleep(i)
-        else:
-            break
-
-
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
-        # We could attach gdb to clickhouse-server before running some tests
-        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-        # We should kill existing gdb if any before starting new one.
-        kill_gdb_if_any()
-
         cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
@@ -549,7 +529,6 @@ class SettingsRandomizer:
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
-        "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
@@ -563,32 +542,11 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            # Allow to use uring only when running on Linux
             ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
-            if platform.system().lower() == "linux"
-            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
-            0, 1
-        ),
-        "filesystem_prefetch_max_memory_usage": lambda: random.choice(
-            ["32Mi", "64Mi", "128Mi"]
-        ),
-        "filesystem_prefetches_limit": lambda: random.choice(
-            [0, 10]
-        ),  # 0 means unlimited (but anyway limited by prefetch_max_memory_usage)
-        "filesystem_prefetch_min_bytes_for_single_read_task": lambda: random.choice(
-            ["1Mi", "8Mi", "16Mi"]
-        ),
-        "filesystem_prefetch_step_marks": lambda: random.choice(
-            [0, 50]
-        ),  # 0 means 'auto'
-        "filesystem_prefetch_step_bytes": lambda: random.choice(
-            [0, "100Mi"]
-        ),  # 0 means 'auto'
         "compile_expressions": lambda: random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
@@ -600,20 +558,16 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
     }
 
     @staticmethod
-    def get_random_settings(args):
+    def get_random_settings():
         random_settings = []
-        is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
-            if (
-                is_debug
-                and setting == "allow_prefetched_read_pool_for_remote_filesystem"
-            ):
-                random_settings.append(f"{setting}=0")
-            else:
-                random_settings.append(f"{setting}={generator()}")
+            random_settings.append(f"{setting}={generator()}")
         return random_settings
 
 
@@ -631,9 +585,6 @@ class MergeTreeSettingsRandomizer:
         "vertical_merge_algorithm_min_columns_to_activate": threshold_generator(
             0.4, 0.4, 1, 100
         ),
-        "allow_vertical_merges_from_compact_to_wide_parts": lambda: random.randint(
-            0, 1
-        ),
         "min_merge_bytes_to_use_direct_io": threshold_generator(
             0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -641,10 +592,6 @@ class MergeTreeSettingsRandomizer:
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
         "index_granularity": lambda: random.randint(1, 65536),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
-        "compress_marks": lambda: random.randint(0, 1),
-        "compress_primary_key": lambda: random.randint(0, 1),
-        "marks_compress_block_size": lambda: random.randint(8000, 100000),
-        "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
     }
 
     @staticmethod
@@ -848,7 +795,7 @@ class TestCase:
         )
 
         if self.randomize_settings:
-            self.random_settings = SettingsRandomizer.get_random_settings(args)
+            self.random_settings = SettingsRandomizer.get_random_settings()
 
         if self.randomize_merge_tree_settings:
             self.merge_tree_random_settings = (
@@ -992,10 +939,7 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    with open(self.stdout_file, "rb") as f:
-                        description += trim_for_log(
-                            f.read().decode("utf-8", errors="ignore")
-                        )
+                    description += trim_for_log(open(self.stdout_file).read())
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"
@@ -1070,13 +1014,12 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
-                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "rb")
+                file = open(self.stdout_file, "r")
                 diff += str(file.read())
                 file.close()
                 diff += "==================="
@@ -2046,7 +1989,7 @@ def reportLogStats(args):
 
     query = """
         WITH
-            240 AS mins,
+            120 AS mins,
             (
                 SELECT (count(), sum(length(message)))
                 FROM system.text_log
@@ -2076,7 +2019,7 @@ def reportLogStats(args):
 
     query = """
         WITH
-            240 AS mins
+            120 AS mins
         SELECT
             count() AS count,
             substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
@@ -2097,7 +2040,7 @@ def reportLogStats(args):
     query = """
         SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
         FROM system.text_log
-        WHERE (now() - toIntervalMinute(240)) < event_time
+        WHERE (now() - toIntervalMinute(120)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
         GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
@@ -2108,36 +2051,25 @@ def reportLogStats(args):
     print("\n")
 
     query = """
-        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
-              'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
-              'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}',
-              'Removed', 'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',
-              'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}', 'dropIfEmpty',
-              'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', '{}%', 'Read object: {}',
-              'New segment: {}', 'Convert overflow', 'Division by zero', 'Files set to {}',
-              'Bytes set to {}', 'Numeric overflow', 'Invalid mode: {}',
-              'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
-              'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
-              'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
-              'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
-              'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
-              'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
-              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
-              'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
-              'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
-              'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
-              'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
-              'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
-              'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
+        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue', 'Creating set.',
+              'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
+              'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
+              'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
+              'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', 'Query was cancelled',
+              'Table {} already exists', '{}%', 'Cancelled merging parts', 'All replicas are lost',
+              'Cancelled mutating parts', 'Read object: {}', 'New segment: {}', 'Unknown geometry type {}',
+              'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
+              'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
+              'No part {} in committed state', 'Files set to {}', 'Bytes set to {}', 'Sharding key {} is not used',
+              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow'
         ) AS known_short_messages
-        SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
-            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+        SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
-        WHERE (now() - toIntervalMinute(240)) < event_time
+        WHERE (now() - toIntervalMinute(120)) < event_time
             AND (length(message_format_string) < 16
-                OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
+                OR (length(message_format_string) < 30 AND message ilike '%DB::Exception%'))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 30 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
@@ -2147,7 +2079,7 @@ def reportLogStats(args):
     query = """
         SELECT max((freq, message_format_string)), level
         FROM (SELECT count() / (SELECT count() FROM system.text_log
-              WHERE (now() - toIntervalMinute(240)) < event_time) AS freq,
+              WHERE (now() - toIntervalMinute(120)) < event_time) AS freq,
               min(level) AS level, message_format_string FROM system.text_log
               WHERE (now() - toIntervalMinute(120)) < event_time
               GROUP BY message_format_string ORDER BY freq DESC)
@@ -2268,7 +2200,7 @@ def main(args):
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
             print_stacktraces()

@@ -17,9 +17,9 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 **Engine Parameters**
 
-- `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
-- `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
-- `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
+-   `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
+-   `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
+-   `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
 For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 

@@ -3,8 +3,6 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnVector.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -26,13 +24,10 @@ class FunctionNowInBlock : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionNowInBlock>(context);
+        return std::make_shared<FunctionNowInBlock>();
     }
-    explicit FunctionNowInBlock(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
-    {}
 
     String getName() const override
     {
@@ -72,7 +67,7 @@ public:
         }
         if (arguments.size() == 1)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0));
         }
         return std::make_shared<DataTypeDateTime>();
     }
@@ -81,8 +76,6 @@ public:
     {
         return ColumnDateTime::create(input_rows_count, static_cast<UInt32>(time(nullptr)));
     }
-private:
-    const bool allow_nonconst_timezone_arguments;
 };
 
 }

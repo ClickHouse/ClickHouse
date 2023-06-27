@@ -27,14 +27,13 @@ HedgedConnections::HedgedConnections(
     const ConnectionTimeouts & timeouts_,
     const ThrottlerPtr & throttler_,
     PoolMode pool_mode,
-    std::shared_ptr<QualifiedTableName> table_to_check_,
-    AsyncCallback async_callback)
+    std::shared_ptr<QualifiedTableName> table_to_check_)
     : hedged_connections_factory(pool_, &context_->getSettingsRef(), timeouts_, table_to_check_)
     , context(std::move(context_))
     , settings(context->getSettingsRef())
     , throttler(throttler_)
 {
-    std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode, std::move(async_callback));
+    std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode);
 
     if (connections.empty())
         return;
@@ -174,7 +173,7 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
 
         if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
         {
@@ -184,7 +183,7 @@ void HedgedConnections::sendQuery(
 
         replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
-        replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
+        replica.packet_receiver->setReceiveTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
 
     for (auto & offset_status : offset_states)
@@ -349,14 +348,14 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
 bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLocation & location)
 {
     ReplicaState & replica_state = offset_states[location.offset].replicas[location.index];
-    replica_state.packet_receiver->resume();
+    auto res = replica_state.packet_receiver->resume();
 
-    if (replica_state.packet_receiver->isPacketReady())
+    if (std::holds_alternative<Packet>(res))
     {
-        last_received_packet = replica_state.packet_receiver->getPacket();
+        last_received_packet = std::move(std::get<Packet>(res));
         return true;
     }
-    else if (replica_state.packet_receiver->isTimeoutExpired())
+    else if (std::holds_alternative<Poco::Timespan>(res))
     {
         const String & description = replica_state.connection->getDescription();
         finishProcessReplica(replica_state, true);
@@ -367,12 +366,12 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
                 ErrorCodes::SOCKET_TIMEOUT,
                 "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
                 description,
-                replica_state.packet_receiver->getTimeout().totalMilliseconds());
+                std::get<Poco::Timespan>(res).totalMilliseconds());
     }
-    else if (replica_state.packet_receiver->hasException())
+    else if (std::holds_alternative<std::exception_ptr>(res))
     {
         finishProcessReplica(replica_state, true);
-        std::rethrow_exception(replica_state.packet_receiver->getException());
+        std::rethrow_exception(std::get<std::exception_ptr>(res));
     }
 
     return false;
@@ -388,7 +387,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     {
         events_count = epoll.getManyReady(1, &event, blocking);
         if (!events_count && async_callback)
-            async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+            async_callback(epoll.getFileDescriptor(), 0, epoll.getDescription());
     }
     return event.data.fd;
 }
@@ -570,18 +569,6 @@ void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool discon
     if (disconnect)
         replica.connection->disconnect();
     replica.connection = nullptr;
-}
-
-void HedgedConnections::setAsyncCallback(AsyncCallback async_callback)
-{
-    for (auto & offset_status : offset_states)
-    {
-        for (auto & replica : offset_status.replicas)
-        {
-            if (replica.connection)
-                replica.connection->setAsyncCallback(async_callback);
-        }
-    }
 }
 
 }

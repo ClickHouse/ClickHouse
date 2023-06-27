@@ -743,16 +743,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    size_t key_index = 0;
     for (const auto & name : key_column_names)
-    {
         if (!key_columns.contains(name))
-        {
             key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
 
     auto filter_node = buildFilterNode(query, additional_filter_asts);
 
@@ -815,16 +808,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    size_t key_index = 0;
     for (const auto & name : key_column_names)
-    {
         if (!key_columns.contains(name))
-        {
             key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
 
     if (!filter_dag)
     {
@@ -943,26 +929,6 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-/** When table's key has expression with these functions from a column,
-  * and when a column in a query is compared with a constant, such as:
-  * CREATE TABLE (x String) ORDER BY toDate(x)
-  * SELECT ... WHERE x LIKE 'Hello%'
-  * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparsable values.
-  */
-static std::set<std::string_view> date_time_parsing_functions = {
-    "toDate",
-    "toDate32",
-    "toDateTime",
-    "toDateTime64",
-    "ParseDateTimeBestEffort",
-    "ParseDateTimeBestEffortUS",
-    "ParseDateTime32BestEffort",
-    "ParseDateTime64BestEffort",
-    "parseDateTime",
-    "parseDateTimeInJodaSyntax",
-};
-
 /** The key functional expression constraint may be inferred from a plain column in the expression.
   * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
   * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
@@ -1046,24 +1012,10 @@ bool KeyCondition::transformConstantWithValidFunctions(
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
 
-                    const auto & func_name = func->function_base->getName();
-                    auto func_base = func->function_base;
-                    const auto & arg_types = func_base->getArgumentTypes();
-                    if (date_time_parsing_functions.contains(func_name) && !arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                    {
-                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
-                        ColumnsWithTypeAndName arguments;
-                        int i = 0;
-                        for (const auto & type : func->function_base->getArgumentTypes())
-                            arguments.push_back({nullptr, type, fmt::format("_{}", i++)});
-
-                        func_base = func_or_null->build(arguments);
-                    }
-
                     if (func->children.size() == 1)
                     {
                         std::tie(const_value, const_type)
-                            = applyFunctionForFieldOfUnknownType(func_base, const_type, const_value);
+                            = applyFunctionForFieldOfUnknownType(func->function_base, const_type, const_value);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -1074,7 +1026,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto left_arg_type = left->result_type;
                             auto left_arg_value = (*left->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
+                                FunctionFactory::instance().get(func->function_base->getName(), context),
                                 left_arg_type, left_arg_value, const_type, const_value);
                         }
                         else
@@ -1082,13 +1034,10 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto right_arg_type = right->result_type;
                             auto right_arg_value = (*right->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
+                                FunctionFactory::instance().get(func->function_base->getName(), context),
                                 const_type, const_value, right_arg_type, right_arg_value);
                         }
                     }
-
-                    if (const_value.isNull())
-                        return false;
                 }
 
                 out_key_column_num = it->second;
@@ -2040,9 +1989,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true);
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true);
 
         return callback(hyperrectangle);
     }
@@ -2614,6 +2563,25 @@ bool KeyCondition::alwaysFalse() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
     return rpn_stack[0] == 0;
+}
+
+size_t KeyCondition::getMaxKeyColumn() const
+{
+    size_t res = 0;
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
+            || element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (element.key_column > res)
+                res = element.key_column;
+        }
+    }
+    return res;
 }
 
 bool KeyCondition::hasMonotonicFunctionsChain() const

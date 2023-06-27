@@ -4,8 +4,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event DistributedConnectionTries;
-    extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
 }
@@ -37,7 +35,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     SCOPE_EXIT(is_finished = true);
     try
     {
-        ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
         result.entry = pool->get(*timeouts, settings, /* force_connected = */ false);
         AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
 
@@ -48,7 +45,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected(*timeouts);
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;
             return;
@@ -69,7 +65,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
-        ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
 
         UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
@@ -116,57 +111,75 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     const Settings * settings_,
     Poco::Logger * log_,
     const QualifiedTableName * table_to_check_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection_establisher(pool_, timeouts_, settings_, log_, table_to_check_)
+    : connection_establisher(pool_, timeouts_, settings_, log_, table_to_check_)
 {
-    epoll.add(timeout_descriptor.getDescriptor());
+    epoll.add(receive_timeout.getDescriptor());
 }
 
-void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, SuspendCallback)
+void ConnectionEstablisherAsync::Routine::ReadCallback::operator()(int fd, Poco::Timespan timeout, const std::string &)
 {
-    connection_establisher_async.reset();
-    connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);
-    connection_establisher_async.connection_establisher.run(connection_establisher_async.result, connection_establisher_async.fail_message);
-    connection_establisher_async.is_finished = true;
-}
-
-void ConnectionEstablisherAsync::processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
-{
-    socket_fd = fd;
-    socket_description = description;
-    epoll.add(fd, events);
-    timeout_descriptor.setRelative(socket_timeout);
-    timeout = socket_timeout;
-    timeout_type = type;
-}
-
-void ConnectionEstablisherAsync::clearAsyncEvent()
-{
-    timeout_descriptor.reset();
-    epoll.remove(socket_fd);
-}
-
-bool ConnectionEstablisherAsync::checkBeforeTaskResume()
-{
-    /// If we just restarted the task, no need to check timeout.
-    if (restarted)
+    /// Check if it's the first time and we need to add socket fd to epoll.
+    if (connection_establisher_async.socket_fd == -1)
     {
-        restarted = false;
-        return true;
+        connection_establisher_async.epoll.add(fd);
+        connection_establisher_async.socket_fd = fd;
     }
 
-    return checkTimeout();
+    connection_establisher_async.receive_timeout.setRelative(timeout);
+    fiber = std::move(fiber).resume();
+    connection_establisher_async.receive_timeout.reset();
 }
 
-void ConnectionEstablisherAsync::cancelAfter()
+Fiber ConnectionEstablisherAsync::Routine::operator()(Fiber && sink)
 {
-    if (!is_finished)
-        reset();
+    try
+    {
+        connection_establisher_async.connection_establisher.setAsyncCallback(ReadCallback{connection_establisher_async, sink});
+        connection_establisher_async.connection_establisher.run(connection_establisher_async.result, connection_establisher_async.fail_message);
+    }
+    catch (const boost::context::detail::forced_unwind &)
+    {
+        /// This exception is thrown by fiber implementation in case if fiber is being deleted but hasn't exited
+        /// It should not be caught or it will segfault.
+        /// Other exceptions must be caught
+        throw;
+    }
+    catch (...)
+    {
+        connection_establisher_async.exception = std::current_exception();
+    }
+
+    return std::move(sink);
 }
 
-bool ConnectionEstablisherAsync::checkTimeout()
+std::variant<int, ConnectionEstablisher::TryResult> ConnectionEstablisherAsync::resume()
+{
+    if (!fiber_created)
+    {
+        reset();
+        fiber = boost::context::fiber(std::allocator_arg_t(), fiber_stack, Routine{*this});
+        fiber_created = true;
+    } else if (!checkReceiveTimeout())
+        return result;
+
+    fiber = std::move(fiber).resume();
+
+    if (exception)
+        std::rethrow_exception(exception);
+
+    if (connection_establisher.isFinished())
+    {
+        destroyFiber();
+        return result;
+    }
+
+    return epoll.getFileDescriptor();
+}
+
+bool ConnectionEstablisherAsync::checkReceiveTimeout()
 {
     bool is_socket_ready = false;
-    bool is_timeout_alarmed = false;
+    bool is_receive_timeout_alarmed = false;
 
     epoll_event events[2];
     events[0].data.fd = events[1].data.fd = -1;
@@ -175,37 +188,31 @@ bool ConnectionEstablisherAsync::checkTimeout()
     {
         if (events[i].data.fd == socket_fd)
             is_socket_ready = true;
-        if (events[i].data.fd == timeout_descriptor.getDescriptor())
-            is_timeout_alarmed = true;
+        if (events[i].data.fd == receive_timeout.getDescriptor())
+            is_receive_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready)
+    if (is_receive_timeout_alarmed && !is_socket_ready)
     {
-        /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
+        destroyFiber();
+        /// In not async case this exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
-        fail_message = getSocketTimeoutExceededMessageByTimeoutType(timeout_type, timeout, socket_description);
-
+        fail_message = fmt::format(
+            "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
+            result.entry->getDescription(),
+            result.entry->getSocket()->getReceiveTimeout().totalMilliseconds());
         epoll.remove(socket_fd);
-        /// Restart task, so the connection process will start from the beginning in the next resume().
-        restart();
-        /// The result should be Null in case of timeout.
         resetResult();
-        restarted = true;
-        /// Mark that current connection process is finished.
-        is_finished = true;
         return false;
     }
 
     return true;
 }
 
-void ConnectionEstablisherAsync::afterTaskResume()
+void ConnectionEstablisherAsync::cancel()
 {
-    if (is_finished)
-    {
-        restart();
-        restarted = true;
-    }
+    destroyFiber();
+    reset();
 }
 
 void ConnectionEstablisherAsync::reset()
@@ -213,7 +220,6 @@ void ConnectionEstablisherAsync::reset()
     resetResult();
     fail_message.clear();
     socket_fd = -1;
-    is_finished = false;
 }
 
 void ConnectionEstablisherAsync::resetResult()
@@ -223,6 +229,12 @@ void ConnectionEstablisherAsync::resetResult()
         result.entry->disconnect();
         result.reset();
     }
+}
+
+void ConnectionEstablisherAsync::destroyFiber()
+{
+    Fiber to_destroy = std::move(fiber);
+    fiber_created = false;
 }
 
 #endif

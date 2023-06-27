@@ -31,7 +31,10 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
 }
 
 
-ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer() = default;
+ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
+{
+    finalize();
+}
 
 void ZstdDeflatingWriteBuffer::nextImpl()
 {
@@ -60,7 +63,7 @@ void ZstdDeflatingWriteBuffer::nextImpl()
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
-                                "ZSTD stream encoding failed: error: '{}'; zstd version: {}",
+                                "Zstd stream encoding failed: error: '{}'; zstd version: {}",
                                 ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
             out->position() = out->buffer().begin() + output.pos;

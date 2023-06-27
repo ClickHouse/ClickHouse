@@ -84,15 +84,7 @@ namespace
         }
         void operator() (const UUID & x) const
         {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-            auto tmp_x = x.toUnderType();
-            char * start = reinterpret_cast<char *>(&tmp_x);
-            char * end = start + sizeof(tmp_x);
-            std::reverse(start, end);
-            operator()(tmp_x);
-#else
             operator()(x.toUnderType());
-#endif
         }
         void operator() (const IPv4 & x) const
         {
@@ -435,11 +427,9 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing, {});
     }
 
-    out_hashing.finalize();
-
+    out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-
     out->preFinalize();
     return out;
 }
