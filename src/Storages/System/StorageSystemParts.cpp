@@ -57,6 +57,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>()},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
+        {"primary_key_size",                            std::make_shared<DataTypeUInt64>()},
         {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
@@ -168,6 +169,8 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(columns_size.data_compressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getIndexSizeFromFile());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.marks);
         if (columns_mask[src_index++])
