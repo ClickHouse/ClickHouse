@@ -2,8 +2,8 @@
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -34,10 +34,10 @@ namespace ErrorCodes
 void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
-    ExternalDataSourceConfiguration configuration;
 
     String cluster_name;
     String cluster_description;
+    String database, table, username = "default", password;
 
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -50,47 +50,38 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      * For now named collection can be used only for remote as cluster does not require credentials.
      */
     size_t max_args = is_cluster_function ? 4 : 6;
-    auto named_collection = getExternalDataSourceConfiguration(args, context, false, false);
-    if (named_collection)
+    NamedCollectionPtr named_collection;
+    std::vector<std::pair<std::string, ASTPtr>> complex_args;
+    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args)))
     {
-        if (is_cluster_function)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection cannot be used for table function cluster");
+        validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
+            *named_collection,
+            {"addresses_expr", "host", "hostname", "table"},
+            {"username", "user", "password", "sharding_key", "port", "database", "db"});
 
-        /**
-         * Common arguments: database, table, username, password, addresses_expr.
-         * Specific args (remote): sharding_key, or database (in case it is not ASTLiteral).
-         * None of the common arguments is empty at this point, it is checked in getExternalDataSourceConfiguration.
-         */
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
-        configuration.set(common_configuration);
-
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
+        if (!complex_args.empty())
         {
-            if (arg_name == "sharding_key")
+            for (const auto & [arg_name, arg_ast] : complex_args)
             {
-                sharding_key = arg_value;
-            }
-            else if (arg_name == "database")
-            {
-                const auto * function = arg_value->as<ASTFunction>();
-                if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
-                {
-                    remote_table_function_ptr = arg_value;
-                }
+                if (arg_name == "database" || arg_name == "db")
+                    remote_table_function_ptr = arg_ast;
+                else if (arg_name == "sharding_key")
+                    sharding_key = arg_ast;
                 else
-                {
-                    auto database_literal = evaluateConstantExpressionOrIdentifierAsLiteral(arg_value, context);
-                    configuration.database = checkAndGetLiteralArgument<String>(database_literal, "database");
-                }
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected argument representation for {}", arg_name);
             }
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected: sharding_key", arg_name);
         }
-        cluster_description = configuration.addresses_expr;
-        if (cluster_description.empty())
-            cluster_description = configuration.port ? configuration.host + ':' + toString(configuration.port) : configuration.host;
+        else
+            database = named_collection->getAnyOrDefault<String>({"db", "database"}, "default");
+
+        cluster_description = named_collection->getOrDefault<String>("addresses_expr", "");
+        if (cluster_description.empty() && named_collection->hasAny({"host", "hostname"}))
+            cluster_description = named_collection->has("port")
+                ? named_collection->getAny<String>({"host", "hostname"}) + ':' + toString(named_collection->get<UInt64>("port"))
+                : named_collection->getAny<String>({"host", "hostname"});
+        table = named_collection->get<String>("table");
+        username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");
+        password = named_collection->getOrDefault<String>("password", "");
     }
     else
     {
@@ -145,7 +136,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
             {
                 if (!get_string_literal(*args[arg_num], cluster_description))
-                    throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hosts pattern must be string literal (in single quotes).");
             }
         }
 
@@ -159,11 +150,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         else
         {
             args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
-            configuration.database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
+            database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
 
             ++arg_num;
 
-            auto qualified_name = QualifiedTableName::parseFromString(configuration.database);
+            auto qualified_name = QualifiedTableName::parseFromString(database);
             if (qualified_name.database.empty())
             {
                 if (arg_num >= args.size())
@@ -179,8 +170,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 }
             }
 
-            configuration.database = std::move(qualified_name.database);
-            configuration.table = std::move(qualified_name.table);
+            database = std::move(qualified_name.database);
+            table = std::move(qualified_name.table);
 
             /// Cluster function may have sharding key for insert
             if (is_cluster_function && arg_num < args.size())
@@ -195,9 +186,9 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         {
             if (arg_num < args.size())
             {
-                if (!get_string_literal(*args[arg_num], configuration.username))
+                if (!get_string_literal(*args[arg_num], username))
                 {
-                    configuration.username = "default";
+                    username = "default";
                     sharding_key = args[arg_num];
                 }
                 ++arg_num;
@@ -205,7 +196,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
             if (arg_num < args.size() && !sharding_key)
             {
-                if (!get_string_literal(*args[arg_num], configuration.password))
+                if (!get_string_literal(*args[arg_num], password))
                 {
                     sharding_key = args[arg_num];
                 }
@@ -243,7 +234,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
         if (names.empty())
-            throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard list is empty after parsing first argument");
 
         auto maybe_secure_port = context->getTCPPortSecure();
 
@@ -264,22 +255,25 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
-        cluster = std::make_shared<Cluster>(
-            context->getSettingsRef(),
-            names,
-            configuration.username,
-            configuration.password,
-            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+        ClusterConnectionParameters params{
+            username,
+            password,
+            static_cast<UInt16>(secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
             treat_local_as_remote,
             treat_local_port_as_remote,
-            secure);
+            secure,
+            /* priority= */ Priority{1},
+            /* cluster_name= */ "",
+            /* password= */ ""
+        };
+        cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
     }
 
-    if (!remote_table_function_ptr && configuration.table.empty())
-        throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+    if (!remote_table_function_ptr && table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of remote table cannot be empty");
 
-    remote_table_id.database_name = configuration.database;
-    remote_table_id.table_name = configuration.table;
+    remote_table_id.database_name = database;
+    remote_table_id.table_name = table;
 }
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const
@@ -334,7 +328,7 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
-    help_message = fmt::format(
+    help_message = PreformattedMessage::create(
         "Table function '{}' requires from 2 to {} parameters: "
         "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
         name,

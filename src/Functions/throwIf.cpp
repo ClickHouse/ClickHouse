@@ -43,7 +43,7 @@ public:
         if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be {}",
-                getName(), toString(number_of_arguments), allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
+                getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
 
         if (!isNativeNumber(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -132,9 +132,14 @@ private:
             const auto & in_data = in->getData();
             if (!memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
             {
-                throw Exception(
-                    error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
-                    message.value_or("Value passed to '" + getName() + "' function is non-zero"));
+                if (message.has_value())
+                    throw Exception::createRuntime(
+                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                        *message);
+                else
+                    throw Exception(
+                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                        "Value passed to '{}' function is non-zero", getName());
             }
 
             size_t result_size = in_untyped->size();

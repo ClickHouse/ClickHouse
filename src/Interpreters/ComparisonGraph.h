@@ -2,6 +2,12 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/TreeCNFConverter.h>
+
+#include <Analyzer/Passes/CNF.h>
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/IQueryTreeNode.h>
+
+#include <type_traits>
 #include <unordered_map>
 #include <map>
 #include <vector>
@@ -9,50 +15,56 @@
 namespace DB
 {
 
+enum class ComparisonGraphCompareResult : uint8_t
+{
+    LESS,
+    LESS_OR_EQUAL,
+    EQUAL,
+    GREATER_OR_EQUAL,
+    GREATER,
+    NOT_EQUAL,
+    UNKNOWN,
+};
+
+template <typename T>
+concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, QueryTreeNodePtr>;
+
 /*
  * Graph of relations between terms in constraints.
  * Allows to compare terms and get equal terms.
  */
+template <ComparisonGraphNodeType Node>
 class ComparisonGraph
 {
 public:
+    static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
+    using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
+    using CNF = std::conditional_t<with_ast, CNFQuery, Analyzer::CNF>;
+
     /// atomic_formulas are extracted from constraints.
-    explicit ComparisonGraph(const ASTs & atomic_formulas);
+    explicit ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context = nullptr);
 
-    enum class CompareResult
-    {
-        LESS,
-        LESS_OR_EQUAL,
-        EQUAL,
-        GREATER_OR_EQUAL,
-        GREATER,
-        NOT_EQUAL,
-        UNKNOWN,
-    };
+    static ComparisonGraphCompareResult atomToCompareResult(const typename CNF::AtomicFormula & atom);
 
-    static CompareResult atomToCompareResult(const CNFQuery::AtomicFormula & atom);
-    static CompareResult functionNameToCompareResult(const std::string & name);
-    static CompareResult inverseCompareResult(CompareResult result);
-
-    CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
+    ComparisonGraphCompareResult compare(const Node & left, const Node & right) const;
 
     /// It's possible that left <expected> right
-    bool isPossibleCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
+    bool isPossibleCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const;
 
     /// It's always true that left <expected> right
-    bool isAlwaysCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
+    bool isAlwaysCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const;
 
-    /// Returns all expressions from component to which @ast belongs if any.
-    ASTs getEqual(const ASTPtr & ast) const;
+    /// Returns all expressions from component to which @node belongs if any.
+    NodeContainer getEqual(const Node & node) const;
 
-    /// Returns constant expression from component to which @ast belongs if any.
-    std::optional<ASTPtr> getEqualConst(const ASTPtr & ast) const;
+    /// Returns constant expression from component to which @node belongs if any.
+    std::optional<Node> getEqualConst(const Node & node) const;
 
-    /// Finds component id to which @ast belongs if any.
-    std::optional<std::size_t> getComponentId(const ASTPtr & ast) const;
+    /// Finds component id to which @node belongs if any.
+    std::optional<std::size_t> getComponentId(const Node & node) const;
 
     /// Returns all expressions from component.
-    ASTs getComponent(size_t id) const;
+    NodeContainer getComponent(size_t id) const;
 
     size_t getNumOfComponents() const { return graph.vertices.size(); }
 
@@ -61,22 +73,22 @@ public:
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
     /// Returns: {constant, is strict less/greater}
-    std::optional<std::pair<Field, bool>> getConstUpperBound(const ASTPtr & ast) const;
-    std::optional<std::pair<Field, bool>> getConstLowerBound(const ASTPtr & ast) const;
+    std::optional<std::pair<Field, bool>> getConstUpperBound(const Node & node) const;
+    std::optional<std::pair<Field, bool>> getConstLowerBound(const Node & node) const;
 
     /// Returns all expression in graph.
-    std::vector<ASTs> getVertices() const;
+    std::vector<NodeContainer> getVertices() const;
 
 private:
     /// Strongly connected component
     struct EqualComponent
     {
         /// All these expressions are considered as equal.
-        ASTs  asts;
+        NodeContainer nodes;
         std::optional<size_t> constant_index;
 
         bool hasConstant() const;
-        ASTPtr getConstant() const;
+        Node getConstant() const;
         void buildConstants();
     };
 
@@ -110,20 +122,29 @@ private:
             }
         };
 
-        std::unordered_map<IAST::Hash, size_t, ASTHash> ast_hash_to_component;
+        static auto getHash(const Node & node)
+        {
+            if constexpr (with_ast)
+                return node->getTreeHash();
+            else
+                return QueryTreeNodePtrWithHash{node};
+        }
+
+        using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IAST::Hash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
+        NodeHashToComponentContainer node_hash_to_component;
         std::vector<EqualComponent> vertices;
         std::vector<std::vector<Edge>> edges;
     };
 
     /// Receives graph, in which each vertex corresponds to one expression.
     /// Then finds strongly connected components and builds graph on them.
-    static Graph buildGraphFromAstsGraph(const Graph & asts_graph);
+    static Graph buildGraphFromNodesGraph(const Graph & nodes_graph);
 
-    static Graph reverseGraph(const Graph & asts_graph);
+    static Graph reverseGraph(const Graph & nodes_graph);
 
     /// The first part of finding strongly connected components.
     /// Finds order of exit from vertices of dfs traversal of graph.
-    static void dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order);
+    static void dfsOrder(const Graph & nodes_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order);
 
     using OptionalIndices = std::vector<std::optional<size_t>>;
 
@@ -139,13 +160,13 @@ private:
         GREATER_OR_EQUAL,
     };
 
-    static CompareResult pathToCompareResult(Path path, bool inverse);
+    static ComparisonGraphCompareResult pathToCompareResult(Path path, bool inverse);
     std::optional<Path> findPath(size_t start, size_t finish) const;
 
     /// Calculate @dists.
     static std::map<std::pair<size_t, size_t>, Path> buildDistsFromGraph(const Graph & g);
 
-    /// Calculate @ast_const_lower_bound and @ast_const_lower_bound.
+    /// Calculate @nodeconst_lower_bound and @node_const_lower_bound.
     std::pair<std::vector<ssize_t>, std::vector<ssize_t>> buildConstBounds() const;
 
     /// Direct acyclic graph in which each vertex corresponds
@@ -165,11 +186,11 @@ private:
 
     /// Maximal constant value for each component that
     /// is lower bound for all expressions in component.
-    std::vector<ssize_t> ast_const_lower_bound;
+    std::vector<ssize_t> node_const_lower_bound;
 
     /// Minimal constant value for each component that
     /// is upper bound for all expressions in component.
-    std::vector<ssize_t> ast_const_upper_bound;
+    std::vector<ssize_t> node_const_upper_bound;
 };
 
 }

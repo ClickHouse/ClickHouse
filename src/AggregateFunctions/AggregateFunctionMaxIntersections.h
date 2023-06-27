@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <base/sort.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -66,13 +65,13 @@ public:
         , kind(kind_)
     {
         if (!isNativeNumber(arguments[0]))
-            throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: first argument must be represented by integer", getName());
 
         if (!isNativeNumber(arguments[1]))
-            throw Exception{getName() + ": second argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: second argument must be represented by integer", getName());
 
         if (!arguments[0]->equals(*arguments[1]))
-            throw Exception{getName() + ": arguments must have the same type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: arguments must have the same type", getName());
     }
 
     String getName() const override
@@ -117,7 +116,21 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
+
+        /// In this version, pairs were serialized with padding.
+        /// We must ensure that padding bytes are zero-filled.
+
+        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, first) == 0);
+        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, second) > 0);
+
+        char zero_padding[offsetof(typename MaxIntersectionsData<PointType>::Value, second) - sizeof(value[0].first)]{};
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            writePODBinary(value[i].first, buf);
+            writePODBinary(zero_padding, buf);
+            writePODBinary(value[i].second, buf);
+        }
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -126,7 +139,8 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE);
 
         auto & value = this->data(place).value;
 

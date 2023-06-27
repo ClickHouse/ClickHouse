@@ -55,14 +55,19 @@ private:
                 getName(), arguments.size());
         }
 
-        for (const auto & arg : arguments)
+        DataTypes arg_types;
+        for (size_t i = 0, size = arguments.size(); i < size; ++i)
         {
-            if (!isInteger(arg))
-                throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            if (i < 2 && WhichDataType(arguments[i]).isIPv4())
+                arg_types.emplace_back(std::make_shared<DataTypeUInt32>());
+            else if (isInteger(arguments[i]))
+                arg_types.push_back(arguments[i]);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[i]->getName(), getName());
         }
 
-        DataTypePtr common_type = getLeastSupertype(arguments);
+        DataTypePtr common_type = getLeastSupertype(arg_types);
         return std::make_shared<DataTypeArray>(common_type);
     }
 
@@ -76,21 +81,23 @@ private:
                 [this] (const size_t lhs, const T rhs)
                 {
                     if (rhs < 0)
-                        throw Exception{"A call to function " + getName() + " overflows, only support positive values when only end is provided",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, only support positive values when only end is provided", getName());
 
                     const auto sum = lhs + rhs;
                     if (sum < lhs)
-                        throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
                     return sum;
                 });
 
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
 
             auto data_col = ColumnVector<T>::create(total_values);
             auto offsets_col = ColumnArray::ColumnOffsets::create(in->size());
@@ -131,8 +138,7 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             if (step == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
             if (start < end_data[row_idx] && step > 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step) + 1;
@@ -144,14 +150,16 @@ private:
             pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -193,8 +201,7 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             if (step == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
             if (start_data[row_idx] < end_data[row_idx] && step > 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step) + 1;
@@ -206,14 +213,16 @@ private:
             pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -255,8 +264,7 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             if (step_data[row_idx] == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
             if (start < end_data[row_idx] && step_data[row_idx] > 0)
                 row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
@@ -268,14 +276,16 @@ private:
             pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -332,14 +342,16 @@ private:
             pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -369,9 +381,9 @@ private:
 
         if (!which.isNativeUInt() && !which.isNativeInt())
         {
-            throw Exception{"Illegal columns of arguments of function " + getName()
-                            + ", the function only implemented for unsigned/signed integers up to 64 bit",
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal columns of arguments of function {}, the function only implemented "
+                            "for unsigned/signed integers up to 64 bit", getName());
         }
 
         ColumnPtr res;
@@ -382,7 +394,7 @@ private:
                   || (res = executeInternal<UInt64>(col)) || (res = executeInternal<Int8>(col)) || (res = executeInternal<Int16>(col))
                   || (res = executeInternal<Int32>(col)) || (res = executeInternal<Int64>(col))))
             {
-                throw Exception{"Illegal column " + col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col->getName(), getName());
             }
             return res;
         }
@@ -508,7 +520,7 @@ private:
 
         if (!res)
         {
-            throw Exception{"Illegal columns " + column_ptrs[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} of argument of function {}", column_ptrs[0]->getName(), getName());
         }
 
         return res;

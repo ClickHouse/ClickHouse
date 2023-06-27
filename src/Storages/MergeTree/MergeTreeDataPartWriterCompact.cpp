@@ -9,6 +9,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static CompressionCodecPtr getMarksCompressionCodec(const String & marks_compression_codec)
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    return CompressionCodecFactory::instance().get(ast, nullptr);
+}
+
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeMutableDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
@@ -38,7 +45,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
-            settings_.getMarksCompressionCodec(),
+            getMarksCompressionCodec(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
@@ -87,7 +94,9 @@ namespace
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, bool last_block)
 {
     if (current_mark >= index_granularity.getMarksCount())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request to get granules from mark {} but index granularity size is {}", current_mark, index_granularity.getMarksCount());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Request to get granules from mark {} but index granularity size is {}",
+                        current_mark, index_granularity.getMarksCount());
 
     Granules result;
     size_t current_row = 0;
@@ -99,7 +108,9 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         {
             /// Invariant: we always have equal amount of rows for block in compact parts because we accumulate them in buffer.
             /// The only exclusion is the last block, when we cannot accumulate more rows.
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", expected_rows_in_mark, rows_left_in_block);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Required to write {} rows, but only {} rows was written for the non last granule",
+                            expected_rows_in_mark, rows_left_in_block);
         }
 
         result.emplace_back(Granule{
@@ -128,8 +139,8 @@ void writeColumnSingleGranule(
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true; //-V1048
-    serialize_settings.low_cardinality_max_dictionary_size = 0; //-V1048
+    serialize_settings.position_independent_encoding = true;
+    serialize_settings.low_cardinality_max_dictionary_size = 0;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -225,7 +236,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
-            prev_stream->hashing_buf.next(); //-V522
+            prev_stream->hashing_buf.next();
         }
 
         writeIntBinary(granule.rows_to_write, marks_out);
@@ -265,14 +276,23 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
         writeIntBinary(static_cast<UInt64>(0), marks_out);
     }
 
+    for (const auto & [_, stream] : streams_by_codec)
+    {
+        stream->hashing_buf.finalize();
+        stream->compressed_buf.finalize();
+    }
+
+    plain_hashing.finalize();
+
     plain_file->next();
 
     if (marks_source_hashing)
-        marks_source_hashing->next();
+        marks_source_hashing->finalize();
     if (marks_compressor)
-        marks_compressor->next();
+        marks_compressor->finalize();
 
-    marks_file_hashing->next();
+    marks_file_hashing->finalize();
+
     addToChecksums(checksums);
 
     plain_file->preFinalize();
@@ -281,14 +301,14 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
-    plain_file->finalize();
-    marks_file->finalize();
-
     if (sync)
     {
         plain_file->sync();
         marks_file->sync();
     }
+
+    plain_file->finalize();
+    marks_file->finalize();
 }
 
 static void fillIndexGranularityImpl(

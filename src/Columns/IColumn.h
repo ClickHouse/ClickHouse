@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
-#include <Core/Types.h>
+#include <Core/TypeId.h>
 
 #include "config.h"
 
@@ -111,19 +111,19 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const
     {
-        throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
     }
 
     /// If column stores native numeric type, it returns n-th element casted to Float64
     /// Is used in regression methods to cast each features into uniform type
     [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
     {
-        throw Exception("Method getFloat64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not supported for {}", getName());
     }
 
     [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const
     {
-        throw Exception("Method getFloat32 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
     }
 
     /** If column is numeric, return value of n-th element, casted to UInt64.
@@ -132,12 +132,12 @@ public:
       */
     [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const
     {
-        throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getUInt is not supported for {}", getName());
     }
 
     [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const
     {
-        throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInt is not supported for {}", getName());
     }
 
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
@@ -149,7 +149,7 @@ public:
       */
     [[nodiscard]] virtual bool getBool(size_t /*n*/) const
     {
-        throw Exception("Method getBool is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
     }
 
     /// Removes all elements outside of specified range.
@@ -286,7 +286,7 @@ public:
 
     [[nodiscard]] virtual llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
     {
-        throw Exception("Method compileComparator is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", getName());
     }
 
 #endif
@@ -294,7 +294,9 @@ public:
     /// Equivalent to compareAt, but collator is used to compare values.
     [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
     {
-        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing it.", ErrorCodes::BAD_COLLATION);
+        throw Exception(ErrorCodes::BAD_COLLATION,
+                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+                        "or for Array or Tuple, containing it.");
     }
 
     /// Compare the whole column with single value from rhs column.
@@ -348,13 +350,17 @@ public:
     virtual void getPermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                             size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/) const
     {
-        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+        throw Exception(ErrorCodes::BAD_COLLATION,
+                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+                        "or for Array or Tuple, containing them.");
     }
 
     virtual void updatePermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                             size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/, EqualRanges & /*equal_ranges*/) const
     {
-        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+        throw Exception(ErrorCodes::BAD_COLLATION,
+                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+                        "or for Array or Tuple, containing them.");
     }
 
     /** Copies each element according offsets parameter.
@@ -412,32 +418,37 @@ public:
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
-    using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const {}
-
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback callback);
+    virtual void forEachSubcolumn(MutableColumnCallback) {}
+
+    /// Default implementation calls the mutable overload using const_cast.
+    using ColumnCallback = std::function<void(const WrappedPtr &)>;
+    virtual void forEachSubcolumn(ColumnCallback) const;
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
-    using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
-
     using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback);
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
+
+    /// Default implementation calls the mutable overload using const_cast.
+    using RecursiveColumnCallback = std::function<void(const IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
     [[nodiscard]] virtual bool structureEquals(const IColumn &) const
     {
-        throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
     }
 
-    /// Returns ration of values in column, that equal to default value of column.
+    /// Returns ratio of values in column, that are equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
     [[nodiscard]] virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
+
+    /// Returns number of values in column, that are equal to default value of column.
+    [[nodiscard]] virtual UInt64 getNumberOfDefaultRows() const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -524,10 +535,10 @@ public:
     [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
+    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName()); }
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
-    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
+    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName()); }
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
     [[nodiscard]] virtual bool isNumeric() const { return false; }
@@ -577,6 +588,9 @@ protected:
     /// Template is to devirtualize calls to 'isDefaultAt' method.
     template <typename Derived>
     double getRatioOfDefaultRowsImpl(double sample_ratio) const;
+
+    template <typename Derived>
+    UInt64 getNumberOfDefaultRowsImpl() const;
 
     template <typename Derived>
     void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;

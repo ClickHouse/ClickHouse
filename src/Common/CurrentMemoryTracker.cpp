@@ -128,3 +128,9 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
     return AllocationTrace(0);
 }
 
+void CurrentMemoryTracker::injectFault()
+{
+    if (auto * memory_tracker = getMemoryTracker())
+        memory_tracker->injectFault();
+}
+

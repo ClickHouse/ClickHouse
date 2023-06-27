@@ -29,6 +29,7 @@
 #include <base/getPageSize.h>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -61,6 +62,12 @@
 extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
+
+namespace CurrentMetrics
+{
+    extern const Metric MMappedAllocs;
+    extern const Metric MMappedAllocBytes;
+}
 
 namespace DB
 {
@@ -217,15 +224,18 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (alignment > mmap_min_alignment)
-                throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
-                    ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                                    "Too large alignment {}: more than page size when allocating {}.",
+                                    ReadableSize(alignment), ReadableSize(size));
 
             buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
                        mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno(fmt::format("Allocator: Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
             /// No need for zero-fill, because mmap guarantees it.
+
+            CurrentMetrics::add(CurrentMetrics::MMappedAllocs);
+            CurrentMetrics::add(CurrentMetrics::MMappedAllocBytes, size);
         }
         else
         {
@@ -261,6 +271,9 @@ private:
         {
             if (0 != munmap(buf, size))
                 DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
+
+            CurrentMetrics::sub(CurrentMetrics::MMappedAllocs);
+            CurrentMetrics::sub(CurrentMetrics::MMappedAllocBytes, size);
         }
         else
         {

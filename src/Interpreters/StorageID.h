@@ -79,9 +79,9 @@ struct StorageID
     {
         // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
         if (empty())
-            throw Exception("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
         if (table_name.empty() && !database_name.empty())
-            throw Exception("Table name is empty, but database name is not", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty, but database name is not");
     }
 
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
@@ -138,7 +138,7 @@ namespace fmt
         template <typename FormatContext>
         auto format(const DB::StorageID & storage_id, FormatContext & ctx)
         {
-            return format_to(ctx.out(), "{}", storage_id.getNameForLogs());
+            return fmt::format_to(ctx.out(), "{}", storage_id.getNameForLogs());
         }
     };
 }

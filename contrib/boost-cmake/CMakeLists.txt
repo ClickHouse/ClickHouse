@@ -92,6 +92,8 @@ add_library (boost::system ALIAS _boost_system)
 target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
 
 # context
+option (BOOST_USE_UCONTEXT "Use ucontext_t for context switching of boost::fiber within boost::context" OFF)
+
 enable_language(ASM)
 SET(ASM_OPTIONS "-x assembler-with-cpp")
 
@@ -100,31 +102,31 @@ set (SRCS_CONTEXT
     "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
 )
 
-if (SANITIZE AND (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "thread"))
-    add_compile_definitions(BOOST_USE_UCONTEXT)
-
-    if (SANITIZE STREQUAL "address")
-        add_compile_definitions(BOOST_USE_ASAN)
-    elseif (SANITIZE STREQUAL "thread")
-        add_compile_definitions(BOOST_USE_TSAN)
-    endif()
-
-    set (SRCS_CONTEXT ${SRCS_CONTEXT}
-            "${LIBRARY_DIR}/libs/context/src/fiber.cpp"
-            "${LIBRARY_DIR}/libs/context/src/continuation.cpp"
-    )
-endif()
 if (ARCH_AARCH64)
-    set (SRCS_CONTEXT ${SRCS_CONTEXT}
-        "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S"
-    )
+    if (OS_DARWIN)
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_macho_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_macho_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_macho_gas.S"
+        )
+    else()
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S"
+        )
+    endif()
 elseif (ARCH_PPC64LE)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S"
+    )
+elseif (ARCH_S390X)
+    set (SRCS_CONTEXT ${SRCS_CONTEXT}
+        "${LIBRARY_DIR}/libs/context/src/asm/jump_s390x_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/make_s390x_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/ontop_s390x_sysv_elf_gas.S"
     )
 elseif (ARCH_RISCV64)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
@@ -146,9 +148,26 @@ else()
     )
 endif()
 
+if (SANITIZE OR BOOST_USE_UCONTEXT)
+    list (APPEND SRCS_CONTEXT
+        "${LIBRARY_DIR}/libs/context/src/fiber.cpp"
+        "${LIBRARY_DIR}/libs/context/src/continuation.cpp"
+    )
+endif()
+
 add_library (_boost_context ${SRCS_CONTEXT})
 add_library (boost::context ALIAS _boost_context)
 target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
+
+if (SANITIZE OR BOOST_USE_UCONTEXT)
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
+endif()
+
+if (SANITIZE STREQUAL "address")
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_ASAN)
+elseif (SANITIZE STREQUAL "thread")
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_TSAN)
+endif()
 
 # coroutine
 

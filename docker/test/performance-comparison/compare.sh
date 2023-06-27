@@ -14,6 +14,13 @@ LEFT_SERVER_PORT=9001
 # patched version
 RIGHT_SERVER_PORT=9002
 
+# abort_conf   -- abort if some options is not recognized
+# abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
+# narenas      -- set them explicitly to avoid disabling per-cpu arena in env
+#                 that returns different number of CPUs for some of the following
+#                 _SC_NPROCESSORS_ONLN/_SC_NPROCESSORS_CONF/sched_getaffinity
+export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
+
 function wait_for_server # port, pid
 {
     for _ in {1..60}
@@ -109,10 +116,6 @@ function restart
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
 
-    # Change the jemalloc settings here.
-    # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
-    export MALLOC_CONF="confirm_conf:true"
-
     set -m # Spawn servers in their own process groups
 
     local left_server_opts=(
@@ -146,8 +149,6 @@ function restart
     disown $right_pid
 
     set +m
-
-    unset MALLOC_CONF
 
     wait_for_server $LEFT_SERVER_PORT $left_pid
     echo left ok
@@ -399,7 +400,7 @@ clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
--- Separately process 'partial' queries which we could only run on the new server
+-- Separately process backward-incompatible ('partial') queries which we could only run on the new server
 -- because they use new functions. We can't make normal stats for them, but still
 -- have to show some stats so that the PR author can tweak them.
 create view partial_queries as select test, query_index
@@ -537,9 +538,20 @@ unset IFS
 # all nodes.
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
-# Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
-jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
-numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+
+# Notes for parallel:
+#
+# Some queries can consume 8+ GB of memory, so it worth to limit amount of jobs
+# that can be run in parallel.
+#
+# --memfree:
+#
+#   will kill jobs, which is not good (and retried until --retries exceeded)
+#
+# --memsuspend:
+#
+#   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
+numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -650,7 +662,7 @@ create view partial_query_times as select * from
         'test text, query_index int, time_stddev float, time_median double')
     ;
 
--- Report for partial queries that we could only run on the new server (e.g.
+-- Report for backward-incompatible ('partial') queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
     settings output_format_decimal_trailing_zeros = 1
@@ -829,7 +841,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- Guess the number of query runs used for this test. The number is required to
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
---  1) partial queries which run only on one server
+--  1) backward-incompatible ('partial') queries which run only on one server
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --

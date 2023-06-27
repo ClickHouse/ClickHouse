@@ -60,13 +60,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 void ColumnFixedString::insert(const Field & x)
 {
     const String & s = x.get<const String &>();
-
-    if (s.size() > n)
-        throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    size_t old_size = chars.size();
-    chars.resize_fill(old_size + n);
-    memcpy(chars.data() + old_size, s.data(), s.size());
+    insertData(s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -74,7 +68,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 
     if (n != src.getN())
-        throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
 
     size_t old_size = chars.size();
     chars.resize(old_size + n);
@@ -84,11 +78,12 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 void ColumnFixedString::insertData(const char * pos, size_t length)
 {
     if (length > n)
-        throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
     size_t old_size = chars.size();
-    chars.resize_fill(old_size + n);
+    chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, length);
+    memset(chars.data() + old_size + length, 0, n - length);
 }
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
@@ -121,8 +116,9 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
     auto s = size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, "
+                        "hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -192,11 +188,9 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
 
     if (start + length > src_concrete.size())
-        throw Exception("Parameters start = "
-            + toString(start) + ", length = "
-            + toString(length) + " are out of bound in ColumnFixedString::insertRangeFrom method"
-            " (size() = " + toString(src_concrete.size()) + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnFixedString::insertRangeFrom method (size() = {}).",
+                        toString(start), toString(length), toString(src_concrete.size()));
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
@@ -275,17 +269,17 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 {
     if (mask.size() < size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
     ssize_t index = mask.size() - 1;
     ssize_t from = size() - 1;
-    chars.resize_fill(mask.size() * n, 0);
+    chars.resize_fill(mask.size() * n);
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
             memcpy(&chars[index * n], &chars[from * n], n);
             --from;
@@ -295,7 +289,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
@@ -334,7 +328,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 {
     size_t col_size = size();
     if (col_size != offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = ColumnFixedString::create(n);
 
@@ -399,13 +393,13 @@ ColumnPtr ColumnFixedString::compress() const
     const size_t column_size = size();
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(column_size, compressed_size,
-        [compressed = std::move(compressed), column_size, n = n]
+        [my_compressed = std::move(compressed), column_size, my_n = n]
         {
-            size_t chars_size = n * column_size;
-            auto res = ColumnFixedString::create(n);
+            size_t chars_size = my_n * column_size;
+            auto res = ColumnFixedString::create(my_n);
             res->getChars().resize(chars_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+                my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
             return res;
         });
 }

@@ -7,7 +7,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <string>

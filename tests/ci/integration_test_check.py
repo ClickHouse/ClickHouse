@@ -19,8 +19,10 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    post_commit_status,
+    RerunHelper,
+    get_commit,
     override_status,
+    post_commit_status,
     post_commit_status_to_file,
 )
 from docker_pull_helper import get_images_with_versions
@@ -29,7 +31,6 @@ from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, read_test_results
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -117,10 +118,18 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = Path(result_folder) / "test_results.tsv"
-    test_results = read_test_results(results_path, False)
-    if len(test_results) == 0:
-        return "error", "Empty test_results.tsv", test_results, additional_files
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
+        test_results = read_test_results(results_path, False)
+        if len(test_results) == 0:
+            return "error", "Empty test_results.tsv", test_results, additional_files
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 
@@ -190,8 +199,9 @@ def main():
         sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    rerun_helper = RerunHelper(commit, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -276,15 +286,10 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            gh, pr_info.sha, check_name_with_group, description, state, report_url
+            commit, state, report_url, description, check_name_with_group, pr_info
         )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        post_commit_status_to_file(post_commit_path, description, state, report_url)
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'

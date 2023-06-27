@@ -50,7 +50,7 @@ Float64 IntervalKind::toSeconds() const
         case IntervalKind::Week:
             return 604800;
         default:
-            throw Exception("Not possible to get precise number of seconds in non-precise interval", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
     }
     UNREACHABLE();
 }
@@ -221,7 +221,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
             // else if (ParserKeyword("WEEK").ignore(pos, expected))
             //    function_name = "toRelativeWeekNum";
-            throw Exception("The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week");
         case IntervalKind::Month:
             return "toMonth";
         case IntervalKind::Quarter:

@@ -32,10 +32,12 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     : PartUploadSettings(settings)
 {
     String key = config_prefix + "." + setting_name_prefix;
+    strict_upload_part_size = config.getUInt64(key + "strict_upload_part_size", strict_upload_part_size);
     min_upload_part_size = config.getUInt64(key + "min_upload_part_size", min_upload_part_size);
     max_upload_part_size = config.getUInt64(key + "max_upload_part_size", max_upload_part_size);
     upload_part_size_multiply_factor = config.getUInt64(key + "upload_part_size_multiply_factor", upload_part_size_multiply_factor);
     upload_part_size_multiply_parts_count_threshold = config.getUInt64(key + "upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
+    max_inflight_parts_for_one_file = config.getUInt64(key + "max_inflight_parts_for_one_file", max_inflight_parts_for_one_file);
     max_part_number = config.getUInt64(key + "max_part_number", max_part_number);
     max_single_part_upload_size = config.getUInt64(key + "max_single_part_upload_size", max_single_part_upload_size);
     max_single_operation_copy_size = config.getUInt64(key + "max_single_operation_copy_size", max_single_operation_copy_size);
@@ -49,10 +51,12 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
 {
+    strict_upload_part_size = collection.getOrDefault<UInt64>("strict_upload_part_size", strict_upload_part_size);
     min_upload_part_size = collection.getOrDefault<UInt64>("min_upload_part_size", min_upload_part_size);
+    max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
     upload_part_size_multiply_factor = collection.getOrDefault<UInt64>("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
     upload_part_size_multiply_parts_count_threshold = collection.getOrDefault<UInt64>("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
-    max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
+    max_inflight_parts_for_one_file = collection.getOrDefault<UInt64>("max_inflight_parts_for_one_file", max_inflight_parts_for_one_file);
 
     /// This configuration is only applicable to s3. Other types of object storage are not applicable or have different meanings.
     storage_class_name = collection.getOrDefault<String>("s3_storage_class", storage_class_name);
@@ -63,6 +67,9 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedC
 
 void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(const Settings & settings, bool if_changed)
 {
+    if (!if_changed || settings.s3_strict_upload_part_size.changed)
+        strict_upload_part_size = settings.s3_strict_upload_part_size;
+
     if (!if_changed || settings.s3_min_upload_part_size.changed)
         min_upload_part_size = settings.s3_min_upload_part_size;
 
@@ -75,6 +82,9 @@ void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(con
     if (!if_changed || settings.s3_upload_part_size_multiply_parts_count_threshold.changed)
         upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
 
+    if (!if_changed || settings.s3_max_inflight_parts_for_one_file.changed)
+        max_inflight_parts_for_one_file = settings.s3_max_inflight_parts_for_one_file;
+
     if (!if_changed || settings.s3_max_single_part_upload_size.changed)
         max_single_part_upload_size = settings.s3_max_single_part_upload_size;
 }
@@ -82,6 +92,12 @@ void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(con
 void S3Settings::RequestSettings::PartUploadSettings::validate()
 {
     static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
+    if (strict_upload_part_size && strict_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting strict_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(strict_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
     if (min_upload_part_size < min_upload_part_size_limit)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
@@ -116,20 +132,17 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     if (!upload_part_size_multiply_factor)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor cannot be zero",
-            upload_part_size_multiply_factor);
+            "Setting upload_part_size_multiply_factor cannot be zero");
 
     if (!upload_part_size_multiply_parts_count_threshold)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero",
-            upload_part_size_multiply_parts_count_threshold);
+            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
 
     if (!max_part_number)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_part_number cannot be zero",
-            max_part_number);
+            "Setting max_part_number cannot be zero");
 
     static constexpr size_t max_part_number_limit = 10000;
     if (max_part_number > max_part_number_limit)
@@ -141,9 +154,10 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     size_t maybe_overflow;
     if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor is too big ({}). Multiplication to max_upload_part_size ({}) will cause integer overflow",
-            ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Setting upload_part_size_multiply_factor is too big ({}). "
+                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                        ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!storage_class_name.empty() && !storage_class_names.contains(storage_class_name))
@@ -167,6 +181,8 @@ S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
 {
     max_single_read_retries = collection.getOrDefault<UInt64>("max_single_read_retries", max_single_read_retries);
     max_connections = collection.getOrDefault<UInt64>("max_connections", max_connections);
+    list_object_keys_size = collection.getOrDefault<UInt64>("list_object_keys_size", list_object_keys_size);
+    throw_on_zero_files_match = collection.getOrDefault<bool>("throw_on_zero_files_match", throw_on_zero_files_match);
 }
 
 S3Settings::RequestSettings::RequestSettings(
@@ -180,6 +196,10 @@ S3Settings::RequestSettings::RequestSettings(
     max_single_read_retries = config.getUInt64(key + "max_single_read_retries", settings.s3_max_single_read_retries);
     max_connections = config.getUInt64(key + "max_connections", settings.s3_max_connections);
     check_objects_after_upload = config.getBool(key + "check_objects_after_upload", settings.s3_check_objects_after_upload);
+    list_object_keys_size = config.getUInt64(key + "list_object_keys_size", settings.s3_list_object_keys_size);
+    throw_on_zero_files_match = config.getBool(key + "throw_on_zero_files_match", settings.s3_throw_on_zero_files_match);
+    retry_attempts = config.getUInt64(key + "retry_attempts", settings.s3_retry_attempts);
+    request_timeout_ms = config.getUInt64(key + "request_timeout_ms", request_timeout_ms);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
@@ -219,6 +239,9 @@ void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settin
     if (!if_changed || settings.s3_max_unexpected_write_error_retries.changed)
         max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
 
+    if (!if_changed || settings.s3_list_object_keys_size.changed)
+        list_object_keys_size = settings.s3_list_object_keys_size;
+
     if ((!if_changed || settings.s3_max_get_rps.changed || settings.s3_max_get_burst.changed) && settings.s3_max_get_rps)
         get_request_throttler = std::make_shared<Throttler>(
             settings.s3_max_get_rps, settings.s3_max_get_burst ? settings.s3_max_get_burst : Throttler::default_burst_seconds * settings.s3_max_get_rps);
@@ -226,6 +249,12 @@ void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settin
     if ((!if_changed || settings.s3_max_put_rps.changed || settings.s3_max_put_burst.changed) && settings.s3_max_put_rps)
         put_request_throttler = std::make_shared<Throttler>(
             settings.s3_max_put_rps, settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * settings.s3_max_put_rps);
+
+    if (!if_changed || settings.s3_throw_on_zero_files_match.changed)
+        throw_on_zero_files_match = settings.s3_throw_on_zero_files_match;
+
+    if (!if_changed || settings.s3_retry_attempts.changed)
+        retry_attempts = settings.s3_retry_attempts;
 }
 
 void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)

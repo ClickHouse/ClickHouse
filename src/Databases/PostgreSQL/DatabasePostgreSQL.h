@@ -8,7 +8,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {
@@ -74,6 +73,7 @@ private:
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePool::TaskHolder cleaner_task;
+    Poco::Logger * log;
 
     String getTableNameForLogs(const String & table_name) const;
 

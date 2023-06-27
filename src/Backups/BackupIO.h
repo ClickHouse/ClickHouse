@@ -1,45 +1,72 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Disks/DiskType.h>
-#include <Disks/IDisk.h>
+
 
 namespace DB
 {
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
 class WriteBuffer;
+enum class WriteMode;
+struct WriteSettings;
+struct ReadSettings;
 
 /// Represents operations of loading from disk or downloading for reading a backup.
-class IBackupReader /// BackupReaderFile, BackupReaderDisk
+/// See also implementations: BackupReaderFile, BackupReaderDisk.
+class IBackupReader
 {
 public:
     virtual ~IBackupReader() = default;
+
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
+
     virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) = 0;
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
+
+    /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
+    /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
+    /// Parameters:
+    /// `encrypted_in_backup` specify if this file is encrypted in the backup, so it shouldn't be encrypted again while restoring to an encrypted disk.
+    virtual void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+                                DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) = 0;
+
+    virtual const ReadSettings & getReadSettings() const = 0;
+    virtual const WriteSettings & getWriteSettings() const = 0;
+    virtual size_t getWriteBufferSize() const = 0;
 };
 
 /// Represents operations of storing to disk or uploading for writing a backup.
-class IBackupWriter /// BackupWriterFile, BackupWriterDisk
+/// See also implementations: BackupWriterFile, BackupWriterDisk
+class IBackupWriter
 {
 public:
     virtual ~IBackupWriter() = default;
+
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
     virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents) = 0;
+
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
+
+    using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+    virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
+
+    /// The function copyFileFromDisk() can be much faster than copyDataToFile()
+    /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
+    /// Parameters:
+    /// `start_pos` and `length` specify a part of the file on `src_disk` to copy to the backup.
+    /// `copy_encrypted` specify whether this function should copy encrypted data of the file `src_path` to the backup.
+    virtual void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
+                                  bool copy_encrypted, UInt64 start_pos, UInt64 length) = 0;
+
     virtual void removeFile(const String & file_name) = 0;
     virtual void removeFiles(const Strings & file_names) = 0;
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
-    virtual void copyFileThroughBuffer(std::unique_ptr<SeekableReadBuffer> && source, const String & file_name);
 
-    virtual bool supportNativeCopy(DataSourceDescription /* data_source_description */) const
-    {
-        return false;
-    }
-
-    virtual void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to);
+    virtual const ReadSettings & getReadSettings() const = 0;
+    virtual const WriteSettings & getWriteSettings() const = 0;
+    virtual size_t getWriteBufferSize() const = 0;
 };
 
 }

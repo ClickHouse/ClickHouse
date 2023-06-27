@@ -1,0 +1,47 @@
+--- Aliases of SHOW INDEX
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+--- EXTENDED
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+--- WHERE
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+--- Check with weird table names
+$4@^7	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c
+NULL	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c
+\'	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c
+\'	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c
+--- Original table
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+--- Equally named table in other database
+tbl	0	mmi_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	b
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	a
+--- Short form
+tbl	0	mmi_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	b
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	a

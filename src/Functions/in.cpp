@@ -104,8 +104,8 @@ public:
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
-            throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
+                getName(), column_set_ptr->getName());
 
         ColumnsWithTypeAndName columns_of_key_columns;
 
@@ -122,7 +122,14 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        auto set = column_set->getData();
+        auto future_set = column_set->getData();
+        if (!future_set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+
+        auto set = future_set->get();
+        if (!set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
+
         auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())

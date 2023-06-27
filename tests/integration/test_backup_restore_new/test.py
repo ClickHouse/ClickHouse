@@ -1,15 +1,19 @@
 import pytest
 import asyncio
+import glob
 import re
 import random
 import os.path
+from collections import namedtuple
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
+
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -62,6 +66,13 @@ def get_path_to_backup(backup_name):
     return os.path.join(instance.cluster.instances_dir, "backups", name)
 
 
+def find_files_in_backup_folder(backup_name):
+    path = get_path_to_backup(backup_name)
+    files = [f for f in glob.glob(path + "/**", recursive=True) if os.path.isfile(f)]
+    files += [f for f in glob.glob(path + "/.**", recursive=True) if os.path.isfile(f)]
+    return files
+
+
 session_id_counter = 0
 
 
@@ -80,6 +91,63 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
     )
 
 
+BackupInfo = namedtuple(
+    "BackupInfo",
+    "name id status error num_files total_size num_entries uncompressed_size compressed_size files_read bytes_read",
+)
+
+
+def get_backup_info_from_system_backups(by_id=None, by_name=None):
+    where_condition = "1"
+    if by_id:
+        where_condition = f"id = '{by_id}'"
+    elif by_name:
+        where_condition = f"name = '{by_name}'"
+
+    [
+        name,
+        id,
+        status,
+        error,
+        num_files,
+        total_size,
+        num_entries,
+        uncompressed_size,
+        compressed_size,
+        files_read,
+        bytes_read,
+    ] = (
+        instance.query(
+            f"SELECT name, id, status, error, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read "
+            f"FROM system.backups WHERE {where_condition} LIMIT 1"
+        )
+        .strip("\n")
+        .split("\t")
+    )
+
+    num_files = int(num_files)
+    total_size = int(total_size)
+    num_entries = int(num_entries)
+    uncompressed_size = int(uncompressed_size)
+    compressed_size = int(compressed_size)
+    files_read = int(files_read)
+    bytes_read = int(bytes_read)
+
+    return BackupInfo(
+        name=name,
+        id=id,
+        status=status,
+        error=error,
+        num_files=num_files,
+        total_size=total_size,
+        num_entries=num_entries,
+        uncompressed_size=uncompressed_size,
+        compressed_size=compressed_size,
+        files_read=files_read,
+        bytes_read=bytes_read,
+    )
+
+
 @pytest.mark.parametrize(
     "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
 )
@@ -89,8 +157,6 @@ def test_restore_table(engine):
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
@@ -132,8 +198,6 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -146,8 +210,6 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -177,8 +239,6 @@ def test_incremental_backup():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
@@ -190,6 +250,67 @@ def test_incremental_backup():
         f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
+
+
+def test_increment_backup_without_changes():
+    backup_name = new_backup_name()
+    incremental_backup_name = new_backup_name()
+
+    create_and_fill_table(n=1)
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == TSV([["1", "0"]])
+
+    # prepare first backup without base_backup
+    id_backup = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[
+        0
+    ]
+    backup_info = get_backup_info_from_system_backups(by_id=id_backup)
+
+    assert backup_info.status == "BACKUP_CREATED"
+    assert backup_info.error == ""
+    assert backup_info.num_files > 0
+    assert backup_info.total_size > 0
+    assert (
+        0 < backup_info.num_entries and backup_info.num_entries <= backup_info.num_files
+    )
+    assert backup_info.uncompressed_size > 0
+    assert backup_info.compressed_size == backup_info.uncompressed_size
+
+    # create second backup without changes based on the first one
+    id_backup2 = instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    ).split("\t")[0]
+
+    backup2_info = get_backup_info_from_system_backups(by_id=id_backup2)
+
+    assert backup2_info.status == "BACKUP_CREATED"
+    assert backup2_info.error == ""
+    assert backup2_info.num_files == backup_info.num_files
+    assert backup2_info.total_size == backup_info.total_size
+    assert backup2_info.num_entries == 0
+    assert backup2_info.uncompressed_size > 0
+    assert backup2_info.compressed_size == backup2_info.uncompressed_size
+
+    # restore the second backup
+    # we expect to see all files in the meta info of the restore and a sum of uncompressed and compressed sizes
+    id_restore = instance.query(
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+    ).split("\t")[0]
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table2") == TSV(
+        [["1", "0"]]
+    )
+
+    restore_info = get_backup_info_from_system_backups(by_id=id_restore)
+
+    assert restore_info.status == "RESTORED"
+    assert restore_info.error == ""
+    assert restore_info.num_files == backup2_info.num_files
+    assert restore_info.total_size == backup2_info.total_size
+    assert restore_info.num_entries == backup2_info.num_entries
+    assert restore_info.uncompressed_size == backup2_info.uncompressed_size
+    assert restore_info.compressed_size == backup2_info.compressed_size
+    assert restore_info.files_read == backup2_info.num_files
+    assert restore_info.bytes_read == backup2_info.total_size
 
 
 def test_incremental_backup_overflow():
@@ -344,6 +465,29 @@ def test_incremental_backup_for_log_family():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
+def test_incremental_backup_append_table_def():
+    backup_name = new_backup_name()
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("ALTER TABLE test.table MODIFY SETTING parts_to_throw_insert=100")
+
+    incremental_backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query(f"RESTORE TABLE test.table FROM {incremental_backup_name}")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    assert "parts_to_throw_insert = 100" in instance.query(
+        "SHOW CREATE TABLE test.table"
+    )
+
+
 def test_backup_not_found_or_already_exists():
     backup_name = new_backup_name()
 
@@ -372,8 +516,6 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -387,8 +529,6 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
@@ -428,6 +568,24 @@ def test_zip_archive_with_settings():
         f"RESTORE TABLE test.table FROM {backup_name} SETTINGS password='qwerty'"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_zip_archive_with_bad_compression_method():
+    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.zip')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    expected_error = "Unknown compression method specified for a zip archive"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_compression_method', compression_method='foobar'"
+    )
+    assert (
+        instance.query(
+            "SELECT status FROM system.backups WHERE id='archive_with_bad_compression_method'"
+        )
+        == "BACKUP_FAILED\n"
+    )
 
 
 def test_async():
@@ -486,7 +644,8 @@ def test_async_backups_to_same_destination(interface):
             f"BACKUP TABLE test.table TO {backup_name} ASYNC"
         )
 
-    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # One of those two backups to the same destination is expected to fail.
+    # If the second backup is going to fail it can fail either immediately or after a while.
     # If it fails immediately we won't even get its ID.
     id2 = None if err else res.split("\t")[0]
 
@@ -501,17 +660,16 @@ def test_async_backups_to_same_destination(interface):
         "",
     )
 
-    # The first backup should succeed.
-    assert instance.query(
-        f"SELECT status, error FROM system.backups WHERE id='{id1}'"
-    ) == TSV([["BACKUP_CREATED", ""]])
+    ids_succeeded = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
+    ).splitlines()
 
-    if id2:
-        # The second backup should fail.
-        assert (
-            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-            == "BACKUP_FAILED\n"
-        )
+    ids_failed = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+    ).splitlines()
+
+    assert len(ids_succeeded) == 1
+    assert set(ids_succeeded + ids_failed) == set(ids)
 
     # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")
@@ -1038,6 +1196,85 @@ def test_restore_partition():
     )
 
 
+@pytest.mark.parametrize("exclude_system_log_tables", [False, True])
+def test_backup_all(exclude_system_log_tables):
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')",
+        params={"session_id": session_id},
+    )
+
+    instance.query("CREATE FUNCTION two_and_half AS (x) -> x * 2.5")
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+
+    backup_name = new_backup_name()
+
+    exclude_from_backup = []
+    if exclude_system_log_tables:
+        # See the list of log tables in src/Interpreters/SystemLog.cpp
+        log_tables = [
+            "query_log",
+            "query_thread_log",
+            "part_log",
+            "trace_log",
+            "crash_log",
+            "text_log",
+            "metric_log",
+            "filesystem_cache_log",
+            "filesystem_read_prefetches_log",
+            "asynchronous_metric_log",
+            "opentelemetry_span_log",
+            "query_views_log",
+            "zookeeper_log",
+            "session_log",
+            "transactions_info_log",
+            "processors_profile_log",
+            "asynchronous_insert_log",
+        ]
+        exclude_from_backup += ["system." + table_name for table_name in log_tables]
+
+    backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
+
+    instance.http_query(backup_command, params={"session_id": session_id})
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+    restore_settings = []
+    if not exclude_system_log_tables:
+        restore_settings.append("allow_non_empty_tables=true")
+    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS '+ ', '.join(restore_settings) if restore_settings else ''}"
+
+    session_id = new_session_id()
+    instance.http_query(
+        restore_command, params={"session_id": session_id}, method="POST"
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])
+
+    assert instance.query("SELECT two_and_half(6)") == "15\n"
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+
 def test_operation_id():
     create_and_fill_table(n=30)
 
@@ -1083,31 +1320,55 @@ def test_operation_id():
 
 
 def test_system_backups():
+    # Backup
     create_and_fill_table(n=30)
 
     backup_name = new_backup_name()
-
     id = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
 
-    [name, status, num_files, uncompressed_size, compressed_size, error] = (
-        instance.query(
-            f"SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'"
-        )
-        .strip("\n")
-        .split("\t")
+    info = get_backup_info_from_system_backups(by_id=id)
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    assert info.name == escaped_backup_name
+    assert info.status == "BACKUP_CREATED"
+    assert info.error == ""
+    assert info.num_files > 0
+    assert info.total_size > 0
+    assert 0 < info.num_entries and info.num_entries <= info.num_files
+    assert info.uncompressed_size > 0
+    assert info.compressed_size == info.uncompressed_size
+    assert info.files_read == 0
+    assert info.bytes_read == 0
+
+    files_in_backup_folder = find_files_in_backup_folder(backup_name)
+    assert info.num_entries == len(files_in_backup_folder) - 1
+    assert info.uncompressed_size == sum(
+        os.path.getsize(f) for f in files_in_backup_folder
     )
 
-    escaped_backup_name = backup_name.replace("'", "\\'")
-    num_files = int(num_files)
-    compressed_size = int(compressed_size)
-    uncompressed_size = int(uncompressed_size)
-    assert name == escaped_backup_name
-    assert status == "BACKUP_CREATED"
-    assert num_files > 1
-    assert uncompressed_size > 1
-    assert compressed_size == uncompressed_size
-    assert error == ""
+    # The concrete values can change.
+    info.num_files == 91
+    info.total_size == 4973
+    info.num_entries == 55
+    info.uncompressed_size == 19701
 
+    instance.query("DROP TABLE test.table")
+
+    # Restore
+    id = instance.query(f"RESTORE TABLE test.table FROM {backup_name}").split("\t")[0]
+    restore_info = get_backup_info_from_system_backups(by_id=id)
+
+    assert restore_info.name == escaped_backup_name
+    assert restore_info.status == "RESTORED"
+    assert restore_info.error == ""
+    assert restore_info.num_files == info.num_files
+    assert restore_info.total_size == info.total_size
+    assert restore_info.num_entries == info.num_entries
+    assert restore_info.uncompressed_size == info.uncompressed_size
+    assert restore_info.compressed_size == info.compressed_size
+    assert restore_info.files_read == restore_info.num_files
+    assert restore_info.bytes_read == restore_info.total_size
+
+    # Failed backup.
     backup_name = new_backup_name()
     expected_error = "Table test.non_existent_table was not found"
     assert expected_error in instance.query_and_get_error(
@@ -1115,22 +1376,17 @@ def test_system_backups():
     )
 
     escaped_backup_name = backup_name.replace("'", "\\'")
-    [status, num_files, uncompressed_size, compressed_size, error] = (
-        instance.query(
-            f"SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'"
-        )
-        .strip("\n")
-        .split("\t")
-    )
+    info = get_backup_info_from_system_backups(by_name=escaped_backup_name)
 
-    num_files = int(num_files)
-    compressed_size = int(compressed_size)
-    uncompressed_size = int(uncompressed_size)
-    assert status == "BACKUP_FAILED"
-    assert num_files == 0
-    assert uncompressed_size == 0
-    assert compressed_size == 0
-    assert expected_error in error
+    assert info.status == "BACKUP_FAILED"
+    assert expected_error in info.error
+    assert info.num_files == 0
+    assert info.total_size == 0
+    assert info.num_entries == 0
+    assert info.uncompressed_size == 0
+    assert info.compressed_size == 0
+    assert info.files_read == 0
+    assert info.bytes_read == 0
 
 
 def test_mutation():
@@ -1166,23 +1422,16 @@ def test_tables_dependency():
     instance.query("CREATE DATABASE test2")
 
     # For this test we use random names of tables to check they're created according to their dependency (not just in alphabetic order).
-    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 10)]
+    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 15)]
     random.shuffle(random_table_names)
     random_table_names = [
         random.choice(["test", "test2"]) + "." + table_name
         for table_name in random_table_names
     ]
     print(f"random_table_names={random_table_names}")
-
-    t1 = random_table_names[0]
-    t2 = random_table_names[1]
-    t3 = random_table_names[2]
-    t4 = random_table_names[3]
-    t5 = random_table_names[4]
-    t6 = random_table_names[5]
-    t7 = random_table_names[6]
-    t8 = random_table_names[7]
-    t9 = random_table_names[8]
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15 = tuple(
+        random_table_names
+    )
 
     # Create a materialized view and a dictionary with a local table as source.
     instance.query(
@@ -1208,11 +1457,34 @@ def test_tables_dependency():
     instance.query(f"CREATE VIEW {t7} AS SELECT sum(x) FROM (SELECT x FROM {t6})")
 
     instance.query(
-        f"CREATE TABLE {t8} AS {t2} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+        f"CREATE DICTIONARY {t8} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+    )
+
+    instance.query(f"CREATE TABLE {t9}(a Int64) ENGINE=Log")
+
+    instance.query(
+        f"CREATE VIEW {t10}(x Int64, y String) AS SELECT * FROM {t1} WHERE x IN {t9}"
     )
 
     instance.query(
-        f"CREATE DICTIONARY {t9} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+        f"CREATE VIEW {t11}(x Int64, y String) AS SELECT * FROM {t2} WHERE x NOT IN (SELECT a FROM {t9})"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t12} AS {t1} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t13} AS {t1} ENGINE = Buffer((SELECT '{t2.split('.')[0]}'), (SELECT '{t2.split('.')[1]}'), 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t14} AS {t1} ENGINE = Buffer('', {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)",
+        database=t2.split(".")[0],
+    )
+
+    instance.query(
+        f"CREATE TABLE {t15} AS {t1} ENGINE = Buffer('', '', 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
     )
 
     # Make backup.
@@ -1221,17 +1493,23 @@ def test_tables_dependency():
 
     # Drop everything in reversive order.
     def drop():
-        instance.query(f"DROP DICTIONARY {t9}")
-        instance.query(f"DROP TABLE {t8} NO DELAY")
-        instance.query(f"DROP TABLE {t7} NO DELAY")
-        instance.query(f"DROP TABLE {t6} NO DELAY")
-        instance.query(f"DROP TABLE {t5} NO DELAY")
+        instance.query(f"DROP TABLE {t15} SYNC")
+        instance.query(f"DROP TABLE {t14} SYNC")
+        instance.query(f"DROP TABLE {t13} SYNC")
+        instance.query(f"DROP TABLE {t12} SYNC")
+        instance.query(f"DROP TABLE {t11} SYNC")
+        instance.query(f"DROP TABLE {t10} SYNC")
+        instance.query(f"DROP TABLE {t9} SYNC")
+        instance.query(f"DROP DICTIONARY {t8}")
+        instance.query(f"DROP TABLE {t7} SYNC")
+        instance.query(f"DROP TABLE {t6} SYNC")
+        instance.query(f"DROP TABLE {t5} SYNC")
         instance.query(f"DROP DICTIONARY {t4}")
-        instance.query(f"DROP TABLE {t3} NO DELAY")
-        instance.query(f"DROP TABLE {t2} NO DELAY")
-        instance.query(f"DROP TABLE {t1} NO DELAY")
-        instance.query("DROP DATABASE test NO DELAY")
-        instance.query("DROP DATABASE test2 NO DELAY")
+        instance.query(f"DROP TABLE {t3} SYNC")
+        instance.query(f"DROP TABLE {t2} SYNC")
+        instance.query(f"DROP TABLE {t1} SYNC")
+        instance.query("DROP DATABASE test SYNC")
+        instance.query("DROP DATABASE test2 SYNC")
 
     drop()
 
@@ -1241,7 +1519,7 @@ def test_tables_dependency():
     # Check everything is restored.
     assert instance.query(
         "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
-    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8, t9]))
+    ) == TSV(sorted(random_table_names))
 
     # Check logs.
     instance.query("SYSTEM FLUSH LOGS")
@@ -1256,8 +1534,20 @@ def test_tables_dependency():
         f"Table {t5} has 1 dependencies: {t4} (level 2)",
         f"Table {t6} has 1 dependencies: {t4} (level 2)",
         f"Table {t7} has 1 dependencies: {t6} (level 3)",
-        f"Table {t8} has 1 dependencies: {t2} (level 1)",
-        f"Table {t9} has 1 dependencies: {t1} (level 1)",
+        f"Table {t8} has 1 dependencies: {t1} (level 1)",
+        f"Table {t9} has no dependencies (level 0)",
+        (
+            f"Table {t10} has 2 dependencies: {t1}, {t9} (level 1)",
+            f"Table {t10} has 2 dependencies: {t9}, {t1} (level 1)",
+        ),
+        (
+            f"Table {t11} has 2 dependencies: {t2}, {t9} (level 1)",
+            f"Table {t11} has 2 dependencies: {t9}, {t2} (level 1)",
+        ),
+        f"Table {t12} has 1 dependencies: {t2} (level 1)",
+        f"Table {t13} has 1 dependencies: {t2} (level 1)",
+        f"Table {t14} has 1 dependencies: {t2} (level 1)",
+        f"Table {t15} has no dependencies (level 0)",
     ]
     for expect in expect_in_logs:
         assert any(

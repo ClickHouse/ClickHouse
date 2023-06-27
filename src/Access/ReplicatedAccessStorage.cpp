@@ -1,3 +1,4 @@
+#include <memory>
 #include <Access/AccessEntityIO.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -13,8 +14,9 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
 #include <base/range.h>
 #include <base/sleep.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -51,7 +53,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     , backup_allowed(allow_backup_)
 {
     if (zookeeper_path.empty())
-        throw Exception("ZooKeeper path must be non-empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -72,7 +74,7 @@ void ReplicatedAccessStorage::startWatchingThread()
 {
     bool prev_watching_flag = watching.exchange(true);
     if (!prev_watching_flag)
-        watching_thread = ThreadFromGlobalPool(&ReplicatedAccessStorage::runWatchingThread, this);
+        watching_thread = std::make_unique<ThreadFromGlobalPool>(&ReplicatedAccessStorage::runWatchingThread, this);
 }
 
 void ReplicatedAccessStorage::stopWatchingThread()
@@ -81,8 +83,8 @@ void ReplicatedAccessStorage::stopWatchingThread()
     if (prev_watching_flag)
     {
         watched_queue->finish();
-        if (watching_thread.joinable())
-            watching_thread.join();
+        if (watching_thread && watching_thread->joinable())
+            watching_thread->join();
     }
 }
 
@@ -458,7 +460,7 @@ zkutil::ZooKeeperPtr ReplicatedAccessStorage::getZooKeeperNoLock()
     {
         auto zookeeper = get_zookeeper();
         if (!zookeeper)
-            throw Exception("Can't have Replicated access without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't have Replicated access without ZooKeeper");
 
         /// It's possible that we connected to different [Zoo]Keeper instance
         /// so we may read a bit stale state.
@@ -523,9 +525,9 @@ void ReplicatedAccessStorage::refreshEntities(const zkutil::ZooKeeperPtr & zooke
     }
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
-    auto watch_entities_list = [watched_queue = watched_queue](const Coordination::WatchResponse &)
+    auto watch_entities_list = [my_watched_queue = watched_queue](const Coordination::WatchResponse &)
     {
-        [[maybe_unused]] bool push_result = watched_queue->push(UUIDHelpers::Nil);
+        [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
     };
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
@@ -590,10 +592,10 @@ void ReplicatedAccessStorage::refreshEntityNoLock(const zkutil::ZooKeeperPtr & z
 
 AccessEntityPtr ReplicatedAccessStorage::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
-    const auto watch_entity = [watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
+    const auto watch_entity = [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
     {
         if (response.type == Coordination::Event::CHANGED)
-            [[maybe_unused]] bool push_result = watched_queue->push(id);
+            [[maybe_unused]] bool push_result = my_watched_queue->push(id);
     };
 
     Coordination::Stat entity_stat;
@@ -674,18 +676,16 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         backup_entries_collector.getContext()->getAccessControl());
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    String current_host_id = backup_entries_collector.getBackupSettings().host_id;
-    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, current_host_id, backup_entry_with_path.first);
+    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, backup_entry_with_path.first);
 
     backup_entries_collector.addPostTask(
         [backup_entry = backup_entry_with_path.second,
-         zookeeper_path = zookeeper_path,
+         my_zookeeper_path = zookeeper_path,
          type,
-         current_host_id,
          &backup_entries_collector,
          backup_coordination]
         {
-            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type, current_host_id))
+            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(my_zookeeper_path, type))
                 backup_entries_collector.addBackupEntry(path, backup_entry);
         });
 }
@@ -708,9 +708,9 @@ void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
 
-    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
-        for (const auto & [id, entity] : entities)
+        for (const auto & [id, entity] : my_entities)
             insertWithID(id, entity, replace_if_exists, throw_if_exists);
     });
 }

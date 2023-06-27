@@ -5,7 +5,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -74,7 +74,9 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
-    String query = transformQueryForExternalDatabase(query_info,
+    String query = transformQueryForExternalDatabase(
+        query_info,
+        column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
@@ -114,7 +116,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     bridge_helper->startBridgeSync();
 
@@ -130,13 +132,16 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
     request_uri.addQueryParameter("format_name", format_name);
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
+
     return std::make_shared<StorageURLSink>(
         request_uri.toString(),
         format_name,
         getFormatSettings(local_context),
         metadata_snapshot->getSampleBlock(),
         local_context,
-        ConnectionTimeouts::getHTTPTimeouts(local_context),
+        ConnectionTimeouts::getHTTPTimeouts(
+            local_context->getSettingsRef(),
+            {local_context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
         compression_method);
 }
 
@@ -165,15 +170,16 @@ namespace
             ASTs & engine_args = args.engine_args;
 
             if (engine_args.size() != 3)
-                throw Exception("Storage " + name + " requires exactly 3 parameters: " + name + "('DSN', database or schema, table)",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
 
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
                 args.getContext()->getSettingsRef().http_receive_timeout.value,
-                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"));
+                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
+                args.getContext()->getSettingsRef().odbc_bridge_use_connection_pooling.value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
                 checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),

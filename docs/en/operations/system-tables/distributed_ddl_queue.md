@@ -7,18 +7,18 @@ Contains information about [distributed ddl queries (ON CLUSTER clause)](../../s
 
 Columns:
 
--   `entry` ([String](../../sql-reference/data-types/string.md)) — Query id.
--   `host_name` ([String](../../sql-reference/data-types/string.md)) — Hostname.
--   `host_address` ([String](../../sql-reference/data-types/string.md)) — IP address that the Hostname resolves to.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Host Port.
--   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the query.
--   `cluster` ([String](../../sql-reference/data-types/string.md)) — Cluster name.
--   `query` ([String](../../sql-reference/data-types/string.md)) — Query executed.
--   `initiator` ([String](../../sql-reference/data-types/string.md)) — Node that executed the query.
--   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query start time.
--   `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
--   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code from [ClickHouse Keeper](../../operations/tips.md#zookeeper).
+- `entry` ([String](../../sql-reference/data-types/string.md)) — Query id.
+- `host_name` ([String](../../sql-reference/data-types/string.md)) — Hostname.
+- `host_address` ([String](../../sql-reference/data-types/string.md)) — IP address that the Hostname resolves to.
+- `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Host Port.
+- `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the query.
+- `cluster` ([String](../../sql-reference/data-types/string.md)) — Cluster name.
+- `query` ([String](../../sql-reference/data-types/string.md)) — Query executed.
+- `initiator` ([String](../../sql-reference/data-types/string.md)) — Node that executed the query.
+- `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query start time.
+- `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
+- `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
+- `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code from [ClickHouse Keeper](../../operations/tips.md#zookeeper).
 
 **Example**
 

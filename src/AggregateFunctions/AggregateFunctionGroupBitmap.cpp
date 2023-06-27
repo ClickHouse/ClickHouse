@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 // TODO include this last because of a broken roaring header. See the comment inside.
@@ -41,17 +40,16 @@ namespace
         assertUnary(name, argument_types);
 
         if (!argument_types[0]->canBeUsedInBitOperations())
-            throw Exception(
-                "The type " + argument_types[0]->getName() + " of argument for aggregate function " + name
-                    + " is illegal, because it cannot be used in Bitmap operations",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The type {} of argument for aggregate function {} "
+                            "is illegal, because it cannot be used in Bitmap operations",
+                            argument_types[0]->getName(), name);
 
         AggregateFunctionPtr res(createWithIntegerType<AggregateFunctionBitmap, Data>(*argument_types[0], argument_types[0]));
 
         if (!res)
-            throw Exception(
-                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                argument_types[0]->getName(), name);
 
         return res;
     }
@@ -67,9 +65,8 @@ namespace
         DataTypePtr argument_type_ptr = argument_types[0];
         WhichDataType which(*argument_type_ptr);
         if (which.idx != TypeIndex::AggregateFunction)
-            throw Exception(
-                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                argument_types[0]->getName(), name);
 
         /// groupBitmap needs to know about the data type that was used to create bitmaps.
         /// We need to look inside the type of its argument to obtain it.
@@ -77,9 +74,8 @@ namespace
         AggregateFunctionPtr aggfunc = datatype_aggfunc.getFunction();
 
         if (aggfunc->getName() != AggregateFunctionGroupBitmapData<UInt8>::name())
-            throw Exception(
-                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                argument_types[0]->getName(), name);
 
         DataTypePtr nested_argument_type_ptr = aggfunc->getArgumentTypes()[0];
 
@@ -87,9 +83,8 @@ namespace
             *nested_argument_type_ptr, argument_type_ptr));
 
         if (!res)
-            throw Exception(
-                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                argument_types[0]->getName(), name);
 
         return res;
     }

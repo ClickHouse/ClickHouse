@@ -44,7 +44,7 @@ public:
         if (command_arguments.size() != 2)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));

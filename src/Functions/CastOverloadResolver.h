@@ -80,15 +80,13 @@ protected:
     {
         const auto & column = arguments.back().column;
         if (!column)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is non-constant column of type " + arguments.back().type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
+                "Instead there is non-constant column of type {}", getName(), arguments.back().type->getName());
 
         const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
         if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is a column with the following structure: " + column->dumpStructure(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
+                "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
 
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
         validateDataType(type, data_type_validation_settings);

@@ -1,11 +1,13 @@
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+
+#include <Functions/IFunction.h>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
-#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -13,9 +15,12 @@ namespace DB
 namespace
 {
 
-class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitor<OptimizeRedundantFunctionsInOrderByVisitor>
+class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeRedundantFunctionsInOrderByVisitor>
 {
 public:
+    using Base = InDepthQueryTreeVisitorWithContext<OptimizeRedundantFunctionsInOrderByVisitor>;
+    using Base::Base;
+
     static bool needChildVisit(QueryTreeNodePtr & node, QueryTreeNodePtr & /*parent*/)
     {
         if (node->as<FunctionNode>())
@@ -25,6 +30,9 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_redundant_functions_in_order_by)
+            return;
+
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -116,9 +124,10 @@ private:
 
 }
 
-void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr /*context*/)
+void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    OptimizeRedundantFunctionsInOrderByVisitor().visit(query_tree_node);
+    OptimizeRedundantFunctionsInOrderByVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
 }
 
 }

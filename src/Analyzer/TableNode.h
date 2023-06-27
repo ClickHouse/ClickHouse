@@ -29,6 +29,9 @@ public:
     /// Construct table node with storage, storage lock, storage snapshot
     explicit TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_);
 
+    /// Construct table node with storage, context
+    explicit TableNode(StoragePtr storage_, const ContextPtr & context);
+
     /// Get storage
     const StoragePtr & getStorage() const
     {
@@ -53,6 +56,18 @@ public:
         return storage_lock;
     }
 
+    /// Get temporary table name
+    const std::string & getTemporaryTableName() const
+    {
+        return temporary_table_name;
+    }
+
+    /// Set temporary table name
+    void setTemporaryTableName(std::string temporary_table_name_value)
+    {
+        temporary_table_name = std::move(temporary_table_name_value);
+    }
+
     /// Return true if table node has table expression modifiers, false otherwise
     bool hasTableExpressionModifiers() const
     {
@@ -61,6 +76,12 @@ public:
 
     /// Get table expression modifiers
     const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> & getTableExpressionModifiers()
     {
         return table_expression_modifiers;
     }
@@ -85,7 +106,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     StoragePtr storage;
@@ -93,6 +114,7 @@ private:
     TableLockHolder storage_lock;
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+    std::string temporary_table_name;
 
     static constexpr size_t children_size = 0;
 };

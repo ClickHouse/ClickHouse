@@ -51,7 +51,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 #endif
 
     auto current_logger = config.getString("logger", "");
-    if (config_logger == current_logger) //-V1051
+    if (config_logger.has_value() && *config_logger == current_logger)
         return;
 
     config_logger = current_logger;

@@ -3,17 +3,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/toOneLineQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <chrono>
 
@@ -78,7 +74,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     const Settings & settings = query_context->getSettingsRef();
 
     if (client_info.current_query_id.empty())
-        throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast);
 
@@ -92,7 +88,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             if (queue_max_wait_ms)
                 LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
-                throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries. Maximum: {}", max_size);
         }
 
         if (!is_unlimited_query)
@@ -130,10 +126,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
 
             if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
                 && processes.size() >= settings.max_concurrent_queries_for_all_users)
-                throw Exception(
-                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
-                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
-                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for all users. "
+                    "Current: {}, maximum: {}", processes.size(), settings.max_concurrent_queries_for_all_users.toString());
         }
 
         /** Why we use current user?
@@ -153,18 +147,18 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 if (!is_unlimited_query && settings.max_concurrent_queries_for_user
                     && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
-                    throw Exception("Too many simultaneous queries for user " + client_info.current_user
-                        + ". Current: " + toString(user_process_list->second.queries.size())
-                        + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
-                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous queries for user {}. "
+                                    "Current: {}, maximum: {}",
+                                    client_info.current_user, user_process_list->second.queries.size(),
+                                    settings.max_concurrent_queries_for_user.toString());
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 
                 if (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
-                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
 
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
@@ -180,8 +174,9 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                             return false;
                         }))
                     {
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and can't be stopped",
-                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
                     }
                  }
             }
@@ -193,8 +188,9 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             if (user_process_list.first == client_info.current_user)
                 continue;
             if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
-                throw Exception("Query with id = " + client_info.current_query_id + " is already running by user " + user_process_list.first,
-                    ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                "Query with id = {} is already running by user {}",
+                                client_info.current_query_id, user_process_list.first);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -207,10 +203,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
+        CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            std::lock_guard lock_thread_group(thread_group->mutex);
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
@@ -218,8 +214,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
-            thread_group->query = query_;
-            thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
@@ -252,6 +246,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 priorities.insert(static_cast<int>(settings.priority)),
                 std::move(thread_group),
                 query_kind,
+                settings,
                 watch_start_nanoseconds));
 
         increaseQueryKindAmount(query_kind);
@@ -346,8 +341,9 @@ QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
-    ThreadGroupStatusPtr && thread_group_,
+    ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
+    const Settings & query_settings_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
@@ -359,14 +355,20 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
 {
-    auto settings = getContext()->getSettings();
-    limits.max_execution_time = settings.max_execution_time;
-    overflow_mode = settings.timeout_overflow_mode;
+    /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
+    /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
+    /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
+    limits.max_execution_time = query_settings_.max_execution_time;
+    overflow_mode = query_settings_.timeout_overflow_mode;
 }
 
 QueryStatus::~QueryStatus()
 {
-    assert(executors.empty());
+#if !defined(NDEBUG)
+    /// Check that all executors were invalidated.
+    for (const auto & [_, e] : executors)
+        assert(!e->executor);
+#endif
 
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -377,6 +379,19 @@ QueryStatus::~QueryStatus()
     }
 }
 
+void QueryStatus::ExecutorHolder::cancel()
+{
+    std::lock_guard lock(mutex);
+    if (executor)
+        executor->cancel();
+}
+
+void QueryStatus::ExecutorHolder::remove()
+{
+    std::lock_guard lock(mutex);
+    executor = nullptr;
+}
+
 CancellationCode QueryStatus::cancelQuery(bool)
 {
     if (is_killed.load())
@@ -384,8 +399,27 @@ CancellationCode QueryStatus::cancelQuery(bool)
 
     is_killed.store(true);
 
-    std::lock_guard lock(executors_mutex);
-    for (auto * e : executors)
+    std::vector<ExecutorHolderPtr> executors_snapshot;
+
+    {
+        /// Create a snapshot of executors under a mutex.
+        std::lock_guard lock(executors_mutex);
+        executors_snapshot.reserve(executors.size());
+        for (const auto & [_, e] : executors)
+            executors_snapshot.push_back(e);
+    }
+
+    /// We should call cancel() for each executor with unlocked executors_mutex, because
+    /// cancel() can try to lock some internal mutex that is already locked by query executing
+    /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
+    /// which will lead to deadlock.
+    /// Note that the size and the content of executors cannot be changed while
+    /// executors_mutex is unlocked, because:
+    /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
+    /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
+    /// just mark that executor is invalid.
+    /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
+    for (const auto & e : executors_snapshot)
         e->cancel();
 
     return CancellationCode::CancelSent;
@@ -397,24 +431,33 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
-    executors.push_back(e);
+    assert(!executors.contains(e));
+    executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
-    std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
-    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
+    ExecutorHolderPtr executor_holder;
+
+    {
+        std::lock_guard lock(executors_mutex);
+        assert(executors.contains(e));
+        executor_holder = executors[e];
+        executors.erase(e);
+    }
+
+    /// Invalidate executor pointer inside holder.
+    /// We should do it with released executors_mutex to avoid possible lock order inversion.
+    executor_holder->remove();
 }
 
 bool QueryStatus::checkTimeLimit()
 {
     if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     return limits.checkTimeLimit(watch, overflow_mode);
 }
@@ -526,6 +569,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.query_kind        = query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
@@ -543,19 +587,19 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
-        {
-            std::lock_guard lock(thread_group->mutex);
-            res.thread_ids.assign(thread_group->thread_ids.begin(), thread_group->thread_ids.end());
-        }
+            res.thread_ids = thread_group->getInvolvedThreadIds();
 
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    if (get_settings && getContext())
+    if (get_settings)
     {
-        res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
-        res.current_database = getContext()->getCurrentDatabase();
+        if (auto ctx = context.lock())
+        {
+            res.query_settings = std::make_shared<Settings>(ctx->getSettings());
+            res.current_database = ctx->getCurrentDatabase();
+        }
     }
 
     return res;
@@ -564,12 +608,18 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
 ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
+    /// We have to copy `processes` first because `process->getInfo()` below can access the context to get the query settings,
+    /// and it's better not to keep the process list's lock while doing that.
+    std::vector<QueryStatusPtr> processes_copy;
+
+    {
+        auto lock = safeLock();
+        processes_copy.assign(processes.begin(), processes.end());
+    }
+
     Info per_query_infos;
-
-    auto lock = safeLock();
-
-    per_query_infos.reserve(processes.size());
-    for (const auto & process : processes)
+    per_query_infos.reserve(processes_copy.size());
+    for (const auto & process : processes_copy)
         per_query_infos.emplace_back(process->getInfo(get_thread_list, get_profile_events, get_settings));
 
     return per_query_infos;
@@ -588,7 +638,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
     if (global_context)
     {
         size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getTempDataOnDisk(), size_limit);
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 
@@ -637,7 +687,7 @@ void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
     if (found == query_kind_amounts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease before increase on '{}'", query_kind);
     else if (found->second == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, found->second);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}', {}", query_kind, found->second);
     else
         found->second -= 1;
 }

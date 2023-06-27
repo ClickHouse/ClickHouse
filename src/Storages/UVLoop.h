@@ -25,7 +25,7 @@ public:
         int res = uv_loop_init(loop_ptr.get());
 
         if (res != 0)
-            throw Exception("UVLoop could not initialize", ErrorCodes::SYSTEM_ERROR);
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "UVLoop could not initialize");
     }
 
     ~UVLoop()

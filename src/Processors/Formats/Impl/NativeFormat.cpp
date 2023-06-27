@@ -16,8 +16,15 @@ class NativeInputFormat final : public IInputFormat
 {
 public:
     NativeInputFormat(ReadBuffer & buf, const Block & header_, const FormatSettings & settings)
-        : IInputFormat(header_, buf)
-        , reader(std::make_unique<NativeReader>(buf, header_, 0, settings.skip_unknown_fields))
+        : IInputFormat(header_, &buf)
+        , reader(std::make_unique<NativeReader>(
+              buf,
+              header_,
+              0,
+              settings.skip_unknown_fields,
+              settings.null_as_default,
+              settings.native.allow_types_conversion,
+              settings.defaults_for_omitted_fields ? &block_missing_values : nullptr))
         , header(header_) {}
 
     String getName() const override { return "Native"; }
@@ -30,7 +37,11 @@ public:
 
     Chunk generate() override
     {
+        block_missing_values.clear();
+        size_t block_start = getDataOffsetMaybeCompressed(*in);
         auto block = reader->read();
+        approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
+
         if (!block)
             return {};
 
@@ -47,17 +58,23 @@ public:
         IInputFormat::setReadBuffer(in_);
     }
 
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 private:
     std::unique_ptr<NativeReader> reader;
     Block header;
+    BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk;
 };
 
 class NativeOutputFormat final : public IOutputFormat
 {
 public:
-    NativeOutputFormat(WriteBuffer & buf, const Block & header)
+    NativeOutputFormat(WriteBuffer & buf, const Block & header, UInt64 client_protocol_version = 0)
         : IOutputFormat(header, buf)
-        , writer(buf, 0, header)
+        , writer(buf, client_protocol_version, header)
     {
     }
 
@@ -115,9 +132,9 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
-        return std::make_shared<NativeOutputFormat>(buf, sample);
+        return std::make_shared<NativeOutputFormat>(buf, sample, settings.client_protocol_version);
     });
 }
 

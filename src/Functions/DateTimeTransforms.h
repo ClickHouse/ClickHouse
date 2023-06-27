@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -21,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 /** Transformations.
@@ -53,6 +56,10 @@ struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
+    static inline UInt16 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt16>(time_zone.toDayNum(t.whole));
+    }
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return UInt16(time_zone.toDayNum(t));
@@ -68,6 +75,10 @@ struct ToDateImpl
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
         return d;
+    }
+    static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toDayNum(t.whole), 0};
     }
 
     using FactorTransform = ZeroTransform;
@@ -710,6 +721,56 @@ struct ToYearImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToWeekYearImpl
+{
+    static constexpr auto name = "toWeekYear";
+
+    static constexpr Int8 week_mode = 3;
+
+    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearWeek(t, week_mode).first;
+    }
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearWeek(t, week_mode).first;
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearWeek(ExtendedDayNum(d), week_mode).first;
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearWeek(DayNum(d), week_mode).first;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToWeekOfWeekYearImpl
+{
+    static constexpr auto name = "toWeekOfWeekYear";
+
+    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(t);
+    }
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(t);
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(ExtendedDayNum(d));
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(DayNum(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToQuarterImpl
 {
     static constexpr auto name = "toQuarter";
@@ -786,21 +847,21 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
 
-    static inline UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t);
+        return time_zone.toDayOfWeek(t, mode);
     }
-    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt32 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t);
+        return time_zone.toDayOfWeek(t, mode);
     }
-    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int32 d, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d));
+        return time_zone.toDayOfWeek(ExtendedDayNum(d), mode);
     }
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16 d, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(DayNum(d));
+        return time_zone.toDayOfWeek(DayNum(d), mode);
     }
 
     using FactorTransform = ToMondayImpl;
@@ -1367,12 +1428,15 @@ struct ToDateTimeComponentsImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct DateTimeAccurateConvertStrategyAdditions {};
+struct DateTimeAccurateOrNullConvertStrategyAdditions {};
 
-template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
+template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false, typename Additions = void *>
 struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
-    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
+    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
+        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to)
     {
         using ValueType = typename ToTypeVector::value_type;
         size_t size = vec_from.size();
@@ -1380,6 +1444,30 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
+            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
+            {
+                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
+                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                {
+                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
+
+                    if (!is_valid_input)
+                    {
+                        if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                        {
+                            vec_to[i] = 0;
+                            (*vec_null_map_to)[i] = true;
+                            continue;
+                        }
+                        else
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
+                                vec_from[i], TypeName<ValueType>);
+                        }
+                    }
+                }
+            }
+
             if constexpr (is_extended_result)
                 vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], time_zone));
             else
@@ -1388,18 +1476,26 @@ struct Transformer
     }
 };
 
-
 template <typename FromDataType, typename ToDataType, typename Transform, bool is_extended_result = false>
 struct DateTimeTransformImpl
 {
+    template <typename Additions = void *>
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
-        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>;
+        using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
+            ColumnUInt8::MutablePtr col_null_map_to;
+            ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
+            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+            {
+                col_null_map_to = ColumnUInt8::create(sources->getData().size(), false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
@@ -1407,7 +1503,7 @@ struct DateTimeTransformImpl
             if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
             }
             else
             {
@@ -1416,7 +1512,15 @@ struct DateTimeTransformImpl
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
+            }
+
+            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+            {
+                if (vec_null_map_to)
+                {
+                    return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
+                }
             }
 
             return mutable_result_col;

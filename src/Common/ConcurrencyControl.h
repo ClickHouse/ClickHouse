@@ -5,17 +5,10 @@
 #include <mutex>
 #include <memory>
 #include <list>
-#include <condition_variable>
 
-#include <Common/Exception.h>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-}
 
 /*
  * Controls how many threads can be allocated for a query (or another activity).
@@ -53,17 +46,12 @@ public:
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
     struct Slot : boost::noncopyable
     {
-        ~Slot()
-        {
-            allocation->release();
-        }
+        ~Slot();
 
     private:
         friend struct Allocation; // for ctor
 
-        explicit Slot(AllocationPtr && allocation_)
-            : allocation(std::move(allocation_))
-        {}
+        explicit Slot(AllocationPtr && allocation_);
 
         AllocationPtr allocation;
     };
@@ -74,47 +62,18 @@ public:
     // Manages group of slots for a single query, see ConcurrencyControl::allocate(min, max)
     struct Allocation : std::enable_shared_from_this<Allocation>, boost::noncopyable
     {
-        ~Allocation()
-        {
-            // We have to lock parent's mutex to avoid race with grant()
-            // NOTE: shortcut can be added, but it requires Allocation::mutex lock even to check if shortcut is possible
-            parent.free(this);
-        }
+        ~Allocation();
 
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
-        [[nodiscard]] SlotPtr tryAcquire()
-        {
-            SlotCount value = granted.load();
-            while (value)
-            {
-                if (granted.compare_exchange_strong(value, value - 1))
-                {
-                    std::unique_lock lock{mutex};
-                    return SlotPtr(new Slot(shared_from_this())); // can't use std::make_shared due to private ctor
-                }
-            }
-            return {}; // avoid unnecessary locking
-        }
+        [[nodiscard]] SlotPtr tryAcquire();
 
-        SlotCount grantedCount() const
-        {
-            return granted;
-        }
+        SlotCount grantedCount() const;
 
     private:
         friend struct Slot; // for release()
         friend class ConcurrencyControl; // for grant(), free() and ctor
 
-        Allocation(ConcurrencyControl & parent_, SlotCount limit_, SlotCount granted_, Waiters::iterator waiter_ = {})
-            : parent(parent_)
-            , limit(limit_)
-            , allocated(granted_)
-            , granted(granted_)
-            , waiter(waiter_)
-        {
-            if (allocated < limit)
-                *waiter = this;
-        }
+        Allocation(ConcurrencyControl & parent_, SlotCount limit_, SlotCount granted_, Waiters::iterator waiter_ = {});
 
         auto cancel()
         {
@@ -126,23 +85,10 @@ public:
         }
 
         // Grant single slot to allocation, returns true iff more slot(s) are required
-        bool grant()
-        {
-            std::unique_lock lock{mutex};
-            granted++;
-            allocated++;
-            return allocated < limit;
-        }
+        bool grant();
 
         // Release one slot and grant it to other allocation if required
-        void release()
-        {
-            parent.release(1);
-            std::unique_lock lock{mutex};
-            released++;
-            if (released > allocated)
-                abort();
-        }
+        void release();
 
         ConcurrencyControl & parent;
         const SlotCount limit;
@@ -157,106 +103,32 @@ public:
     };
 
 public:
-    ConcurrencyControl()
-        : cur_waiter(waiters.end())
-    {}
+    ConcurrencyControl();
 
     // WARNING: all Allocation objects MUST be destructed before ConcurrencyControl
     // NOTE: Recommended way to achieve this is to use `instance()` and do graceful shutdown of queries
-    ~ConcurrencyControl()
-    {
-        if (!waiters.empty())
-            abort();
-    }
+    ~ConcurrencyControl();
 
     // Allocate at least `min` and at most `max` slots.
     // If not all `max` slots were successfully allocated, a subscription for later allocation is created
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
-    [[nodiscard]] AllocationPtr allocate(SlotCount min, SlotCount max)
-    {
-        if (min > max)
-            throw DB::Exception("ConcurrencyControl: invalid allocation requirements", DB::ErrorCodes::LOGICAL_ERROR);
+    [[nodiscard]] AllocationPtr allocate(SlotCount min, SlotCount max);
 
-        std::unique_lock lock{mutex};
+    void setMaxConcurrency(SlotCount value);
 
-        // Acquire as much slots as we can, but not lower than `min`
-        SlotCount granted = std::max(min, std::min(max, available(lock)));
-        cur_concurrency += granted;
-
-        // Create allocation and start waiting if more slots are required
-        if (granted < max)
-            return AllocationPtr(new Allocation(*this, max, granted,
-                waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
-        else
-            return AllocationPtr(new Allocation(*this, max, granted));
-    }
-
-    void setMaxConcurrency(SlotCount value)
-    {
-        std::unique_lock lock{mutex};
-        max_concurrency = std::max<SlotCount>(1, value); // never allow max_concurrency to be zero
-        schedule(lock);
-    }
-
-    static ConcurrencyControl & instance()
-    {
-        static ConcurrencyControl result;
-        return result;
-    }
+    static ConcurrencyControl & instance();
 
 private:
     friend struct Allocation; // for free() and release()
 
-    void free(Allocation * allocation)
-    {
-        // Allocation is allowed to be canceled even if there are:
-        //  - `amount`: granted slots (acquired slots are not possible, because Slot holds AllocationPtr)
-        //  - `waiter`: active waiting for more slots to be allocated
-        // Thus Allocation destruction may require the following lock, to avoid race conditions
-        std::unique_lock lock{mutex};
-        auto [amount, waiter] = allocation->cancel();
+    void free(Allocation * allocation);
 
-        cur_concurrency -= amount;
-        if (waiter)
-        {
-            if (cur_waiter == *waiter)
-                cur_waiter = waiters.erase(*waiter);
-            else
-                waiters.erase(*waiter);
-        }
-        schedule(lock);
-    }
-
-    void release(SlotCount amount)
-    {
-        std::unique_lock lock{mutex};
-        cur_concurrency -= amount;
-        schedule(lock);
-    }
+    void release(SlotCount amount);
 
     // Round-robin scheduling of available slots among waiting allocations
-    void schedule(std::unique_lock<std::mutex> &)
-    {
-        while (cur_concurrency < max_concurrency && !waiters.empty())
-        {
-            cur_concurrency++;
-            if (cur_waiter == waiters.end())
-                cur_waiter = waiters.begin();
-            Allocation * allocation = *cur_waiter;
-            if (allocation->grant())
-                ++cur_waiter;
-            else
-                cur_waiter = waiters.erase(cur_waiter); // last required slot has just been granted -- stop waiting
-        }
-    }
+    void schedule(std::unique_lock<std::mutex> &);
 
-    SlotCount available(std::unique_lock<std::mutex> &) const
-    {
-        if (cur_concurrency < max_concurrency)
-            return max_concurrency - cur_concurrency;
-        else
-            return 0;
-    }
+    SlotCount available(std::unique_lock<std::mutex> &) const;
 
     std::mutex mutex;
     Waiters waiters;
@@ -264,3 +136,5 @@ private:
     SlotCount max_concurrency = Unlimited;
     SlotCount cur_concurrency = 0;
 };
+
+}

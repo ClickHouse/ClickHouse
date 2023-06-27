@@ -1,6 +1,4 @@
 #pragma once
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 #include <new>
 #include <base/defines.h>
@@ -17,6 +15,12 @@
 #    include <cstdlib>
 #endif
 
+#if USE_GWP_ASAN
+#    include <gwp_asan/guarded_pool_allocator.h>
+
+static gwp_asan::GuardedPoolAllocator GuardedAlloc;
+#endif
+
 namespace Memory
 {
 
@@ -29,6 +33,23 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.shouldSample()))
+    {
+        if constexpr (sizeof...(TAlign) == 1)
+        {
+            if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align...)))
+                return ptr;
+        }
+        else
+        {
+            if (void * ptr = GuardedAlloc.allocate(size))
+                return ptr;
+
+        }
+    }
+#endif
+
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
         ptr = aligned_alloc(alignToSizeT(align...), size);
@@ -44,16 +65,37 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.shouldSample()))
+    {
+        if (void * ptr = GuardedAlloc.allocate(size))
+            return ptr;
+    }
+#endif
     return malloc(size);
 }
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.shouldSample()))
+    {
+        if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align)))
+            return ptr;
+    }
+#endif
     return aligned_alloc(static_cast<size_t>(align), size);
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        GuardedAlloc.deallocate(ptr);
+        return;
+    }
+#endif
     free(ptr);
 }
 
@@ -65,6 +107,14 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... al
 {
     if (unlikely(ptr == nullptr))
         return;
+
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        GuardedAlloc.deallocate(ptr);
+        return;
+    }
+#endif
 
     if constexpr (sizeof...(TAlign) == 1)
         sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
@@ -78,6 +128,13 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        GuardedAlloc.deallocate(ptr);
+        return;
+    }
+#endif
     free(ptr);
 }
 
@@ -125,6 +182,16 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 {
     std::size_t actual_size = 0;
 
+#if USE_GWP_ASAN
+    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    {
+        if (!size)
+            size = GuardedAlloc.getSize(ptr);
+        trace = CurrentMemoryTracker::free(size);
+        return size;
+    }
+#endif
+
     try
     {
 #if USE_JEMALLOC
@@ -156,5 +223,3 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 }
 
 }
-
-#pragma GCC diagnostic pop

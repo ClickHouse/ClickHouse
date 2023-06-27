@@ -68,22 +68,32 @@ public:
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
-    std::vector<String> readHeaderRow() {return readRowImpl<true>(); }
+    std::vector<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
 
-    std::vector<String> readRow() { return readRowImpl<false>(); }
+    std::vector<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
+
+    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
 
-    EscapingRule getEscapingRule() { return format_settings.custom.escaping_rule; }
+    EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+
 private:
-    template <bool is_header>
+    enum class ReadFieldMode : uint8_t
+    {
+        AS_STRING,
+        AS_FIELD,
+        AS_POSSIBLE_STRING,
+    };
+
+    template <ReadFieldMode mode>
     std::vector<String> readRowImpl();
 
-    template <bool read_string>
+    template <ReadFieldMode mode>
     String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
 
     void updateFormatSettings(bool is_last_column);
@@ -99,7 +109,9 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
@@ -107,6 +119,7 @@ private:
     CustomSeparatedFormatReader reader;
     bool first_row = true;
     JSONInferenceInfo json_inference_info;
+    bool no_more_data = false;
 };
 
 }

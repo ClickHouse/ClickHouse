@@ -19,6 +19,8 @@ public:
     static constexpr auto type_id = TypeToTypeIndex<IPv4>;
 
     const char * getFamilyName() const override { return TypeName<IPv4>.data(); }
+    String getSQLCompatibleName() const override { return "TEXT"; }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override { return IPv4{}; }
@@ -37,6 +39,7 @@ public:
     bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }
+    bool isValueRepresentedByInteger() const override { return true; }
     bool isValueRepresentedByUnsignedInteger() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const override { return true; }
@@ -58,6 +61,8 @@ public:
     static constexpr auto type_id = TypeToTypeIndex<IPv6>;
 
     const char * getFamilyName() const override { return TypeName<IPv6>.data(); }
+    String getSQLCompatibleName() const override { return "TEXT"; }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override { return IPv6{}; }
