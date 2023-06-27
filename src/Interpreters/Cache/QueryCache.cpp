@@ -132,6 +132,11 @@ QueryCache::Key::Key(
 {
 }
 
+QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
+    : QueryCache::Key(ast_, {}, user_name_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+{
+}
+
 bool QueryCache::Key::operator==(const Key & other) const
 {
     return ast->getTreeHash() == other.ast->getTreeHash();
@@ -387,19 +392,22 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         return;
     }
 
-    if (!entry->key.is_shared && entry->key.user_name != key.user_name)
+    const auto & entry_key = entry->key;
+    const auto & entry_mapped = entry->mapped;
+
+    if (!entry_key.is_shared && entry_key.user_name != key.user_name)
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
     }
 
-    if (IsStale()(entry->key))
+    if (IsStale()(entry_key))
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found for query {}", key.queryStringFromAst());
         return;
     }
 
-    if (!entry->key.is_compressed)
+    if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
         // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
@@ -408,15 +416,15 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         // optimization.
 
         Chunks cloned_chunks;
-        for (const auto & chunk : entry->mapped->chunks)
+        for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildSourceFromChunks(entry->key.header, std::move(cloned_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
         Chunks decompressed_chunks;
-        const Chunks & chunks = entry->mapped->chunks;
+        const Chunks & chunks = entry_mapped->chunks;
         for (const auto & chunk : chunks)
         {
             const Columns & columns = chunk.getColumns();
@@ -430,7 +438,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildSourceFromChunks(entry->key.header, std::move(decompressed_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
     LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
