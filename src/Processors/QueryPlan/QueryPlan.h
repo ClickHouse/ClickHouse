@@ -113,6 +113,8 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
 
+    const QueryPlanResourceHolder & getResources() { return resources; }
+
 private:
     QueryPlanResourceHolder resources;
     Nodes nodes;

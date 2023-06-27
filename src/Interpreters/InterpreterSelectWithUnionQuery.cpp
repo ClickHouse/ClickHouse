@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryFragments.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -242,14 +241,7 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
             .getSampleBlock();
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        if (!context->getSettingsRef().allow_experimental_query_coordination)
-        {
-            return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
-        }
-        else
-        {
-            return InterpreterSelectQueryFragments(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
-        }
+        return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
     }
     else
         return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
@@ -262,14 +254,7 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        if (!context->getSettingsRef().allow_experimental_query_coordination)
-        {
-            return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
-        }
-        else
-        {
-            return std::make_unique<InterpreterSelectQueryFragments>(ast_ptr_, context, options, current_required_result_column_names);
-        }
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
     }
     else
         return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
@@ -414,35 +399,16 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
 {
     for (const auto & interpreter : nested_interpreters)
     {
-        if (context->getSettingsRef().allow_experimental_query_coordination)
+        const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get());
+        if (select_interpreter)
         {
-            const auto * select_interpreter = dynamic_cast<const InterpreterSelectQueryFragments *>(interpreter.get());
-            if (select_interpreter)
+            auto filter = select_interpreter->getRowPolicyFilter();
+            if (filter)
             {
-                auto filter = select_interpreter->getRowPolicyFilter();
-                if (filter)
+                for (const auto & row_policy : filter->policies)
                 {
-                    for (const auto & row_policy : filter->policies)
-                    {
-                        auto name = row_policy->getFullName().toString();
-                        elem.used_row_policies.emplace(std::move(name));
-                    }
-                }
-            }
-        }
-        else
-        {
-            const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get());
-            if (select_interpreter)
-            {
-                auto filter = select_interpreter->getRowPolicyFilter();
-                if (filter)
-                {
-                    for (const auto & row_policy : filter->policies)
-                    {
-                        auto name = row_policy->getFullName().toString();
-                        elem.used_row_policies.emplace(std::move(name));
-                    }
+                    auto name = row_policy->getFullName().toString();
+                    elem.used_row_policies.emplace(std::move(name));
                 }
             }
         }

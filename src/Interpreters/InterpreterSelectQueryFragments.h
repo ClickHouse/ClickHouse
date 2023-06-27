@@ -169,12 +169,13 @@ private:
     void executeSinglePlan(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
     PlanFragmentPtrs executeDistributedPlan(QueryPlan & query_plan);
 
-    PlanFragmentPtrs createPlanFragments(Node & single_node_plan);
-    PlanFragmentPtr createPlanFragments(Node & root_node, PlanFragmentPtrs & all_fragments);
+    PlanFragmentPtrs createPlanFragments(const QueryPlan & single_plan, Node & single_node_plan);
+    PlanFragmentPtr createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments);
     PlanFragmentPtr createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment);
     PlanFragmentPtr createScanFragment(QueryPlanStepPtr step);
     PlanFragmentPtr createAggregationFragment(PlanFragmentPtr childFragment);
     PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition);
+    PlanFragmentPtr createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment);
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryPlan & query_plan);

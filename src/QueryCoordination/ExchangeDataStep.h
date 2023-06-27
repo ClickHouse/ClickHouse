@@ -50,7 +50,7 @@ public:
     }
 
 private:
-    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_);
+    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 

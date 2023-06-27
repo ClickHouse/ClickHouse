@@ -870,27 +870,12 @@ static String formattedAST(const ASTPtr & ast)
 PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments()
 {
     QueryPlan query_plan;
-    executeSinglePlan(query_plan, std::move(input_pipe));
+    buildQueryPlan(query_plan);
 
     const auto & res_fragments = executeDistributedPlan(query_plan);
 
-    Node * root = res_fragments.back()->getRootNode();
-    /// We must guarantee that result structure is the same as in getSampleBlock()
-    ///
-    /// But if it's a projection query, plan header does not match result_header.
-    /// TODO: add special stage for InterpreterSelectQueryFragments?
-    if (!options.is_projection_query && !blocksHaveEqualStructure(root->step->getOutputStream().header, result_header))
-    {
-        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            root->step->getOutputStream().header.getColumnsWithTypeAndName(),
-            result_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            true);
-
-        auto converting = std::make_shared<ExpressionStep>(root->step->getOutputStream(), convert_actions_dag);
-        res_fragments.back()->addStep(std::move(converting));
-    }
-
+    /// query_plan resources move to fragments
+    const auto & resources = query_plan.getResources();
     /// Extend lifetime of context, table lock, storage.
     /// TODO every fragment need context, table lock, storage ?
     for (const auto & fragment : res_fragments)
@@ -900,26 +885,64 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments()
             fragment->addTableLock(table_lock);
         if (storage)
             fragment->addStorageHolder(storage);
+
+        for (const auto & context_ : resources.interpreter_context)
+        {
+            fragment->addInterpreterContext(context_);
+        }
+
+        for (const auto & storage_holder : resources.storage_holders)
+        {
+            fragment->addStorageHolder(storage_holder);
+        }
+
+        for (const auto & table_lock_ : resources.table_locks)
+        {
+            fragment->addTableLock(table_lock_);
+        }
     }
 
     return res_fragments;
 }
 
 
-void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & /*query_plan*/)
+void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
 {
-    throw; // not support
+    executeSinglePlan(query_plan, std::move(input_pipe));
+
+    /// We must guarantee that result structure is the same as in getSampleBlock()
+    ///
+    /// But if it's a projection query, plan header does not match result_header.
+    /// TODO: add special stage for InterpreterSelectQuery?
+    if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            result_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            true);
+
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+        query_plan.addStep(std::move(converting));
+    }
+
+    /// Extend lifetime of context, table lock, storage.
+    query_plan.addInterpreterContext(context);
+    if (table_lock)
+        query_plan.addTableLock(std::move(table_lock));
+    if (storage)
+        query_plan.addStorageHolder(storage);
 }
 
 PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPlan & query_plan)
 {
-    return createPlanFragments(*query_plan.getRootNode());
+    return createPlanFragments(query_plan, *query_plan.getRootNode());
 }
 
-PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(Node & single_node_plan)
+PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(const QueryPlan & single_plan, Node & single_node_plan)
 {
     PlanFragmentPtrs res_fragments;
-    createPlanFragments(single_node_plan, res_fragments);
+    createPlanFragments(single_plan, single_node_plan, res_fragments);
 
     for (UInt32 i = 0; i < res_fragments.size(); ++i)
     {
@@ -1000,12 +1023,12 @@ UnionStep (DB)
  *
  * */
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root_node, PlanFragmentPtrs & all_fragments)
+PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments)
 {
     PlanFragmentPtrs childFragments;
     for (Node * child : root_node.children)
     {
-        childFragments.emplace_back(createPlanFragments(*child, all_fragments));
+        childFragments.emplace_back(createPlanFragments(single_plan, *child, all_fragments));
     }
 
     PlanFragmentPtr result;
@@ -1042,7 +1065,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
         childFragments[0]->addStep(root_node.step);
         result = childFragments[0];
     }
-    else if (dynamic_cast<ExpressionStep *>(root_node.step.get()) && root_node.step->getStepDescription() == "Projection")
+    else if (single_plan.getRootNode() == &root_node) /// is root node
     {
         if (!childFragments[0]->isPartitioned())
         {
@@ -1067,6 +1090,12 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
     {
         processLimitRelated(root_node.step, childFragments[0]);
         result = childFragments[0];
+    }
+    else if (dynamic_cast<JoinStep *>(root_node.step.get()))
+    {
+        if (childFragments.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step children fragment size {}", childFragments.size());
+        createJoinFragment(root_node.step, childFragments[0], childFragments[1]);
     }
     else
     {
@@ -1101,6 +1130,31 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
         //    }
 
     return result;
+}
+
+
+PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment)
+{
+    /// Just only impl hash shaffle join yet
+
+    auto * join_step = dynamic_cast<JoinStep *>(step.get());
+    auto join_clause = join_step->getJoin()->getTableJoin().getOnlyClause();
+    DataPartition lhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_left, .keys_size = join_clause.key_names_left.size(), .partition_by_bucket_num = false};
+
+    DataPartition rhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_right, .keys_size = join_clause.key_names_right.size(), .partition_by_bucket_num = false};
+
+    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, lhs_join_partition);
+
+    PlanFragmentPtrs left_right_fragments;
+    left_right_fragments.emplace_back(left_child_fragment);
+    left_right_fragments.emplace_back(right_child_fragment);
+
+    parent_fragment->unitePlanFragments(step, left_right_fragments, storage_limits);
+
+    left_child_fragment->setOutputPartition(lhs_join_partition);
+    right_child_fragment->setOutputPartition(rhs_join_partition);
+
+    return parent_fragment;
 }
 
 void InterpreterSelectQueryFragments::processLimitRelated(QueryPlanStepPtr step, PlanFragmentPtr childFragment)

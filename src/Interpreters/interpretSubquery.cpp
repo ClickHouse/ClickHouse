@@ -114,7 +114,11 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
 
     /// We don't want to execute reading for subqueries in parallel
     subquery_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
-    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+
+    if (!context->getSettingsRef().allow_experimental_query_coordination)
+        return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+    else
+        return std::make_shared<InterpreterSelectWithUnionQueryF>(query, subquery_context, subquery_options, required_source_columns);
 }
 
 }

@@ -38,7 +38,7 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
     }
 }
 
-void ExchangeDataStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
+void ExchangeDataStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)

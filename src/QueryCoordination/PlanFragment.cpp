@@ -43,7 +43,7 @@ void PlanFragment::unitePlanFragments(QueryPlanStepPtr step, std::vector<std::sh
                 step_header.dumpStructure());
     }
 
-    std::vector<PlanNode *> child_nodes;
+    std::vector<PlanNode *> child_exchange_nodes;
     for (auto & fragment : fragments)
     {
         auto exchange_step = std::make_shared<ExchangeDataStep>(fragment->getCurrentDataStream(), storage_limits_);
@@ -51,10 +51,10 @@ void PlanFragment::unitePlanFragments(QueryPlanStepPtr step, std::vector<std::sh
         fragment->setDestination(&nodes.back());
         fragment->setOutputPartition(data_partition);
 
-        child_nodes.emplace_back(&nodes.back());
+        child_exchange_nodes.emplace_back(&nodes.back());
     }
 
-    nodes.emplace_back(makeNewNode(step, child_nodes));
+    nodes.emplace_back(makeNewNode(step, child_exchange_nodes));
     root = &nodes.back();
 
     for (auto & fragment : fragments)
