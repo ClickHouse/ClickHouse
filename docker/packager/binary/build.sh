@@ -17,7 +17,8 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
 
   if [ "$EXPORT_SOURCES_WITH_SUBMODULES" = "1" ]; then
-    tar -c /build --exclude-vcs-ignores --exclude-vcs --exclude '/build/build' --exclude '/build/build_docker' --exclude '/build/debian' --exclude '/build/.cache' --exclude '/build/docs' --exclude '/build/tests/integration' | pigz -9 > /output/source_sub.tar.gz
+    cd /build
+    tar --exclude-vcs-ignores --exclude-vcs --exclude build --exclude build_docker --exclude debian --exclude .git --exclude .github --exclude .cache --exclude docs --exclude tests/integration -c . | pigz -9 > /output/source_sub.tar.gz
   fi
 fi
 
