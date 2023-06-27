@@ -435,7 +435,12 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*client_ptr, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        copyS3File(client_ptr, bucket, object_from.remote_path, 0, size, dest_s3->bucket, object_to.remote_path,
+        auto create_read_buffer = [this, object_from]
+        {
+            return readObject(object_from);
+        };
+
+        copyS3File(create_read_buffer, client_ptr, bucket, object_from.remote_path, 0, size, dest_s3->bucket, object_to.remote_path,
                    settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
     }
     else
@@ -451,7 +456,12 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto settings_ptr = s3_settings.get();
     auto size = S3::getObjectSize(*client_ptr, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
     auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-    copyS3File(client_ptr, bucket, object_from.remote_path, 0, size, bucket, object_to.remote_path,
+    auto create_read_buffer = [this, object_from]
+    {
+        return readObject(object_from);
+    };
+
+    copyS3File(create_read_buffer, client_ptr, bucket, object_from.remote_path, 0, size, bucket, object_to.remote_path,
                settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
 }
 
