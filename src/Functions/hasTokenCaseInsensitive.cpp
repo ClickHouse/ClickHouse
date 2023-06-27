@@ -17,10 +17,9 @@ struct NameHasTokenCaseInsensitiveOrNull
 };
 
 using FunctionHasTokenCaseInsensitive
-    = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasTokenCaseInsensitive, DB::VolnitskyCaseInsensitiveToken, false>>;
-using FunctionHasTokenCaseInsensitiveOrNull = DB::FunctionsStringSearch<
-    DB::HasTokenImpl<NameHasTokenCaseInsensitiveOrNull, DB::VolnitskyCaseInsensitiveToken, false>,
-    DB::ExecutionErrorPolicy::Null>;
+    = FunctionsStringSearch<HasTokenImpl<NameHasTokenCaseInsensitive, VolnitskyCaseInsensitiveToken, false>>;
+using FunctionHasTokenCaseInsensitiveOrNull
+    = FunctionsStringSearch<HasTokenImpl<NameHasTokenCaseInsensitiveOrNull, VolnitskyCaseInsensitiveToken, false>, ExecutionErrorPolicy::Null>;
 
 REGISTER_FUNCTION(HasTokenCaseInsensitive)
 {
