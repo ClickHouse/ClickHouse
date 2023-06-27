@@ -64,10 +64,20 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (Filter)
-        FilterTransform
+        (ReadFromMergeTree)
+        MergeTreeInOrder 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
           (ReadFromMergeTree)
-          MergeTreeInOrder 0 → 1
+          ExpressionTransform
+            MergeTreeInOrder 0 → 1
 2020-10-11	0	0
 2020-10-11	0	10
 2020-10-11	0	20
@@ -82,15 +92,34 @@ ExpressionTransform
       PartialSortingTransform
         (Expression)
         ExpressionTransform
-          (Filter)
-          FilterTransform
+          (ReadFromMergeTree)
+          MergeTreeInOrder 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (Expression)
+          ExpressionTransform
             (ReadFromMergeTree)
-            MergeTreeInOrder 0 → 1
+            ExpressionTransform
+              MergeTreeInOrder 0 → 1
 2020-10-12	0
 2020-10-12	1
 2020-10-12	2
 2020-10-12	3
 2020-10-12	4
+SELECT
+    date,
+    i
+FROM t_read_in_order
+PREWHERE date = \'2020-10-12\'
+ORDER BY i DESC
+LIMIT 5
 (Expression)
 ExpressionTransform
   (Limit)
@@ -98,11 +127,22 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (Filter)
-        FilterTransform
+        (ReadFromMergeTree)
+        ReverseTransform
+          MergeTreeReverse 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
           (ReadFromMergeTree)
-          ReverseTransform
-            MergeTreeReverse 0 → 1
+          ExpressionTransform
+            ReverseTransform
+              MergeTreeReverse 0 → 1
 2020-10-12	99999
 2020-10-12	99998
 2020-10-12	99997

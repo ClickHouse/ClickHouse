@@ -9,20 +9,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
-#if USE_AMQPCPP
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
-#endif
-#if USE_RDKAFKA
-#include <Storages/Kafka/KafkaSettings.h>
-#endif
-#if USE_MYSQL
-#include <Storages/MySQL/MySQLSettings.h>
-#include <Databases/MySQL/ConnectionMySQLSettings.h>
-#endif
-#if USE_NATSIO
-#include <Storages/NATS/NATSSettings.h>
-#endif
-
 #include <re2/re2.h>
 
 namespace DB
@@ -94,115 +80,6 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
 }
 
 
-template <typename T>
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<T> & storage_settings)
-{
-    if (args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
-
-    ExternalDataSourceConfiguration configuration;
-    StorageSpecificArgs non_common_args;
-
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
-    {
-        const auto & config = context->getConfigRef();
-        const auto & collection_prefix = fmt::format("named_collections.{}", collection->name());
-
-        if (!config.has(collection_prefix))
-        {
-            /// For table function remote we do not throw on no collection, because then we consider first arg
-            /// as cluster definition from config.
-            if (!throw_on_no_collection)
-                return std::nullopt;
-
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
-        }
-
-        SettingsChanges config_settings = getSettingsChangesFromConfig(storage_settings, config, collection_prefix);
-
-        configuration.host = config.getString(collection_prefix + ".host", "");
-        configuration.port = config.getInt(collection_prefix + ".port", 0);
-        configuration.username = config.getString(collection_prefix + ".user", "");
-        configuration.password = config.getString(collection_prefix + ".password", "");
-        configuration.quota_key = config.getString(collection_prefix + ".quota_key", "");
-        configuration.database = config.getString(collection_prefix + ".database", "");
-        configuration.table = config.getString(collection_prefix + ".table", config.getString(collection_prefix + ".collection", ""));
-        configuration.schema = config.getString(collection_prefix + ".schema", "");
-        configuration.addresses_expr = config.getString(collection_prefix + ".addresses_expr", "");
-
-        if (!configuration.addresses_expr.empty() && !configuration.host.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have `addresses_expr` and `host`, `port` in configuration at the same time");
-
-        if ((args.size() == 1) && ((configuration.addresses_expr.empty() && (configuration.host.empty() || configuration.port == 0))
-            || configuration.database.empty() || (configuration.table.empty() && !is_database_engine)))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and no key-value arguments are added");
-        }
-
-        /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
-        {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
-            {
-                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
-                auto function_args = args_expr->children;
-                if (function_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                if (function_args[1]->as<ASTFunction>())
-                {
-                    non_common_args.emplace_back(std::make_pair(arg_name, function_args[1]));
-                    continue;
-                }
-
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto * arg_value_literal = arg_value_ast->as<ASTLiteral>();
-                if (arg_value_literal)
-                {
-                    auto arg_value = arg_value_literal->value;
-
-                    if (arg_name == "host")
-                        configuration.host = arg_value.safeGet<String>();
-                    else if (arg_name == "port")
-                        configuration.port = arg_value.safeGet<UInt64>();
-                    else if (arg_name == "user")
-                        configuration.username = arg_value.safeGet<String>();
-                    else if (arg_name == "password")
-                        configuration.password = arg_value.safeGet<String>();
-                    else if (arg_name == "quota_key")
-                        configuration.quota_key = arg_value.safeGet<String>();
-                    else if (arg_name == "database")
-                        configuration.database = arg_value.safeGet<String>();
-                    else if (arg_name == "table")
-                        configuration.table = arg_value.safeGet<String>();
-                    else if (arg_name == "schema")
-                        configuration.schema = arg_value.safeGet<String>();
-                    else if (arg_name == "addresses_expr")
-                        configuration.addresses_expr = arg_value.safeGet<String>();
-                    else if (storage_settings.has(arg_name))
-                        config_settings.emplace_back(arg_name, arg_value);
-                    else
-                        non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
-                }
-                else
-                {
-                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
-                }
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-            }
-        }
-
-        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = non_common_args, .settings_changes = config_settings };
-    }
-    return std::nullopt;
-}
-
 static void validateConfigKeys(
     const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, HasConfigKeyFunc has_config_key_func)
 {
@@ -250,7 +127,8 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
+                            "Named collection of connection parameters is missing some "
+                            "of the parameters and dictionary parameters are not added");
         }
         return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = {}, .settings_changes = config_settings };
     }
@@ -373,7 +251,8 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
                     || replica_configuration.username.empty() || replica_configuration.password.empty())
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Named collection of connection parameters is missing some of the parameters and no other dictionary parameters are added");
+                                    "Named collection of connection parameters is missing some "
+                                    "of the parameters and no other dictionary parameters are added");
                 }
 
                 configuration.replicas_configurations[priority].emplace_back(replica_configuration);
@@ -399,68 +278,6 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
     headers = conf.headers;
 }
 
-template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
-{
-    if (args.empty())
-        return false;
-
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
-    {
-        const auto & config = context->getConfigRef();
-        const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
-
-        if (!config.has(config_prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
-
-        auto config_settings = getSettingsChangesFromConfig(settings, config, config_prefix);
-
-        /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
-        {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
-            {
-                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
-                auto function_args = args_expr->children;
-                if (function_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
-                config_settings.emplace_back(arg_name, arg_value);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-            }
-        }
-
-        settings.applyChanges(config_settings);
-        return true;
-    }
-    return false;
-}
-
-#if USE_AMQPCPP
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQSettingsTraits> & settings, ContextPtr context);
-#endif
-
-#if USE_RDKAFKA
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
-#endif
-
-#if USE_NATSIO
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<NATSSettingsTraits> & settings, ContextPtr context);
-#endif
-
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<EmptySettingsTraits> & storage_settings);
-
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
@@ -470,23 +287,4 @@ template
 SettingsChanges getSettingsChangesFromConfig(
     const BaseSettings<EmptySettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
-#if USE_MYSQL
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<MySQLSettingsTraits> & storage_settings);
-
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<ConnectionMySQLSettingsTraits> & storage_settings);
-
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
-    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<MySQLSettingsTraits> & settings);
-
-template
-SettingsChanges getSettingsChangesFromConfig(
-    const BaseSettings<MySQLSettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
-#endif
 }

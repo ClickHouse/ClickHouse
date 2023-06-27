@@ -68,9 +68,9 @@ public:
         return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
     {
-        return getNested()->write(query, metadata_snapshot, context);
+        return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
     void drop() override { getNested()->drop(); }
@@ -127,12 +127,13 @@ public:
             bool final,
             bool deduplicate,
             const Names & deduplicate_by_columns,
+            bool cleanup,
             ContextPtr context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, context);
     }
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override { getNested()->mutate(commands, context, force_wait); }
+    void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
@@ -162,4 +163,3 @@ public:
 
 
 }
-

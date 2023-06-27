@@ -72,6 +72,9 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
+  Codebrowser:
+    needs: [DockerHubPush]
+    uses: ./.github/workflows/woboq.yml
   BuilderCoverity:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -107,7 +110,7 @@ jobs:
         run: |
           curl --form token="${COVERITY_TOKEN}" \
             --form email='security+coverity@clickhouse.com' \
-            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tar.zst" \
+            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tar.gz" \
             --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
             --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
             https://scan.coverity.com/builds?project=ClickHouse%2FClickHouse
@@ -118,13 +121,15 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   SonarCloud:
+    # TODO: Remove if: whenever SonarCloud supports c++23
+    if: ${{ false }}
     runs-on: [self-hosted, builder]
     env:
-      SONAR_SCANNER_VERSION: 4.7.0.2747
+      SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
-      CC: clang-15
-      CXX: clang++-15
+      CC: clang-16
+      CXX: clang++-16
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -154,7 +159,7 @@ jobs:
       - name: Set Up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -yq git cmake ccache python3 ninja-build
+          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
       - name: Run build-wrapper
         run: |
@@ -173,4 +178,4 @@ jobs:
             --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
             --define sonar.projectKey="ClickHouse_ClickHouse" \
             --define sonar.organization="clickhouse-java" \
-            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql"
+            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql" \

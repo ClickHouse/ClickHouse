@@ -28,10 +28,10 @@ void CachedCompressedReadBuffer::initInput()
 }
 
 
-void CachedCompressedReadBuffer::prefetch()
+void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
     initInput();
-    file_in->prefetch();
+    file_in->prefetch(priority);
 }
 
 
@@ -69,9 +69,8 @@ bool CachedCompressedReadBuffer::nextImpl()
     /// nextimpl_working_buffer_offset is set in the seek function (lazy seek). So we have to
     /// check that we are not seeking beyond working buffer.
     if (nextimpl_working_buffer_offset > working_buffer.size())
-        throw Exception("Seek position is beyond the decompressed block"
-        " (pos: " + toString(nextimpl_working_buffer_offset) + ", block size: " + toString(working_buffer.size()) + ")",
-        ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is beyond the decompressed block (pos: "
+        "{}, block size: {})", nextimpl_working_buffer_offset, toString(working_buffer.size()));
 
     file_pos += owned_cell->compressed_size;
 

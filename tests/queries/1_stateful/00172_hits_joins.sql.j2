@@ -1,6 +1,8 @@
-{% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge'] -%}
+-- Tags: no-parallel-replicas
+{% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}20K{% else %}0{% endif %}';
+SET max_rows_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
+SET grace_hash_join_initial_buckets = 4;
 
 SELECT '--- {{ join_algorithm }} ---';
 

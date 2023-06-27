@@ -18,6 +18,7 @@ namespace ErrorCodes
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
+    clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -69,9 +70,8 @@ void ASTColumnsRegexpMatcher::setPattern(String pattern)
     original_pattern = std::move(pattern);
     column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
     if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "COLUMNS pattern {} cannot be compiled: {}", original_pattern, column_matcher->error());
 }
 
 const String & ASTColumnsRegexpMatcher::getPattern() const
@@ -92,6 +92,7 @@ bool ASTColumnsRegexpMatcher::isColumnMatching(const String & column_name) const
 ASTPtr ASTColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
+    clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -151,6 +152,7 @@ void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatSt
 ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
+    clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
@@ -177,9 +179,8 @@ void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern, bool set_match
 
     column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
     if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "COLUMNS pattern {} cannot be compiled: {}", original_pattern, column_matcher->error());
 }
 
 void ASTQualifiedColumnsRegexpMatcher::setMatcher(std::shared_ptr<re2::RE2> matcher)
@@ -218,6 +219,7 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & setting
 ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
+    clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 

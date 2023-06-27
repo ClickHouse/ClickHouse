@@ -41,7 +41,17 @@ struct LengthImpl
 
     [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
-        throw Exception("Cannot apply function length to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function length to UUID argument");
+    }
+
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function length to IPv6 argument");
+    }
+
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function length to IPv4 argument");
     }
 };
 
@@ -56,8 +66,8 @@ using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64, 
 REGISTER_FUNCTION(Length)
 {
     factory.registerFunction<FunctionLength>(
-        {
-            R"(
+        FunctionDocumentation{
+            .description=R"(
 Calculates the length of the string or array.
 
 For String or FixedString argument: calculates the number of bytes in string.
@@ -77,18 +87,18 @@ and it is not the same as the visible string width.
 It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
 [example:nul]
 )",
-            Documentation::Examples{
-                {"string1", "SELECT length('Hello, world!')"},
-                {"arr1", "SELECT length(['Hello'], ['world'])"},
+            .examples{
+                {"string1", "SELECT length('Hello, world!')", ""},
+                {"arr1", "SELECT length(['Hello'], ['world'])", ""},
                 {"constexpr", "WITH 'hello' || toString(number) AS str\n"
                               "SELECT str, \n"
                               "       isConstant(length(str)) AS str_length_is_constant, \n"
                               "       isConstant(length(str::FixedString(6))) AS fixed_str_length_is_constant\n"
-                              "FROM numbers(3)"},
-                {"unicode", "SELECT 'ёлка' AS str1, length(str1), lengthUTF8(str1), normalizeUTF8NFKD(str1) AS str2, length(str2), lengthUTF8(str2)"},
-                {"nul", R"(SELECT 'abc\0\0\0' AS str, length(str))"},
+                              "FROM numbers(3)", ""},
+                {"unicode", "SELECT 'ёлка' AS str1, length(str1), lengthUTF8(str1), normalizeUTF8NFKD(str1) AS str2, length(str2), lengthUTF8(str2)", ""},
+                {"nul", R"(SELECT 'abc\0\0\0' AS str, length(str))", ""},
                 },
-            Documentation::Categories{"String", "Array"}
+            .categories{"String", "Array"}
         },
         FunctionFactory::CaseInsensitive);
 }

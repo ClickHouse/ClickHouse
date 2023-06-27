@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set query_plan_read_in_order=0;set max_threads=3"
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set query_plan_read_in_order=1;set optimize_read_in_order=1;set max_threads=3"
-MAKE_OUTPUT_STABLE="set optimize_read_in_order=1;set max_threads=3"
+MAKE_OUTPUT_STABLE="set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0"
 GREP_SORTING="grep 'PartialSortingTransform\|LimitsCheckingTransform\|MergeSortingTransform\|MergingSortedTransform'"
 GREP_SORTMODE="grep 'Sorting ('"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
@@ -17,9 +17,12 @@ function explain_sorting {
     echo "-- QUERY: "$1
     $CLICKHOUSE_CLIENT -nq "$1" | eval $FIND_SORTING
 }
+
 function explain_sortmode {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT -nq "$1" | eval $FIND_SORTMODE
+    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=0 -nq "$1" | eval $FIND_SORTMODE
+    echo "-- QUERY (analyzer): "$1
+    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 -nq "$1" | eval $FIND_SORTMODE
 }
 
 $CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"
@@ -62,10 +65,6 @@ explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=
 echo "-- aliases break sorting order"
 explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM (SELECT sipHash64(a) AS a FROM (SELECT a FROM optimize_sorting ORDER BY a)) ORDER BY a"
 
-# FIXME: we still do full sort here, - it's because, for most inner subqueury, sorting description contains original column names but header contains only aliases on those columns:
-#|     Header: x Int32                                                 │
-#│             y Int32                                                 │
-#│     Sort Mode: Chunk: a ASC, b ASC                                  │
 echo "-- aliases DONT break sorting order"
 explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, b FROM (SELECT x AS a, y AS b FROM (SELECT a AS x, b AS y FROM optimize_sorting) ORDER BY x, y)"
 

@@ -76,9 +76,8 @@ public:
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     static void vector(FirstSignificantSubdomainCustomLookup & tld_lookup,

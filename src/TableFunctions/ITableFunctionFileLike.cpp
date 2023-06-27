@@ -2,12 +2,10 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Common/Exception.h>
 
 #include <Storages/StorageFile.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -20,8 +18,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
@@ -45,12 +43,16 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
 
     ASTs & args = args_func.at(0)->children;
+    parseArgumentsImpl(args, context);
+}
 
-    if (args.empty())
-        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
+{
+    if (args.empty() || args.size() > 4)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -63,22 +65,49 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
     if (format == "auto")
         format = getFormatFromFirstArgument();
 
-    if (args.size() <= 2)
-        return;
+    if (args.size() > 2)
+    {
+        structure = checkAndGetLiteralArgument<String>(args[2], "structure");
+        if (structure.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table structure is empty for table function '{}'. If you want to use automatic schema inference, use 'auto'",
+                getName());
+    }
 
-    if (args.size() != 3 && args.size() != 4)
-        throw Exception("Table function '" + getName() + "' requires 1, 2, 3 or 4 arguments: filename, format (default auto), structure (default auto) and compression method (default auto)",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    structure = checkAndGetLiteralArgument<String>(args[2], "structure");
-
-    if (structure.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table structure is empty for table function '{}'. If you want to use automatic schema inference, use 'auto'",
-            ast_function->formatForErrorMessage());
-
-    if (args.size() == 4)
+    if (args.size() > 3)
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
+}
+
+void ITableFunctionFileLike::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr &)
+{
+    if (args.empty() || args.size() > getMaxNumberOfArguments())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
+
+    auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+    /// f(filename)
+    if (args.size() == 1)
+    {
+        /// Add format=auto before structure argument.
+        args.push_back(std::make_shared<ASTLiteral>("auto"));
+        args.push_back(structure_literal);
+    }
+    /// f(filename, format)
+    else if (args.size() == 2)
+    {
+        args.push_back(structure_literal);
+    }
+    /// f(filename, format, 'auto')
+    else if (args.size() == 3)
+    {
+        args.back() = structure_literal;
+    }
+    /// f(filename, format, 'auto', compression)
+    else if (args.size() == 4)
+    {
+        args[args.size() - 2] = structure_literal;
+    }
 }
 
 StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const

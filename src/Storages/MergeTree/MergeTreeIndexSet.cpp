@@ -73,7 +73,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
-        settings.low_cardinality_max_dictionary_size = 0; //-V1048
+        settings.low_cardinality_max_dictionary_size = 0;
 
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
@@ -145,9 +145,8 @@ MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const String & index_na
 void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -555,7 +554,10 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     if (atomFromAST(node))
     {
         if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            node = makeASTFunction("__bitWrapperFunc", node);
+            /// __bitWrapperFunc* uses default implementation for Nullable types
+            /// Here we additionally convert Null to 0,
+            /// otherwise condition 'something OR NULL' will always return Null and filter everything.
+            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("ifNull", node, std::make_shared<ASTLiteral>(Field(0))));
     }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
@@ -713,9 +715,9 @@ MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.arguments.size() != 1)
-        throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument.");
     else if (index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception("Set index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer.");
 }
 
 }

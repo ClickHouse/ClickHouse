@@ -232,7 +232,7 @@ StoragesInfo StoragesInfoStream::next()
 
         info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
         if (!info.data)
-            throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
 
         return info;
     }
@@ -304,6 +304,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
     /// Add aliases for old column names for backwards compatibility.
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
+    add_alias("part_name", "name");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(tmp_columns);

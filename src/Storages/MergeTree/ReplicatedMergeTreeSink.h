@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 
 namespace Poco { class Logger; }
@@ -86,7 +87,8 @@ private:
     size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    std::vector<String> commitPart(
+    /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
+    std::pair<std::vector<String>, bool> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
@@ -115,10 +117,13 @@ private:
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
+    UInt64 cache_version = 0;
+
     bool is_attach = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
+    UInt64 num_blocks_processed = 0;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;

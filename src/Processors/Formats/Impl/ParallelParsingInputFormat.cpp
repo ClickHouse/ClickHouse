@@ -8,16 +8,17 @@
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
+            CurrentThread::detachFromGroupIfNotDetached();
     );
     if (thread_group)
-        CurrentThread::attachTo(thread_group);
+        CurrentThread::attachToGroup(thread_group);
 
     setThreadName("Segmentator");
+
     try
     {
         while (!parsing_finished)
@@ -38,8 +39,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
+            size_t segment_start = getDataOffsetMaybeCompressed(*in);
             auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
+            unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
 
@@ -50,6 +53,9 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             if (!have_more_data)
                 break;
+
+            // Segmentator thread can be long-living, so we have to manually update performance counters for CPU progress to be correct
+            CurrentThread::updatePerformanceCountersIfNeeded();
         }
     }
     catch (...)
@@ -58,14 +64,14 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
     }
 }
 
-void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
+            CurrentThread::detachFromGroupIfNotDetached();
     );
     if (thread_group)
-        CurrentThread::attachToIfDetached(thread_group);
+        CurrentThread::attachToGroupIfDetached(thread_group);
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
@@ -104,6 +110,11 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+            size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
+            /// We could decompress data during file segmentation.
+            /// Correct chunk size using original segment size.
+            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / unit.segment.size() * unit.original_segment_size));
+            unit.chunk_ext.approx_chunk_sizes.push_back(approx_chunk_size);
         }
 
         /// Extract column_mapping from first parser to propagate it to others
@@ -161,6 +172,12 @@ Chunk ParallelParsingInputFormat::generate()
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))
     {
+        /// Lock 'finish_and_wait_mutex' to avoid recreation of
+        /// 'segmentator_thread' after it was joined.
+        std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
+        if (finish_and_wait_called)
+            return {};
+
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }
@@ -227,6 +244,7 @@ Chunk ParallelParsingInputFormat::generate()
 
     Chunk res = std::move(unit.chunk_ext.chunk.at(*next_block_in_current_unit));
     last_block_missing_values = std::move(unit.chunk_ext.block_missing_values[*next_block_in_current_unit]);
+    last_approx_bytes_read_for_chunk = unit.chunk_ext.approx_chunk_sizes.at(*next_block_in_current_unit);
 
     next_block_in_current_unit.value() += 1;
 

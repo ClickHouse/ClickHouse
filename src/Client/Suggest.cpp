@@ -43,7 +43,7 @@ Suggest::Suggest()
         "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
         "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
         "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",
+        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "CLEANUP",     "APPEND"
     });
 }
 
@@ -101,21 +101,23 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
-    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    /// FIXME: Forbid this query using new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
+    /// We should remove this restriction after resolving this bug.
+    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res) SETTINGS allow_experimental_analyzer=0";
     return query;
 }
 
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
-    loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
         ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
             {
-                auto connection = ConnectionType::createConnection(connection_parameters, context);
+                auto connection = ConnectionType::createConnection(connection_parameters, my_context);
                 fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
             }
             catch (const Exception & e)
@@ -158,6 +160,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 fillWordsFromBlock(packet.block);
                 continue;
 
+            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::Totals:
@@ -186,7 +189,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
         return;
 
     if (block.columns() != 1)
-        throw Exception("Wrong number of columns received for query to read words for suggestion", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns received for query to read words for suggestion");
 
     const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
 

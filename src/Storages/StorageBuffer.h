@@ -88,7 +88,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
@@ -100,6 +100,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     bool supportsSampling() const override { return true; }

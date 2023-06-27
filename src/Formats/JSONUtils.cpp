@@ -44,18 +44,17 @@ namespace JSONUtils
         {
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
-                throw ParsingException(
-                    "Size of JSON object is extremely large. Expected not greater than " + std::to_string(min_bytes)
-                        + " bytes, but current is " + std::to_string(current_object_size)
-                        + " bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely JSON is malformed",
-                    ErrorCodes::INCORRECT_DATA);
+                throw ParsingException(ErrorCodes::INCORRECT_DATA,
+                    "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
+                    "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
+                    "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
 
             if (quotes)
             {
                 pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
-                    throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
                 else if (pos == in.buffer().end())
                     continue;
 
@@ -76,7 +75,7 @@ namespace JSONUtils
                 pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
-                    throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
                 else if (pos == in.buffer().end())
                     continue;
 
@@ -199,7 +198,7 @@ namespace JSONUtils
     {
         try
         {
-            bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
+            bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
 
             if (yield_strings)
             {
@@ -242,6 +241,15 @@ namespace JSONUtils
         writeChar('"', out);
         writeCString(title, out);
         writeCString("\":", out);
+        writeCString(after_delimiter, out);
+    }
+
+    void writeTitlePretty(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
+    {
+        writeChar(' ', indent * 4, out);
+        writeChar('"', out);
+        writeCString(title, out);
+        writeCString("\": ", out);
         writeCString(after_delimiter, out);
     }
 
@@ -307,10 +315,20 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name,
         size_t indent,
-        const char * title_after_delimiter)
+        const char * title_after_delimiter,
+        bool pretty_json)
     {
         if (name.has_value())
-            writeTitle(name->data(), out, indent, title_after_delimiter);
+        {
+            if (pretty_json)
+            {
+                writeTitlePretty(name->data(), out, indent, title_after_delimiter);
+            }
+            else
+            {
+                writeTitle(name->data(), out, indent, title_after_delimiter);
+            }
+        }
 
         if (yield_strings)
         {
@@ -320,7 +338,16 @@ namespace JSONUtils
             writeJSONString(buf.str(), out, settings);
         }
         else
-            serialization.serializeTextJSON(column, row_num, out, settings);
+        {
+            if (pretty_json)
+            {
+                serialization.serializeTextJSONPretty(column, row_num, out, settings, indent);
+            }
+            else
+            {
+                serialization.serializeTextJSON(column, row_num, out, settings);
+            }
+        }
     }
 
     void writeColumns(
@@ -588,7 +615,9 @@ namespace JSONUtils
             auto header_type = header.getByName(name).type;
             if (header.has(name) && !type->equals(*header_type))
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Type {} of column '{}' from metadata is not the same as type in header {}", type->getName(), name, header_type->getName());
+                                ErrorCodes::INCORRECT_DATA,
+                                "Type {} of column '{}' from metadata is not the same as type in header {}",
+                                type->getName(), name, header_type->getName());
         }
         return names_and_types;
     }

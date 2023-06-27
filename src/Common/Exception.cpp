@@ -15,6 +15,7 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
@@ -71,6 +72,13 @@ Exception::MessageMasked::MessageMasked(const std::string & msg_)
         masker->wipeSensitiveData(msg);
 }
 
+Exception::MessageMasked::MessageMasked(std::string && msg_)
+    : msg(std::move(msg_))
+{
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(msg);
+}
+
 Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
@@ -78,11 +86,21 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
+Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
+    : Poco::Exception(msg_masked.msg, code)
+    , remote(remote_)
+{
+    handle_error_code(message(), code, remote, getStackFramePointers());
+}
+
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+    auto * stack_trace_frames = exc.get_stack_trace_frames();
+    auto stack_trace_size = exc.get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    set_stack_trace(stack_trace_frames, stack_trace_size);
 #endif
 }
 
@@ -90,7 +108,10 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+    auto * stack_trace_frames = exc.get_stack_trace_frames();
+    auto stack_trace_size = exc.get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    set_stack_trace(stack_trace_frames, stack_trace_size);
 #endif
 }
 
@@ -98,7 +119,10 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 std::string getExceptionStackTraceString(const std::exception & e)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    return StackTrace::toString(e.get_stack_trace_frames(), 0, e.get_stack_trace_size());
+    auto * stack_trace_frames = e.get_stack_trace_frames();
+    auto stack_trace_size = e.get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
 #else
     if (const auto * db_exception = dynamic_cast<const Exception *>(&e))
         return db_exception->getStackTraceString();
@@ -126,7 +150,10 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 std::string Exception::getStackTraceString() const
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    return StackTrace::toString(get_stack_trace_frames(), 0, get_stack_trace_size());
+    auto * stack_trace_frames = get_stack_trace_frames();
+    auto stack_trace_size = get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
 #else
     return trace.toString();
 #endif
@@ -142,6 +169,7 @@ Exception::FramePointers Exception::getStackFramePointers() const
         {
             frame_pointers[i] = get_stack_trace_frames()[i];
         }
+        __msan_unpoison(frame_pointers.data(), frame_pointers.size() * sizeof(frame_pointers[0]));
     }
 #else
     {
@@ -172,10 +200,11 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 {
     try
     {
-        if (start_of_message.empty())
-            LOG_ERROR(logger, "{}", getCurrentExceptionMessage(true));
-        else
-            LOG_ERROR(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+        if (!start_of_message.empty())
+            message.text = fmt::format("{}: {}", start_of_message, message.text);
+
+        LOG_ERROR(logger, message);
     }
     catch (...)
     {
@@ -324,7 +353,13 @@ std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
+    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).text;
+}
+
+PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+{
     WriteBufferFromOwnString stream;
+    std::string_view message_format_string;
 
     try
     {
@@ -335,6 +370,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
                << (with_extra_info ? getExtraExceptionInfo(e) : "")
                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        message_format_string = e.tryGetMessageFormatString();
     }
     catch (const Poco::Exception & e)
     {
@@ -380,7 +416,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         catch (...) {}
     }
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), message_format_string};
 }
 
 
@@ -433,14 +469,6 @@ int getExceptionErrorCode(std::exception_ptr e)
 }
 
 
-void rethrowFirstException(const Exceptions & exceptions)
-{
-    for (const auto & exception : exceptions)
-        if (exception)
-            std::rethrow_exception(exception);
-}
-
-
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message)
 {
     try
@@ -466,6 +494,11 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+}
+
+PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     WriteBufferFromOwnString stream;
 
@@ -497,7 +530,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
     }
     catch (...) {}
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
 
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
@@ -540,9 +573,9 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     return true;
 }
 
-ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
+ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace)
 {
-    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
@@ -556,10 +589,6 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
 ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
-{
-}
-ParsingException::ParsingException(int code, const std::string & message)
-    : Exception(message, code)
 {
 }
 

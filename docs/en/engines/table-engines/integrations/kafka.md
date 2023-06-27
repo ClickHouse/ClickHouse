@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/kafka
-sidebar_position: 8
+sidebar_position: 110
 sidebar_label: Kafka
 ---
 
@@ -10,17 +10,17 @@ This engine works with [Apache Kafka](http://kafka.apache.org/).
 
 Kafka lets you:
 
--   Publish or subscribe to data flows.
--   Organize fault-tolerant storage.
--   Process streams as they become available.
+- Publish or subscribe to data flows.
+- Organize fault-tolerant storage.
+- Process streams as they become available.
 
 ## Creating a Table {#table_engine-kafka-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
     ...
 ) ENGINE = Kafka()
 SETTINGS
@@ -46,27 +46,27 @@ SETTINGS
 
 Required parameters:
 
--   `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
--   `kafka_topic_list` — A list of Kafka topics.
--   `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
--   `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+- `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
+- `kafka_topic_list` — A list of Kafka topics.
+- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+- `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:
 
--   `kafka_row_delimiter` — Delimiter character, which ends the message. **This setting is deprecated and is no longer used, not left for compatibility reasons.**
--   `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
--   `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
--   `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
--   `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
--   `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
--   `kafka_client_id` — Client identifier. Empty by default.
--   `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
--   `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
--   `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
--   `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
--   `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default, stream.
--   `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
--   `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
+- `kafka_row_delimiter` — Delimiter character, which ends the message. **This setting is deprecated and is no longer used, not left for compatibility reasons.**
+- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
+- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
+- `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
+- `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
+- `kafka_client_id` — Client identifier. Empty by default.
+- `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
+- `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
+- `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
+- `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
+- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default, stream.
+- `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
+- `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 
 Examples:
 
@@ -102,7 +102,7 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
@@ -112,6 +112,10 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 ```
 
 </details>
+
+:::info
+The Kafka table engine doesn't support columns with [default value](../../../sql-reference/statements/create/table.md#default_value). If you need columns with default value, you can add them at materialized view level (see below).
+:::
 
 ## Description {#description}
 
@@ -162,21 +166,58 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Configuration {#configuration}
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+
+    <!-- Configuration specific to topics "logs" and "stats" -->
+
+    <kafka_topic>
+      <name>logs</name>
+      <retry_backoff_ms>250</retry_backoff_ms>
+      <fetch_min_bytes>100000</fetch_min_bytes>
+    </kafka_topic>
+
+    <kafka_topic>
+      <name>stats</name>
+      <retry_backoff_ms>400</retry_backoff_ms>
+      <fetch_min_bytes>50000</fetch_min_bytes>
+    </kafka_topic>
+  </kafka>
+
+```
+
+<details markdown="1">
+
+<summary>Example in deprecated syntax</summary>
+
+``` xml
+  <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
   </kafka>
 
-  <!-- Configuration specific for topic "logs" -->
+  <!-- Configuration specific to topics "logs" and "stats" -->
+  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
+
   <kafka_logs>
     <retry_backoff_ms>250</retry_backoff_ms>
     <fetch_min_bytes>100000</fetch_min_bytes>
   </kafka_logs>
+
+  <kafka_stats>
+    <retry_backoff_ms>400</retry_backoff_ms>
+    <fetch_min_bytes>50000</fetch_min_bytes>
+  </kafka_stats>
 ```
+
+</details>
+
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
@@ -198,14 +239,14 @@ Example:
 
 ## Virtual Columns {#virtual-columns}
 
--   `_topic` — Kafka topic.
--   `_key` — Key of the message.
--   `_offset` — Offset of the message.
--   `_timestamp` — Timestamp of the message.
--   `_timestamp_ms` — Timestamp in milliseconds of the message.
--   `_partition` — Partition of Kafka topic.
--   `_headers.name` — Array of message's headers keys.
--   `_headers.value` — Array of message's headers values.
+- `_topic` — Kafka topic.
+- `_key` — Key of the message.
+- `_offset` — Offset of the message.
+- `_timestamp` — Timestamp of the message.
+- `_timestamp_ms` — Timestamp in milliseconds of the message.
+- `_partition` — Partition of Kafka topic.
+- `_headers.name` — Array of message's headers keys.
+- `_headers.value` — Array of message's headers values.
 
 ## Data formats support {#data-formats-support}
 
@@ -217,5 +258,5 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 **See Also**
 
--   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)

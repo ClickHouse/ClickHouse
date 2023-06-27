@@ -27,7 +27,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
     : TemporaryFileOnDisk(disk_, "")
 {}
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope)
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope)
     : TemporaryFileOnDisk(disk_)
 {
     sub_metric_increment.emplace(metric_scope);
@@ -38,7 +38,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     , metric_increment(CurrentMetrics::TotalTemporaryFiles)
 {
     if (!disk)
-        throw Exception("Disk is not specified", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk is not specified");
 
     if (fs::path prefix_path(prefix); prefix_path.has_parent_path())
         disk->createDirectories(prefix_path.parent_path());
@@ -55,7 +55,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     relative_path.replace(0, dummy_prefix.length(), prefix);
 
     if (relative_path.empty())
-        throw Exception("Temporary file name is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file name is empty");
 }
 
 String TemporaryFileOnDisk::getPath() const

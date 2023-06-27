@@ -71,9 +71,12 @@ public:
         scale(scale_)
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
-            throw Exception("Precision " + std::to_string(precision) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Precision {} is out of bounds (precision range: [1, {}])",
+                            std::to_string(precision), maxPrecision());
         if (unlikely(scale > maxPrecision()))
-            throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
+                            std::to_string(scale), maxPrecision());
     }
 
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
@@ -129,7 +132,7 @@ public:
     T scaleFactorFor(const DataTypeDecimalBase<U> & x, bool) const
     {
         if (getScale() < x.getScale())
-            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
         UInt32 scale_delta = getScale() - x.getScale(); /// scale_delta >= 0
         return getScaleMultiplier(scale_delta);
     }
@@ -189,10 +192,11 @@ template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
     if (precision_value < DecimalUtils::min_precision || precision_value > DecimalUtils::max_precision<Decimal256>)
-        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
+                        DecimalUtils::min_precision, DecimalUtils::max_precision<Decimal256>, precision_value);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
-        throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
 
     if (precision_value <= DecimalUtils::max_precision<Decimal32>)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);

@@ -103,7 +103,7 @@ namespace
         });
     }
 
-    bool parseElement(IParser::Pos & pos, Expected & expected, bool allow_all, Element & element)
+    bool parseElement(IParser::Pos & pos, Expected & expected, Element & element)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -169,7 +169,7 @@ namespace
                 return true;
             }
 
-            if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
+            if (ParserKeyword{"ALL"}.ignore(pos, expected))
             {
                 element.type = ElementType::ALL;
                 parseExceptDatabases(pos, expected, element.except_databases);
@@ -181,7 +181,7 @@ namespace
         });
     }
 
-    bool parseElements(IParser::Pos & pos, Expected & expected, bool allow_all, std::vector<Element> & elements)
+    bool parseElements(IParser::Pos & pos, Expected & expected, std::vector<Element> & elements)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -190,7 +190,7 @@ namespace
             auto parse_element = [&]
             {
                 Element element;
-                if (parseElement(pos, expected, allow_all, element))
+                if (parseElement(pos, expected, element))
                 {
                     result.emplace_back(std::move(element));
                     return true;
@@ -334,11 +334,8 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    /// Disable "ALL" if this is a RESTORE command.
-    bool allow_all = (kind == Kind::RESTORE);
-
     std::vector<Element> elements;
-    if (!parseElements(pos, expected, allow_all, elements))
+    if (!parseElements(pos, expected, elements))
         return false;
 
     String cluster;

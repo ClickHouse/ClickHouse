@@ -13,6 +13,7 @@
 #include <Common/NetException.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/Priority.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ namespace ProfileEvents
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
 /// Initialized by several PoolBase objects.
 /// When a connection is requested, tries to create or choose an alive connection from one of the nested pools.
-/// Pools are tried in the order consistent with lexicographical order of (error count, priority, random number) tuples.
+/// Pools are tried in the order consistent with lexicographical order of (error count, slowdown count, config priority, priority, random number) tuples.
 /// Number of tries for a single pool is limited by max_tries parameter.
 /// The client can set nested pool priority by passing a GetPriority functor.
 ///
@@ -101,7 +102,7 @@ public:
     struct ShuffledPool
     {
         NestedPool * pool{};
-        const PoolState * state{};
+        const PoolState * state{}; // WARNING: valid only during initial ordering, dangling
         size_t index = 0;
         size_t error_count = 0;
         size_t slowdown_count = 0;
@@ -113,8 +114,7 @@ public:
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
-    using GetPriorityFunc = std::function<size_t(size_t index)>;
-
+    using GetPriorityFunc = std::function<Priority(size_t index)>;
 
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
@@ -175,10 +175,11 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     }
 
     /// Sort the pools into order in which they will be tried (based on respective PoolStates).
+    /// Note that `error_count` and `slowdown_count` are used for ordering, but set to zero in the resulting ShuffledPool
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, 0});
+        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)
@@ -211,9 +212,8 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
         max_ignored_errors, fallback_to_stale_replicas,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
-        throw DB::Exception(
-                "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
-                DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                "PoolWithFailoverBase::getMany() returned less than min_entries entries.");
     return results[0].entry;
 }
 
@@ -227,6 +227,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         const GetPriorityFunc & get_priority)
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
+
+    /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
+    if (max_tries > max_error_cap)
+        max_tries = max_error_cap;
 
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
@@ -292,9 +296,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
 
     if (usable_count < min_entries)
-        throw DB::NetException(
-                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
-                DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
     std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
@@ -321,10 +324,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         try_results.resize(up_to_date_count);
     }
     else
-        throw DB::Exception(
-                "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(up_to_date_count)
-                + ", needed: " + std::to_string(min_entries),
-                DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
+        throw DB::Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}", up_to_date_count, max_entries);
 
     return try_results;
 }
@@ -336,9 +337,9 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     /// The number of slowdowns that led to changing replica in HedgedRequestsFactory
     UInt64 slowdown_count = 0;
     /// Priority from the <remote_server> configuration.
-    Int64 config_priority = 1;
+    Priority config_priority{1};
     /// Priority from the GetPriorityFunc.
-    Int64 priority = 0;
+    Priority priority{0};
     UInt64 random = 0;
 
     void randomize()
@@ -375,7 +376,7 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
 
     /// distributed_replica_max_ignored_errors
     for (auto & state : result)
-        state.error_count = std::max<UInt64>(0, state.error_count - max_ignored_errors);
+        state.error_count = state.error_count > max_ignored_errors ? state.error_count - max_ignored_errors : 0;
 
     return result;
 }
@@ -385,7 +386,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 {
     time_t current_time = time(nullptr);
 
-    if (last_decrease_time) //-V1051
+    if (last_decrease_time)
     {
         time_t delta = current_time - last_decrease_time;
 

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <base/TypeName.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
-#include <base/TypeName.h>
+#include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ public:
     }
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, true);
+        deserializeText(column, istr, settings, false);
     }
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
@@ -74,13 +75,10 @@ public:
         serializeText(column, row_num, ostr, settings);
         writeChar('"', ostr);
     }
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &/* settings*/) const override
     {
         IPv value;
         readCSV(value, istr);
-
-        if (!istr.eof())
-            throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
 
         assert_cast<ColumnVector<IPv> &>(column).getData().push_back(value);
     }

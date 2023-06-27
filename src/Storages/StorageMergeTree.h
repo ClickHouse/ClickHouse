@@ -45,7 +45,6 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void flush() override;
     void shutdown() override;
 
     ~StorageMergeTree() override;
@@ -72,7 +71,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -83,9 +82,10 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool hasLightweightDeletedMask() const override;
 
@@ -111,6 +111,8 @@ public:
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
+    size_t getNumberOfUnfinishedMutations() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
@@ -150,6 +152,13 @@ private:
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
 
+    /// PreparedSets cache for one executing mutation.
+    /// NOTE: we only store weak_ptr to PreparedSetsCache, so that the cache is shared between mutation tasks that are executed in parallel.
+    /// The goal is to avoiding consuming a lot of memory when the same big sets are used by multiple tasks at the same time.
+    /// If the tasks are executed without time overlap, we will destroy the cache to free memory, and the next task might rebuild the same sets.
+    std::mutex mutation_prepared_sets_cache_mutex;
+    std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
+
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
@@ -165,6 +174,7 @@ private:
             const String & partition_id,
             bool final, bool deduplicate,
             const Names & deduplicate_by_columns,
+            bool cleanup,
             const MergeTreeTransactionPtr & txn,
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);
@@ -174,18 +184,17 @@ private:
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
     /// If not force, then take merges selector and check that part is not participating in background operations.
-    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force);
+    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
-    void waitForMutation(Int64 version);
-    void waitForMutation(const String & mutation_id) override;
-    void waitForMutation(Int64 version, const String & mutation_id);
+    void waitForMutation(Int64 version, bool wait_for_another_mutation = false);
+    void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
+    void waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation = false);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
-
 
     friend struct CurrentlyMergingPartsTagger;
 
@@ -213,6 +222,15 @@ private:
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
+    /// Merges have to be aware of the outdated part's levels inside designated merge range.
+    /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
+    /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
+    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
+    UInt32 getMaxLevelInBetween(
+        const DataPartPtr & left,
+        const DataPartPtr & right) const;
+
     size_t clearOldMutations(bool truncate = false);
 
     // Partition helpers
@@ -235,7 +253,11 @@ private:
     /// because we can execute several mutations at once. Order is important for
     /// better readability of exception message. If mutation was killed doesn't
     /// return any ids.
-    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr,
+                                                                        bool from_another_mutation = false) const;
+
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatusUnlocked(Int64 mutation_version, std::unique_lock<std::mutex> & lock,
+                                                                        std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
 
@@ -248,6 +270,8 @@ private:
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
+    PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
+
     friend class MergeTreeSink;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
@@ -255,8 +279,7 @@ private:
 
 
 protected:
-
-    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

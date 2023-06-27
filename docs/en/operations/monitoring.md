@@ -2,6 +2,7 @@
 slug: /en/operations/monitoring
 sidebar_position: 45
 sidebar_label: Monitoring
+description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.
 ---
 
 # Monitoring
@@ -11,20 +12,17 @@ import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md
 
 You can monitor:
 
--   Utilization of hardware resources.
--   ClickHouse server metrics.
+- Utilization of hardware resources.
+- ClickHouse server metrics.
 
 ## Resource Utilization {#resource-utilization}
 
-ClickHouse does not monitor the state of hardware resources by itself.
+ClickHouse also monitors the state of hardware resources by itself such as:
 
-It is highly recommended to set up monitoring for:
+- Load and temperature on processors.
+- Utilization of storage system, RAM and network.
 
--   Load and temperature on processors.
-
-    You can use [dmesg](https://en.wikipedia.org/wiki/Dmesg), [turbostat](https://www.linux.org/docs/man8/turbostat.html) or other instruments.
-
--   Utilization of storage system, RAM and network.
+This data is collected in the `system.asynchronous_metric_log` table.
 
 ## ClickHouse Server Metrics {#clickhouse-server-metrics}
 
@@ -34,8 +32,8 @@ To track server events use server logs. See the [logger](../operations/server-co
 
 ClickHouse collects:
 
--   Different metrics of how the server uses computational resources.
--   Common statistics on query processing.
+- Different metrics of how the server uses computational resources.
+- Common statistics on query processing.
 
 You can find metrics in the [system.metrics](../operations/system-tables/metrics.md#system_tables-metrics), [system.events](../operations/system-tables/events.md#system_tables-events), and [system.asynchronous_metrics](../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) tables.
 

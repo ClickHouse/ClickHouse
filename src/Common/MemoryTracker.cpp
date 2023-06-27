@@ -69,17 +69,17 @@ inline std::string_view toDescription(OvercommitResult result)
     switch (result)
     {
     case OvercommitResult::NONE:
-        return "Memory overcommit isn't used. OvercommitTracker isn't set";
+        return "";
     case OvercommitResult::DISABLED:
-        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero";
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero.";
     case OvercommitResult::MEMORY_FREED:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
     case OvercommitResult::SELECTED:
-        return "Query was selected to stop by OvercommitTracker";
+        return "Query was selected to stop by OvercommitTracker.";
     case OvercommitResult::TIMEOUTED:
-        return "Waiting timeout for memory to be freed is reached";
+        return "Waiting timeout for memory to be freed is reached.";
     case OvercommitResult::NOT_ENOUGH_FREED:
-        return "Memory overcommit has freed not enough memory";
+        return "Memory overcommit has freed not enough memory.";
     }
 }
 
@@ -120,12 +120,17 @@ using namespace std::chrono_literals;
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
+MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
 
 std::atomic<Int64> MemoryTracker::free_memory_in_allocator_arenas;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
-
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_)
+    : parent(parent_)
+    , log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_)
+    , level(level_)
+{}
 
 MemoryTracker::~MemoryTracker()
 {
@@ -142,7 +147,6 @@ MemoryTracker::~MemoryTracker()
     }
 }
 
-
 void MemoryTracker::logPeakMemoryUsage()
 {
     log_peak_memory_usage_in_destructor = false;
@@ -158,6 +162,47 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
         "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
+void MemoryTracker::injectFault() const
+{
+    if (!memoryTrackerCanThrow(level, true))
+    {
+        LOG_WARNING(&Poco::Logger::get("MemoryTracker"),
+                    "Cannot inject fault at specific point. Uncaught exceptions: {}, stack trace:\n{}",
+                    std::uncaught_exceptions(), StackTrace().toString());
+        return;
+    }
+
+    /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+
+    ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
+    throw DB::Exception(
+        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+        "Memory tracker{}{}: fault injected (at specific point)",
+        description ? " " : "",
+        description ? description : "");
+}
+
+void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
+{
+    /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
+    /// Let's find them.
+#ifdef ABORT_ON_LOGICAL_ERROR
+    if (size < 0)
+        return;
+
+    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
+    if (size < threshold)
+        return;
+
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
+                                                   "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
+#else
+    return;     /// Avoid trash logging in release builds
+#endif
+}
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
 {
@@ -236,7 +281,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 formatReadableSizeWithBinarySuffix(current_hard_limit));
         }
         else
+        {
             memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
+        }
     }
 
     Int64 limit_to_check = current_hard_limit;
@@ -283,14 +331,17 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
-                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
-                    description ? " " : "",
-                    description ? description : "",
-                    formatReadableSizeWithBinarySuffix(will_be),
-                    size,
-                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    toDescription(overcommit_result));
+                                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                                    "Memory limit{}{} exceeded: "
+                                    "would use {} (attempt to allocate chunk of {} bytes), maximum: {}."
+                                    "{}{}",
+                                    description ? " " : "",
+                                    description ? description : "",
+                                    formatReadableSizeWithBinarySuffix(will_be),
+                                    size,
+                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
+                                    toDescription(overcommit_result));
             }
             else
             {
@@ -301,7 +352,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             }
         }
         else
+        {
             memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
+        }
     }
 
     bool peak_updated = false;
@@ -321,6 +375,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         {
             bool log_memory_usage = false;
             peak_updated = updatePeak(will_be, log_memory_usage);
+            debugLogBigAllocationWithoutCheck(size);
         }
     }
 
@@ -514,4 +569,11 @@ double MemoryTracker::getSampleProbability()
         return loaded_next->getSampleProbability();
 
     return 0;
+}
+
+bool canEnqueueBackgroundTask()
+{
+    auto limit = background_memory_tracker.getSoftLimit();
+    auto amount = background_memory_tracker.get();
+    return limit == 0 || amount < limit;
 }

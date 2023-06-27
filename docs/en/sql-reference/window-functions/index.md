@@ -21,6 +21,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `lag/lead(value, offset)`                                                          | Not supported. Workarounds:                                                                                                                                                                 |
 |                                                                                    | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`                                                                  |
 |                                                                                    | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
+| ntile(buckets) | Supported. Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
 ## ClickHouse-specific Window Functions
 
@@ -38,7 +39,7 @@ The computed value is the following for each row:
 
 The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
-All GitHub issues related to window funtions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
+All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
 
 ### Tests
 
@@ -79,7 +80,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
-- `WINDOW` - allows to reuse a window definition with multiple exressions.
+- `WINDOW` - allows to reuse a window definition with multiple expressions.
 
 ### Functions
 
@@ -139,8 +140,8 @@ ORDER BY
 │        1 │     1 │     1 │ [1,2,3]      │   <┐   
 │        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
 │        1 │     3 │     3 │ [1,2,3]      │   <┘ 
-│        2 │     0 │     0 │ [0]          │   <-  2-nd group
-│        3 │     0 │     0 │ [0]          │   <-  3-d group
+│        2 │     0 │     0 │ [0]          │   <- 2-nd group
+│        3 │     0 │     0 │ [0]          │   <- 3-d group
 └──────────┴───────┴───────┴──────────────┘
 ```
 
@@ -566,7 +567,7 @@ SELECT
     ts,
     value,
     round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
-       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) moving_avg_10_days_temp
+       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
 FROM sensors
 ORDER BY
     metric ASC,
@@ -590,5 +591,6 @@ ORDER BY
 
 ## Related Content
 
-- [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
-- [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+- Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
+- Blog: [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

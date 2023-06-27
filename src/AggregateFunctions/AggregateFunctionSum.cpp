@@ -19,7 +19,7 @@ namespace
 template <typename T>
 struct SumSimple
 {
-    /// @note It uses slow Decimal128 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
+    /// @note It uses slow Decimal128/256 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
     using ResultType = std::conditional_t<is_decimal<T>,
                                         std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
                                         NearestFieldType<T>>;
@@ -63,8 +63,8 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
         res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
     if (!res)
-        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                        argument_types[0]->getName(), name);
     return res;
 }
 

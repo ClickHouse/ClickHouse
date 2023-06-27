@@ -45,7 +45,7 @@ struct Hash
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
         return s390x_crc32(crc, val);
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -60,7 +60,7 @@ struct Hash
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
         return s390x_crc32_u32(crc, val);
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -75,7 +75,7 @@ struct Hash
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
         return s390x_crc32_u16(crc, val);
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -90,7 +90,7 @@ struct Hash
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
         return s390x_crc32_u8(crc, val);
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 

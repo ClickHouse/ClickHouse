@@ -109,7 +109,7 @@ private:
         size_t res = 0;
 
         if (common::addOverflow<size_t>(value, pad_right, res))
-            throw Exception("value is too big to apply padding", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "value is too big to apply padding");
 
         return res;
     }

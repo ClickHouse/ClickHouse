@@ -31,17 +31,16 @@ namespace
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
-            throw Exception(
-                "Illegal column " + interval_column.name + " of argument of function " + function_name, ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                interval_column.name, function_name);
         const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
         if (!interval_column_const_int64)
-            throw Exception(
-                "Illegal column " + interval_column.name + " of argument of function " + function_name, ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                interval_column.name, function_name);
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
-            throw Exception(
-                "Value for column " + interval_column.name + " of function " + function_name + " must be positive",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for column {} of function {} must be positive",
+                interval_column.name, function_name);
 
         return {interval_type->getKind(), num_units};
     }
@@ -51,36 +50,30 @@ namespace
         if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()); col_tuple)
         {
             if (!checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index)))
-                throw Exception(
-                    "Illegal column for first argument of function " + function_name + ". Must be a Tuple(DataTime, DataTime)",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
+                    "Must be a Tuple(DataTime, DataTime)", function_name);
             return col_tuple->getColumnPtr(index);
         }
         else
         {
-            throw Exception(
-                "Illegal column for first argument of function " + function_name + ". Must be Tuple",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
+                "Must be Tuple", function_name);
         }
     }
 
     void checkFirstArgument(const ColumnWithTypeAndName & argument, const String & function_name)
     {
         if (!isDateTime(argument.type))
-            throw Exception(
-                "Illegal type " + argument.type->getName() + " of argument of function " + function_name
-                    + ". Should be a date with time",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                "Should be a date with time", argument.type->getName(), function_name);
     }
 
     void checkIntervalArgument(const ColumnWithTypeAndName & argument, const String & function_name, IntervalKind & interval_kind, bool & result_type_is_date)
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(argument.type.get());
         if (!interval_type)
-            throw Exception(
-                "Illegal type " + argument.type->getName() + " of argument of function " + function_name
-                    + ". Should be an interval of time",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                "Should be an interval of time", argument.type->getName(), function_name);
         interval_kind = interval_type->getKind();
         result_type_is_date = (interval_type->getKind() == IntervalKind::Year) || (interval_type->getKind() == IntervalKind::Quarter)
             || (interval_type->getKind() == IntervalKind::Month) || (interval_type->getKind() == IntervalKind::Week);
@@ -97,10 +90,9 @@ namespace
         const String & function_name)
     {
         if (!WhichDataType(argument.type).isString())
-            throw Exception(
-                "Illegal type " + argument.type->getName() + " of argument of function " + function_name
-                    + ". This argument is optional and must be a constant string with timezone name",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                "This argument is optional and must be a constant string with timezone name",
+                argument.type->getName(), function_name);
     }
 
     bool checkIntervalOrTimeZoneArgument(const ColumnWithTypeAndName & argument, const String & function_name, IntervalKind & interval_kind, bool & result_type_is_date)
@@ -137,17 +129,16 @@ struct TimeWindowImpl<TUMBLE>
         }
         else
         {
-            throw Exception(
-                "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                function_name, arguments.size());
         }
 
         DataTypePtr data_type = nullptr;
         if (result_type_is_date)
             data_type = std::make_shared<DataTypeDate>();
         else
-            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
 
         return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
@@ -161,9 +152,8 @@ struct TimeWindowImpl<TUMBLE>
         const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         if (!which_type.isDateTime() || !time_column_vec)
-            throw Exception(
-                "Illegal column " + time_column.name + " of function " + function_name + ". Must contain dates or dates with time",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column {} of function {}. "
+                "Must contain dates or dates with time", time_column.name, function_name);
 
         auto interval = dispatchForIntervalColumns(interval_column, function_name);
 
@@ -193,7 +183,7 @@ struct TimeWindowImpl<TUMBLE>
             case IntervalKind::Year:
                 return executeTumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
             default:
-                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
         UNREACHABLE();
     }
@@ -236,9 +226,9 @@ struct TimeWindowImpl<TUMBLE_START>
             else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
-                throw Exception(
-                    "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Illegal type of first argument of function {} should be DateTime, Tuple or UInt32",
+                                function_name);
         }
         else
         {
@@ -319,21 +309,20 @@ struct TimeWindowImpl<HOP>
         }
         else
         {
-            throw Exception(
-                "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
+                function_name, arguments.size());
         }
 
         if (interval_kind_1 != interval_kind_2)
-            throw Exception(
-                "Illegal type of window and hop column of function " + function_name + ", must be same", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
+                function_name);
 
         DataTypePtr data_type = nullptr;
         if (result_type_is_date)
             data_type = std::make_shared<DataTypeDate>();
         else
-            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0));
+            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false));
         return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
 
@@ -346,18 +335,15 @@ struct TimeWindowImpl<HOP>
         const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 3, 0);
         if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
-            throw Exception(
-                "Illegal column " + time_column.name + " argument of function " + function_name
-                    + ". Must contain dates or dates with time",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column {} argument of function {}. "
+                "Must contain dates or dates with time", time_column.name, function_name);
 
         auto hop_interval = dispatchForIntervalColumns(hop_interval_column, function_name);
         auto window_interval = dispatchForIntervalColumns(window_interval_column, function_name);
 
         if (std::get<1>(hop_interval) > std::get<1>(window_interval))
-            throw Exception(
-                "Value for hop interval of function " + function_name + " must not larger than window interval",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Value for hop interval of function {} must not larger than window interval", function_name);
 
         switch (std::get<0>(window_interval))
         {
@@ -396,7 +382,7 @@ struct TimeWindowImpl<HOP>
                 return executeHop<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
-                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
         UNREACHABLE();
     }
@@ -460,8 +446,8 @@ struct TimeWindowImpl<WINDOW_ID>
             if (checkIntervalOrTimeZoneArgument(arguments.at(2), function_name, interval_kind_2, result_type_is_date))
             {
                 if (interval_kind_1 != interval_kind_2)
-                    throw Exception(
-                        "Illegal type of window and hop column of function " + function_name + ", must be same", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
+                        function_name);
             }
         }
         else if (arguments.size() == 4)
@@ -473,10 +459,9 @@ struct TimeWindowImpl<WINDOW_ID>
         }
         else
         {
-            throw Exception(
-                "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be 2, 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2, 3 or 4",
+                function_name, arguments.size());
         }
 
         if (result_type_is_date)
@@ -495,18 +480,15 @@ struct TimeWindowImpl<WINDOW_ID>
         const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 3, 0);
         if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
-            throw Exception(
-                "Illegal column " + time_column.name + " argument of function " + function_name
-                    + ". Must contain dates or dates with time",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column {} argument of function {}. "
+                "Must contain dates or dates with time", time_column.name, function_name);
 
         auto hop_interval = dispatchForIntervalColumns(hop_interval_column, function_name);
         auto window_interval = dispatchForIntervalColumns(window_interval_column, function_name);
 
         if (std::get<1>(hop_interval) > std::get<1>(window_interval))
-            throw Exception(
-                "Value for hop interval of function " + function_name + " must not larger than window interval",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Value for hop interval of function {} must not larger than window interval", function_name);
 
         switch (std::get<0>(window_interval))
         {
@@ -545,7 +527,7 @@ struct TimeWindowImpl<WINDOW_ID>
                 return executeHopSlice<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
-                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
         UNREACHABLE();
     }
@@ -616,9 +598,9 @@ struct TimeWindowImpl<HOP_START>
             else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
-                throw Exception(
-                    "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Illegal type of first argument of function {} should be DateTime, Tuple or UInt32",
+                                function_name);
         }
         else
         {

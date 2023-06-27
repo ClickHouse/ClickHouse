@@ -27,6 +27,8 @@ protected:
 
     Names names;
     size_t indent;
+
+    Block header;
 };
 
 }

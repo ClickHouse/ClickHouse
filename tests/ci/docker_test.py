@@ -10,9 +10,8 @@ from pr_info import PRInfo
 from report import TestResult
 import docker_images_check as di
 
-with patch("git_helper.Git"):
-    from version_helper import get_version_from_string
-    import docker_server as ds
+from version_helper import get_version_from_string
+import docker_server as ds
 
 # di.logging.basicConfig(level=di.logging.INFO)
 
@@ -117,15 +116,13 @@ class TestDockerImageCheck(unittest.TestCase):
         self.assertEqual(versions, ["1", "1-HEAD"])
         self.assertEqual(result_version, "1-HEAD")
 
-    @patch("builtins.open")
-    @patch("subprocess.Popen")
+    @patch("docker_images_check.TeePopen")
     @patch("platform.machine")
-    def test_build_and_push_one_image(self, mock_machine, mock_popen, mock_open):
+    def test_build_and_push_one_image(self, mock_machine, mock_popen):
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
         image = di.DockerImage("path", "name", False, gh_repo_path="")
 
-        result, _ = di.build_and_push_one_image(image, "version", "", True, True)
-        mock_open.assert_called_once()
+        result, _ = di.build_and_push_one_image(image, "version", [], True, True)
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -138,13 +135,11 @@ class TestDockerImageCheck(unittest.TestCase):
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
 
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
-        result, _ = di.build_and_push_one_image(image, "version2", "", False, True)
-        mock_open.assert_called_once()
+        result, _ = di.build_and_push_one_image(image, "version2", [], False, True)
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -158,12 +153,10 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertTrue(result)
 
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 1
-        result, _ = di.build_and_push_one_image(image, "version2", "", False, False)
-        mock_open.assert_called_once()
+        result, _ = di.build_and_push_one_image(image, "version2", [], False, False)
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -176,14 +169,12 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertFalse(result)
 
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 1
         result, _ = di.build_and_push_one_image(
-            image, "version2", "cached-version", False, False
+            image, "version2", ["cached-version", "another-cached"], False, False
         )
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -192,21 +183,20 @@ class TestDockerImageCheck(unittest.TestCase):
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-from type=registry,ref=name:cached-version "
+            "--cache-from type=registry,ref=name:another-cached "
             "--cache-to type=inline,mode=max --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
 
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         only_amd64_image = di.DockerImage("path", "name", True)
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
 
         result, _ = di.build_and_push_one_image(
-            only_amd64_image, "version", "", True, True
+            only_amd64_image, "version", [], True, True
         )
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_called_once()
         self.assertIn(
@@ -216,12 +206,14 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertTrue(result)
         result, _ = di.build_and_push_one_image(
-            only_amd64_image, "version", "", False, True
+            only_amd64_image, "version", [], False, True
         )
         self.assertIn(
             "docker pull ubuntu:20.04; docker tag ubuntu:20.04 name:version; ",
             mock_popen.call_args.args,
         )
+        with self.assertRaises(AssertionError):
+            result, _ = di.build_and_push_one_image(image, "version", [""], False, True)
 
     @patch("docker_images_check.build_and_push_one_image")
     def test_process_image_with_parents(self, mock_build):
@@ -233,7 +225,7 @@ class TestDockerImageCheck(unittest.TestCase):
         # We use list to have determined order of image builgings
         images = [im4, im1, im3, im2, im1]
         test_results = [
-            di.process_image_with_parents(im, ["v1", "v2", "latest"], "", True)
+            di.process_image_with_parents(im, ["v1", "v2", "latest"], [], True)
             for im in images
         ]
         # The time is random, so we check it's not None and greater than 0,
@@ -319,7 +311,3 @@ class TestDockerServer(unittest.TestCase):
         for case in cases_equal:
             release = ds.auto_release_type(case[0], "auto")
             self.assertEqual(case[1], release)
-
-
-if __name__ == "__main__":
-    unittest.main()

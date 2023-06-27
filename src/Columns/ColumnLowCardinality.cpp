@@ -26,7 +26,7 @@ namespace
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
-            throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnUnique expected as an argument of ColumnLowCardinality.");
     }
 
     template <typename T>
@@ -60,7 +60,7 @@ namespace
 
         for (size_t i = 0; i < index.size(); ++i)
             if (data[index[i]] != copy[i])
-                throw Exception("Expected " + toString(data[index[i]]) + ", but got " + toString(copy[i]), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(data[index[i]]), toString(copy[i]));
 
         return res_col;
     }
@@ -123,8 +123,8 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
         else
-            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got " + column.getName(),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}",
+                            column.getName());
     }
 }
 
@@ -150,7 +150,7 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -178,7 +178,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -237,8 +237,8 @@ static void checkPositionsAreLimited(const IColumn & positions, UInt64 limit)
         !check_for_type(UInt16()) &&
         !check_for_type(UInt32()) &&
         !check_for_type(UInt64()))
-        throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + positions.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column for ColumnLowCardinality index. Expected UInt, got {}",
+                        positions.getName());
 }
 
 void ColumnLowCardinality::insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions)
@@ -280,8 +280,8 @@ void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
     auto s = size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const auto & dict = getDictionary().getNestedColumn();
     WeakHash32 dict_hash(dict->size());
@@ -308,6 +308,18 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
         unique_ptr = unique_ptr->cloneEmpty();
 
     return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
+}
+
+MutableColumnPtr ColumnLowCardinality::cloneNullable() const
+{
+    auto res = cloneFinalized();
+    /* Compact required not to share dictionary.
+     * If `shared` flag is not set `cloneFinalized` will return shallow copy
+     * and `nestedToNullable` will mutate source column.
+     */
+    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
+    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
+    return res;
 }
 
 int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
@@ -469,8 +481,8 @@ std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_colu
 void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 {
     if (!empty())
-        throw Exception("Can't set ColumnUnique for ColumnLowCardinality because is't not empty.",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set ColumnUnique for "
+                        "ColumnLowCardinality because is't not empty.");
 
     dictionary.setShared(column_unique);
 }
@@ -478,13 +490,8 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
-    /// Create column with new indexes and old dictionary.
-    /// Dictionary is shared, but will be recreated after compactInplace call.
-    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
-    /// Will create new dictionary.
-    column->compactInplace();
-
-    return column;
+    auto new_column_unique = Dictionary::compact(dictionary.getColumnUnique(), sub_positions);
+    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions));
 }
 
 void ColumnLowCardinality::compactInplace()
@@ -549,8 +556,8 @@ void ColumnLowCardinality::Index::callForType(Callback && callback, size_t size_
         case sizeof(UInt32): { callback(UInt32()); break; }
         case sizeof(UInt64): { callback(UInt64()); break; }
         default: {
-            throw Exception("Unexpected size of index type for ColumnLowCardinality: " + toString(size_of_type),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnLowCardinality: {}",
+                            size_of_type);
         }
     }
 }
@@ -578,11 +585,11 @@ size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, s
     if (auto size = try_get_size_for(UInt64()))
         return size;
 
-    throw Exception("Unexpected indexes type for ColumnLowCardinality. Expected UInt, got " + column.getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected indexes type for ColumnLowCardinality. Expected UInt, got {}",
+                    column.getName());
 }
 
-void ColumnLowCardinality::Index::attachPositions(ColumnPtr positions_)
+void ColumnLowCardinality::Index::attachPositions(MutableColumnPtr positions_)
 {
     positions = std::move(positions_);
     updateSizeOfType();
@@ -593,9 +600,8 @@ typename ColumnVector<IndexType>::Container & ColumnLowCardinality::Index::getPo
 {
     auto * positions_ptr = typeid_cast<ColumnVector<IndexType> *>(positions->assumeMutable().get());
     if (!positions_ptr)
-        throw Exception("Invalid indexes type for ColumnLowCardinality."
-                        " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid indexes type for ColumnLowCardinality. Expected UInt{}, got {}",
+                        8 * sizeof(IndexType), positions->getName());
 
     return positions_ptr->getData();
 }
@@ -605,9 +611,8 @@ const typename ColumnVector<IndexType>::Container & ColumnLowCardinality::Index:
 {
     const auto * positions_ptr = typeid_cast<const ColumnVector<IndexType> *>(positions.get());
     if (!positions_ptr)
-        throw Exception("Invalid indexes type for ColumnLowCardinality."
-                        " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid indexes type for ColumnLowCardinality. Expected UInt{}, got {}",
+                        8 * sizeof(IndexType), positions->getName());
 
     return positions_ptr->getData();
 }
@@ -621,8 +626,8 @@ void ColumnLowCardinality::Index::convertPositions()
         auto & data = getPositionsData<CurIndexType>();
 
         if (sizeof(CurIndexType) > sizeof(IndexType))
-            throw Exception("Converting indexes to smaller type: from " + toString(sizeof(CurIndexType)) +
-                            " to " + toString(sizeof(IndexType)), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting indexes to smaller type: from {} to {}",
+                            sizeof(CurIndexType), sizeof(IndexType));
 
         if (sizeof(CurIndexType) != sizeof(IndexType))
         {
@@ -651,8 +656,8 @@ void ColumnLowCardinality::Index::expandType()
         using CurIndexType = decltype(type);
         constexpr auto next_size = NumberTraits::nextSize(sizeof(CurIndexType));
         if (next_size == sizeof(CurIndexType))
-            throw Exception("Can't expand indexes type for ColumnLowCardinality from type: "
-                            + demangle(typeid(CurIndexType).name()), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't expand indexes type for ColumnLowCardinality from type: {}",
+                            demangle(typeid(CurIndexType).name()));
 
         using NewIndexType = typename NumberTraits::Construct<false, false, next_size>::Type;
         convertPositions<NewIndexType>();
@@ -730,8 +735,8 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
         !insert_for_type(UInt16()) &&
         !insert_for_type(UInt32()) &&
         !insert_for_type(UInt64()))
-        throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + column.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column for ColumnLowCardinality index. Expected UInt, got {}",
+                        column.getName());
 
     checkSizeOfType();
 }
@@ -739,8 +744,8 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
 void ColumnLowCardinality::Index::checkSizeOfType()
 {
     if (size_of_type != getSizeOfIndexType(*positions, size_of_type))
-        throw Exception("Invalid size of type. Expected " + toString(8 * size_of_type) +
-                        ", but positions are " + positions->getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid size of type. Expected {}, but positions are {}",
+                        8 * size_of_type, positions->getName());
 }
 
 void ColumnLowCardinality::Index::countKeys(ColumnUInt64::Container & counts) const
@@ -815,21 +820,58 @@ void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique
     shared = true;
 }
 
-void ColumnLowCardinality::Dictionary::compact(ColumnPtr & positions)
+void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & positions)
 {
-    auto new_column_unique = column_unique->cloneEmpty();
+    column_unique = compact(getColumnUnique(), positions);
+    shared = false;
+}
 
-    auto & unique = getColumnUnique();
+MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & positions)
+{
+    auto new_column_unique = unique.cloneEmpty();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
-    auto indexes = mapUniqueIndex(positions->assumeMutableRef());
+    auto indexes = mapUniqueIndex(*positions);
     auto sub_keys = unique.getNestedColumn()->index(*indexes, 0);
     auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
 
     positions = IColumn::mutate(new_indexes->index(*positions, 0));
-    column_unique = std::move(new_column_unique);
+    return new_column_unique;
+}
 
-    shared = false;
+ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
+{
+    if (!nestedIsNullable())
+        return getPtr();
+
+    auto res = cloneEmpty();
+    auto & lc_res = assert_cast<ColumnLowCardinality &>(*res);
+    lc_res.nestedRemoveNullable();
+    size_t end = size();
+    size_t start = 0;
+    while (start < end)
+    {
+        size_t next_null_index = start;
+        while (next_null_index < end && !isNullAt(next_null_index))
+            ++next_null_index;
+
+        if (next_null_index != start)
+            lc_res.insertRangeFrom(*this, start, next_null_index - start);
+
+        if (next_null_index < end)
+            lc_res.insertDefault();
+
+        start = next_null_index + 1;
+    }
+
+    return res;
+}
+
+bool isColumnLowCardinalityNullable(const IColumn & column)
+{
+    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(column))
+        return lc_column->nestedIsNullable();
+    return false;
 }
 
 }

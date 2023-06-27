@@ -104,12 +104,12 @@ off_t ConcatSeekableReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_position = current_position + off;
     else
-        throw Exception("ConcatSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ConcatSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence");
 
     if (new_position < 0)
-        throw Exception("SEEK_SET underflow: off = " + std::to_string(off), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);
     if (static_cast<UInt64>(new_position) > total_size)
-        throw Exception("SEEK_CUR shift out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
 
     if (static_cast<UInt64>(new_position) == total_size)
     {

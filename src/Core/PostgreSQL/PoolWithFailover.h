@@ -8,7 +8,6 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StoragePostgreSQL.h>
 

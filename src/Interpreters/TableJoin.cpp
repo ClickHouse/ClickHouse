@@ -14,6 +14,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -141,12 +143,13 @@ void TableJoin::addDisjunct()
     clauses.emplace_back();
 
     if (getStorageJoin() && clauses.size() > 1)
-        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 }
 
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 {
     addKey(left_table_ast->getColumnName(), right_table_ast->getAliasOrColumnName(), left_table_ast, right_table_ast);
+    right_key_aliases[right_table_ast->getColumnName()] = right_table_ast->getAliasOrColumnName();
 }
 
 /// @return how many times right key appears in ON section.
@@ -490,11 +493,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     if (strictness() == JoinStrictness::Asof)
     {
         if (clauses.size() != 1)
-            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
-
-        auto asof_key_type = right_types.find(clauses.back().key_names_right.back());
-        if (asof_key_type != right_types.end() && asof_key_type->second->isNullable())
-            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join over multiple keys is not supported");
     }
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
@@ -662,6 +661,14 @@ String TableJoin::renamedRightColumnName(const String & name) const
     return name;
 }
 
+String TableJoin::renamedRightColumnNameWithAlias(const String & name) const
+{
+    auto renamed = renamedRightColumnName(name);
+    if (const auto it = right_key_aliases.find(renamed); it != right_key_aliases.end())
+        return it->second;
+    return renamed;
+}
+
 void TableJoin::setRename(const String & from, const String & to)
 {
     renames[from] = to;
@@ -753,6 +760,13 @@ bool TableJoin::allowParallelHashJoin() const
     if (isSpecialStorage() || !oneDisjunct())
         return false;
     return true;
+}
+
+ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
+{
+    ASTPtr expression_list = rightKeysList();
+    auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
+    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
 }

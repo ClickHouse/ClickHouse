@@ -34,7 +34,7 @@ struct QuantileInterpolatedWeighted
 
     using Weight = UInt64;
     using UnderlyingType = NativeType<Value>;
-    using Hasher = std::conditional_t<std::is_same_v<Value, Decimal128>, Int128Hash, HashCRC32<UnderlyingType>>;
+    using Hasher = HashCRC32<UnderlyingType>;
 
     /// When creating, the hash table must be small.
     using Map = HashMapWithStackMemory<UnderlyingType, Weight, Hasher, 4>;
@@ -88,12 +88,12 @@ struct QuantileInterpolatedWeighted
     /// The same, but in the case of an empty state, NaN is returned.
     Float64 getFloat(Float64) const
     {
-        throw Exception("Method getFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileInterpolatedWeighted");
     }
 
     void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
     {
-        throw Exception("Method getManyFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for QuantileInterpolatedWeighted");
     }
 
 private:

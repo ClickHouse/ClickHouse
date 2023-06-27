@@ -58,6 +58,7 @@ def test_jbod_ha(start_cluster):
                     old_parts_lifetime = 1,
                     cleanup_delay_period = 1,
                     cleanup_delay_period_random_add = 2,
+                    cleanup_thread_preferred_points_per_iteration=0,
                     max_bytes_to_merge_at_max_space_in_pool = 4096
             """.format(
                     i
@@ -72,9 +73,21 @@ def test_jbod_ha(start_cluster):
 
         node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
-        # mimic disk failure
+        # Mimic disk failure
+        #
+        # NOTE: you cannot do one of the following:
+        # - chmod 000 - this will not block access to the owner of the namespace,
+        #   and running clickhouse from non-root user is very tricky in this
+        #   sandbox.
+        # - unmount it, to replace with something else because in this case you
+        #   will loose tmpfs and besides clickhouse works from root, so it will
+        #   still be able to write/read from/to it.
+        #
+        # So it simply mounts over tmpfs, proc, and this will throw exception
+        # for read, because there is no such file and does not allows writes
+        # either.
         node1.exec_in_container(
-            ["bash", "-c", "chmod -R 000 /jbod1"], privileged=True, user="root"
+            ["bash", "-c", "mount -t proc proc /jbod1"], privileged=True, user="root"
         )
 
         time.sleep(3)
@@ -91,9 +104,11 @@ def test_jbod_ha(start_cluster):
 
         assert int(node1.query("select count(p) from tbl")) == 2500
 
-        # mimic disk recovery
+        # Mimic disk recovery
+        #
+        # NOTE: this will unmount only proc from /jbod1 and leave tmpfs
         node1.exec_in_container(
-            ["bash", "-c", "chmod -R 755 /jbod1"],
+            ["bash", "-c", "umount  /jbod1"],
             privileged=True,
             user="root",
         )

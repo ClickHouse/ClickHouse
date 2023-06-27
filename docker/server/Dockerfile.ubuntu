@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
@@ -9,19 +9,20 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
+    && apt-get upgrade -yq \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
         ca-certificates \
         dirmngr \
-        gnupg \
-        locales \
+        gnupg2 \
         wget \
+        locales \
         tzdata \
     && apt-get clean
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="22.12.3.5"
+ARG VERSION="23.5.3.24"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -80,15 +81,8 @@ RUN arch=${TARGETARCH:-amd64} \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
-# Remove as much of Ubuntu as possible.
-# ClickHouse does not need Ubuntu. It can run on top of Linux kernel without any OS distribution.
-# ClickHouse does not need Docker at all. ClickHouse is above all that.
-# It does not care about Ubuntu, Docker, or other cruft and you should neither.
-# The fact that this Docker image is based on Ubuntu is just a misconception.
-# Some vulnerability scanners are arguing about Ubuntu, which is not relevant to ClickHouse at all.
-# ClickHouse does not care when you report false vulnerabilities by running some Docker scanners.
-
-RUN apt-get remove --purge -y libksba8 && apt-get autoremove -y
+RUN apt-get autoremove --purge -yq libksba8 && \
+    apt-get autoremove -yq
 
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)

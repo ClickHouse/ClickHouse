@@ -24,7 +24,7 @@ public:
     void pushBlock(Block && log_block);
 
     /// Converts priority from Poco::Message::Priority to a string
-    static const char * getPriorityName(int priority);
+    static std::string_view getPriorityName(int priority);
 
     void setSourceRegexp(const String & regexp);
 private:

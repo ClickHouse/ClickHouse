@@ -53,6 +53,53 @@ static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
                         child_num, child->getInputStreams().size(), node->children.size());
 }
 
+static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const NameSet & identifiers_in_predicate)
+{
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        for (const auto & identifier : identifiers_in_predicate)
+        {
+            if (std::find(grouping_set.used_keys.begin(), grouping_set.used_keys.end(), identifier) == grouping_set.used_keys.end())
+                return false;
+        }
+    }
+    return true;
+}
+
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+{
+    NameSet res;
+
+    /// We treat all INPUT as identifier
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        res.emplace(node->result_name);
+        return res;
+    }
+
+    std::queue<const ActionsDAG::Node *> queue;
+    queue.push(node);
+
+    while (!queue.empty())
+    {
+        const auto * top = queue.front();
+        for (const auto * child : top->children)
+        {
+            if (child->type == ActionsDAG::ActionType::INPUT)
+            {
+                res.emplace(child->result_name);
+            }
+            else
+            {
+                /// Only push non INPUT child into the queue
+                queue.push(child);
+            }
+        }
+        queue.pop();
+    }
+    return res;
+}
+
 static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -176,6 +223,20 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
+        /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
+        /// of the grouping sets, we could not push the filter down.
+        if (aggregating->isGroupingSets())
+        {
+
+            const auto & actions = filter->getExpression();
+            const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
+
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+
+            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
+                return 0;
+        }
+
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;
 
@@ -207,11 +268,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 2;
     }
 
+    if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(child.get()))
+    {
+        /// CreatingSets does not change header.
+        /// We can push down filter and update header.
+        /// Filter - DelayedCreatingSets - Something
+        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputStream(), delayed->detachSets(), delayed->getContext());
+        std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
+        /// DelayedCreatingSets - Filter - Something
+        return 2;
+    }
+
     if (auto * totals_having = typeid_cast<TotalsHavingStep *>(child.get()))
     {
         /// If totals step has HAVING expression, skip it for now.
         /// TODO:
-        /// We can merge HAVING expression with current filer.
+        /// We can merge HAVING expression with current filter.
         /// Also, we can push down part of HAVING which depend only on aggregation keys.
         if (totals_having->getActions())
             return 0;
@@ -253,20 +327,23 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
         return updated_steps;
 
-    if (auto * join = typeid_cast<JoinStep *>(child.get()))
+    auto * join = typeid_cast<JoinStep *>(child.get());
+    auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
+
+    if (join || filled_join)
     {
         auto join_push_down = [&](JoinKind kind) -> size_t
         {
-            const auto & table_join = join->getJoin()->getTableJoin();
+            const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
 
-            /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
+            /// Only inner, cross and left(/right) join are supported. Other types may generate default values for left table keys.
             /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-            if (table_join.kind() != JoinKind::Inner && table_join.kind() != kind)
+            if (table_join.kind() != JoinKind::Inner && table_join.kind() != JoinKind::Cross && table_join.kind() != kind)
                 return 0;
 
             bool is_left = kind == JoinKind::Left;
-            const auto & input_header = is_left ? join->getInputStreams().front().header : join->getInputStreams().back().header;
-            const auto & res_header = join->getOutputStream().header;
+            const auto & input_header = is_left ? child->getInputStreams().front().header : child->getInputStreams().back().header;
+            const auto & res_header = child->getOutputStream().header;
             Names allowed_keys;
             const auto & source_columns = input_header.getNames();
             for (const auto & name : source_columns)
@@ -311,7 +388,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
 
         /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
-        if (join->allowPushDownToRight())
+        if (join && join->allowPushDownToRight())
         {
             if (size_t updated_steps = join_push_down(JoinKind::Right))
                 return updated_steps;
@@ -333,8 +410,19 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * sorting = typeid_cast<SortingStep *>(child.get()))
+    {
+        const auto & sort_description = sorting->getSortDescription();
+        auto sort_description_it = std::find_if(sort_description.begin(), sort_description.end(), [&](auto & sort_column_description)
+        {
+            return sort_column_description.column_name == filter->getFilterColumnName();
+        });
+        bool can_remove_filter = sort_description_it == sort_description.end();
+
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
 
     if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
         return updated_steps;

@@ -137,7 +137,7 @@ namespace
 
         auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
         auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
-        if (!info || !info->is_local)
+        if (!info || !info->is_local || info->table_name.table.empty())
             return;
 
         auto * source_list = dictionary.source->elements->as<ASTExpressionList>();
@@ -336,8 +336,11 @@ void DDLRenamingMap::setNewDatabaseName(const String & old_database_name, const 
     {
         if (it->second == new_database_name)
             return;
-        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS, "Wrong renaming: it's specified that database {} should be renamed to {} and to {} at the same time",
-                        backQuoteIfNeed(old_database_name), backQuoteIfNeed(it->second), backQuoteIfNeed(new_database_name));
+        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS,
+                        "Wrong renaming: it's specified that database {} should be renamed "
+                        "to {} and to {} at the same time",
+                        backQuoteIfNeed(old_database_name), backQuoteIfNeed(it->second),
+                        backQuoteIfNeed(new_database_name));
     }
     old_to_new_database_names[old_database_name] = new_database_name;
 }

@@ -1,34 +1,54 @@
 ---
 slug: /en/sql-reference/functions/string-replace-functions
-sidebar_position: 42
-sidebar_label: For Replacing in Strings
+sidebar_position: 150
+sidebar_label: Replacing in Strings
 ---
 
-# Functions for Searching and Replacing in Strings
+# Functions for Replacing in Strings
 
-:::note
-Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
-:::
+[General strings functions](string-functions.md) and [functions for searching in strings](string-search-functions.md) are described separately.
 
-## replaceOne(haystack, pattern, replacement)
+## replaceOne
 
-Replaces the first occurrence of the substring ‘pattern’ (if it exists) in ‘haystack’ by the ‘replacement’ string.
-‘pattern’ and ‘replacement’ must be constants.
+Replaces the first occurrence of the substring `pattern` in `haystack` by the `replacement` string.
 
-## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement)
+**Syntax**
 
-Replaces all occurrences of the substring ‘pattern’ in ‘haystack’ by the ‘replacement’ string.
+```sql
+replaceOne(haystack, pattern, replacement)
+```
 
-## replaceRegexpOne(haystack, pattern, replacement)
+## replaceAll
 
-Replaces the first occurrence of the substring matching the regular expression ‘pattern’ in ‘haystack‘ by the ‘replacement‘ string.
-‘pattern‘ must be a constant [re2 regular expression](https://github.com/google/re2/wiki/Syntax).
-‘replacement’ must be a plain constant string or a constant string containing substitutions `\0-\9`.
+Replaces all occurrences of the substring `pattern` in `haystack` by the `replacement` string.
+
+**Syntax**
+
+```sql
+replaceAll(haystack, pattern, replacement)
+```
+
+Alias: `replace`.
+
+## replaceRegexpOne
+
+Replaces the first occurrence of the substring matching the regular expression `pattern` (in [re2 syntax](https://github.com/google/re2/wiki/Syntax)) in `haystack` by the `replacement` string.
+
+`replacement` can containing substitutions `\0-\9`.
 Substitutions `\1-\9` correspond to the 1st to 9th capturing group (submatch), substitution `\0` corresponds to the entire match.
-To use a verbatim `\` character in the ‘pattern‘ or ‘replacement‘ string, escape it using `\`.
-Also keep in mind that string literals require an extra escaping.
 
-Example 1. Converting ISO dates to American format:
+To use a verbatim `\` character in the `pattern` or `replacement` strings, escape it using `\`.
+Also keep in mind that string literals require extra escaping.
+
+**Syntax**
+
+```sql
+replaceRegexpOne(haystack, pattern, replacement)
+```
+
+**Example**
+
+Converting ISO dates to American format:
 
 ``` sql
 SELECT DISTINCT
@@ -38,6 +58,8 @@ FROM test.hits
 LIMIT 7
 FORMAT TabSeparated
 ```
+
+Result:
 
 ``` text
 2014-03-17      03/17/2014
@@ -49,11 +71,13 @@ FORMAT TabSeparated
 2014-03-23      03/23/2014
 ```
 
-Example 2. Copying a string ten times:
+Copying a string ten times:
 
 ``` sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
+
+Result:
 
 ``` text
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -61,13 +85,19 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## replaceRegexpAll(haystack, pattern, replacement)
+## replaceRegexpAll
 
-Like ‘replaceRegexpOne‘, but replaces all occurrences of the pattern. Example:
+Like `replaceRegexpOne` but replaces all occurrences of the pattern.
+
+Alias: `REGEXP_REPLACE`.
+
+**Example**
 
 ``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
+
+Result:
 
 ``` text
 ┌─res────────────────────────┐
@@ -75,12 +105,13 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 └────────────────────────────┘
 ```
 
-As an exception, if a regular expression worked on an empty substring, the replacement is not made more than once.
-Example:
+As an exception, if a regular expression worked on an empty substring, the replacement is not made more than once, e.g.:
 
 ``` sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
+
+Result:
 
 ``` text
 ┌─res─────────────────┐
@@ -88,23 +119,36 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
-## regexpQuoteMeta(s)
+## regexpQuoteMeta
 
-The function adds a backslash before some predefined characters in the string.
-Predefined characters: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
+Adds a backslash before these characters with special meaning in regular expressions: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
+
 This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
-For more information, see the link: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
+For more information, see [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
+**Syntax**
 
-## translate(s, from, to)
+```sql
+regexpQuoteMeta(s)
+```
 
-The function replaces characters in the string ‘s’ in accordance with one-to-one character mapping defined by ‘from’ and ‘to’ strings. ‘from’ and ‘to’ must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+## translate
 
-Example:
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings. `from` and `to` must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+
+**Syntax**
+
+```sql
+translate(s, from, to)
+```
+
+**Example**
 
 ``` sql
 SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
 ```
+
+Result:
 
 ``` text
 ┌─res───────────┐
@@ -112,18 +156,6 @@ SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
 └───────────────┘
 ```
 
-## translateUTF8(string, from, to)
+## translateUTF8
 
-Similar to previous function, but works with UTF-8 arguments. ‘from’ and ‘to’ must be valid constant UTF-8 strings of the same size.
-
-Example:
-
-``` sql
-SELECT translateUTF8('Hélló, Wórld¡', 'óé¡', 'oe!') AS res
-```
-
-``` text
-┌─res───────────┐
-│ Hello, World! │
-└───────────────┘
-```
+Like [translate](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.

@@ -5,6 +5,7 @@
 #include <mutex>
 
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
@@ -44,7 +45,8 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -62,12 +64,12 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     void drop() override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -130,6 +132,8 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
+
+    friend class ReadFromMemoryStorageStep;
 };
 
 }

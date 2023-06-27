@@ -40,7 +40,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     if (config.getBool("ask-password", false))
     {
         if (config.has("password"))
-            throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
         password_prompt = true;
     }
     else
@@ -67,7 +67,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
             Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
             Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0),
             Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0));
+            Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0),
+            Poco::Timespan(config.getInt("handshake_timeout_ms", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000), 0));
 
     timeouts.sync_request_timeout = Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0);
 }

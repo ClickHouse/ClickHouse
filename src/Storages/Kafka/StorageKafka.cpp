@@ -19,13 +19,13 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -41,6 +41,7 @@
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 
+#include "Storages/ColumnDefault.h"
 #include "config_version.h"
 
 #include <Common/CurrentMetrics.h>
@@ -122,7 +123,7 @@ struct StorageKafkaInterceptors
             return thread_status_ptr.get() == current_thread;
         });
         if (it == self->thread_statuses.end())
-            throw Exception("No thread status for this librdkafka thread.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread status for this librdkafka thread.");
 
         self->thread_statuses.erase(it);
 
@@ -175,22 +176,69 @@ namespace
     const auto CLEANUP_TIMEOUT_MS = 3000;
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
 
-    /// Configuration prefix
-    const String CONFIG_PREFIX = "kafka";
+    const String CONFIG_KAFKA_TAG = "kafka";
+    const String CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
+    const String CONFIG_NAME_TAG = "name";
 
-    void loadFromConfig(cppkafka::Configuration & conf, const Poco::Util::AbstractConfiguration & config, const std::string & path)
+    /// Read server configuration into cppkafka configuration, used by global configuration and by legacy per-topic configuration
+    void loadFromConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(path, keys);
+        /// Read all tags one level below <kafka>
+        Poco::Util::AbstractConfiguration::Keys tags;
+        config.keys(config_prefix, tags);
 
-        for (const auto & key : keys)
+        for (const auto & tag : tags)
         {
-            const String key_path = path + "." + key;
-            // log_level has valid underscore, rest librdkafka setting use dot.separated.format
-            // which is not acceptable for XML.
-            // See also https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-            const String key_name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
-            conf.set(key_name, config.getString(key_path));
+            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG)) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+                continue; /// used by new per-topic configuration, ignore
+
+            const String setting_path = config_prefix + "." + tag;
+            const String setting_value = config.getString(setting_path);
+
+            /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+            /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+            const String setting_name_in_kafka_config = (tag == "log_level") ? tag : boost::replace_all_copy(tag, "_", ".");
+            kafka_config.set(setting_name_in_kafka_config, setting_value);
+        }
+    }
+
+    /// Read server configuration into cppkafa configuration, used by new per-topic configuration
+    void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const String & topic)
+    {
+        /// Read all tags one level below <kafka>
+        Poco::Util::AbstractConfiguration::Keys tags;
+        config.keys(config_prefix, tags);
+
+        for (const auto & tag : tags)
+        {
+            /// Only consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+            if (!tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
+                continue;
+
+            /// Read topic name between <name>...</name>
+            const String kafka_topic_path = config_prefix + "." + tag;
+            const String kafpa_topic_name_path = kafka_topic_path + "." + CONFIG_NAME_TAG;
+
+            const String topic_name = config.getString(kafpa_topic_name_path);
+            if (topic_name == topic)
+            {
+                /// Found it! Now read the per-topic configuration into cppkafka.
+                Poco::Util::AbstractConfiguration::Keys inner_tags;
+                config.keys(kafka_topic_path, inner_tags);
+                for (const auto & inner_tag : inner_tags)
+                {
+                    if (inner_tag == CONFIG_NAME_TAG)
+                        continue; // ignore <name>
+
+                    /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+                    /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+                    const String setting_path = kafka_topic_path + "." + inner_tag;
+                    const String setting_value = config.getString(setting_path);
+
+                    const String setting_name_in_kafka_config = (inner_tag == "log_level") ? inner_tag : boost::replace_all_copy(inner_tag, "_", ".");
+                    kafka_config.set(setting_name_in_kafka_config, setting_value);
+                }
+            }
         }
     }
 }
@@ -298,7 +346,8 @@ Pipe StorageKafka::read(
         return {};
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
@@ -325,7 +374,7 @@ Pipe StorageKafka::read(
 }
 
 
-SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
@@ -334,7 +383,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
-        throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics!");
 
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
@@ -508,29 +557,33 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 String StorageKafka::getConfigPrefix() const
 {
     if (!collection_name.empty())
-        return "named_collections." + collection_name + "." + CONFIG_PREFIX; /// Add one more level to separate librdkafka configuration.
-    return CONFIG_PREFIX;
+        return "named_collections." + collection_name + "." + CONFIG_KAFKA_TAG; /// Add one more level to separate librdkafka configuration.
+    return CONFIG_KAFKA_TAG;
 }
 
-void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
+void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
 {
-    // Update consumer configuration from the configuration
+    // Update consumer configuration from the configuration. Example:
+    //     <kafka>
+    //         <retry_backoff_ms>250</retry_backoff_ms>
+    //         <fetch_min_bytes>100000</fetch_min_bytes>
+    //     </kafka>
     const auto & config = getContext()->getConfigRef();
     auto config_prefix = getConfigPrefix();
     if (config.has(config_prefix))
-        loadFromConfig(conf, config, config_prefix);
+        loadFromConfig(kafka_config, config, config_prefix);
 
-    #if USE_KRB5
-    if (conf.has_property("sasl.kerberos.kinit.cmd"))
+#if USE_KRB5
+    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
-    conf.set("sasl.kerberos.kinit.cmd","");
-    conf.set("sasl.kerberos.min.time.before.relogin","0");
+    kafka_config.set("sasl.kerberos.kinit.cmd","");
+    kafka_config.set("sasl.kerberos.min.time.before.relogin","0");
 
-    if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
+    if (kafka_config.has_property("sasl.kerberos.keytab") && kafka_config.has_property("sasl.kerberos.principal"))
     {
-        String keytab = conf.get("sasl.kerberos.keytab");
-        String principal = conf.get("sasl.kerberos.principal");
+        String keytab = kafka_config.get("sasl.kerberos.keytab");
+        String principal = kafka_config.get("sasl.kerberos.principal");
         LOG_DEBUG(log, "Running KerberosInit");
         try
         {
@@ -542,21 +595,47 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         }
         LOG_DEBUG(log, "Finished KerberosInit");
     }
-    #else // USE_KRB5
-    if (conf.has_property("sasl.kerberos.keytab") || conf.has_property("sasl.kerberos.principal"))
-        LOG_WARNING(log, "Kerberos-related parameters are ignored because ClickHouse was built without support of krb5 library.");
-    #endif // USE_KRB5
+#else // USE_KRB5
+    if (kafka_config.has_property("sasl.kerberos.keytab") || kafka_config.has_property("sasl.kerberos.principal"))
+        LOG_WARNING(log, "Ignoring Kerberos-related parameters because ClickHouse was built without krb5 library support.");
+#endif // USE_KRB5
 
-    // Update consumer topic-specific configuration
+    // Update consumer topic-specific configuration (legacy syntax, retained for compatibility). Example with topic "football":
+    //     <kafka_football>
+    //         <retry_backoff_ms>250</retry_backoff_ms>
+    //         <fetch_min_bytes>100000</fetch_min_bytes>
+    //     </kafka_football>
+    // The legacy syntax has the problem that periods in topic names (e.g. "sports.football") are not supported because the Poco
+    // configuration framework hierarchy is based on periods as level separators. Besides that, per-topic tags at the same level
+    // as <kafka> are ugly.
     for (const auto & topic : topics)
     {
         const auto topic_config_key = config_prefix + "_" + topic;
         if (config.has(topic_config_key))
-            loadFromConfig(conf, config, topic_config_key);
+            loadFromConfig(kafka_config, config, topic_config_key);
     }
 
+    // Update consumer topic-specific configuration (new syntax). Example with topics "football" and "baseball":
+    //     <kafka>
+    //         <kafka_topic>
+    //             <name>football</name>
+    //             <retry_backoff_ms>250</retry_backoff_ms>
+    //             <fetch_min_bytes>5000</fetch_min_bytes>
+    //         </kafka_topic>
+    //         <kafka_topic>
+    //             <name>baseball</name>
+    //             <retry_backoff_ms>300</retry_backoff_ms>
+    //             <fetch_min_bytes>2000</fetch_min_bytes>
+    //         </kafka_topic>
+    //     </kafka>
+    // Advantages: The period restriction no longer applies (e.g. <name>sports.football</name> will work), everything
+    // Kafka-related is below <kafka>.
+    for (const auto & topic : topics)
+        if (config.has(config_prefix))
+            loadTopicConfig(kafka_config, config, config_prefix, topic);
+
     // No need to add any prefix, messages can be distinguished
-    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
+    kafka_config.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
     {
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
@@ -572,13 +651,13 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 
         int status;
 
-        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(),
+        status = rd_kafka_conf_interceptor_add_on_new(kafka_config.get_handle(),
             "init", StorageKafkaInterceptors::rdKafkaOnNew, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
             LOG_ERROR(log, "Cannot set new interceptor due to {} error", status);
 
         // cppkafka always copy the configuration
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(),
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(kafka_config.get_handle(),
             "init", StorageKafkaInterceptors::rdKafkaOnConfDup, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
             LOG_ERROR(log, "Cannot set dup conf interceptor due to {} error", status);
@@ -673,7 +752,7 @@ bool StorageKafka::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
@@ -756,10 +835,21 @@ void registerStorageKafka(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
-        bool has_settings = args.storage_def->settings;
+        const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
-        auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *kafka_settings, args.getLocalContext());
+        String collection_name;
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        {
+            for (const auto & setting : kafka_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    kafka_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+        }
+
         if (has_settings)
         {
             kafka_settings->loadFromQuery(*args.storage_def);
@@ -771,10 +861,10 @@ void registerStorageKafka(StorageFactory & factory)
             if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 &&                 \
                 !kafka_settings->PAR_NAME.changed)                          \
             {                                                               \
-                throw Exception(                                            \
-                    "Required parameter '" #PAR_NAME "' "                   \
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,\
+                    "Required parameter '{}' "                              \
                     "for storage Kafka not specified",                      \
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);          \
+                    #PAR_NAME);                                             \
             }                                                               \
             if (args_count >= (ARG_NUM))                                    \
             {                                                               \
@@ -782,11 +872,11 @@ void registerStorageKafka(StorageFactory & factory)
                 if (has_settings &&                                         \
                     kafka_settings->PAR_NAME.changed)                       \
                 {                                                           \
-                    throw Exception(                                        \
-                        "The argument №" #ARG_NUM " of storage Kafka "      \
-                        "and the parameter '" #PAR_NAME "' "                \
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,              \
+                        "The argument №{} of storage Kafka "                \
+                        "and the parameter '{}' "                           \
                         "in SETTINGS cannot be specified at the same time", \
-                        ErrorCodes::BAD_ARGUMENTS);                         \
+                        #ARG_NUM, #PAR_NAME);                               \
                 }                                                           \
                 /* move engine args to settings */                          \
                 else                                                        \
@@ -823,14 +913,10 @@ void registerStorageKafka(StorageFactory & factory)
           * - Do intermediate commits when the batch consumed and handled
           */
 
-        String collection_name;
-        if (named_collection)
+        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+        /// In case of named collection we already validated the arguments.
+        if (collection_name.empty())
         {
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
-        }
-        else
-        {
-            /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
             CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
             CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
@@ -858,25 +944,42 @@ void registerStorageKafka(StorageFactory & factory)
         if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > max_consumers)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of consumers can not be bigger than {}. "
-                            "A single consumer can read any number of partitions. Extra consumers are relatively expensive, "
-                            "and using a lot of them can lead to high memory and CPU usage. To achieve better performance "
+                            "A single consumer can read any number of partitions. "
+                            "Extra consumers are relatively expensive, "
+                            "and using a lot of them can lead to high memory and CPU usage. "
+                            "To achieve better performance "
                             "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
-                            "and ensure you have enough threads in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
+                            "and ensure you have enough threads "
+                            "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
                             "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {
-            throw Exception("Number of consumers can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
         }
 
         if (kafka_settings->kafka_max_block_size.changed && kafka_settings->kafka_max_block_size.value < 1)
         {
-            throw Exception("kafka_max_block_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_max_block_size can not be lower than 1");
         }
 
         if (kafka_settings->kafka_poll_max_batch_size.changed && kafka_settings->kafka_poll_max_batch_size.value < 1)
         {
-            throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
+        }
+        NamesAndTypesList supported_columns;
+        for (const auto & column : args.columns)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Alias)
+                supported_columns.emplace_back(column.name, column.type);
+            if (column.default_desc.kind == ColumnDefaultKind::Default && !column.default_desc.expression)
+                supported_columns.emplace_back(column.name, column.type);
+        }
+        // Kafka engine allows only ordinary columns without default expression or alias columns.
+        if (args.columns.getAll() != supported_columns)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
+                                                       "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
         return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);

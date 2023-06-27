@@ -24,11 +24,13 @@
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX
 #cmakedefine01 USE_JEMALLOC
+#cmakedefine01 USE_GWP_ASAN
 #cmakedefine01 USE_H3
 #cmakedefine01 USE_S2_GEOMETRY
 #cmakedefine01 USE_FASTOPS
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_VECTORSCAN
+#cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_AVRO
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_PARQUET
@@ -54,3 +56,6 @@
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_OPENSSL_INTREE
+#cmakedefine01 USE_ULID
+#cmakedefine01 FIU_ENABLE
+#cmakedefine01 USE_BCRYPT

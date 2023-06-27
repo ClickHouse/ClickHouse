@@ -254,7 +254,12 @@ void KafkaConsumer::commit()
             }
             catch (const cppkafka::HandleException & e)
             {
-                LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
+                // If there were actually no offsets to commit, return. Retrying won't solve
+                // anything here
+                if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
+                    committed = true;
+                else
+                    LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
             }
             --max_retries;
         }
@@ -263,7 +268,9 @@ void KafkaConsumer::commit()
         {
             // TODO: insert atomicity / transactions is needed here (possibility to rollback, on 2 phase commits)
             ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
-            throw Exception("All commit attempts failed. Last block was already written to target table(s), but was not committed to Kafka.", ErrorCodes::CANNOT_COMMIT_OFFSET);
+            throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET,
+                            "All commit attempts failed. Last block was already written to target table(s), "
+                            "but was not committed to Kafka.");
         }
         else
         {
@@ -482,7 +489,7 @@ size_t KafkaConsumer::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    auto new_end = std::remove_if(messages.begin(), messages.end(), [this](auto & message)
+    size_t skipped = std::erase_if(messages, [this](auto & message)
     {
         if (auto error = message.get_error())
         {
@@ -493,12 +500,8 @@ size_t KafkaConsumer::filterMessageErrors()
         return false;
     });
 
-    size_t skipped = std::distance(new_end, messages.end());
     if (skipped)
-    {
         LOG_ERROR(log, "There were {} messages with an error", skipped);
-        messages.erase(new_end, messages.end());
-    }
 
     return skipped;
 }

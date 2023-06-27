@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Poco/Net/IPAddress.h>
@@ -61,7 +62,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
         while (it != end && *it != ']')
             out_host += *it++;
         if (it == end)
-            throw Exception("Malformed IPv6 address", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed IPv6 address");
         ++it;
     }
     else /// Case '<IPv4 or domain name or something else>:<port>'
@@ -77,7 +78,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
             port_str += *it++;
     }
     else
-        throw Exception("Missing port number", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing port number");
 
     unsigned port;
     if (Poco::NumberParser::tryParseUnsigned(port_str, port) && port <= 0xFFFF)
@@ -85,7 +86,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
         out_port = static_cast<UInt16>(port);
     }
     else
-        throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Port must be numeric");
 }
 
 DNSResolver::IPAddresses hostByName(const std::string & host)
@@ -103,14 +104,14 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
     }
     catch (const Poco::Net::DNSException & e)
     {
-        LOG_ERROR(&Poco::Logger::get("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.name());
+        LOG_WARNING(&Poco::Logger::get("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.name());
         addresses.clear();
     }
 
     if (addresses.empty())
     {
         ProfileEvents::increment(ProfileEvents::DNSError);
-        throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
+        throw Exception(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
     }
 
     return addresses;

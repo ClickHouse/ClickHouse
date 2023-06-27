@@ -28,18 +28,13 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
-    MergeTreeDataPartCompact(
-        MergeTreeData & storage_,
-        const String & name_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
-
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
         const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;

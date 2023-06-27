@@ -31,6 +31,12 @@ public:
         return query_context;
     }
 
+    /// Get query context settings
+    const Settings & getSettings() const
+    {
+        return query_context->getSettingsRef();
+    }
+
     /** Get block with constants.
       * Valid only for AST tree.
       */
@@ -72,6 +78,12 @@ public:
     /// Construct RPNBuilderTreeNode with non null ast node and tree context
     explicit RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_);
 
+    /// Get AST node
+    const IAST * getASTNode() const { return ast_node; }
+
+    /// Get DAG node
+    const ActionsDAG::Node * getDAGNode() const { return dag_node; }
+
     /// Get column name
     std::string getColumnName() const;
 
@@ -97,13 +109,13 @@ public:
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
-    ConstSetPtr tryGetPreparedSet() const;
+    FutureSetPtr tryGetPreparedSet() const;
 
     /// Try get prepared set from node that match data types
-    ConstSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
+    FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
     /// Try get prepared set from node that match indexes mapping and data types
-    ConstSetPtr tryGetPreparedSet(
+    FutureSetPtr tryGetPreparedSet(
         const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
         const DataTypes & data_types) const;
 

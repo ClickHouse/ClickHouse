@@ -57,7 +57,7 @@ public:
                 else if (key.starts_with("host"))
                     allowed_client_hosts.addName(value);
                 else
-                    throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
+                    throw Exception(ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE, "Unknown address pattern type: {}", key);
             }
         }
     }
@@ -65,7 +65,7 @@ public:
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
         if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
-            throw Exception("Connections from " + socket.peerAddress().toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+            throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", socket.peerAddress().toString());
 
         try
         {

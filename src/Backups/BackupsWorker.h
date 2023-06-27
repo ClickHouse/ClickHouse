@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Backups/BackupStatus.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 #include <unordered_map>
@@ -17,13 +18,19 @@ struct RestoreSettings;
 struct BackupInfo;
 class IBackupCoordination;
 class IRestoreCoordination;
+class IBackup;
+using BackupMutablePtr = std::shared_ptr<IBackup>;
+using BackupPtr = std::shared_ptr<const IBackup>;
+class IBackupEntry;
+using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+using DataRestoreTasks = std::vector<std::function<void()>>;
 
 /// Manager of backups and restores: executes backups and restores' threads in the background.
 /// Keeps information about backups and restores started in this session.
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads);
+    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -53,14 +60,26 @@ public:
         /// Status of backup or restore operation.
         BackupStatus status;
 
-        /// Number of files in the backup (including backup's metadata; only unique files are counted).
+        /// The number of files stored in the backup.
         size_t num_files = 0;
 
-        /// Size of all files in the backup (including backup's metadata; only unique files are counted).
+        /// The total size of files stored in the backup.
+        UInt64 total_size = 0;
+
+        /// The number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder.
+        size_t num_entries = 0;
+
+        /// The uncompressed size of the backup.
         UInt64 uncompressed_size = 0;
 
-        /// Size of the backup if it's stored as an archive; or the same as `uncompressed_size` if the backup is stored as a folder.
+        /// The compressed size of the backup.
         UInt64 compressed_size = 0;
+
+        /// Returns the number of files read during RESTORE from this backup.
+        size_t num_read_files = 0;
+
+        // Returns the total size of files read during RESTORE from this backup.
+        UInt64 num_read_bytes = 0;
 
         /// Set only if there was an error.
         std::exception_ptr exception;
@@ -87,6 +106,12 @@ private:
         ContextMutablePtr mutable_context,
         bool called_async);
 
+    /// Builds file infos for specified backup entries.
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination);
+
+    /// Write backup entries to an opened backup.
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal);
+
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
     void doRestore(
@@ -99,13 +124,17 @@ private:
         ContextMutablePtr context,
         bool called_async);
 
+    /// Run data restoring tasks which insert data to tables.
+    void restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool);
+
     void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
-    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
+    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
+                            UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    ThreadPool backups_thread_pool;
-    ThreadPool restores_thread_pool;
+    std::unique_ptr<ThreadPool> backups_thread_pool;
+    std::unique_ptr<ThreadPool> restores_thread_pool;
 
     std::unordered_map<OperationID, Info> infos;
     std::condition_variable status_changed;
@@ -113,6 +142,8 @@ private:
     std::atomic<size_t> num_active_restores = 0;
     mutable std::mutex infos_mutex;
     Poco::Logger * log;
+    const bool allow_concurrent_backups;
+    const bool allow_concurrent_restores;
 };
 
 }

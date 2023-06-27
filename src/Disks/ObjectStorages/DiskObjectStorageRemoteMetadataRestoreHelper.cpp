@@ -98,7 +98,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
         ObjectAttributes metadata {
             {"path", path}
         };
-        updateObjectMetadata(object.absolute_path, metadata);
+        updateObjectMetadata(object.remote_path, metadata);
     }
 }
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
@@ -202,7 +202,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
             /// In this case we need to additionally cleanup S3 from objects with later revision.
             /// Will be simply just restore to different path.
             if (information.source_path == disk->object_storage_root_path && information.revision != LATEST_REVISION)
-                throw Exception("Restoring to the same bucket and path is allowed if revision is latest (0)", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Restoring to the same bucket and path is allowed if revision is latest (0)");
 
             /// This case complicates S3 cleanup in case of unsuccessful restore.
             if (information.source_path != disk->object_storage_root_path && disk->object_storage_root_path.starts_with(information.source_path))
@@ -220,7 +220,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
                  disk->name, information.revision, information.source_path);
 
         if (readSchemaVersion(source_object_storage, information.source_path) < RESTORABLE_SCHEMA_VERSION)
-            throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Source bucket doesn't have restorable schema.");
 
         LOG_INFO(disk->log, "Removing old metadata...");
 
@@ -266,14 +266,14 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(Restor
 
             auto pos = property.find('=');
             if (pos == std::string::npos || pos == 0 || pos == property.length())
-                throw Exception(fmt::format("Invalid property {} in restore file", property), ErrorCodes::UNKNOWN_FORMAT);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Invalid property {} in restore file", property);
 
             auto key = property.substr(0, pos);
             auto value = property.substr(pos + 1);
 
             auto it = properties.find(key);
             if (it != properties.end())
-                throw Exception(fmt::format("Property key duplication {} in restore file", key), ErrorCodes::UNKNOWN_FORMAT);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Property key duplication {} in restore file", key);
 
             properties[key] = value;
         }
@@ -291,7 +291,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(Restor
             else if (key == "detached")
                 readBoolTextWord(restore_information.detached, value_buffer);
             else
-                throw Exception(fmt::format("Unknown key {} in restore file", key), ErrorCodes::UNKNOWN_FORMAT);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown key {} in restore file", key);
         }
     }
     catch (const Exception &)
@@ -304,7 +304,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(Restor
 static String shrinkKey(const String & path, const String & key)
 {
     if (!key.starts_with(path))
-        throw Exception("The key " + key + " prefix mismatch with given " + path, ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} prefix mismatch with given {}", key, path);
 
     return key.substr(path.length());
 }
@@ -356,7 +356,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
     std::vector<std::future<void>> results;
-    auto restore_files = [this, &source_object_storage, &restore_information, &results](const RelativePathsWithSize & objects)
+    auto restore_files = [this, &source_object_storage, &restore_information, &results](const RelativePathsWithMetadata & objects)
     {
         std::vector<String> keys_names;
         for (const auto & object : objects)
@@ -389,8 +389,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
         return true;
     };
 
-    RelativePathsWithSize children;
-    source_object_storage->findAllFiles(restore_information.source_path, children, /* max_keys= */ 0);
+    RelativePathsWithMetadata children;
+    source_object_storage->listObjects(restore_information.source_path, children, /* max_keys= */ 0);
 
     restore_files(children);
 
@@ -472,7 +472,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         || disk->object_storage_root_path != restore_information.source_path;
 
     std::set<String> renames;
-    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const RelativePathsWithSize & objects)
+    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const RelativePathsWithMetadata & objects)
     {
         const String rename = "rename";
         const String hardlink = "hardlink";
@@ -539,8 +539,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         return true;
     };
 
-    RelativePathsWithSize children;
-    source_object_storage->findAllFiles(restore_information.source_path + "operations/", children, /* max_keys= */ 0);
+    RelativePathsWithMetadata children;
+    source_object_storage->listObjects(restore_information.source_path + "operations/", children, /* max_keys= */ 0);
     restore_file_operations(children);
 
     if (restore_information.detached)

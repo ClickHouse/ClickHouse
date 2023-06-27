@@ -5,15 +5,20 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-
-
 #include <city.h>
+
+namespace ProfileEvents
+{
+    extern const Event WaitPrefetchTaskMicroseconds;
+};
 
 namespace DB
 {
@@ -43,18 +48,18 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
+    const ExpressionActionsSettings & actions_settings_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
-    const Names & virt_column_names_,
-    std::optional<ParallelReadingExtension> extension_)
+    const Names & virt_column_names_)
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings))
+    , actions_settings(actions_settings_)
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -62,7 +67,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
-    , extension(extension_)
+    , owned_uncompressed_cache(use_uncompressed_cache ? storage.getContext()->getUncompressedCache() : nullptr)
+    , owned_mark_cache(storage.getContext()->getMarkCache())
 {
     header_without_const_virtual_columns = applyPrewhereActions(std::move(header), prewhere_info);
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
@@ -74,39 +80,52 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
 
-    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
+    if (!prewhere_actions.steps.empty())
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
+
+    if (prewhere_info)
+        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+            (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
+            (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
 }
 
+bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere);
 
-std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings)
+PrewhereExprInfo IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps)
 {
-    std::unique_ptr<PrewhereExprInfo> prewhere_actions;
+    PrewhereExprInfo prewhere_actions;
     if (prewhere_info)
     {
-        prewhere_actions = std::make_unique<PrewhereExprInfo>();
-
         if (prewhere_info->row_level_filter)
         {
             PrewhereExprStep row_level_filter_step
             {
+                .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
-                .column_name = prewhere_info->row_level_column_name,
-                .remove_column = true,
-                .need_filter = true
+                .filter_column_name = prewhere_info->row_level_column_name,
+                .remove_filter_column = true,
+                .need_filter = true,
+                .perform_alter_conversions = true,
             };
 
-            prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
+            prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
         }
 
-        PrewhereExprStep prewhere_step
+        if (!enable_multiple_prewhere_read_steps ||
+            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions))
         {
-            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
-            .column_name = prewhere_info->prewhere_column_name,
-            .remove_column = prewhere_info->remove_prewhere_column,
-            .need_filter = prewhere_info->need_filter
-        };
+            PrewhereExprStep prewhere_step
+            {
+                .type = PrewhereExprStep::Filter,
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
+                .filter_column_name = prewhere_info->prewhere_column_name,
+                .remove_filter_column = prewhere_info->remove_prewhere_column,
+                .need_filter = prewhere_info->need_filter,
+                .perform_alter_conversions = true,
+            };
 
-        prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+            prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
+        }
     }
 
     return prewhere_actions;
@@ -115,86 +134,11 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
 
 bool IMergeTreeSelectAlgorithm::getNewTask()
 {
-    /// No parallel reading feature
-    if (!extension.has_value())
+    if (getNewTaskImpl())
     {
-        if (getNewTaskImpl())
-        {
-            finalizeNewTask();
-            return true;
-        }
-        return false;
-    }
-    return getNewTaskParallelReading();
-}
-
-
-bool IMergeTreeSelectAlgorithm::getNewTaskParallelReading()
-{
-    if (getTaskFromBuffer())
+        finalizeNewTask();
         return true;
-
-    if (no_more_tasks)
-        return getDelayedTasks();
-
-    while (true)
-    {
-        /// The end of execution. No task.
-        if (!getNewTaskImpl())
-        {
-            no_more_tasks = true;
-            return getDelayedTasks();
-        }
-
-        splitCurrentTaskRangesAndFillBuffer();
-
-        if (getTaskFromBuffer())
-            return true;
     }
-}
-
-
-bool IMergeTreeSelectAlgorithm::getTaskFromBuffer()
-{
-    while (!buffered_ranges.empty())
-    {
-        auto ranges = std::move(buffered_ranges.front());
-        buffered_ranges.pop_front();
-
-        assert(!ranges.empty());
-
-        auto res = performRequestToCoordinator(ranges, /*delayed=*/false);
-
-        if (Status::Accepted == res)
-            return true;
-
-        /// To avoid any possibility of ignoring cancellation, exception will be thrown.
-        if (Status::Cancelled == res)
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query had been cancelled");
-    }
-    return false;
-}
-
-
-bool IMergeTreeSelectAlgorithm::getDelayedTasks()
-{
-    while (!delayed_tasks.empty())
-    {
-        task = std::move(delayed_tasks.front());
-        delayed_tasks.pop_front();
-
-        assert(!task->mark_ranges.empty());
-
-        auto res = performRequestToCoordinator(task->mark_ranges, /*delayed=*/true);
-
-        if (Status::Accepted == res)
-            return true;
-
-        if (Status::Cancelled == res)
-            break;
-    }
-
-    finish();
     return false;
 }
 
@@ -241,63 +185,123 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
             return ChunkAndProgress{
                 .chunk = Chunk(ordered_columns, res.row_count),
                 .num_read_rows = res.num_read_rows,
-                .num_read_bytes = res.num_read_bytes};
+                .num_read_bytes = res.num_read_bytes,
+                .is_finished = false};
         }
         else
         {
-            num_read_rows += res.num_read_rows;
-            num_read_bytes += res.num_read_bytes;
+            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
         }
     }
 
-    return {Chunk(), num_read_rows, num_read_bytes};
+    return {Chunk(), num_read_rows, num_read_bytes, true};
+}
+
+void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
+    const StorageMetadataPtr & metadata_snapshot,
+    const IMergeTreeReader::ValueSizeMap & value_size_map,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+{
+    if (!task)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no task");
+
+    if (task->reader.valid())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+        reader = task->reader.get();
+    }
+    else
+    {
+        reader = task->data_part->getReader(
+            task->task_columns.columns, metadata_snapshot, task->mark_ranges,
+            owned_uncompressed_cache.get(), owned_mark_cache.get(),
+            task->alter_conversions, reader_settings, value_size_map, profile_callback);
+    }
+
+    if (!task->pre_reader_for_step.empty())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+        pre_reader_for_step.clear();
+        for (auto & pre_reader : task->pre_reader_for_step)
+            pre_reader_for_step.push_back(pre_reader.get());
+    }
+    else
+    {
+        initializeMergeTreePreReadersForPart(
+            task->data_part, task->alter_conversions,
+            task->task_columns, metadata_snapshot,
+            task->mark_ranges, value_size_map, profile_callback);
+    }
 }
 
 void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForPart(
-    MergeTreeData::DataPartPtr & data_part,
-    const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
-    const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
+    const MergeTreeData::DataPartPtr & data_part,
+    const AlterConversionsPtr & alter_conversions,
+    const MergeTreeReadTaskColumns & task_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MarkRanges & mark_ranges,
+    const IMergeTreeReader::ValueSizeMap & value_size_map,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    reader = data_part->getReader(task_columns.columns, metadata_snapshot, mark_ranges,
-        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-        value_size_map, profile_callback);
+    reader = data_part->getReader(
+        task_columns.columns, metadata_snapshot, mark_ranges,
+        owned_uncompressed_cache.get(), owned_mark_cache.get(),
+        alter_conversions, reader_settings, value_size_map, profile_callback);
 
+    initializeMergeTreePreReadersForPart(
+        data_part, alter_conversions, task_columns, metadata_snapshot,
+        mark_ranges, value_size_map, profile_callback);
+}
+
+void IMergeTreeSelectAlgorithm::initializeMergeTreePreReadersForPart(
+    const MergeTreeData::DataPartPtr & data_part,
+    const AlterConversionsPtr & alter_conversions,
+    const MergeTreeReadTaskColumns & task_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MarkRanges & mark_ranges,
+    const IMergeTreeReader::ValueSizeMap & value_size_map,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+{
     pre_reader_for_step.clear();
 
     /// Add lightweight delete filtering step
     if (reader_settings.apply_deleted_mask && data_part->hasLightweightDelete())
     {
-        pre_reader_for_step.push_back(data_part->getReader({LightweightDeleteDescription::FILTER_COLUMN}, metadata_snapshot, mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                value_size_map, profile_callback));
+        pre_reader_for_step.push_back(
+            data_part->getReader(
+                {LightweightDeleteDescription::FILTER_COLUMN}, metadata_snapshot,
+                mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+                alter_conversions, reader_settings, value_size_map, profile_callback));
     }
 
-    if (prewhere_info)
+    for (const auto & pre_columns_per_step : task_columns.pre_columns)
     {
-        for (const auto & pre_columns_per_step : task_columns.pre_columns)
-        {
-            pre_reader_for_step.push_back(data_part->getReader(pre_columns_per_step, metadata_snapshot, mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                value_size_map, profile_callback));
-        }
+        pre_reader_for_step.push_back(
+            data_part->getReader(
+                pre_columns_per_step, metadata_snapshot, mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(),
+                alter_conversions, reader_settings, value_size_map, profile_callback));
     }
 }
 
 void IMergeTreeSelectAlgorithm::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
     return initializeRangeReadersImpl(
-        current_task.range_reader, current_task.pre_range_readers, prewhere_info, prewhere_actions.get(),
+        current_task.range_reader, current_task.pre_range_readers, prewhere_actions,
         reader.get(), current_task.data_part->hasLightweightDelete(), reader_settings,
         pre_reader_for_step, lightweight_delete_filter_step, non_const_virtual_column_names);
 }
 
 void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
-    MergeTreeRangeReader & range_reader, std::deque<MergeTreeRangeReader> & pre_range_readers,
-    PrewhereInfoPtr prewhere_info, const PrewhereExprInfo * prewhere_actions,
-    IMergeTreeReader * reader, bool has_lightweight_delete, const MergeTreeReaderSettings & reader_settings,
+    MergeTreeRangeReader & range_reader,
+    std::deque<MergeTreeRangeReader> & pre_range_readers,
+    const PrewhereExprInfo & prewhere_actions,
+    IMergeTreeReader * reader,
+    bool has_lightweight_delete,
+    const MergeTreeReaderSettings & reader_settings,
     const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
-    const PrewhereExprStep & lightweight_delete_filter_step, const Names & non_const_virtual_column_names)
+    const PrewhereExprStep & lightweight_delete_filter_step,
+    const Names & non_const_virtual_column_names)
 {
     MergeTreeRangeReader * prev_reader = nullptr;
     bool last_reader = false;
@@ -312,25 +316,25 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
         pre_readers_shift++;
     }
 
-    if (prewhere_info)
+    if (prewhere_actions.steps.size() + pre_readers_shift != pre_reader_for_step.size())
     {
-        if (prewhere_actions->steps.size() + pre_readers_shift != pre_reader_for_step.size())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "PREWHERE steps count mismatch, actions: {}, readers: {}",
-                prewhere_actions->steps.size(), pre_reader_for_step.size());
-        }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PREWHERE steps count mismatch, actions: {}, readers: {}",
+            prewhere_actions.steps.size(), pre_reader_for_step.size());
+    }
 
-        for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
-        {
-            last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    {
+        last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions.steps.size());
 
-            MergeTreeRangeReader current_reader(pre_reader_for_step[i + pre_readers_shift].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names);
+        MergeTreeRangeReader current_reader(
+            pre_reader_for_step[i + pre_readers_shift].get(),
+            prev_reader, prewhere_actions.steps[i].get(),
+            last_reader, non_const_virtual_column_names);
 
-            pre_range_readers.push_back(std::move(current_reader));
-            prev_reader = &pre_range_readers.back();
-        }
+        pre_range_readers.push_back(std::move(current_reader));
+        prev_reader = &pre_range_readers.back();
     }
 
     if (!last_reader)
@@ -406,9 +410,9 @@ IMergeTreeSelectAlgorithm::BlockAndProgress IMergeTreeSelectAlgorithm::readFromP
 
     const auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
-        throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
-                        "Have " + toString(sample_block.columns()) + " in sample block "
-                        "and " + toString(read_result.columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns got from MergeTreeRangeReader. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(read_result.columns.size()));
 
     /// TODO: check columns have the same types as in header.
 
@@ -456,11 +460,6 @@ namespace
 
         bool columnExists(const String & name) const { return block.has(name); }
 
-        void insertStringColumn(const ColumnPtr & column, const String & name)
-        {
-            block.insert({column, std::make_shared<DataTypeString>(), name});
-        }
-
         void insertUInt8Column(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeUInt8>(), name});
@@ -474,6 +473,11 @@ namespace
         void insertUUIDColumn(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeUUID>(), name});
+        }
+
+        void insertLowCardinalityColumn(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), name});
         }
 
         void insertPartitionValueColumn(
@@ -545,8 +549,7 @@ static void injectPartConstVirtualColumns(
     if (!virtual_columns.empty())
     {
         if (unlikely(rows && !task))
-            throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert virtual columns to non-empty chunk without specified task.");
 
         const IMergeTreeDataPart * part = nullptr;
         if (rows)
@@ -561,11 +564,13 @@ static void injectPartConstVirtualColumns(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, part->name)->convertToFullColumnIfConst();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                 .createColumnConst(rows, part->name)
+                                 ->convertToFullColumnIfConst();
                 else
-                    column = DataTypeString().createColumn();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
 
-                inserter.insertStringColumn(column, virtual_column_name);
+                inserter.insertLowCardinalityColumn(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_index")
             {
@@ -591,11 +596,13 @@ static void injectPartConstVirtualColumns(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, part->info.partition_id)->convertToFullColumnIfConst();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                 .createColumnConst(rows, part->info.partition_id)
+                                 ->convertToFullColumnIfConst();
                 else
-                    column = DataTypeString().createColumn();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
 
-                inserter.insertStringColumn(column, virtual_column_name);
+                inserter.insertLowCardinalityColumn(column, virtual_column_name);
             }
             else if (virtual_column_name == "_partition_value")
             {
@@ -627,35 +634,41 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
-                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                    row_level_column.type->getName());
             }
 
             block.erase(prewhere_info->row_level_column_name);
         }
 
         if (prewhere_info->prewhere_actions)
+        {
             block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
 
-        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
-        if (!prewhere_column.type->canBeUsedInBooleanContext())
-        {
-            throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
-        }
+            auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
+            if (!prewhere_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                    prewhere_column.type->getName());
+            }
 
-        if (prewhere_info->remove_prewhere_column)
-            block.erase(prewhere_info->prewhere_column_name);
-        else
-        {
-            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-            if (which.isNativeInt() || which.isNativeUInt())
-                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-            else if (which.isFloat())
-                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
-            else
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", prewhere_column.type->getName());
+            if (prewhere_info->remove_prewhere_column)
+            {
+                block.erase(prewhere_info->prewhere_column_name);
+            }
+            else if (prewhere_info->need_filter)
+            {
+                WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+
+                if (which.isNativeInt() || which.isNativeUInt())
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+                else if (which.isFloat())
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                        "Illegal type {} of column for filter",
+                        prewhere_column.type->getName());
+            }
         }
     }
 
@@ -687,170 +700,6 @@ std::unique_ptr<MergeTreeBlockSizePredictor> IMergeTreeSelectAlgorithm::getSizeP
         data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block);
 }
 
-
-IMergeTreeSelectAlgorithm::Status IMergeTreeSelectAlgorithm::performRequestToCoordinator(MarkRanges requested_ranges, bool delayed)
-{
-    String partition_id = task->data_part->info.partition_id;
-    String part_name;
-    String projection_name;
-
-    if (task->data_part->isProjectionPart())
-    {
-        part_name = task->data_part->getParentPart()->name;
-        projection_name = task->data_part->name;
-    }
-    else
-    {
-        part_name = task->data_part->name;
-    }
-
-    PartBlockRange block_range
-    {
-        .begin = task->data_part->info.min_block,
-        .end = task->data_part->info.max_block
-    };
-
-    PartitionReadRequest request
-    {
-        .partition_id = std::move(partition_id),
-        .part_name = std::move(part_name),
-        .projection_name = std::move(projection_name),
-        .block_range = std::move(block_range),
-        .mark_ranges = std::move(requested_ranges)
-    };
-    String request_description = request.toString();
-
-    /// Consistent hashing won't work with reading in order, because at the end of the execution
-    /// we could possibly seek back
-    if (!delayed && canUseConsistentHashingForParallelReading())
-    {
-        const auto hash = request.getConsistentHash(extension->count_participating_replicas);
-        if (hash != extension->number_of_current_replica)
-        {
-            auto delayed_task = std::make_unique<MergeTreeReadTask>(*task); // Create a copy
-            delayed_task->mark_ranges = std::move(request.mark_ranges);
-            delayed_tasks.emplace_back(std::move(delayed_task));
-            LOG_TRACE(log, "Request delayed by hash: {}", request_description);
-            return Status::Denied;
-        }
-    }
-
-    auto optional_response = extension.value().callback(std::move(request));
-
-    if (!optional_response.has_value())
-    {
-        LOG_TRACE(log, "Request cancelled: {}", request_description);
-        return Status::Cancelled;
-    }
-
-    auto response = optional_response.value();
-
-    task->mark_ranges = std::move(response.mark_ranges);
-
-    if (response.denied || task->mark_ranges.empty())
-    {
-        LOG_TRACE(log, "Request rejected: {}", request_description);
-        return Status::Denied;
-    }
-
-    finalizeNewTask();
-
-    LOG_TRACE(log, "Request accepted: {}", request_description);
-    return Status::Accepted;
-}
-
-
-size_t IMergeTreeSelectAlgorithm::estimateMaxBatchSizeForHugeRanges()
-{
-    /// This is an empirical number and it is so,
-    /// because we have an adaptive granularity by default.
-    const size_t average_granule_size_bytes = 1024 * 1024 * 10; // 10 MiB
-
-    /// We want to have one RTT per one gigabyte of data read from disk
-    /// this could be configurable.
-    const size_t max_size_for_one_request = 1024 * 1024 * 1024; // 1 GiB
-
-    size_t sum_average_marks_size = 0;
-    /// getColumnSize is not fully implemented for compact parts
-    if (task->data_part->getType() == IMergeTreeDataPart::Type::Compact)
-    {
-        sum_average_marks_size = average_granule_size_bytes;
-    }
-    else
-    {
-        for (const auto & name : extension->colums_to_read)
-        {
-            auto size = task->data_part->getColumnSize(name);
-
-            assert(size.marks != 0);
-            sum_average_marks_size += size.data_uncompressed / size.marks;
-        }
-    }
-
-    if (sum_average_marks_size == 0)
-        sum_average_marks_size = average_granule_size_bytes; // 10 MiB
-
-    LOG_TEST(log, "Reading from {} part, average mark size is {}",
-        task->data_part->getTypeName(), sum_average_marks_size);
-
-    return max_size_for_one_request / sum_average_marks_size;
-}
-
-void IMergeTreeSelectAlgorithm::splitCurrentTaskRangesAndFillBuffer()
-{
-    const size_t max_batch_size = estimateMaxBatchSizeForHugeRanges();
-
-    size_t current_batch_size = 0;
-    buffered_ranges.emplace_back();
-
-    for (const auto & range : task->mark_ranges)
-    {
-        auto expand_if_needed = [&]
-        {
-            if (current_batch_size > max_batch_size)
-            {
-                buffered_ranges.emplace_back();
-                current_batch_size = 0;
-            }
-        };
-
-        expand_if_needed();
-
-        if (range.end - range.begin < max_batch_size)
-        {
-            buffered_ranges.back().push_back(range);
-            current_batch_size += range.end - range.begin;
-            continue;
-        }
-
-        auto current_begin = range.begin;
-        auto current_end = range.begin + max_batch_size;
-
-        while (current_end < range.end)
-        {
-            auto current_range = MarkRange{current_begin, current_end};
-            buffered_ranges.back().push_back(current_range);
-            current_batch_size += current_end - current_begin;
-
-            current_begin = current_end;
-            current_end = current_end + max_batch_size;
-
-            expand_if_needed();
-        }
-
-        if (range.end - current_begin > 0)
-        {
-            auto current_range = MarkRange{current_begin, range.end};
-            buffered_ranges.back().push_back(current_range);
-            current_batch_size += range.end - current_begin;
-
-            expand_if_needed();
-        }
-    }
-
-    if (buffered_ranges.back().empty())
-        buffered_ranges.pop_back();
-}
 
 IMergeTreeSelectAlgorithm::~IMergeTreeSelectAlgorithm() = default;
 

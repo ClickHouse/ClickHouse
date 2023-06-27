@@ -8,14 +8,14 @@ sidebar_label: ALTER
 
 Most `ALTER TABLE` queries modify table settings or data:
 
--   [COLUMN](/docs/en/sql-reference/statements/alter/column.md)
--   [PARTITION](/docs/en/sql-reference/statements/alter/partition.md)
--   [DELETE](/docs/en/sql-reference/statements/alter/delete.md)
--   [UPDATE](/docs/en/sql-reference/statements/alter/update.md)
--   [ORDER BY](/docs/en/sql-reference/statements/alter/order-by.md)
--   [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
--   [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
--   [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
+- [COLUMN](/docs/en/sql-reference/statements/alter/column.md)
+- [PARTITION](/docs/en/sql-reference/statements/alter/partition.md)
+- [DELETE](/docs/en/sql-reference/statements/alter/delete.md)
+- [UPDATE](/docs/en/sql-reference/statements/alter/update.md)
+- [ORDER BY](/docs/en/sql-reference/statements/alter/order-by.md)
+- [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
+- [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
+- [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
 
 :::note    
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](/docs/en/engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](/docs/en/engines/table-engines/special/merge.md) and [Distributed](/docs/en/engines/table-engines/special/distributed.md).
@@ -23,16 +23,16 @@ Most `ALTER TABLE` queries are supported only for [\*MergeTree](/docs/en/engines
 
 These `ALTER` statements manipulate views:
 
--   [ALTER TABLE ... MODIFY QUERY](/docs/en/sql-reference/statements/alter/view.md) — Modifies a [Materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized) structure.
--   [ALTER LIVE VIEW](/docs/en/sql-reference/statements/alter/view.md/#alter-live-view) — Refreshes a [Live view](/docs/en/sql-reference/statements/create/view.md/#live-view).
+- [ALTER TABLE ... MODIFY QUERY](/docs/en/sql-reference/statements/alter/view.md) — Modifies a [Materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized) structure.
+- [ALTER LIVE VIEW](/docs/en/sql-reference/statements/alter/view.md/#alter-live-view) — Refreshes a [Live view](/docs/en/sql-reference/statements/create/view.md/#live-view).
 
 These `ALTER` statements modify entities related to role-based access control:
 
--   [USER](/docs/en/sql-reference/statements/alter/user.md)
--   [ROLE](/docs/en/sql-reference/statements/alter/role.md)
--   [QUOTA](/docs/en/sql-reference/statements/alter/quota.md)
--   [ROW POLICY](/docs/en/sql-reference/statements/alter/row-policy.md)
--   [SETTINGS PROFILE](/docs/en/sql-reference/statements/alter/settings-profile.md)
+- [USER](/docs/en/sql-reference/statements/alter/user.md)
+- [ROLE](/docs/en/sql-reference/statements/alter/role.md)
+- [QUOTA](/docs/en/sql-reference/statements/alter/quota.md)
+- [ROW POLICY](/docs/en/sql-reference/statements/alter/row-policy.md)
+- [SETTINGS PROFILE](/docs/en/sql-reference/statements/alter/settings-profile.md)
 
 [ALTER TABLE ... MODIFY COMMENT](/docs/en/sql-reference/statements/alter/comment.md) statement adds, modifies, or removes comments to the table, regardless if it was set before or not.
 
@@ -52,12 +52,16 @@ Entries for finished mutations are not deleted right away (the number of preserv
 
 For non-replicated tables, all `ALTER` queries are performed synchronously. For replicated tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
-For all `ALTER` queries, you can use the [replication_alter_partitions_sync](/docs/en/operations/settings/settings.md/#replication-alter-partitions-sync) setting to set up waiting.
+For all `ALTER` queries, you can use the [alter_sync](/docs/en/operations/settings/settings.md/#alter-sync) setting to set up waiting.
 
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/docs/en/operations/settings/settings.md/#replication-wait-for-inactive-replica-timeout) setting.
 
 :::note    
-For all `ALTER` queries, if `replication_alter_partitions_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
-For `ALTER TABLE ... UPDATE|DELETE` queries the synchronicity is defined by the [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting.
+For `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN` queries the synchronicity is defined by the [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting.
+
+## Related content
+
+- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

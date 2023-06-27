@@ -22,16 +22,25 @@ public:
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+    void resetParser() override;
+
 private:
+    TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
+                               bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
+
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+
+
+    std::unique_ptr<PeekableReadBuffer> buf;
 };
 
 class TabSeparatedFormatReader final : public FormatWithNamesAndTypesReader
 {
 public:
-    TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
+    TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
 
     bool readField(IColumn & column, const DataTypePtr & type,
                    const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
@@ -45,21 +54,34 @@ public:
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
 
-    std::vector<String> readRow();
-    std::vector<String> readNames() override { return readRow(); }
-    std::vector<String> readTypes() override { return readRow(); }
+    std::vector<String> readRow() { return readRowImpl<false>(); }
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
+
+    template <bool read_string>
     String readFieldIntoString();
+
+    std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
-    FormatSettings::EscapingRule getEscapingRule() const
+    FormatSettings::EscapingRule getEscapingRule() const override
     {
         return is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped;
     }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+
+    bool checkForSuffix() override;
+
 private:
+    template <bool is_header>
+    std::vector<String> readRowImpl();
+
+    PeekableReadBuffer * buf;
     bool is_raw;
     bool first_row = true;
 };
@@ -70,8 +92,10 @@ public:
     TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
+    PeekableReadBuffer buf;
     TabSeparatedFormatReader reader;
 };
 

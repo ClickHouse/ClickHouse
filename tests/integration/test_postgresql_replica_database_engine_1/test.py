@@ -1,12 +1,5 @@
 import pytest
 
-# FIXME Tests with MaterializedPostgresSQL are temporarily disabled
-# https://github.com/ClickHouse/ClickHouse/issues/36898
-# https://github.com/ClickHouse/ClickHouse/issues/38677
-# https://github.com/ClickHouse/ClickHouse/pull/39272#issuecomment-1190087190
-
-pytestmark = pytest.mark.skip
-
 import time
 import os.path as p
 import random
@@ -396,7 +389,6 @@ def test_table_schema_changes(started_cluster):
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
-        settings=["materialized_postgresql_allow_automatic_update = 1"],
     )
 
     for i in range(NUM_TABLES):
@@ -414,37 +406,20 @@ def test_table_schema_changes(started_cluster):
 
     altered_idx = random.randint(0, 4)
     altered_table = f"postgresql_replica_{altered_idx}"
-    cursor.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
+    prev_count = int(
+        instance.query(f"SELECT count() FROM test_database.{altered_table}")
+    )
 
+    cursor.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
     for i in range(NUM_TABLES):
         cursor.execute(f"INSERT INTO postgresql_replica_{i} VALUES (50, {i}, {i})")
-        cursor.execute(f"UPDATE {altered_table} SET value3 = 12 WHERE key%2=0")
 
-    time.sleep(2)
-    assert_nested_table_is_created(instance, altered_table)
-    assert_number_of_columns(instance, 3, altered_table)
-    check_tables_are_synchronized(instance, altered_table)
-    print("check1 OK")
-
-    check_several_tables_are_synchronized(instance, NUM_TABLES)
-
-    for i in range(NUM_TABLES):
-        if i != altered_idx:
-            instance.query(
-                "INSERT INTO postgres_database.postgresql_replica_{} SELECT 51 + number, {}, {}, {} from numbers(49)".format(
-                    i, i, i, i
-                )
-            )
-        else:
-            instance.query(
-                "INSERT INTO postgres_database.postgresql_replica_{} SELECT 51 + number, {}, {} from numbers(49)".format(
-                    i, i, i
-                )
-            )
-
-    check_tables_are_synchronized(instance, altered_table)
-    print("check2 OK")
-    check_several_tables_are_synchronized(instance, NUM_TABLES)
+    assert instance.wait_for_log_line(
+        f"Table postgresql_replica_{altered_idx} is skipped from replication stream"
+    )
+    assert prev_count == int(
+        instance.query(f"SELECT count() FROM test_database.{altered_table}")
+    )
 
 
 def test_many_concurrent_queries(started_cluster):
@@ -592,7 +567,6 @@ def test_virtual_columns(started_cluster):
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
-        settings=["materialized_postgresql_allow_automatic_update = 1"],
     )
 
     assert_nested_table_is_created(instance, table_name)
@@ -604,28 +578,6 @@ def test_virtual_columns(started_cluster):
     # just check that it works, no check with `expected` because _version is taken as LSN, which will be different each time.
     result = instance.query(
         f"SELECT key, value, _sign, _version FROM test_database.{table_name};"
-    )
-    print(result)
-
-    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value2 integer")
-    instance.query(
-        f"INSERT INTO postgres_database.{table_name} SELECT number, number, number from numbers(10, 10)"
-    )
-    assert_number_of_columns(instance, 3, table_name)
-    check_tables_are_synchronized(instance, table_name)
-
-    result = instance.query(
-        "SELECT key, value, value2,  _sign, _version FROM test_database.postgresql_replica_0;"
-    )
-    print(result)
-
-    instance.query(
-        f"INSERT INTO postgres_database.{table_name} SELECT number, number, number from numbers(20, 10)"
-    )
-    check_tables_are_synchronized(instance, table_name)
-
-    result = instance.query(
-        f"SELECT key, value, value2,  _sign, _version FROM test_database.{table_name};"
     )
     print(result)
 
@@ -774,8 +726,6 @@ def test_concurrent_transactions(started_cluster):
 
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
-    pytest.skip("Temporary disabled (FIXME)")
-
     def transaction(thread_id):
         if thread_id % 2:
             conn = get_postgres_conn(
@@ -851,8 +801,6 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
-    pytest.skip("Temporary disabled (FIXME)")
-
     def transaction(thread_id):
         if thread_id % 2:
             conn = get_postgres_conn(

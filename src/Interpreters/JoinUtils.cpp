@@ -160,16 +160,14 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 
     if (col->lowCardinality())
     {
-        auto mut_col = IColumn::mutate(std::move(col));
-        ColumnLowCardinality * col_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
-        if (col_lc->nestedIsNullable())
+        const ColumnLowCardinality & col_lc = assert_cast<const ColumnLowCardinality &>(*col);
+        if (col_lc.nestedIsNullable())
         {
-            return mut_col;
+            return col;
         }
-        else if (col_lc->nestedCanBeInsideNullable())
+        else if (col_lc.nestedCanBeInsideNullable())
         {
-            col_lc->nestedToNullable();
-            return mut_col;
+            return col_lc.cloneNullable();
         }
     }
     else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
@@ -232,11 +230,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->lowCardinality())
         {
-            auto mut_col = IColumn::mutate(std::move(column.column));
-            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
-            if (col_as_lc && col_as_lc->nestedIsNullable())
-                col_as_lc->nestedRemoveNullable();
-            column.column = std::move(mut_col);
+            column.column = assert_cast<const ColumnLowCardinality *>(column.column.get())->cloneWithDefaultOnNull();
         }
     }
     else
@@ -324,17 +318,20 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
+ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
 {
-    ColumnRawPtrMap ptrs;
+    ColumnPtrMap ptrs;
     ptrs.reserve(names.size());
 
     for (const auto & column_name : names)
     {
-        auto & column = block.getByName(column_name);
-        column.column = recursiveRemoveLowCardinality(column.column->convertToFullColumnIfConst());
-        column.type = recursiveRemoveLowCardinality(column.type);
-        ptrs[column_name] = column.column.get();
+        ColumnPtr column = block.getByName(column_name).column;
+
+        column = column->convertToFullColumnIfConst();
+        column = recursiveRemoveLowCardinality(column);
+        column = recursiveRemoveSparse(column);
+
+        ptrs[column_name] = column;
     }
 
     return ptrs;
@@ -483,7 +480,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column) //-V1051
+        if (!column.column)
             column.column = column.type->createColumn();
     }
 }
@@ -529,24 +526,24 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 JoinMask getColumnAsMask(const Block & block, const String & column_name)
 {
     if (column_name.empty())
-        return JoinMask(true);
+        return JoinMask(true, block.rows());
 
     const auto & src_col = block.getByName(column_name);
 
     DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
     if (isNothing(col_type))
-        return JoinMask(false);
+        return JoinMask(false, block.rows());
 
     if (const auto * const_cond = checkAndGetColumn<ColumnConst>(*src_col.column))
     {
-        return JoinMask(const_cond->getBool(0));
+        return JoinMask(const_cond->getBool(0), block.rows());
     }
 
     ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
-            return JoinMask(false);
+            return JoinMask(false, block.rows());
 
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
@@ -639,9 +636,8 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block
 {
     if (num_shards == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
-    UNUSED(scatterBlockByHashPow2);
-    // if (likely(isPowerOf2(num_shards)))
-    //     return scatterBlockByHashPow2(key_columns_names, block, num_shards);
+    if (likely(isPowerOf2(num_shards)))
+        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
 }
 

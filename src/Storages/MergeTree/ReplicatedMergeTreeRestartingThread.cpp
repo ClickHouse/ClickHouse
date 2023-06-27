@@ -144,6 +144,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
+    storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
     LOG_DEBUG(log, "Table started successfully");
@@ -360,6 +361,12 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
     /// if first pass wasn't done we don't have to decrement because it wasn't incremented in the first place
     /// the task should be deactivated if it's full shutdown so no race is present
     if (!first_time && on_shutdown)
+    {
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+    }
+
+    if (storage.since_metadata_err_incr_readonly_metric)
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);

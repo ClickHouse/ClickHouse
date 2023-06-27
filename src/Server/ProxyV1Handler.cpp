@@ -1,6 +1,7 @@
 #include <Server/ProxyV1Handler.h>
 #include <Poco/Net/NetException.h>
 #include <Common/NetException.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 
@@ -28,38 +29,38 @@ void ProxyV1Handler::run()
 
     // read "PROXY"
     if (!readWord(5, word, eol) || word != "PROXY" || eol)
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read "TCP4" or "TCP6" or "UNKNOWN"
     if (!readWord(7, word, eol))
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     if (word != "TCP4" && word != "TCP6" && word != "UNKNOWN")
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     if (word == "UNKNOWN" && eol)
         return;
 
     if (eol)
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read address
     if (!readWord(39, word, eol) || eol)
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     stack_data.forwarded_for = std::move(word);
 
     // read address
     if (!readWord(39, word, eol) || eol)
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read port
     if (!readWord(5, word, eol) || eol)
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     // read port and "\r\n"
     if (!readWord(5, word, eol) || !eol)
-        throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
     if (!stack_data.forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address from PROXY header: {}", stack_data.forwarded_for);
@@ -104,21 +105,21 @@ bool ProxyV1Handler::readWord(int max_len, std::string & word, bool & eol)
     }
     catch (const Poco::Net::NetException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), socket().peerAddress().toString());
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket ({}, {} ms)",
             socket().peerAddress().toString(),
-            socket().getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+            socket().getReceiveTimeout().totalMilliseconds());
     }
     catch (const Poco::IOException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), socket().peerAddress().toString());
     }
 
     if (n < 0)
-        throw NetException("Cannot read from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", socket().peerAddress().toString());
 
     return false;
 }

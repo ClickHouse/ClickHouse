@@ -80,9 +80,6 @@ extern const char empty_pod_array[empty_pod_array_size];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnull-dereference"
-
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
@@ -110,7 +107,7 @@ protected:
     {
         size_t amount;
         if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
-            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         return amount;
     }
 
@@ -119,7 +116,7 @@ protected:
     {
         size_t amount;
         if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
-            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         return amount;
     }
 
@@ -774,7 +771,6 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, P
 {
     lhs.swap(rhs);
 }
-#pragma GCC diagnostic pop
 
 /// Prevent implicit template instantiation of PODArray for common numeric types
 

@@ -6,7 +6,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -112,8 +111,7 @@ public:
             return Status::NeedData;
 
         if (!all_finished)
-            throw Exception(
-                "SortingAggregatedForMemoryBoundMergingTransform has read bucket, but couldn't push it.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "SortingAggregatedForMemoryBoundMergingTransform has read bucket, but couldn't push it.");
 
         if (overflow_chunk)
         {
@@ -154,8 +152,7 @@ private:
 
         const auto & info = chunk.getChunkInfo();
         if (!info)
-            throw Exception(
-                "Chunk info was not set for chunk in SortingAggregatedForMemoryBoundMergingTransform.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in SortingAggregatedForMemoryBoundMergingTransform.");
 
         const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)

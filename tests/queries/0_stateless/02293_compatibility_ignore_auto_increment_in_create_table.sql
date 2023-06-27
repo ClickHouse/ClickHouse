@@ -1,3 +1,7 @@
+-- Tags: no-random-merge-tree-settings
+-- Tag no-random-merge-tree-settings: query is rewritten in parser
+-- while adding merge tree settings
+
 select 'disable AUTO_INCREMENT compatibility mode';
 set compatibility_ignore_auto_increment_in_create_table=false;
 

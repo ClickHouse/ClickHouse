@@ -4,6 +4,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
@@ -40,7 +41,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -62,7 +62,7 @@ public:
     {
         assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
-        std::lock_guard<std::mutex> lock(mux);
+        std::lock_guard lock(mux);
         if (input_port || output_port)
         {
             assert(input_port && output_port);
@@ -105,7 +105,7 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , column_names(column_names_)
     , max_rows_in_set(max_rows_in_set_)
-    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), false, true))
+    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), 0, true))
     , filtering_set(nullptr)
     , crosswise_connection(crosswise_connection_)
     , position(position_)
@@ -198,7 +198,7 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 
     own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 
-    output_stream = input_streams[0];
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
 

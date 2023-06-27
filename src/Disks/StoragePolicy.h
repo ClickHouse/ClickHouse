@@ -10,7 +10,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 
 #include <memory>
 #include <mutex>
@@ -92,6 +91,7 @@ public:
     bool hasAnyVolumeWithDisabledMerges() const override;
 
     bool containsVolume(const String & volume_name) const override;
+
 private:
     Volumes volumes;
     const String name;
@@ -118,6 +118,8 @@ using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector
 {
 public:
+    static constexpr auto TMP_STORAGE_POLICY_PREFIX = "__";
+
     StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
     StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
@@ -125,8 +127,15 @@ public:
     /// Policy by name
     StoragePolicyPtr get(const String & name) const;
 
+    StoragePolicyPtr tryGet(const String & name) const;
+
     /// All policies
     const StoragePoliciesMap & getPoliciesMap() const { return policies; }
+
+    /// Add storage policy to StoragePolicySelector.
+    /// Used when storage policy needs to be created on the fly, not being present in config file.
+    /// Done by getOrSetStoragePolicyForSingleDisk.
+    void add(StoragePolicyPtr storage_policy);
 
 private:
     StoragePoliciesMap policies;

@@ -40,7 +40,7 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
     else if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
     else
-        throw Exception("Unknown escaping rule \"" + escaping_rule + "\"", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
@@ -104,7 +104,7 @@ bool deserializeFieldByEscapingRule(
     const FormatSettings & format_settings)
 {
     bool read = true;
-    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
+    bool parse_as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
     switch (escaping_rule)
     {
         case FormatSettings::EscapingRule::Escaped:
@@ -233,7 +233,10 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
                 readCSVField(result, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedString(result, buf);
+            if constexpr (read_string)
+                readEscapedString(result, buf);
+            else
+                readTSVField(result, buf);
             break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read value with {} escaping rule", escapingRuleToString(escaping_rule));
@@ -249,6 +252,21 @@ String readFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule es
 String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
     return readByEscapingRule<true>(buf, escaping_rule, format_settings);
+}
+
+String readStringOrFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
+{
+    /// For Quoted escaping rule we can read value as string only if it starts with `'`.
+    /// If there is no `'` it can be any other field number/array/etc.
+    if (escaping_rule == FormatSettings::EscapingRule::Quoted && !buf.eof() && *buf.position() != '\'')
+        return readFieldByEscapingRule(buf, escaping_rule, format_settings);
+
+    /// For JSON it's the same as for Quoted, but we check `"`.
+    if (escaping_rule == FormatSettings::EscapingRule::JSON && !buf.eof() && *buf.position() != '"')
+        return readFieldByEscapingRule(buf, escaping_rule, format_settings);
+
+    /// For other escaping rules we can read any field as string value.
+    return readStringByEscapingRule(buf, escaping_rule, format_settings);
 }
 
 DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
@@ -292,13 +310,14 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 return type;
             }
 
-            /// Case when CSV value is not in quotes. Check if it's a number, and if not, determine it's as a string.
-            auto type = tryInferNumberFromString(field, format_settings);
+            /// Case when CSV value is not in quotes. Check if it's a number or date/datetime, and if not, determine it as a string.
+            if (auto number_type = tryInferNumberFromString(field, format_settings))
+                return number_type;
 
-            if (!type)
-                return std::make_shared<DataTypeString>();
+            if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
+                return date_type;
 
-            return type;
+            return std::make_shared<DataTypeString>();
         }
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
         case FormatSettings::EscapingRule::Escaped:
@@ -330,7 +349,8 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             return type;
         }
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the type for value with {} escaping rule", escapingRuleToString(escaping_rule));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the type for value with {} escaping rule",
+                            escapingRuleToString(escaping_rule));
     }
 }
 
@@ -357,7 +377,9 @@ void transformInferredTypesByEscapingRuleIfNeeded(DataTypePtr & first, DataTypeP
             transformInferredTypesIfNeeded(first, second, settings);
             break;
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot transform inferred types for value with {} escaping rule", escapingRuleToString(escaping_rule));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot transform inferred types for value with {} escaping rule",
+                            escapingRuleToString(escaping_rule));
     }
 }
 
@@ -386,9 +408,10 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
+        settings.max_bytes_to_read_for_schema_inference,
         settings.schema_inference_make_columns_nullable);
 }
 
