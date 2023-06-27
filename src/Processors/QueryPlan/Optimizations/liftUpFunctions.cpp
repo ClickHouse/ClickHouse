@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -27,6 +28,22 @@ const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// This is a check that output columns with the same name have the same types.
+/// This is ok to have such a situation in DAG, but not for Block.
+/// TODO: we should have a different data structure for headers.
+static bool areOutputsAreConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
+{
+    std::unordered_map<std::string_view, const IDataType *> name_to_type;
+    for (const auto & output : outputs)
+    {
+        auto [it, inserted] = name_to_type.emplace(output->result_name, output->result_type.get());
+        if (!inserted && !it->second->equals(*output->result_type))
+            return false;
+    }
+
+    return true;
+}
 
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
@@ -55,6 +72,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     // No calculations can be postponed.
     if (unneeded_for_sorting->trivial())
+        return 0;
+
+    if (!areOutputsAreConvertableToBlock(needed_for_sorting->getOutputs()))
         return 0;
 
     // Sorting (parent_node) -> Expression (child_node)
