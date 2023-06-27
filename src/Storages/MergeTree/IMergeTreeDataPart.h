@@ -323,6 +323,7 @@ public:
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
+    UInt64 getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }

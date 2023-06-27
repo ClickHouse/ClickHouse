@@ -1,5 +1,6 @@
 #include "IMergeTreeDataPart.h"
 #include "Storages/MergeTree/IDataPartStorage.h"
+#include "base/types.h"
 
 #include <optional>
 #include <boost/algorithm/string/join.hpp>
@@ -1798,6 +1799,22 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & di
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
     return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, storage.log);
+}
+
+UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const 
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (parent_part)
+        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    const auto & pk = metadata_snapshot->getPrimaryKey();
+    if (!pk.column_names.empty())
+    {
+        String file = "primary" + getIndexExtension(false);
+        if (checksums.files.contains("primary" + getIndexExtension(true)))
+            file = "primary" + getIndexExtension(true);
+        return getFileSizeOrZero(file);
+    }
+    return 0;
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
