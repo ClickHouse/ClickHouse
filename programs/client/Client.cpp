@@ -4,14 +4,16 @@
 #include <map>
 #include <iostream>
 #include <iomanip>
+#include <memory>
 #include <optional>
-#include <string_view>
+#include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
 #include <string>
 #include "Client.h"
+#include "Client/ConnectionString.h"
 #include "Core/Protocol.h"
 #include "Parsers/formatAST.h"
 
@@ -307,7 +309,7 @@ int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    MainThreadStatus::getInstance();
+    auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
@@ -319,6 +321,14 @@ try
 
     processConfig();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+
+    {
+        // All that just to set DB::CurrentThread::get().getGlobalContext()
+        // which is required for client timezone (pushed from server) to work.
+        auto thread_group = std::make_shared<ThreadGroup>();
+        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
+        thread_status.attachToGroup(thread_group, false);
+    }
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -977,13 +987,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
-        /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
-            * implicit_value is used to avoid this exception (to allow user to type just "--password")
-            * Since currently boost provides no way to check if a value has been set implicitly for an option,
-            * the "\n" is used to distinguish this case because there is hardly a chance a user would use "\n"
-            * as the password.
-            */
-        ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
+        ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
@@ -1248,6 +1252,9 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
+    bool has_connection_string = argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
+    int start_argument_index = has_connection_string ? 2 : 1;
+
     /** We allow different groups of arguments:
         * - common arguments;
         * - arguments for any number of external tables each in form "--external args...",
@@ -1260,9 +1267,12 @@ void Client::readArguments(
     std::string prev_host_arg;
     std::string prev_port_arg;
 
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    for (int arg_num = start_argument_index; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
+        if (has_connection_string)
+            checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
         if (arg == "--external")
         {
@@ -1390,6 +1400,14 @@ void Client::readArguments(
                 ++arg_num;
                 arg = argv[arg_num];
                 addMultiquery(arg, common_arguments);
+            }
+            else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
+            {
+                common_arguments.emplace_back(arg);
+                /// No password was provided by user. Add '\n' as implicit password,
+                /// which encodes that client should ask user for the password.
+                /// '\n' is used because there is hardly a chance that a user would use '\n' as a password.
+                common_arguments.emplace_back("\n");
             }
             else
                 common_arguments.emplace_back(arg);

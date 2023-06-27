@@ -1109,17 +1109,18 @@ void ZooKeeper::initFeatureFlags()
 
         get(path, std::move(callback), {});
         if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-        {
-            LOG_TRACE(log, "Failed to get {}: timeout", description);
-            return std::nullopt;
-        }
+            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
 
         auto response = future.get();
 
-        if (response.error != Coordination::Error::ZOK)
+        if (response.error == Coordination::Error::ZNONODE)
         {
             LOG_TRACE(log, "Failed to get {}", description);
             return std::nullopt;
+        }
+        else if (response.error != Coordination::Error::ZOK)
+        {
+            throw Exception(response.error, "Failed to get {}", description);
         }
 
         return std::move(response.data);
@@ -1133,13 +1134,18 @@ void ZooKeeper::initFeatureFlags()
 
     auto keeper_api_version_string = try_get(keeper_api_version_path, "API version");
 
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
+
     if (!keeper_api_version_string.has_value())
+    {
+        LOG_TRACE(log, "API version not found, assuming {}", keeper_api_version);
         return;
+    }
 
     DB::ReadBufferFromOwnString buf(*keeper_api_version_string);
     uint8_t keeper_version{0};
     DB::readIntText(keeper_version, buf);
-    auto keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
+    keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
     keeper_feature_flags.fromApiVersion(keeper_api_version);
 }

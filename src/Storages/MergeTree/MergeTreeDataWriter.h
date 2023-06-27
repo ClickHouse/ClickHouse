@@ -71,6 +71,7 @@ public:
 
         scope_guard temporary_directory_lock;
 
+        void cancel();
         void finalize();
     };
 
