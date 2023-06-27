@@ -60,13 +60,8 @@ private:
                 getName(), arguments.size());
         }
 
-        for (size_t i = 0, size = arguments.size(); i < size; ++i)
-        {
-            if (arguments[i]->onlyNull())
-            {
-                return makeNullable(std::make_shared<DataTypeNothing>());
-            }
-        }
+        if (std::find_if (arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg->onlyNull(); }) != arguments.cend())
+            return makeNullable(std::make_shared<DataTypeNothing>());
 
         DataTypes arg_types;
         for (size_t i = 0, size = arguments.size(); i < size; ++i)
@@ -393,9 +388,7 @@ private:
     {
         NullPresence null_presence = getNullPresense(arguments);
         if (null_presence.has_null_constant)
-        {
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
-        }
 
         DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
         WhichDataType which(elem_type);
@@ -410,15 +403,11 @@ private:
         auto throwIfNullValue = [&](const ColumnWithTypeAndName & col)
         {
             if (!col.type->isNullable())
-            {
                 return;
-            }
             const auto & nullable_col = assert_cast<const ColumnNullable &>(*col.column);
             const auto & null_map = nullable_col.getNullMapData();
             if (!memoryIsZero(null_map.data(), 0, null_map.size()))
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal (null) value column {} of argument of function {}", col.column->getName(), getName());
-            }
         };
 
         ColumnPtr res;
@@ -429,7 +418,7 @@ private:
             if (arguments[0].type->isNullable())
             {
                 const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
-                col= nullable->getNestedColumnPtr().get();
+                col = nullable->getNestedColumnPtr().get();
             }
 
             if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))
