@@ -992,7 +992,10 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += trim_for_log(open(self.stdout_file).read())
+                    with open(self.stdout_file, "rb") as f:
+                        description += trim_for_log(
+                            f.read().decode("utf-8", errors="ignore")
+                        )
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"

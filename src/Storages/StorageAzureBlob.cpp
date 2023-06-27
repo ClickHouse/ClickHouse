@@ -491,10 +491,18 @@ public:
         cancelled = true;
     }
 
-    void onException() override
+    void onException(std::exception_ptr exception) override
     {
         std::lock_guard lock(cancel_mutex);
-        finalize();
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            release();
+        }
     }
 
     void onFinish() override
@@ -518,10 +526,15 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            writer.reset();
-            write_buf->finalize();
+            release();
             throw;
         }
+    }
+
+    void release()
+    {
+        writer.reset();
+        write_buf->finalize();
     }
 
     Block sample_block;
@@ -622,15 +635,15 @@ Pipe StorageAzureBlob::read(
     else if (configuration.withGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
-        iterator_wrapper = std::make_shared<StorageAzureBlobSource::Iterator>(
-            object_storage.get(), configuration.container, std::nullopt,
-            configuration.blob_path, query_info.query, virtual_block, local_context, nullptr);
+        iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
+            object_storage.get(), configuration.container, configuration.blob_path,
+            query_info.query, virtual_block, local_context, nullptr);
     }
     else
     {
-        iterator_wrapper = std::make_shared<StorageAzureBlobSource::Iterator>(
+        iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
             object_storage.get(), configuration.container, configuration.blobs_paths,
-            std::nullopt, query_info.query, virtual_block, local_context, nullptr);
+            query_info.query, virtual_block, local_context, nullptr);
     }
 
     ColumnsDescription columns_description;
@@ -793,11 +806,10 @@ static void addPathToVirtualColumns(Block & block, const String & path, size_t i
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-StorageAzureBlobSource::Iterator::Iterator(
+StorageAzureBlobSource::GlobIterator::GlobIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
-    std::optional<Strings> keys_,
-    std::optional<String> blob_path_with_globs_,
+    String blob_path_with_globs_,
     ASTPtr query_,
     const Block & virtual_header_,
     ContextPtr context_,
@@ -805,186 +817,118 @@ StorageAzureBlobSource::Iterator::Iterator(
     : IIterator(context_)
     , object_storage(object_storage_)
     , container(container_)
-    , keys(keys_)
     , blob_path_with_globs(blob_path_with_globs_)
     , query(query_)
     , virtual_header(virtual_header_)
     , outer_blobs(outer_blobs_)
 {
-    if (keys.has_value() && blob_path_with_globs.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify keys and glob simultaneously it's a bug");
 
-    if (!keys.has_value() && !blob_path_with_globs.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Both keys and glob mask are not specified");
+    const String key_prefix = blob_path_with_globs.substr(0, blob_path_with_globs.find_first_of("*?{"));
 
-    if (keys)
+    /// We don't have to list bucket, because there is no asterisks.
+    if (key_prefix.size() == blob_path_with_globs.size())
     {
-        Strings all_keys = *keys;
-
-        blobs_with_metadata.emplace();
-        /// Create a virtual block with one row to construct filter
-        if (query && virtual_header && !all_keys.empty())
-        {
-            /// Append "idx" column as the filter result
-            virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-            auto block = virtual_header.cloneEmpty();
-            addPathToVirtualColumns(block, fs::path(container) / all_keys.front(), 0);
-
-            VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-
-            if (filter_ast)
-            {
-                block = virtual_header.cloneEmpty();
-                for (size_t i = 0; i < all_keys.size(); ++i)
-                    addPathToVirtualColumns(block, fs::path(container) / all_keys[i], i);
-
-                VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-                const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
-
-                Strings filtered_keys;
-                filtered_keys.reserve(block.rows());
-                for (UInt64 idx : idxs.getData())
-                    filtered_keys.emplace_back(std::move(all_keys[idx]));
-
-                all_keys = std::move(filtered_keys);
-            }
-        }
-
-        for (auto && key : all_keys)
-        {
-            ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
-            total_size += object_metadata.size_bytes;
-            blobs_with_metadata->emplace_back(RelativePathWithMetadata{key, object_metadata});
-            if (outer_blobs)
-                outer_blobs->emplace_back(blobs_with_metadata->back());
-        }
-    }
-    else
-    {
-        const String key_prefix = blob_path_with_globs->substr(0, blob_path_with_globs->find_first_of("*?{"));
-
-        /// We don't have to list bucket, because there is no asterisks.
-        if (key_prefix.size() == blob_path_with_globs->size())
-        {
-            ObjectMetadata object_metadata = object_storage->getObjectMetadata(*blob_path_with_globs);
-            blobs_with_metadata->emplace_back(*blob_path_with_globs, object_metadata);
-            if (outer_blobs)
-                outer_blobs->emplace_back(blobs_with_metadata->back());
-            return;
-        }
-
-        object_storage_iterator = object_storage->iterate(key_prefix);
-
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(*blob_path_with_globs));
-
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", *blob_path_with_globs, matcher->error());
-
-        recursive = *blob_path_with_globs == "/**" ? true : false;
+        ObjectMetadata object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
+        blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
+        if (outer_blobs)
+            outer_blobs->emplace_back(blobs_with_metadata.back());
+        return;
     }
 
+    object_storage_iterator = object_storage->iterate(key_prefix);
+
+    matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(blob_path_with_globs));
+
+    if (!matcher->ok())
+        throw Exception(
+            ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", blob_path_with_globs, matcher->error());
+
+    recursive = blob_path_with_globs == "/**" ? true : false;
 }
 
-RelativePathWithMetadata StorageAzureBlobSource::Iterator::next()
+RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 {
     std::lock_guard lock(next_mutex);
+
     if (is_finished)
         return {};
 
-    if (keys)
+    bool need_new_batch = blobs_with_metadata.empty() || index >= blobs_with_metadata.size();
+
+    if (need_new_batch)
     {
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= blobs_with_metadata->size())
+        RelativePathsWithMetadata new_batch;
+        while (new_batch.empty())
         {
-            is_finished = true;
-            return {};
-        }
-
-        return (*blobs_with_metadata)[current_index];
-    }
-    else
-    {
-        bool need_new_batch = false;
-        need_new_batch = !blobs_with_metadata || index >= blobs_with_metadata->size();
-
-        if (need_new_batch)
-        {
-            RelativePathsWithMetadata new_batch;
-            while (new_batch.empty())
+            auto result = object_storage_iterator->getCurrrentBatchAndScheduleNext();
+            if (result.has_value())
             {
-                {
-                    if (object_storage_iterator->isValid())
-                    {
-                        new_batch = object_storage_iterator->currentBatch();
-                        object_storage_iterator->nextBatch();
-                    }
-                    else
-                    {
-                        is_finished = true;
-                        return {};
-                    }
-                }
-
-                for (auto it = new_batch.begin(); it != new_batch.end();)
-                {
-                    if (!recursive && !re2::RE2::FullMatch(it->relative_path, *matcher))
-                        it = new_batch.erase(it);
-                    else
-                        ++it;
-                }
-            }
-
-            index.store(0, std::memory_order_relaxed);
-            if (!is_initialized)
-            {
-                createFilterAST(new_batch.front().relative_path);
-                is_initialized = true;
-            }
-
-            if (filter_ast)
-            {
-                auto block = virtual_header.cloneEmpty();
-                for (size_t i = 0; i < new_batch.size(); ++i)
-                    addPathToVirtualColumns(block, fs::path(container) / new_batch[i].relative_path, i);
-
-                VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-                const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
-
-                blob_path_with_globs.reset();
-                blob_path_with_globs.emplace();
-                for (UInt64 idx : idxs.getData())
-                {
-                    total_size.fetch_add(new_batch[idx].metadata.size_bytes, std::memory_order_relaxed);
-                    blobs_with_metadata->emplace_back(std::move(new_batch[idx]));
-                    if (outer_blobs)
-                        outer_blobs->emplace_back(blobs_with_metadata->back());
-                }
+                new_batch = result.value();
             }
             else
             {
-                if (outer_blobs)
-                    outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
+                is_finished = true;
+                return {};
+            }
 
-                blobs_with_metadata = std::move(new_batch);
-                for (const auto & [_, info] : *blobs_with_metadata)
-                    total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
+            for (auto it = new_batch.begin(); it != new_batch.end();)
+            {
+                if (!recursive && !re2::RE2::FullMatch(it->relative_path, *matcher))
+                    it = new_batch.erase(it);
+                else
+                    ++it;
             }
         }
 
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        return (*blobs_with_metadata)[current_index];
+        index = 0;
+        if (!is_initialized)
+        {
+            createFilterAST(new_batch.front().relative_path);
+            is_initialized = true;
+        }
+
+        if (filter_ast)
+        {
+            auto block = virtual_header.cloneEmpty();
+            for (size_t i = 0; i < new_batch.size(); ++i)
+                addPathToVirtualColumns(block, fs::path(container) / new_batch[i].relative_path, i);
+
+            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
+            blobs_with_metadata.clear();
+            for (UInt64 idx : idxs.getData())
+            {
+                total_size.fetch_add(new_batch[idx].metadata.size_bytes, std::memory_order_relaxed);
+                blobs_with_metadata.emplace_back(std::move(new_batch[idx]));
+                if (outer_blobs)
+                    outer_blobs->emplace_back(blobs_with_metadata.back());
+            }
+        }
+        else
+        {
+            if (outer_blobs)
+                outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
+
+            blobs_with_metadata = std::move(new_batch);
+            for (const auto & [_, info] : blobs_with_metadata)
+                total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
+        }
     }
+
+    size_t current_index = index++;
+    if (current_index >= blobs_with_metadata.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bound for blob metadata");
+    return blobs_with_metadata[current_index];
 }
 
-size_t StorageAzureBlobSource::Iterator::getTotalSize() const
+size_t StorageAzureBlobSource::GlobIterator::getTotalSize() const
 {
     return total_size.load(std::memory_order_relaxed);
 }
 
 
-void StorageAzureBlobSource::Iterator::createFilterAST(const String & any_key)
+void StorageAzureBlobSource::GlobIterator::createFilterAST(const String & any_key)
 {
     if (!query || !virtual_header)
         return;
@@ -996,6 +940,78 @@ void StorageAzureBlobSource::Iterator::createFilterAST(const String & any_key)
     auto block = virtual_header.cloneEmpty();
     addPathToVirtualColumns(block, fs::path(container) / any_key, 0);
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
+}
+
+
+StorageAzureBlobSource::KeysIterator::KeysIterator(
+    AzureObjectStorage * object_storage_,
+    const std::string & container_,
+    Strings keys_,
+    ASTPtr query_,
+    const Block & virtual_header_,
+    ContextPtr context_,
+    RelativePathsWithMetadata * outer_blobs_)
+    : IIterator(context_)
+    , object_storage(object_storage_)
+    , container(container_)
+    , query(query_)
+    , virtual_header(virtual_header_)
+    , outer_blobs(outer_blobs_)
+{
+    Strings all_keys = keys_;
+
+    /// Create a virtual block with one row to construct filter
+    if (query && virtual_header && !all_keys.empty())
+    {
+        /// Append "idx" column as the filter result
+        virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+        auto block = virtual_header.cloneEmpty();
+        addPathToVirtualColumns(block, fs::path(container) / all_keys.front(), 0);
+
+        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
+
+        if (filter_ast)
+        {
+            block = virtual_header.cloneEmpty();
+            for (size_t i = 0; i < all_keys.size(); ++i)
+                addPathToVirtualColumns(block, fs::path(container) / all_keys[i], i);
+
+            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
+            Strings filtered_keys;
+            filtered_keys.reserve(block.rows());
+            for (UInt64 idx : idxs.getData())
+                filtered_keys.emplace_back(std::move(all_keys[idx]));
+
+            all_keys = std::move(filtered_keys);
+        }
+    }
+
+    for (auto && key : all_keys)
+    {
+        ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+        total_size += object_metadata.size_bytes;
+        keys.emplace_back(RelativePathWithMetadata{key, object_metadata});
+    }
+
+    if (outer_blobs)
+        *outer_blobs = keys;
+}
+
+RelativePathWithMetadata StorageAzureBlobSource::KeysIterator::next()
+{
+    size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+    if (current_index >= keys.size())
+        return {};
+
+    return keys[current_index];
+}
+
+size_t StorageAzureBlobSource::KeysIterator::getTotalSize() const
+{
+    return total_size.load(std::memory_order_relaxed);
 }
 
 
@@ -1016,11 +1032,13 @@ Chunk StorageAzureBlobSource::generate()
             UInt64 num_rows = chunk.getNumRows();
 
             const auto & file_path = reader.getPath();
-            size_t total_size = file_iterator->getTotalSize();
-            if (num_rows && total_size)
+            if (num_rows && total_objects_size)
             {
+                size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
+                if (!chunk_size)
+                    chunk_size = chunk.bytes();
                 updateRowsProgressApprox(
-                    *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    *this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)
@@ -1046,6 +1064,13 @@ Chunk StorageAzureBlobSource::generate()
 
         if (!reader)
             break;
+
+        size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+        /// Adjust total_rows_approx_accumulated with new total size.
+        if (total_objects_size)
+            total_rows_approx_accumulated = static_cast<size_t>(
+                std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
+        total_objects_size += object_size;
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1095,7 +1120,13 @@ StorageAzureBlobSource::StorageAzureBlobSource(
 {
     reader = createReader();
     if (reader)
+    {
+        const auto & read_buf = reader.getReadBuffer();
+        if (read_buf)
+            total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
+
         reader_future = createReaderAsync();
+    }
 }
 
 
@@ -1137,7 +1168,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), input_format, std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageAzureBlobSource::ReaderHolder> StorageAzureBlobSource::createReaderAsync()
@@ -1178,17 +1209,15 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
         file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx ,
             ctx->getReadTaskCallback());
     }
-    else if (configuration.withGlobs())
+    else (configuration.withGlobs())
     {
-        file_iterator = std::make_shared<StorageAzureBlobSource::Iterator>(
-            object_storage, configuration.container, std::nullopt,
-            configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
+        file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
+            object_storage, configuration.container, configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
     }
     else
     {
-        file_iterator = std::make_shared<StorageAzureBlobSource::Iterator>(
-            object_storage, configuration.container, configuration.blobs_paths,
-            std::nullopt, nullptr, Block{}, ctx, &read_keys);
+        file_iterator = std::make_shared<StorageAzureBlobSource::KeysIterator>(
+            object_storage, configuration.container, configuration.blobs_paths, nullptr, Block{}, ctx, &read_keys);
     }
 
     std::optional<ColumnsDescription> columns_from_cache;
