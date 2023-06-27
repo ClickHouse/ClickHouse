@@ -1030,6 +1030,11 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(Node & root
             all_fragments.emplace_back(result);
         }
     }
+    else if (dynamic_cast<SortingStep *>(root_node.step.get()))
+    {
+        result = createOrderByFragment(root_node.step, childFragments[0]);
+        all_fragments.emplace_back(result);
+    }
         //    } else if (root instanceof SortNode) {
         //        if (((SortNode) root).isAnalyticSort()) {
         //            // don't parallelize this like a regular SortNode
@@ -1072,16 +1077,23 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlan
     /// Create a new fragment for a sort-merging exchange.
     PlanFragmentPtr merge_fragment = createParentFragment(childFragment, DataPartition{.type = PartitionType::UNPARTITIONED});
     auto * exchange_node = merge_fragment->getRootNode(); /// exchange node
-    ExchangeNode exchNode = (ExchangeNode) merge_fragment.getPlanRoot();
 
-    // Set limit, offset and merge parameters in the exchange node.
-    exchNode.unsetLimit();
-    if (hasLimit) {
-        exchNode.setLimit(limit);
-    }
-    exchNode.setMergeInfo(node.getSortInfo());
-    exchNode.setOffset(offset);
+    const auto & query = getSelectQuery();
+    SortDescription sort_description = getSortDescription(query, context);
+    const UInt64 limit = getLimitForSorting(query, context);
+    const auto max_block_size = context->getSettingsRef().max_block_size;
+    const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
 
+    ExchangeDataStep::SortInfo sort_info{
+        .max_block_size = max_block_size,
+        .always_read_till_end = exact_rows_before_limit,
+        .limit = limit,
+        .result_description = sort_description};
+
+    auto * exchange_step = dynamic_cast<ExchangeDataStep *>(exchange_node->step.get());
+    exchange_step->setSortInfo(sort_info);
+
+    return merge_fragment;
 }
 
 
@@ -1791,7 +1803,7 @@ void InterpreterSelectQueryFragments::executeSinglePlan(QueryPlan & query_plan, 
                     order_descr.emplace_back(key_name);
 
                 SortingStep::Settings sort_settings(*context);
-
+                /// Full sort
                 auto sorting_step = std::make_shared<SortingStep>(
                     plan.getCurrentDataStream(),
                     std::move(order_descr),
@@ -2904,7 +2916,7 @@ void InterpreterSelectQueryFragments::executeWindow(QueryPlan & query_plan)
         if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
         {
             SortingStep::Settings sort_settings(*context);
-
+            /// Full sort
             auto sorting_step = std::make_shared<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
@@ -2926,7 +2938,7 @@ void InterpreterSelectQueryFragments::executeWindow(QueryPlan & query_plan)
 void InterpreterSelectQueryFragments::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
 {
     const Settings & settings = context->getSettingsRef();
-
+    /// finishing sort
     auto finish_sorting_step = std::make_shared<SortingStep>(
         query_plan.getCurrentDataStream(),
         input_sorting_info->sort_description_for_merging,
@@ -2979,7 +2991,7 @@ void InterpreterSelectQueryFragments::executeMergeSorted(QueryPlan & query_plan,
     const UInt64 limit = getLimitForSorting(query, context);
     const auto max_block_size = context->getSettingsRef().max_block_size;
     const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
-
+    /// MergingSorted
     auto merging_sorted = std::make_shared<SortingStep>(
         query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
