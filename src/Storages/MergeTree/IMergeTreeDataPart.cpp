@@ -1801,7 +1801,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & di
     return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, storage.log);
 }
 
-UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const 
+UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
