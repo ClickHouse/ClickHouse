@@ -37,11 +37,6 @@ enum class FileSegmentKind
      */
     Regular,
 
-    /* `Persistent` file segment can't be evicted from cache,
-     * it should be removed manually.
-     */
-    Persistent,
-
     /* `Temporary` file segment is removed right after releasing.
      * Also corresponding files are removed during cache loading (if any).
      */
@@ -156,8 +151,6 @@ public:
     size_t offset() const { return range().left; }
 
     FileSegmentKind getKind() const { return segment_kind; }
-
-    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
 
     bool isUnbound() const { return is_unbound; }
 
