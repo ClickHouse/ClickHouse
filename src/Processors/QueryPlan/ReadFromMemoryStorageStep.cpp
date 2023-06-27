@@ -3,7 +3,11 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <stack>
 
+#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -17,6 +21,136 @@
 
 namespace DB
 {
+
+namespace
+{
+
+std::vector<size_t> getIntersect(std::vector<size_t> && first, std::vector<size_t> && second)
+{
+    if (first.empty())
+    {
+        return second;
+    }
+
+    if (second.empty())
+    {
+        return first;
+    }
+
+    auto temp = std::move(second);
+    std::set_intersection(std::make_move_iterator(first.begin()), std::make_move_iterator(first.end()),
+                          std::make_move_iterator(temp.begin()), std::make_move_iterator(temp.end()),
+                          std::back_inserter(second));
+
+    return second;
+}
+
+std::vector<size_t> getNecessaryPositions(const Block & block, const ReadFromMemoryStorageStep::FixedColumns & fixed_columns)
+{
+    std::vector<size_t> block_necessary_positions;
+
+    for (const auto & fixed_column : fixed_columns)
+    {
+        if (!fixed_column)
+        {
+            fmt::print("broken fixed column\n");
+            continue;
+        }
+
+        fmt::print(">>> fixed column: name={}\n", fixed_column->result_name);
+        std::vector<size_t> fixed_column_necessary_positions;
+
+
+        if (const auto * column_in_block = block.findByName(fixed_column->result_name); column_in_block != nullptr)
+        {
+            fmt::print("column_in_block: name={}\n", column_in_block->name);
+
+            std::vector<size_t> result_fields_positions;
+
+            if (column_in_block->column)
+            {
+                const auto constant = (*fixed_column->column)[0];
+                const auto & field = *column_in_block->column;
+
+                for (size_t i=0; i<column_in_block->column->size(); i++)
+                {
+                    fmt::print("#{} field in block: type={}, value={}, fixed_field={}\n",
+                               i,
+                               field[i].getType(),
+                               toString(field[i]),
+                               toString(constant));
+
+                    if (applyVisitor(FieldVisitorAccurateEquals(), constant, field[i]))
+                    {
+                        fmt::print("necessary field with pos={}\n", i);
+                        result_fields_positions.push_back(i);
+                    }
+                    else
+                    {
+                        fmt::print("unnecessary field with pos={}\n", i);
+                    }
+                }
+                fmt::print("\n\n");
+            }
+            fmt::print("for column_in_block: name={} need only this fields: ", column_in_block->name);
+            for (const auto& n : result_fields_positions)
+            {
+                fmt::print("{}, ", n);
+            }
+            fmt::print("\n");
+
+            fixed_column_necessary_positions = getIntersect(std::move(result_fields_positions),
+                                                             std::move(fixed_column_necessary_positions));
+        }
+
+        fmt::print("for current column need only this fields: ");
+        for (const auto& n : fixed_column_necessary_positions)
+        {
+            fmt::print("{}, ", n);
+        }
+        fmt::print("\n\n");
+
+        block_necessary_positions = getIntersect(std::move(fixed_column_necessary_positions),
+                                                  std::move(block_necessary_positions));
+    }
+
+    fmt::print("result necessary columns: ");
+    for (const auto& n : block_necessary_positions)
+    {
+        fmt::print("{}, ", n);
+    }
+    fmt::print("\n\n");
+
+    return block_necessary_positions;
+}
+
+ColumnWithTypeAndName makeColumnNecessaryFields(const ColumnWithTypeAndName * block_column, const std::vector<size_t> & block_necessary_positions)
+{
+    assert(block_column != nullptr);
+    assert(!block_necessary_positions.empty());
+
+    ColumnWithTypeAndName filtered_column = block_column->cloneEmpty();
+    auto c = filtered_column.column->cloneFinalized();
+
+    for (size_t pos : block_necessary_positions)
+    {
+        fmt::print("try to copy usefully field: pos={}, value={}\n", pos, toString(block_column->column->getPtr()->operator[](pos)));
+        c->insertFrom(*block_column->column->getPtr(), pos);
+    }
+
+    ColumnWithTypeAndName res(c->getPtr(), filtered_column.type, filtered_column.name);
+
+    fmt::print("new column after filters:\n");
+    for (size_t i=0; i<res.column->size(); i++)
+    {
+        fmt::print("field={}\n", toString((*res.column)[i]));
+    }
+    fmt::print("\n\n");
+
+    return res;
+}
+
+}
 
 class MemorySource : public ISource
 {
@@ -120,12 +254,140 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+ReadFromMemoryStorageStep::FixedColumns ReadFromMemoryStorageStep::makeFixedColumns()
+{
+    FixedColumns fixed_columns;
+    for (const auto * filter_expression : getFilterNodes().nodes)
+    {
+        if (!filter_expression)
+        {
+            continue;
+        }
+
+        std::stack<const ActionsDAG::Node *> stack;
+        stack.push(filter_expression);
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const auto & func_name = node->function_base->getName();
+                if (func_name == "and")
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+                }
+                else if (func_name == "equals")
+                {
+                    fmt::print("make fixed: has equals\n");
+                    ActionsDAG::Node * maybe_fixed_column = nullptr;
+                    size_t num_constant_columns = 0;
+
+                    fmt::print("size children: {}\n", node->children.size());
+
+                    // @TODO why one children with empty column?
+                    for (const auto & child : node->children)
+                    {
+                        if (child->column)
+                        {
+                            fmt::print("fixed: child has column: name={}\n", child->result_name);
+                            fmt::print("fixed: column size={}\n", node->children.size());
+
+                            // @TODO why children size == 2 and value eq?
+                            for (size_t i=0; i<node->children.size(); i++)
+                            {
+                                fmt::print("child: filed={}\n", toString((*child->column)[i]));
+                            }
+                            ++num_constant_columns;
+
+                            if (maybe_fixed_column && maybe_fixed_column->column == nullptr)
+                            {
+                                maybe_fixed_column->column = child->column;
+                            }
+                        }
+                        else
+                        {
+                            fmt::print("fixed: child has empty column: name={}\n", child->result_name);
+                            maybe_fixed_column = const_cast<ActionsDAG::Node *>(child);
+                        }
+                    }
+                    if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
+                    {
+                        fmt::print(">>> add to fixed_columns\n");
+                        fixed_columns.insert(maybe_fixed_column);
+                    }
+                }
+            }
+        }
+    }
+
+    for (const auto & c : fixed_columns)
+    {
+        fmt::print("total: name={}\n", c->result_name);
+        fmt::print("total: type={}\n", c->result_type);
+        fmt::print("total: column name={}\n", c->column->getName());
+        fmt::print("total: size columns={}\n", c->column->size());
+        for (size_t i=0; i<c->column->size(); i++)
+        {
+            fmt::print("field={}\n", toString((*c->column)[i]));
+        }
+    }
+    return fixed_columns;
+}
+
+std::shared_ptr<const Blocks> ReadFromMemoryStorageStep::filteredByFixedColumns(std::shared_ptr<const Blocks> blocks_ptr)
+{
+    if (!blocks_ptr || blocks_ptr->empty())
+    {
+        return blocks_ptr;
+    }
+
+    const auto fixed_columns = makeFixedColumns();
+    if (fixed_columns.empty())
+    {
+        return blocks_ptr;
+    }
+
+    Blocks blocks_with_fixed_columns;
+    blocks_with_fixed_columns.reserve(columns_to_read.size());
+
+    std::vector<size_t> necessary_positions;
+
+    for (const auto & block : *blocks_ptr)
+    {
+        Block block_with_fixed_columns;
+
+        fmt::print("\nstart filtered block\n");
+
+        auto block_necessary_positions = getNecessaryPositions(block, fixed_columns);
+
+        for (const auto & column_to_read : columns_to_read)
+        {
+            if (const auto * block_column = block.findByName(column_to_read); block_column != nullptr)
+            {
+                auto res = makeColumnNecessaryFields(block_column, block_necessary_positions);
+                block_with_fixed_columns.insert(res);
+            }
+        }
+
+        if (block_with_fixed_columns)
+        {
+            blocks_with_fixed_columns.push_back(std::move(block_with_fixed_columns));
+        }
+    }
+    return std::make_shared<const Blocks>(std::move(blocks_with_fixed_columns));
+}
+
 Pipe ReadFromMemoryStorageStep::makePipe()
 {
     storage_snapshot->check(columns_to_read);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
-    auto current_data = snapshot_data.blocks;
+
+    auto blocks_with_fixed_columns = filteredByFixedColumns(snapshot_data.blocks);
+//    auto blocks_with_fixed_columns = snapshot_data.blocks;
 
     if (delay_read_for_global_sub_queries)
     {
@@ -142,13 +404,13 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
+            [blocks_with_fixed_columns](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = current_data;
+                data_to_initialize = blocks_with_fixed_columns;
             }));
     }
 
-    size_t size = current_data->size();
+    size_t size = blocks_with_fixed_columns->size();
 
     if (num_streams > size)
         num_streams = size;
@@ -159,7 +421,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index));
+        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, blocks_with_fixed_columns, parallel_execution_index));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

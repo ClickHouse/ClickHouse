@@ -15,6 +15,8 @@ class QueryPipelineBuilder;
 class ReadFromMemoryStorageStep final : public SourceStepWithFilter
 {
 public:
+    using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
+
     ReadFromMemoryStorageStep(const Names & columns_to_read_,
                               const StorageSnapshotPtr & storage_snapshot_,
                               size_t num_streams_,
@@ -39,7 +41,12 @@ private:
     size_t num_streams;
     bool delay_read_for_global_sub_queries;
 
+    [[maybe_unused]]
+    FixedColumns makeFixedColumns();
+
     Pipe makePipe();
+
+    std::shared_ptr<const Blocks> filteredByFixedColumns(std::shared_ptr<const Blocks> /*blocks_ptr*/);
 };
 
 }
