@@ -16,6 +16,7 @@
 #include <Poco/URI.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -30,7 +31,6 @@ namespace DB
 {
 
 class PullingPipelineExecutor;
-class StorageS3SequentialSource;
 class NamedCollection;
 
 class StorageS3Source : public ISource, WithContext
@@ -94,6 +94,7 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
+            bool need_total_size = true,
             KeysWithInfo * read_keys = nullptr);
 
         KeyWithInfo next() override;
@@ -162,10 +163,12 @@ private:
         ReaderHolder(
             String path_,
             std::unique_ptr<ReadBuffer> read_buf_,
+            std::shared_ptr<IInputFormat> input_format_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
             : path(std::move(path_))
             , read_buf(std::move(read_buf_))
+            , input_format(input_format_)
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -186,10 +189,15 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
+            input_format = std::move(other.input_format);
             read_buf = std::move(other.read_buf);
             path = std::move(other.path);
             return *this;
         }
+
+        const std::unique_ptr<ReadBuffer> & getReadBuffer() const { return read_buf; }
+
+        const std::shared_ptr<IInputFormat> & getFormat() const { return input_format; }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
@@ -199,14 +207,9 @@ private:
     private:
         String path;
         std::unique_ptr<ReadBuffer> read_buf;
+        std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
-    };
-
-    struct ReadBufferOrFactory
-    {
-        std::unique_ptr<ReadBuffer> buf;
-        SeekableReadBufferFactoryPtr buf_factory;
     };
 
     ReaderHolder reader;
@@ -224,12 +227,13 @@ private:
     UInt64 total_rows_approx_max = 0;
     size_t total_rows_count_times = 0;
     UInt64 total_rows_approx_accumulated = 0;
+    size_t total_objects_size = 0;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();
     std::future<ReaderHolder> createReaderAsync();
 
-    ReadBufferOrFactory createS3ReadBuffer(const String & key, size_t object_size);
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
 };
 
@@ -246,11 +250,6 @@ public:
         Configuration() = default;
 
         String getPath() const { return url.key; }
-
-        void appendToPath(const String & suffix)
-        {
-            url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
-        }
 
         bool update(ContextPtr context);
 
@@ -303,7 +302,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
@@ -353,6 +352,7 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
+        bool need_total_size = true,
         KeysWithInfo * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
