@@ -64,3 +64,26 @@ SELECT count(*) FROM test_block_mismatch_sk2 FINAL;
 INSERT INTO test_block_mismatch_sk2 VALUES (2, toDateTime('2023-01-01 12:12:12'));
 INSERT INTO test_block_mismatch_sk2 VALUES (2, toDateTime('2023-01-01 12:12:12'));
 SELECT count(*) FROM test_block_mismatch_sk2 FINAL;
+
+CREATE TABLE test_block_mismatch_magic_row_dist
+(
+    a UInt32,
+    b DateTime
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYYYYMM(b)
+ORDER BY (toDate(b), a);
+
+INSERT INTO test_block_mismatch_magic_row_dist VALUES (1, toDateTime('2023-02-02 12:12:12'));
+INSERT INTO test_block_mismatch_magic_row_dist VALUES (1, toDateTime('2023-02-02 12:12:12'));
+INSERT INTO test_block_mismatch_magic_row_dist VALUES (1, toDateTime('2023-02-02 12:12:12'));
+INSERT INTO test_block_mismatch_magic_row_dist VALUES (1, toDateTime('2023-02-02 12:12:12'));
+
+optimize table test_block_mismatch_magic_row_dist final;
+
+system stop merges test_block_mismatch_magic_row_dist;
+
+INSERT INTO test_block_mismatch_magic_row_dist VALUES (1, toDateTime('2023-01-01 12:12:12'));
+INSERT INTO test_block_mismatch_magic_row_dist VALUES (1, toDateTime('2023-01-01 12:12:12'));
+
+SELECT count(*) FROM test_block_mismatch_magic_row_dist FINAL;
