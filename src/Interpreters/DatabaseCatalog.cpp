@@ -553,8 +553,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     DatabasePtr db;
     {
         DatabaseNameHints hints(*this);
-        assertDatabaseExists(database_name);
+        std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
         std::lock_guard lock{databases_mutex};
+        assertDatabaseExistsUnlocked(database_name, names);
         db = databases.find(database_name)->second;
         UUID db_uuid = db->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -625,8 +626,8 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
     DatabaseNameHints hints(*this);
     std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
-    assertDatabaseExists(database_name);
     std::lock_guard lock{databases_mutex};
+    assertDatabaseExistsUnlocked(database_name, names);
     return databases.find(database_name)->second;
 }
 
