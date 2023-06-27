@@ -141,6 +141,15 @@ void increasePriority(const HolderPtr & holder)
 class FileCacheTest : public ::testing::Test
 {
 public:
+    FileCacheTest() {
+        /// Context has to be created before calling cache.initialize();
+        /// Otherwise the tests which run before FileCacheTest.get are failed
+        /// It is logical to call destroyContext() at destructor.
+        /// But that wouldn't work because for proper initialization and destruction global/static objects
+        /// testing::Environment has to be used.
+        getContext();
+    }
+
     static void setupLogs(const std::string & level)
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
@@ -192,6 +201,9 @@ TEST_F(FileCacheTest, get)
     settings.base_path = cache_base_path;
     settings.max_size = 30;
     settings.max_elements = 5;
+    settings.boundary_alignment = 1;
+
+    const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
 
     {
         std::cerr << "Step 1\n";
@@ -200,7 +212,7 @@ TEST_F(FileCacheTest, get)
         auto key = cache.createKeyForPath("key1");
 
         {
-            auto holder = cache.getOrSet(key, 0, 10, {});  /// Add range [0, 9]
+            auto holder = cache.getOrSet(key, 0, 10, file_size, {}); /// Add range [0, 9]
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
             download(holder->front());
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
@@ -219,7 +231,7 @@ TEST_F(FileCacheTest, get)
 
         {
             /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
-            auto holder = cache.getOrSet(key, 5, 10, {});
+            auto holder = cache.getOrSet(key, 5, 10, file_size, {});
             assertEqual(holder, { Range(0, 9), Range(10, 14) }, { State::DOWNLOADED, State::EMPTY });
             download(get(holder, 1));
             assertEqual(holder, { Range(0, 9), Range(10, 14) }, { State::DOWNLOADED, State::DOWNLOADED });
@@ -238,20 +250,18 @@ TEST_F(FileCacheTest, get)
 
         /// Get [9, 9]
         {
-            auto holder = cache.getOrSet(key, 9, 1, {});
+            auto holder = cache.getOrSet(key, 9, 1, file_size, {});
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
 
         assertEqual(cache.dumpQueue(), { Range(10, 14), Range(0, 9) });
         /// Get [9, 10]
-        assertEqual(cache.getOrSet(key, 9, 2, {}),
-                    { Range(0, 9),       Range(10, 14) },
-                    { State::DOWNLOADED, State::DOWNLOADED });
+        assertEqual(cache.getOrSet(key, 9, 2, file_size, {}), {Range(0, 9), Range(10, 14)}, {State::DOWNLOADED, State::DOWNLOADED});
 
         /// Get [10, 10]
         {
-            auto holder = cache.getOrSet(key, 10, 1, {});
+            auto holder = cache.getOrSet(key, 10, 1, file_size, {});
             assertEqual(holder, { Range(10, 14) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
@@ -264,19 +274,19 @@ TEST_F(FileCacheTest, get)
         std::cerr << "Step 4\n";
 
         {
-            auto holder = cache.getOrSet(key, 17, 4, {});
+            auto holder = cache.getOrSet(key, 17, 4, file_size, {});
             download(holder); /// Get [17, 20]
             increasePriority(holder);
         }
 
         {
-            auto holder = cache.getOrSet(key, 24, 3, {});
+            auto holder = cache.getOrSet(key, 24, 3, file_size, {});
             download(holder); /// Get [24, 26]
             increasePriority(holder);
         }
 
         {
-            auto holder = cache.getOrSet(key, 27, 1, {});
+            auto holder = cache.getOrSet(key, 27, 1, file_size, {});
             download(holder); /// Get [27, 27]
             increasePriority(holder);
         }
@@ -292,7 +302,7 @@ TEST_F(FileCacheTest, get)
 
         std::cerr << "Step 5\n";
         {
-            auto holder = cache.getOrSet(key, 0, 26, {}); /// Get [0, 25]
+            auto holder = cache.getOrSet(key, 0, 26, file_size, {}); /// Get [0, 25]
             assertEqual(holder,
                         { Range(0, 9),       Range(10, 14),     Range(15, 16),  Range(17, 20),     Range(21, 23), Range(24, 26) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::EMPTY,   State::DOWNLOADED, State::EMPTY,  State::DOWNLOADED });
@@ -309,12 +319,12 @@ TEST_F(FileCacheTest, get)
             /// Let's not invalidate pointers to returned segments from range [0, 25] and
             /// as max elements size is reached, next attempt to put something in cache should fail.
             /// This will also check that [27, 27] was indeed evicted.
-            auto holder2 = cache.getOrSet(key, 27, 1, {});
+            auto holder2 = cache.getOrSet(key, 27, 1, file_size, {});
             assertEqual(holder2, { Range(27, 27) }, { State::EMPTY });
             assertDownloadFails(holder2->front());
             assertEqual(holder2, { Range(27, 27) }, { State::DETACHED });
 
-            auto holder3 = cache.getOrSet(key, 28, 3, {});
+            auto holder3 = cache.getOrSet(key, 28, 3, file_size, {});
             assertEqual(holder3, { Range(28, 30) }, { State::EMPTY });
             assertDownloadFails(holder3->front());
             assertEqual(holder3, { Range(28, 30) }, { State::DETACHED });
@@ -336,7 +346,7 @@ TEST_F(FileCacheTest, get)
         std::cerr << "Step 6\n";
 
         {
-            auto holder = cache.getOrSet(key, 12, 10, {}); /// Get [12, 21]
+            auto holder = cache.getOrSet(key, 12, 10, file_size, {}); /// Get [12, 21]
             assertEqual(holder,
                         { Range(10, 14),     Range(15, 16),     Range(17, 20),     Range(21, 21) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::EMPTY });
@@ -357,7 +367,7 @@ TEST_F(FileCacheTest, get)
 
         std::cerr << "Step 7\n";
         {
-            auto holder = cache.getOrSet(key, 23, 5, {}); /// Get [23, 27]
+            auto holder = cache.getOrSet(key, 23, 5, file_size, {}); /// Get [23, 27]
             assertEqual(holder,
                         { Range(23, 23), Range(24, 26),     Range(27, 27) },
                         { State::EMPTY,  State::DOWNLOADED, State::EMPTY });
@@ -376,25 +386,25 @@ TEST_F(FileCacheTest, get)
 
         std::cerr << "Step 8\n";
         {
-            auto holder = cache.getOrSet(key, 2, 3, {}); /// Get [2, 4]
+            auto holder = cache.getOrSet(key, 2, 3, file_size, {}); /// Get [2, 4]
             assertEqual(holder, { Range(2, 4) }, { State::EMPTY });
 
-            auto holder2 = cache.getOrSet(key, 30, 2, {}); /// Get [30, 31]
+            auto holder2 = cache.getOrSet(key, 30, 2, file_size, {}); /// Get [30, 31]
             assertEqual(holder2, { Range(30, 31) }, { State::EMPTY });
 
             download(get(holder, 0));
             download(get(holder2, 0));
 
-            auto holder3 = cache.getOrSet(key, 23, 1, {}); /// Get [23, 23]
+            auto holder3 = cache.getOrSet(key, 23, 1, file_size, {}); /// Get [23, 23]
             assertEqual(holder3, { Range(23, 23) }, { State::DOWNLOADED });
 
-            auto holder4 = cache.getOrSet(key, 24, 3, {}); /// Get [24, 26]
+            auto holder4 = cache.getOrSet(key, 24, 3, file_size, {}); /// Get [24, 26]
             assertEqual(holder4, { Range(24, 26) }, { State::DOWNLOADED });
 
-            auto holder5 = cache.getOrSet(key, 27, 1, {}); /// Get [27, 27]
+            auto holder5 = cache.getOrSet(key, 27, 1, file_size, {}); /// Get [27, 27]
             assertEqual(holder5, { Range(27, 27) }, { State::DOWNLOADED });
 
-            auto holder6 = cache.getOrSet(key, 0, 40, {});
+            auto holder6 = cache.getOrSet(key, 0, 40, file_size, {});
             assertEqual(holder6,
                         { Range(0, 1), Range(2, 4),        Range(5, 22), Range(23, 23),     Range(24, 26),     Range(27, 27),    Range(28, 29), Range(30, 31),     Range(32, 39) },
                         { State::EMPTY, State::DOWNLOADED, State::EMPTY, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::EMPTY, State::DOWNLOADED, State::EMPTY });
@@ -422,14 +432,14 @@ TEST_F(FileCacheTest, get)
 
         /// Get [2, 4]
         {
-            auto holder = cache.getOrSet(key, 2, 3, {});
+            auto holder = cache.getOrSet(key, 2, 3, file_size, {});
             assertEqual(holder, { Range(2, 4) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
 
 
         {
-            auto holder = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29]
+            auto holder = cache.getOrSet(key, 25, 5, file_size, {}); /// Get [25, 29]
             assertEqual(holder,
                         { Range(24, 26),     Range(27, 27),     Range(28, 29) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::EMPTY });
@@ -451,7 +461,7 @@ TEST_F(FileCacheTest, get)
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
 
-                auto holder2 = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29] once again.
+                auto holder2 = cache.getOrSet(key, 25, 5, file_size, {}); /// Get [25, 29] once again.
                 assertEqual(holder2,
                             { Range(24, 26),     Range(27, 27),     Range(28, 29) },
                             { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADING });
@@ -466,6 +476,7 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().left);
+                file_segment2.complete();
                 ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
             });
 
@@ -494,7 +505,7 @@ TEST_F(FileCacheTest, get)
             /// state is changed not manually via segment->completeWithState(state) but from destructor of holder
             /// and notify_all() is also called from destructor of holder.
 
-            auto holder = cache.getOrSet(key, 3, 23, {}); /// Get [3, 25]
+            auto holder = cache.getOrSet(key, 3, 23, file_size, {}); /// Get [3, 25]
             assertEqual(holder,
                         { Range(2, 4),       Range(5, 23), Range(24, 26) },
                         { State::DOWNLOADED, State::EMPTY, State::DOWNLOADED });
@@ -516,7 +527,7 @@ TEST_F(FileCacheTest, get)
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
 
-                auto holder2 = cache.getOrSet(key, 3, 23, {}); /// Get [3, 25] once again
+                auto holder2 = cache.getOrSet(key, 3, 23, file_size, {}); /// Get [3, 25] once again
                 assertEqual(holder,
                             { Range(2, 4),       Range(5, 23),       Range(24, 26) },
                             { State::DOWNLOADED, State::DOWNLOADING, State::DOWNLOADED });
@@ -560,9 +571,10 @@ TEST_F(FileCacheTest, get)
         auto key = cache2.createKeyForPath("key1");
 
         /// Get [2, 29]
-        assertEqual(cache2.getOrSet(key, 2, 28, {}),
-                    { Range(2, 4),       Range(5, 23),      Range(24, 26),     Range(27, 27),     Range(28, 29) },
-                    { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED });
+        assertEqual(
+            cache2.getOrSet(key, 2, 28, file_size, {}),
+            {Range(2, 4), Range(5, 23), Range(24, 26), Range(27, 27), Range(28, 29)},
+            {State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED});
     }
 
     std::cerr << "Step 12\n";
@@ -578,9 +590,10 @@ TEST_F(FileCacheTest, get)
         auto key = cache2.createKeyForPath("key1");
 
         /// Get [0, 24]
-        assertEqual(cache2.getOrSet(key, 0, 25, {}),
-                    { Range(0, 9),  Range(10, 19), Range(20, 24) },
-                    { State::EMPTY, State::EMPTY,  State::EMPTY });
+        assertEqual(
+            cache2.getOrSet(key, 0, 25, file_size, {}),
+            {Range(0, 9), Range(10, 19), Range(20, 24)},
+            {State::EMPTY, State::EMPTY, State::EMPTY});
     }
 
     std::cerr << "Step 13\n";
@@ -598,7 +611,7 @@ TEST_F(FileCacheTest, get)
         ASSERT_TRUE(!fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
 
-        download(cache.getOrSet(key, 0, 10, {}));
+        download(cache.getOrSet(key, 0, 10, file_size, {}));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
         ASSERT_TRUE(fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
 
@@ -628,7 +641,7 @@ TEST_F(FileCacheTest, get)
         ASSERT_TRUE(!fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
 
-        download(cache.getOrSet(key, 0, 10, {}));
+        download(cache.getOrSet(key, 0, 10, file_size, {}));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
         ASSERT_TRUE(fs::exists(key_path));
 
@@ -682,6 +695,7 @@ TEST_F(FileCacheTest, writeBuffer)
         }
         for (auto & t : threads)
             t.join();
+        out.finalize();
         return holder;
     };
 
@@ -756,7 +770,7 @@ TEST_F(FileCacheTest, temporaryData)
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
 
-    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, CreateFileSegmentSettings{});
+    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{});
 
     {
         ASSERT_EQ(some_data_holder->size(), 5);

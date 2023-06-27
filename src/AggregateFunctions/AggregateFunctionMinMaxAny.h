@@ -10,6 +10,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <base/StringRef.h>
+#include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -1458,11 +1459,11 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         if constexpr (Data::is_compilable)
         {
-            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, arguments[0].value);
         }
         else
         {

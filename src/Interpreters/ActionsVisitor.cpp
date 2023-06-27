@@ -57,6 +57,9 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <Analyzer/QueryNode.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -422,9 +425,8 @@ Block createBlockForSet(
 }
 
 
-SetPtr makeExplicitSet(
-    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
-    ContextPtr context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
+FutureSetPtr makeExplicitSet(
+    const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
 
@@ -443,13 +445,15 @@ SetPtr makeExplicitSet(
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
+    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
+
+    auto set_key = right_arg->getTreeHash();
+    if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
+        return set; /// Already prepared.
+
     for (auto & element_type : set_element_types)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
             element_type = low_cardinality_type->getDictionaryType();
-
-    auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
-    if (auto set = prepared_sets.get(set_key))
-        return set; /// Already prepared.
 
     Block block;
     const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
@@ -458,14 +462,7 @@ SetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    SetPtr set
-        = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
-    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-    set->insertFromBlock(block.getColumnsWithTypeAndName());
-    set->finishInsert();
-
-    prepared_sets.set(set_key, set);
-    return set;
+    return prepared_sets.addFromTuple(set_key, block, context->getSettings());
 }
 
 class ScopeStack::Index
@@ -950,7 +947,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    FutureSet prepared_set;
+    FutureSetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
@@ -959,7 +956,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
             prepared_set = makeSet(node, data, data.no_subqueries);
 
-        if (prepared_set.isValid())
+        if (prepared_set)
         {
             /// Transform tuple or subquery into a set.
         }
@@ -1171,14 +1168,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 num_arguments += columns.size() - 1;
                 arg += columns.size() - 1;
             }
-            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set.isValid())
+            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                const bool is_constant_set = prepared_set.isCreated();
+                const bool is_constant_set = typeid_cast<const FutureSetFromSubquery *>(prepared_set.get()) == nullptr;
                 if (is_constant_set)
                     column.name = data.getUniqueName("__set");
                 else
@@ -1216,11 +1213,22 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());
+                /// Use getUniqueName() to allow multiple use of query parameter in the query:
+                ///
+                ///     CREATE VIEW view AS
+                ///     SELECT *
+                ///     FROM system.one
+                ///     WHERE dummy = {k1:Int}+1 OR dummy = {k1:Int}+2
+                ///                    ^^                    ^^
+                ///
+                /// NOTE: query in the VIEW will not be modified this is needed
+                /// only during analysis for CREATE VIEW to avoid duplicated
+                /// column names.
+                ColumnWithTypeAndName column(data_type, data.getUniqueName("__" + query_parameter->getColumnName()));
                 data.addColumn(column);
 
                 argument_types.push_back(data_type);
-                argument_names.push_back(query_parameter->name);
+                argument_names.push_back(column.name);
             }
             else
             {
@@ -1370,7 +1378,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addColumn(std::move(column));
 }
 
-FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     if (!data.prepared_sets)
         return {};
@@ -1389,13 +1397,34 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
     {
         if (no_subqueries)
             return {};
-        auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
 
+        PreparedSets::Hash set_key;
+        if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
-            auto set = data.prepared_sets->getFuture(set_key);
-            if (set.isValid())
-                return set;
+            /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
+            /// This is a hacky way to allow reusing cache for prepared sets.
+            ///
+            /// Mutation is executed in two stages:
+            /// * first, query 'SELECT count() FROM table WHERE ...' is executed to get the set of affected parts (using analyzer)
+            /// * second, every part is mutated separately, where plan is build "manually", using this code as well
+            /// To share the Set in between first and second stage, we should use the same hash.
+            /// New analyzer is uses a hash from query tree, so here we also build a query tree.
+            ///
+            /// Note : this code can be safely removed, but the test 02581_share_big_sets will be too slow (and fail by timeout).
+            /// Note : we should use new analyzer for mutations and remove this hack.
+            InterpreterSelectQueryAnalyzer interpreter(right_in_operand, data.getContext(), SelectQueryOptions().analyze(true).subquery());
+            const auto & query_tree = interpreter.getQueryTree();
+            if (auto * query_node = query_tree->as<QueryNode>())
+                query_node->setIsSubquery(true);
+            set_key = query_tree->getTreeHash();
         }
+        else
+            set_key = right_in_operand->getTreeHash();
+
+        if (auto set = data.prepared_sets->findSubquery(set_key))
+            return set;
+
+        FutureSetPtr external_table_set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1406,20 +1435,22 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
 
             if (table)
             {
-                StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
-                if (storage_set)
-                {
-                    SetPtr set = storage_set->getSet();
-                    data.prepared_sets->set(set_key, set);
-                    return FutureSet(set);
-                }
+                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                    return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
+            }
+
+            if (!data.getContext()->isGlobalContext())
+            {
+                /// If we are reading from storage, it can be an external table which is used for GLOBAL IN.
+                /// Here, we take FutureSet which is used to build external table.
+                /// It will be used if set is useful for primary key. During PK analysis
+                /// temporary table is not filled yet, so we need to fill it first.
+                if (auto tmp_table = data.getContext()->findExternalTable(identifier->getColumnName()))
+                    external_table_set = tmp_table->future_set;
             }
         }
 
-        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = right_in_operand->getColumnName();
-        bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
-        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
+        std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1429,13 +1460,12 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (!subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            subquery_for_set.createSource(*interpreter);
+            interpreter->buildQueryPlan(*source);
         }
 
-        return subquery_for_set.set;
+        return data.prepared_sets->addFromSubquery(set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
     else
     {
@@ -1443,8 +1473,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
         const auto & index = data.actions_stack.getLastActionsIndex();
         if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return FutureSet(
-                makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets));
+            return makeExplicitSet(&node, last_actions, data.getContext(), *data.prepared_sets);
         else
             return {};
     }
