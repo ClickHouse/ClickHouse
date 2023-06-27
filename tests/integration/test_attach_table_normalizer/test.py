@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    'node', main_configs=["configs/config.xml"], with_zookeeper=True, stay_alive=True
+    "node", main_configs=["configs/config.xml"], with_zookeeper=True, stay_alive=True
 )
 
 
@@ -18,13 +18,13 @@ def started_cluster():
 
 
 def replace_substring_to_substr(node):
-    node.exec_in_container((
+    node.exec_in_container(
         [
             "bash",
             "-c",
             "sed -i 's/substring/substr/g' /var/lib/clickhouse/metadata/default/file.sql",
         ],
-        user="root"
+        user="root",
     )
 
 
