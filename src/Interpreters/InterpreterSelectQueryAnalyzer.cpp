@@ -135,7 +135,10 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
 
-    if (select_query_options.ignore_ast_optimizations)
+    /// We should not apply any query tree level optimizations on shards
+    /// because it can lead to a changed header.
+    if (select_query_options.ignore_ast_optimizations
+        || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
     else
         query_tree_pass_manager.run(query_tree);

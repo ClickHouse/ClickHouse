@@ -16,6 +16,7 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
         {"port", std::make_shared<DataTypeUInt16>()},
         {"index", std::make_shared<DataTypeUInt8>()},
         {"connected_time", std::make_shared<DataTypeDateTime>()},
+        {"session_uptime_elapsed_seconds", std::make_shared<DataTypeUInt64>()},
         {"is_expired", std::make_shared<DataTypeUInt8>()},
         {"keeper_api_version", std::make_shared<DataTypeUInt8>()},
         {"client_id", std::make_shared<DataTypeInt64>()}
@@ -29,10 +30,11 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     res_columns[1]->insert(context->getZooKeeper()->getConnectedZooKeeperHost());
     res_columns[2]->insert(context->getZooKeeper()->getConnectedZooKeeperPort());
     res_columns[3]->insert(context->getZooKeeper()->getConnectedZooKeeperIndex());
-    res_columns[4]->insert(context->getZooKeeperSessionUptime());
-    res_columns[5]->insert(context->getZooKeeper()->expired());
-    res_columns[6]->insert(0);
-    res_columns[7]->insert(context->getZooKeeper()->getClientID());
+    res_columns[4]->insert(context->getZooKeeper()->getConnectedTime());
+    res_columns[5]->insert(context->getZooKeeperSessionUptime());
+    res_columns[6]->insert(context->getZooKeeper()->expired());
+    res_columns[7]->insert(0);
+    res_columns[8]->insert(context->getZooKeeper()->getClientID());
 
     for (const auto & elem : context->getAuxiliaryZooKeepers())
     {
@@ -44,6 +46,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
         res_columns[5]->insert(elem.second->expired());
         res_columns[6]->insert(0);
         res_columns[7]->insert(elem.second->getClientID());
+        res_columns[8]->insert(elem.second->getClientID());
     }
 
 }

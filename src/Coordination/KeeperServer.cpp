@@ -672,7 +672,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
 
-                WriteBuffer write_buf(buffer_start, write_buffer_header_size);
+                WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
                 if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
@@ -681,6 +681,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 writeIntBinary(request_for_session->digest->version, write_buf);
                 if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
+
+                write_buf.finalize();
 
                 return nuraft::cb_func::ReturnCode::Ok;
             }
