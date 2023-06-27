@@ -17,7 +17,7 @@ namespace DB
 class BackupReaderS3 : public BackupReaderDefault
 {
 public:
-    BackupReaderS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy_, const ContextPtr & context_);
+    BackupReaderS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy, const ContextPtr & context_);
     ~BackupReaderS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -32,14 +32,13 @@ private:
     const std::shared_ptr<S3::Client> client;
     S3Settings::RequestSettings request_settings;
     const DataSourceDescription data_source_description;
-    const bool native_copy;
 };
 
 
 class BackupWriterS3 : public BackupWriterDefault
 {
 public:
-    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy_, const ContextPtr & context_);
+    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy, const ContextPtr & context_);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -62,7 +61,6 @@ private:
     S3Settings::RequestSettings request_settings;
     std::optional<bool> supports_batch_delete;
     const DataSourceDescription data_source_description;
-    const bool native_copy;
 };
 
 }

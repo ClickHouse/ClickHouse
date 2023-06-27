@@ -809,7 +809,7 @@ void copyDataToS3File(
 }
 
 
-void copyS3File(
+void copyS3FileNative(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -824,6 +824,26 @@ void copyS3File(
 {
     CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
     helper.performCopy();
+}
+
+void copyS3File(
+    const CreateReadBuffer & create_read_buffer,
+    const std::shared_ptr<const S3::Client> & s3_client,
+    const String & src_bucket,
+    const String & src_key,
+    size_t src_offset,
+    size_t src_size,
+    const String & dest_bucket,
+    const String & dest_key,
+    const S3Settings::RequestSettings & settings,
+    const std::optional<std::map<String, String>> & object_metadata,
+    ThreadPoolCallbackRunner<void> schedule,
+    bool for_disk_s3)
+{
+    if (settings.allow_native_copy)
+        copyS3FileNative(s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
+    else
+        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
 }
 
 }
