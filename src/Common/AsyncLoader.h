@@ -394,6 +394,8 @@ private:
 };
 
 
+size_t currentPoolOr(size_t pool);
+
 inline void scheduleLoad(const LoadTaskPtr & task)
 {
     task->schedule();

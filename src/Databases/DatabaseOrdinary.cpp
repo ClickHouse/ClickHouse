@@ -246,7 +246,7 @@ StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr local_c
 
     // Prioritize jobs (load and startup the table) to be executed in foreground pool and wait for them synchronously
     if (startup_task)
-        waitLoad(AsyncLoaderPoolId::Foreground, *startup_task);
+        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), *startup_task);
 
     return DatabaseOnDisk::tryGetTable(name, local_context);
 }

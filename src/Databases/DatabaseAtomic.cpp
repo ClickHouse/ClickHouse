@@ -114,7 +114,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     // To DROP tables we need the database to be started up (including all the tables)
-    waitLoad(AsyncLoaderPoolId::Foreground, getStartupTask());
+    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), getStartupTask());
 
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock

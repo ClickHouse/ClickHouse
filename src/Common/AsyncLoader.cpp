@@ -82,6 +82,11 @@ void LoadJob::waitNoThrow() const
 thread_local AsyncLoader * current_async_loader = nullptr;
 thread_local LoadJob * current_load_job = nullptr;
 
+size_t currentPoolOr(size_t pool)
+{
+    return current_load_job ? current_load_job->executionPool() : pool;
+}
+
 bool DetectWaitDependentDeadlockImpl(const LoadJob & waited)
 {
     if (&waited == current_load_job)
