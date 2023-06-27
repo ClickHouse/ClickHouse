@@ -945,6 +945,7 @@ public:
             {
                 auto c = DecimalUtils::split(vec[i], scale);
 
+                // -1.123 splits to -1 /  0.123
                 if (vec[i].value < 0 && c.fractional)
                 {
                     using F = typename DataType::FieldType;
