@@ -271,6 +271,9 @@ Pipes buildPipesForReadingByPKRanges(
     for (size_t i = 0; i < result_layers.size(); ++i)
     {
         pipes[i] = reading_step_getter(std::move(result_layers[i]));
+        auto pk_expression = std::make_shared<ExpressionActions>(primary_key.expression->getActionsDAG().clone());
+        pipes[i].addSimpleTransform([pk_expression](const Block & header)
+                                    { return std::make_shared<ExpressionTransform>(header, pk_expression); });
         auto & filter_function = filters[i];
         if (!filter_function)
             continue;
@@ -279,9 +282,6 @@ Pipes buildPipesForReadingByPKRanges(
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in [{}, {})", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
-        auto pk_expression = std::make_shared<ExpressionActions>(primary_key.expression->getActionsDAG().clone());
-        pipes[i].addSimpleTransform([pk_expression](const Block & header)
-                                    { return std::make_shared<ExpressionTransform>(header, pk_expression); });
         pipes[i].addSimpleTransform(
             [&](const Block & header)
             {
