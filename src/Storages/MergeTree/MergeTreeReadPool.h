@@ -193,11 +193,11 @@ public:
             predict_block_size_bytes, column_names, virtual_column_names, prewhere_info,
             actions_settings, reader_settings, per_part_params);
 
-        extension.all_callback(InitialAllRangesAnnouncement{
+        extension.all_callback(InitialAllRangesAnnouncement(
             CoordinationMode::Default,
             parts_ranges.getDescriptions(),
             extension.number_of_current_replica
-        });
+        ));
     }
 
     ~MergeTreeReadPoolParallelReplicas() override;
@@ -254,11 +254,11 @@ public:
         for (const auto & part : parts_ranges)
             buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
 
-        extension.all_callback(InitialAllRangesAnnouncement{
+        extension.all_callback(InitialAllRangesAnnouncement(
             mode,
             parts_ranges.getDescriptions(),
             extension.number_of_current_replica
-        });
+        ));
     }
 
     MarkRanges getNewTask(RangesInDataPartDescription description);
