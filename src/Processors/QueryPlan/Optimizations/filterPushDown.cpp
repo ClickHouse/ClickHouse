@@ -268,6 +268,19 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 2;
     }
 
+    if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(child.get()))
+    {
+        /// CreatingSets does not change header.
+        /// We can push down filter and update header.
+        /// Filter - DelayedCreatingSets - Something
+        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputStream(), delayed->detachSets(), delayed->getContext());
+        std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
+        /// DelayedCreatingSets - Filter - Something
+        return 2;
+    }
+
     if (auto * totals_having = typeid_cast<TotalsHavingStep *>(child.get()))
     {
         /// If totals step has HAVING expression, skip it for now.
