@@ -317,7 +317,7 @@ namespace DB
             writeChar('0' + d     , buf);
         }
 
-        return ReturnType();
+        return ReturnType(true);
     }
 
     template <typename YearT>
