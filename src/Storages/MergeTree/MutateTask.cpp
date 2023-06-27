@@ -153,20 +153,22 @@ static void splitAndModifyMutationCommands(
                     /// But we don't know for sure what happened.
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
-                    /// StorageMergeTree does not have metadata version
-                    if (table_metadata_version <= part_metadata_version && part->storage.supportsReplication())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                        "in table {} with metadata version {}",
-                                        part->name, part_metadata_version, column.name,
-                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
 
-                    if (part_metadata_version < table_metadata_version)
+                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
+                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
                                     part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                         continue;
                     }
+
+                    /// StorageMergeTree does not have metadata version
+                    if (part->storage.supportsReplication())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
+                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                 }
 
                 for_interpreter.emplace_back(
