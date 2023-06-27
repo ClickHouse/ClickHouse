@@ -30,12 +30,12 @@ std::string determineDefaultTimeZone()
 {
     namespace fs = std::filesystem;
 
-    const char * tzdir_env_var = std::getenv("TZDIR"); // NOLINT(concurrency-mt-unsafe) // ok, because it does not run concurrently with other getenv calls
+    const char * tzdir_env_var = std::getenv("TZDIR");
     fs::path tz_database_path = tzdir_env_var ? tzdir_env_var : "/usr/share/zoneinfo/";
 
     fs::path tz_file_path;
     std::string error_prefix;
-    const char * tz_env_var = std::getenv("TZ"); // NOLINT(concurrency-mt-unsafe) // ok, because it does not run concurrently with other getenv calls
+    const char * tz_env_var = std::getenv("TZ");
 
     /// In recent tzdata packages some files now are symlinks and canonical path resolution
     /// may give wrong timezone names - store the name as it is, if possible.
@@ -149,7 +149,7 @@ DateLUT::DateLUT()
 
 const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
 
     auto it = impls.emplace(time_zone, nullptr).first;
     if (!it->second)

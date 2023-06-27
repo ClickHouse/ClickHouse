@@ -1,7 +1,0 @@
-<clickhouse>
-  <named_collections>
-    <collection1>
-      <key1>value1</key1>
-    </collection1>
-  </named_collections>
-</clickhouse>

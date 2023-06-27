@@ -4,20 +4,14 @@
             <hdfs1>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse1/</endpoint>
-                <!-- FIXME: chicken and egg problem with current cluster.py -->
-                <skip_access_check>true</skip_access_check>
             </hdfs1>
             <hdfs1_again>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse1/</endpoint>
-                <!-- FIXME: chicken and egg problem with current cluster.py -->
-                <skip_access_check>true</skip_access_check>
             </hdfs1_again>
             <hdfs2>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse2/</endpoint>
-                <!-- FIXME: chicken and egg problem with current cluster.py -->
-                <skip_access_check>true</skip_access_check>
             </hdfs2>
         </disks>
         <policies>
@@ -89,5 +83,4 @@
         <cluster>test_cluster</cluster>
         <shard>1</shard>
     </macros>
-    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

@@ -65,53 +65,12 @@ INSERT INTO distinct_cardinality_low SELECT number % 1e1, number % 1e2, number %
 drop table if exists distinct_in_order sync;
 drop table if exists ordinary_distinct sync;
 
-select '-- check that distinct in order WITH order by returns the same result as ordinary distinct';
 create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
 insert into distinct_in_order select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=1;
 create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
 insert into ordinary_distinct select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=0;
-select count() as diff from (select distinct * from distinct_in_order except select * from ordinary_distinct);
-
-drop table if exists distinct_in_order sync;
-drop table if exists ordinary_distinct sync;
-
-select '-- check that distinct in order WITHOUT order by returns the same result as ordinary distinct';
-create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into distinct_in_order select distinct * from distinct_cardinality_low settings optimize_distinct_in_order=1;
-create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into ordinary_distinct select distinct * from distinct_cardinality_low settings optimize_distinct_in_order=0;
-select count() as diff from (select distinct * from distinct_in_order except select * from ordinary_distinct);
-
-drop table if exists distinct_in_order;
-drop table if exists ordinary_distinct;
-
-select '-- check that distinct in order WITHOUT order by and WITH filter returns the same result as ordinary distinct';
-create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into distinct_in_order select distinct * from distinct_cardinality_low where low > 0 settings optimize_distinct_in_order=1;
-create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into ordinary_distinct select distinct * from distinct_cardinality_low where low > 0 settings optimize_distinct_in_order=0;
-select count() as diff from (select distinct * from distinct_in_order except select * from ordinary_distinct);
+select distinct * from distinct_in_order except select * from ordinary_distinct;
 
 drop table if exists distinct_in_order;
 drop table if exists ordinary_distinct;
 drop table if exists distinct_cardinality_low;
-
--- bug 42185
-drop table if exists sorting_key_empty_tuple;
-drop table if exists sorting_key_contain_function;
-
-select '-- bug 42185, distinct in order and empty sort description';
-select '-- distinct in order, sorting key tuple()';
-create table sorting_key_empty_tuple (a int, b int) engine=MergeTree() order by tuple();
-insert into sorting_key_empty_tuple select number % 2, number % 5 from numbers(1,10);
-select distinct a from sorting_key_empty_tuple;
-
-select '-- distinct in order, sorting key contains function';
-create table sorting_key_contain_function (datetime DateTime, a int) engine=MergeTree() order by (toDate(datetime));
-insert into sorting_key_contain_function values ('2000-01-01', 1);
-insert into sorting_key_contain_function values ('2000-01-01', 2);
-select distinct datetime from sorting_key_contain_function;
-select distinct toDate(datetime) from sorting_key_contain_function;
-
-drop table sorting_key_empty_tuple;
-drop table sorting_key_contain_function;

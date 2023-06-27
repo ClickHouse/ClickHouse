@@ -13,7 +13,9 @@ REGISTER_FUNCTION(ToMonth)
 {
     factory.registerFunction<FunctionToMonth>();
     /// MysQL compatibility alias.
-    factory.registerAlias("MONTH", "toMonth", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToMonth>("MONTH", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

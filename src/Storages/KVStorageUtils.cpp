@@ -81,10 +81,6 @@ bool traverseASTFilter(
 
             set->checkColumnsNumber(1);
             const auto & set_column = *set->getSetElements()[0];
-
-            if (set_column.getDataType() != primary_key_type->getTypeId())
-                return false;
-
             for (size_t row = 0; row < set_column.size(); ++row)
                 res->push_back(set_column[row]);
             return true;
@@ -144,7 +140,7 @@ std::vector<std::string> serializeKeysToRawString(
     {
         std::string & serialized_key = result.emplace_back();
         WriteBufferFromString wb(serialized_key);
-        key_column_type->getDefaultSerialization()->serializeBinary(*it, wb, {});
+        key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
         wb.finalize();
 
         ++it;
@@ -169,13 +165,13 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
         Field field;
         keys.column->get(i, field);
         /// TODO(@vdimir): use serializeBinaryBulk
-        keys.type->getDefaultSerialization()->serializeBinary(field, wb, {});
+        keys.type->getDefaultSerialization()->serializeBinary(field, wb);
         wb.finalize();
     }
     return result;
 }
 
-/// In current implementation rocks db/redis can have key with only one column.
+/// In current implementation rocks db can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
 {
     if (primary_key.size() != 1)

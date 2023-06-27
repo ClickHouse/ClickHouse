@@ -40,7 +40,7 @@ def copy_keys(instance, keys_file_name):
 
 
 def create_table():
-    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
     node1.query(
         """
         CREATE TABLE tbl ON CLUSTER 'cluster' (
@@ -64,7 +64,6 @@ def optimize_table():
 
 def check_table():
     expected = [[1, "str1"], [2, "str2"]]
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     assert node1.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
     assert node2.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
     assert node1.query("CHECK TABLE tbl") == "1\n"

@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/parts
----
 # system.parts {#system_tables-parts}
 
 此系统表包含 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表分区的相关信息。
@@ -75,7 +72,7 @@ slug: /zh/operations/system-tables/parts
 
 -   `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – 为主键值保留的内存量（以字节为单位）。
 
--   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – 显示分区数据备份存在的标志。1，备份存在。0，备份不存在。更多细节，见 [FREEZE PARTITION](../../sql-reference/statements/alter/partition.mdx#alter_freeze-partition)。
+-   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – 显示分区数据备份存在的标志。1，备份存在。0，备份不存在。更多细节，见 [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)。
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) – 数据库的名称。
 
@@ -99,9 +96,8 @@ slug: /zh/operations/system-tables/parts
 
 -   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — 表达式的数组。 每个表达式定义一个 [TTL MOVE 规则](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-:::warning
-保留 `move_ttl_info.expression` 数组主要是为了向后兼容，现在检查 `TTL MOVE` 规则最简单的方法是使用 `move_ttl_info.min` 和 `move_ttl_info.max` 字段。
-:::
+    !!! note "警告"
+        保留 `move_ttl_info.expression` 数组主要是为了向后兼容，现在检查 `TTL MOVE` 规则最简单的方法是使用 `move_ttl_info.min` 和 `move_ttl_info.max` 字段。
 
 -   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — 日期值和时间值的数组。数组中的每个元素都描述了一个 [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) 的最小键值。
 
@@ -167,3 +163,5 @@ move_ttl_info.max:                     []
 
 -   [MergeTree(合并树)家族](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [列和表的 TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/parts) <!--hide-->

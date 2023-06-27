@@ -4,7 +4,8 @@ CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTr
 
 INSERT INTO merge_table_standard_delete select number, toString(number) from numbers(100);
 
-SET mutations_sync = 0;
+SET mutations_sync = 1;
+SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
 
@@ -50,9 +51,9 @@ DETACH TABLE t_light;
 ATTACH TABLE t_light;
 CHECK TABLE t_light;
 
-alter table t_light MATERIALIZE INDEX i_c SETTINGS mutations_sync=2;
-alter table t_light update b=-1 where a<3 SETTINGS mutations_sync=2;
-alter table t_light drop index i_c SETTINGS mutations_sync=2;
+alter table t_light MATERIALIZE INDEX i_c;
+alter table t_light update b=-1 where a<3;
+alter table t_light drop index i_c;
 
 DETACH TABLE t_light;
 ATTACH TABLE t_light;
@@ -66,7 +67,7 @@ select * from t_light order by a;
 
 select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' order by name;
 
-optimize table t_light final SETTINGS mutations_sync=2;
+optimize table t_light final;
 select count(*) from t_light;
 
 select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' and rows > 0 order by name;
@@ -74,7 +75,7 @@ select table, partition, name, rows from system.parts where database = currentDa
 drop table t_light;
 
 SELECT '-----Test lightweight delete in multi blocks-----';
-CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0, index_granularity=8192, index_granularity_bytes='10Mi';
+CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
 INSERT INTO t_large SELECT number + 1, number + 1  FROM numbers(100000);
 
 DELETE FROM t_large WHERE a = 50000;
@@ -83,8 +84,8 @@ DETACH TABLE t_large;
 ATTACH TABLE t_large;
 CHECK TABLE t_large;
 
-ALTER TABLE t_large UPDATE b = -2 WHERE a between 1000 and 1005 SETTINGS mutations_sync=2;
-ALTER TABLE t_large DELETE WHERE a=1 SETTINGS mutations_sync=2;
+ALTER TABLE t_large UPDATE b = -2 WHERE a between 1000 and 1005;
+ALTER TABLE t_large DELETE WHERE a=1;
 
 DETACH TABLE t_large;
 ATTACH TABLE t_large;
@@ -98,19 +99,12 @@ SELECT '----Test lighweight delete is disabled if table has projections-----';
 
 CREATE TABLE t_proj(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
 
-ALTER TABLE t_proj ADD PROJECTION p_1 (SELECT avg(a), avg(b), count()) SETTINGS mutations_sync=2;
+ALTER TABLE t_proj ADD PROJECTION p_1 (SELECT avg(a), avg(b), count());
 
 INSERT INTO t_proj SELECT number + 1, number + 1  FROM numbers(1000);
 
-DELETE FROM t_proj WHERE a < 100; -- { serverError BAD_ARGUMENTS }
+DELETE FROM t_proj WHERE a < 100; -- { serverError NOT_IMPLEMENTED }
 
 SELECT avg(a), avg(b), count() FROM t_proj;
 
 DROP TABLE t_proj;
-
-CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTree order by id settings min_bytes_for_wide_part=0;
-SET allow_experimental_lightweight_delete = false;
-DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
-SET enable_lightweight_delete = false;
-DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
-DROP TABLE merge_table_standard_delete;

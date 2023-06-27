@@ -23,7 +23,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     /// Why we may have virtual columns in the storage from a single block?
     /// Because it used as tmp storage for pushing blocks into views, and some
@@ -35,8 +35,6 @@ public:
 
     /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
     bool supportsTransactions() const override { return true; }
-
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
 private:
     Block res_block;

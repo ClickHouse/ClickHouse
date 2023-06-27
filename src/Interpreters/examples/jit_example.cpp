@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 

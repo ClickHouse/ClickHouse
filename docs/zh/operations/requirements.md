@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/requirements
 sidebar_position: 44
 sidebar_label: "必备条件"
 ---

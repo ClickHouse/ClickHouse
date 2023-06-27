@@ -20,16 +20,16 @@ date32	Nullable(Date32)
 0	1970-01-01
 1	1970-01-02
 str	Nullable(String)					
-fixed_string	Nullable(FixedString(3))					
+fixed_string	Nullable(String)					
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
-tuple	Tuple(`1` Nullable(UInt64), `2` Nullable(String))					
+tuple	Tuple(Nullable(UInt64), Nullable(String))					
 map	Map(String, Nullable(UInt64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(UInt64)), `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(UInt64))), `2` Map(UInt64, Array(Tuple(`1` Nullable(UInt64), `2` Nullable(String))))), `2` Nullable(UInt8))					
+nested1	Array(Tuple(Array(Nullable(UInt64)), Map(String, Nullable(UInt64))))					
+nested2	Tuple(Tuple(Array(Array(Nullable(UInt64))), Map(UInt64, Array(Tuple(Nullable(UInt64), Nullable(String))))), Nullable(UInt8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 ArrowStream
@@ -54,16 +54,16 @@ date32	Nullable(Date32)
 0	1970-01-01
 1	1970-01-02
 str	Nullable(String)					
-fixed_string	Nullable(FixedString(3))					
+fixed_string	Nullable(String)					
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
-tuple	Tuple(`1` Nullable(UInt64), `2` Nullable(String))					
+tuple	Tuple(Nullable(UInt64), Nullable(String))					
 map	Map(String, Nullable(UInt64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(UInt64)), `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(UInt64))), `2` Map(UInt64, Array(Tuple(`1` Nullable(UInt64), `2` Nullable(String))))), `2` Nullable(UInt8))					
+nested1	Array(Tuple(Array(Nullable(UInt64)), Map(String, Nullable(UInt64))))					
+nested2	Tuple(Tuple(Array(Array(Nullable(UInt64))), Map(UInt64, Array(Tuple(Nullable(UInt64), Nullable(String))))), Nullable(UInt8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 Parquet
@@ -72,7 +72,7 @@ uint8	Nullable(UInt8)
 int16	Nullable(Int16)					
 uint16	Nullable(UInt16)					
 int32	Nullable(Int32)					
-uint32	Nullable(UInt32)					
+uint32	Nullable(Int64)					
 int64	Nullable(Int64)					
 uint64	Nullable(UInt64)					
 0	0	0	0	0	0	0	0
@@ -88,16 +88,16 @@ date32	Nullable(Date32)
 0	1970-01-01
 1	1970-01-02
 str	Nullable(String)					
-fixed_string	Nullable(FixedString(3))					
+fixed_string	Nullable(String)					
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
-tuple	Tuple(`1` Nullable(UInt64), `2` Nullable(String))					
+tuple	Tuple(Nullable(UInt64), Nullable(String))					
 map	Map(String, Nullable(UInt64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(UInt64)), `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(UInt64))), `2` Map(UInt64, Array(Tuple(`1` Nullable(UInt64), `2` Nullable(String))))), `2` Nullable(UInt8))					
+nested1	Array(Tuple(Array(Nullable(UInt64)), Map(String, Nullable(UInt64))))					
+nested2	Tuple(Tuple(Array(Array(Nullable(UInt64))), Map(UInt64, Array(Tuple(Nullable(UInt64), Nullable(String))))), Nullable(UInt8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 ORC
@@ -126,12 +126,12 @@ fixed_string	Nullable(String)
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(Int64))					
-tuple	Tuple(`1` Nullable(Int64), `2` Nullable(String))					
+tuple	Tuple(Nullable(Int64), Nullable(String))					
 map	Map(String, Nullable(Int64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(`1` Array(Nullable(Int64)), `2` Map(String, Nullable(Int64))))					
-nested2	Tuple(`1` Tuple(`1` Array(Array(Nullable(Int64))), `2` Map(Int64, Array(Tuple(`1` Nullable(Int64), `2` Nullable(String))))), `2` Nullable(Int8))					
+nested1	Array(Tuple(Array(Nullable(Int64)), Map(String, Nullable(Int64))))					
+nested2	Tuple(Tuple(Array(Array(Nullable(Int64))), Map(Int64, Array(Tuple(Nullable(Int64), Nullable(String))))), Nullable(Int8))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 Native
@@ -422,9 +422,9 @@ float32	Float32
 float64	Float64					
 0	0
 1.2	0.7692307692307692
-date	Date32					
-1970-01-01
-1970-01-02
+date	Int32					
+0
+1
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100

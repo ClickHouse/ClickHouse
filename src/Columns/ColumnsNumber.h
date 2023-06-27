@@ -27,7 +27,5 @@ using ColumnFloat32 = ColumnVector<Float32>;
 using ColumnFloat64 = ColumnVector<Float64>;
 
 using ColumnUUID = ColumnVector<UUID>;
-using ColumnIPv4 = ColumnVector<IPv4>;
-using ColumnIPv6 = ColumnVector<IPv6>;
 
 }

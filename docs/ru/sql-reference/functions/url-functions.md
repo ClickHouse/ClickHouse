@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/url-functions
 sidebar_position: 54
 sidebar_label: "Функции для работы с URL"
 ---
@@ -404,39 +403,5 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 ### cutURLParameter(URL, name) {#cuturlparameterurl-name}
 
-Удаляет параметр с именем `name` из URL, если такой есть. Функция не кодирует или декодирует символы в именах параметров. Например `Client ID` и `Client%20ID` обрабатываются как разные имена параметров.
+Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
 
-**Синтаксис**
-
-``` sql
-cutURLParameter(URL, name)
-```
-
-**Аргументы**
-
--   `url` — URL. [String](../../sql-reference/data-types/string.md).
--   `name` — имя параметра URL. [String](../../sql-reference/data-types/string.md) или [Array](../../sql-reference/data-types/array.md) состоящий из строк.
-
-**Возвращаемое значение**
-
--   URL с удалённым параметром URL с именем `name`.
-
-Type: `String`.
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
-```
-
-Результат:
-
-``` text
-┌─url_without_a────────────────┬─url_without_c_and_e──────┐
-│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
-└──────────────────────────────┴──────────────────────────┘
-```

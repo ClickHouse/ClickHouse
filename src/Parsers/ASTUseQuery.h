@@ -21,8 +21,6 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTUseQuery>(*this); }
 
-    QueryKind getQueryKind() const override { return QueryKind::Use; }
-
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {

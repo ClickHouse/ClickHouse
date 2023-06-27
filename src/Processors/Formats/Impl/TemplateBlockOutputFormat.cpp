@@ -88,7 +88,7 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
     else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
     else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
+        throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
@@ -133,7 +133,14 @@ void TemplateBlockOutputFormat::writePrefix()
 
 void TemplateBlockOutputFormat::finalizeImpl()
 {
+    if (finalized)
+        return;
+
     size_t parts = format.format_idx_to_column_idx.size();
+    auto outside_statistics = getOutsideStatistics();
+    if (outside_statistics)
+        statistics = std::move(*outside_statistics);
+
     for (size_t i = 0; i < parts; ++i)
     {
         auto type = std::make_shared<DataTypeUInt64>();
@@ -177,19 +184,17 @@ void TemplateBlockOutputFormat::finalizeImpl()
         }
         writeString(format.delimiters[i + 1], out);
     }
+
+    finalized = true;
 }
 
-void TemplateBlockOutputFormat::resetFormatterImpl()
-{
-    row_count = 0;
-    statistics = Statistics();
-}
 
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams &,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;

@@ -1,7 +1,7 @@
 #include "ODBCHandlerFactory.h"
 #include "PingHandler.h"
 #include "ColumnInfoHandler.h"
-#include "config.h"
+#include <Common/config.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Common/logger_useful.h>

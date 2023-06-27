@@ -6,9 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -97,14 +94,6 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
             continue;
 
         std::string full_prefix = config_prefix + ".raft_configuration." + server_key;
-
-        if (getMultipleValuesFromConfig(config, full_prefix, "id").size() > 1
-            || getMultipleValuesFromConfig(config, full_prefix, "hostname").size() > 1
-            || getMultipleValuesFromConfig(config, full_prefix, "port").size() > 1)
-        {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Multiple <id> or <hostname> or <port> specified for a single <server>");
-        }
-
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
@@ -216,7 +205,7 @@ KeeperStateManager::KeeperStateManager(
     int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
     : my_server_id(server_id_)
     , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, LogFileSettings{.force_sync =false, .compress_logs = false, .rotate_interval = 5000}))
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
     , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
@@ -240,14 +229,9 @@ KeeperStateManager::KeeperStateManager(
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           log_storage_path,
-          LogFileSettings
-          {
-            .force_sync = coordination_settings->force_sync,
-            .compress_logs = coordination_settings->compress_logs,
-            .rotate_interval = coordination_settings->rotate_log_storage_interval,
-            .max_size = coordination_settings->max_log_file_size,
-            .overallocate_size = coordination_settings->log_file_overallocate_size
-          }))
+          coordination_settings->rotate_log_storage_interval,
+          coordination_settings->force_sync,
+          coordination_settings->compress_logs))
     , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
@@ -364,12 +348,16 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
             if (read_checksum != hash.get64())
             {
-                constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
+                const auto error_string = fmt::format(
+                    "Invalid checksum while reading state from {}. Got {}, expected {}",
+                    path.generic_string(),
+                    hash.get64(),
+                    read_checksum);
 #ifdef NDEBUG
-                LOG_ERROR(logger, error_format, path.generic_string(), hash.get64(), read_checksum);
+                LOG_ERROR(logger, fmt::runtime(error_string));
                 return nullptr;
 #else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, path.generic_string(), hash.get64(), read_checksum);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_string);
 #endif
             }
 

@@ -27,7 +27,7 @@ enum SnapshotVersion : uint8_t
 
 static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V5;
 
-/// What is stored in binary snapshot
+/// What is stored in binary shapsnot
 struct SnapshotDeserializationResult
 {
     /// Storage
@@ -87,7 +87,7 @@ public:
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<std::string(KeeperStorageSnapshotPtr &&)>;
+using CreateSnapshotCallback = std::function<void(KeeperStorageSnapshotPtr &&)>;
 
 
 using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;

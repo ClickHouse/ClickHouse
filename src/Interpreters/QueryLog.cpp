@@ -1,5 +1,4 @@
-#include <Interpreters/QueryLog.h>
-
+#include <array>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -14,17 +13,14 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/QueryLog.h>
+#include <Poco/Net/IPAddress.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-
-#include <Poco/Net/IPAddress.h>
-
-#include <array>
 
 
 namespace DB
@@ -40,9 +36,6 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
             {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
-
-    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    auto array_low_cardinality_string = std::make_shared<DataTypeArray>(low_cardinality_string);
 
     return
     {
@@ -62,27 +55,31 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"result_bytes", std::make_shared<DataTypeUInt64>()},
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
 
-        {"current_database", low_cardinality_string},
+        {"current_database", std::make_shared<DataTypeString>()},
         {"query", std::make_shared<DataTypeString>()},
         {"formatted_query", std::make_shared<DataTypeString>()},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>()},
-        {"query_kind", low_cardinality_string},
-        {"databases", array_low_cardinality_string},
-        {"tables", array_low_cardinality_string},
-        {"columns", array_low_cardinality_string},
-        {"partitions", array_low_cardinality_string},
-        {"projections", array_low_cardinality_string},
-        {"views", array_low_cardinality_string},
+        {"query_kind", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"databases", std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"tables", std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"columns", std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"projections", std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"views", std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()},
         {"stack_trace", std::make_shared<DataTypeString>()},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>()},
-        {"user", low_cardinality_string},
+        {"user", std::make_shared<DataTypeString>()},
         {"query_id", std::make_shared<DataTypeString>()},
         {"address", DataTypeFactory::instance().get("IPv6")},
         {"port", std::make_shared<DataTypeUInt16>()},
-        {"initial_user", low_cardinality_string},
+        {"initial_user", std::make_shared<DataTypeString>()},
         {"initial_query_id", std::make_shared<DataTypeString>()},
         {"initial_address", DataTypeFactory::instance().get("IPv6")},
         {"initial_port", std::make_shared<DataTypeUInt16>()},
@@ -90,15 +87,15 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
         {"interface", std::make_shared<DataTypeUInt8>()},
         {"is_secure", std::make_shared<DataTypeUInt8>()},
-        {"os_user", low_cardinality_string},
-        {"client_hostname", low_cardinality_string},
-        {"client_name", low_cardinality_string},
+        {"os_user", std::make_shared<DataTypeString>()},
+        {"client_hostname", std::make_shared<DataTypeString>()},
+        {"client_name", std::make_shared<DataTypeString>()},
         {"client_revision", std::make_shared<DataTypeUInt32>()},
         {"client_version_major", std::make_shared<DataTypeUInt32>()},
         {"client_version_minor", std::make_shared<DataTypeUInt32>()},
         {"client_version_patch", std::make_shared<DataTypeUInt32>()},
         {"http_method", std::make_shared<DataTypeUInt8>()},
-        {"http_user_agent", low_cardinality_string},
+        {"http_user_agent", std::make_shared<DataTypeString>()},
         {"http_referer", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
@@ -109,38 +106,32 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"log_comment", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
-        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string)},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
 
-        {"used_aggregate_functions", array_low_cardinality_string},
-        {"used_aggregate_function_combinators", array_low_cardinality_string},
-        {"used_database_engines", array_low_cardinality_string},
-        {"used_data_type_families", array_low_cardinality_string},
-        {"used_dictionaries", array_low_cardinality_string},
-        {"used_formats", array_low_cardinality_string},
-        {"used_functions", array_low_cardinality_string},
-        {"used_storages", array_low_cardinality_string},
-        {"used_table_functions", array_low_cardinality_string},
-
-        {"used_row_policies", array_low_cardinality_string},
+        {"used_aggregate_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_aggregate_function_combinators", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_database_engines", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_data_type_families", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_dictionaries", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_formats", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
         {"transaction_id", getTransactionIDDataType()},
-
-        {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
     };
+
 }
 
 NamesAndAliases QueryLogElement::getNamesAndAliases()
 {
-    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    auto array_low_cardinality_string = std::make_shared<DataTypeArray>(low_cardinality_string);
-
     return
     {
-        {"ProfileEvents.Names", array_low_cardinality_string, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
         {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"},
-        {"Settings.Names", array_low_cardinality_string, "mapKeys(Settings)" },
-        {"Settings.Values", array_low_cardinality_string, "mapValues(Settings)"}
+        {"Settings.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(Settings)" },
+        {"Settings.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapValues(Settings)"}
     };
 }
 
@@ -169,15 +160,12 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(query.data(), query.size());
     columns[i++]->insertData(formatted_query.data(), formatted_query.size());
     columns[i++]->insert(normalized_query_hash);
-
-    const std::string_view query_kind_str = magic_enum::enum_name(query_kind);
-    columns[i++]->insertData(query_kind_str.data(), query_kind_str.size());
+    columns[i++]->insertData(query_kind.data(), query_kind.size());
 
     {
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
 
@@ -196,7 +184,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_databases, column_databases);
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
-        fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);
     }
@@ -249,14 +236,13 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
 
-        auto fill_column = [](const auto & data, ColumnArray & column)
+        auto fill_column = [](const std::unordered_set<String> & data, ColumnArray & column)
         {
             size_t size = 0;
-            for (const auto & value : data)
+            for (const auto & name : data)
             {
-                column.getData().insert(value);
+                column.getData().insertData(name.data(), name.size());
                 ++size;
             }
             auto & offsets = column.getOffsets();
@@ -272,15 +258,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
-        fill_column(used_row_policies, column_row_policies_names);
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
-
-    if (async_read_counters)
-        async_read_counters->dumpToMapColumn(columns[i++].get());
-    else
-        columns[i++]->insertDefault();
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

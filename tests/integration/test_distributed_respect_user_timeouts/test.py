@@ -37,7 +37,7 @@ SELECTS_SQL = {
 
 EXCEPTION_NETWORK = "DB::NetException: "
 EXCEPTION_TIMEOUT = "Timeout exceeded while reading from socket ("
-EXCEPTION_CONNECT_TIMEOUT = "Timeout exceeded while connecting to socket ("
+EXCEPTION_CONNECT = "Timeout: connect timed out: "
 
 TIMEOUT_MEASUREMENT_EPS = 0.01
 
@@ -79,7 +79,7 @@ def _check_exception(exception, expected_tries=3):
     for i, line in enumerate(lines[3 : 3 + expected_tries]):
         expected_lines = (
             "Code: 209. " + EXCEPTION_NETWORK + EXCEPTION_TIMEOUT,
-            EXCEPTION_CONNECT_TIMEOUT,
+            "Code: 209. " + EXCEPTION_NETWORK + EXCEPTION_CONNECT,
             EXCEPTION_TIMEOUT,
         )
 

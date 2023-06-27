@@ -1,10 +1,9 @@
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
+#include <Columns/ColumnsNumber.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 
 
@@ -45,36 +44,11 @@ void SerializationUUID::serializeTextQuoted(const IColumn & column, size_t row_n
 
 void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    UUID uuid;
-    bool fast = false;
-    if (istr.available() >= 38)
-    {
-        assertChar('\'', istr);
-        char * next_pos = find_first_symbols<'\\', '\''>(istr.position(), istr.buffer().end());
-        const size_t len = next_pos - istr.position();
-        if ((len == 32 || len == 36) && istr.position()[len] == '\'')
-        {
-            uuid = parseUUID(std::span(reinterpret_cast<const UInt8 *>(istr.position()), len));
-            istr.ignore(len + 1);
-            fast = true;
-        }
-        else
-        {
-            // It's ok to go back in the position because we haven't read from the buffer except the first char
-            // and we know there were at least 38 bytes available (so no new read has been triggered)
-            istr.position()--;
-        }
-    }
-
-    if (!fast)
-    {
-        String quoted_chars;
-        readQuotedStringInto<false>(quoted_chars, istr);
-        ReadBufferFromString parsed_quoted_buffer(quoted_chars);
-        readText(uuid, parsed_quoted_buffer);
-    }
-
-    assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid)); /// It's important to do this at the end - for exception safety.
+    UUID x;
+    assertChar('\'', istr);
+    readText(x, istr);
+    assertChar('\'', istr);
+    assert_cast<ColumnUUID &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void SerializationUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -108,25 +82,25 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 }
 
 
-void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    UUID x = field.get<UUID>();
+    UUID x = get<UUID>(field);
     writeBinary(x, ostr);
 }
 
-void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     UUID x;
     readBinary(x, istr);
     field = NearestFieldType<UUID>(x);
 }
 
-void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     writeBinary(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
 }
 
-void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     UUID x;
     readBinary(x, istr);

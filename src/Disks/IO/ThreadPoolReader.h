@@ -1,9 +1,7 @@
 #pragma once
 
-#include <memory>
 #include <IO/AsynchronousReader.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -29,14 +27,11 @@ namespace DB
 class ThreadPoolReader final : public IAsynchronousReader
 {
 private:
-    std::unique_ptr<ThreadPool> pool;
+    ThreadPool pool;
 
 public:
     ThreadPoolReader(size_t pool_size, size_t queue_size_);
-
     std::future<Result> submit(Request request) override;
-
-    void wait() override;
 
     /// pool automatically waits for all tasks in destructor.
 };

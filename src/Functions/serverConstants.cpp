@@ -1,6 +1,4 @@
 #include <Functions/FunctionConstantBase.h>
-#include <base/getFQDNOrHostName.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -12,7 +10,7 @@
 
 #include <Poco/Environment.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB
@@ -117,13 +115,6 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 
-    class FunctionDisplayName : public FunctionConstantBase<FunctionDisplayName, String, DataTypeString>
-    {
-    public:
-        static constexpr auto name = "displayName";
-        explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
-        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
-    };
 }
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -162,12 +153,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRevision>(FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -182,20 +173,5 @@ REGISTER_FUNCTION(GetOSKernelVersion)
 }
 
 
-REGISTER_FUNCTION(DisplayName)
-{
-    factory.registerFunction<FunctionDisplayName>(FunctionDocumentation
-        {
-            .description=R"(
-Returns the value of `display_name` from config or server FQDN if not set.
-
-[example:displayName]
-)",
-            .examples{{"displayName", "SELECT displayName();", ""}},
-            .categories{"Constant", "Miscellaneous"}
-        },
-        FunctionFactory::CaseSensitive);
 }
 
-
-}

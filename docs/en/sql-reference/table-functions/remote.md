@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/remote
 sidebar_position: 40
 sidebar_label: remote
 ---
@@ -53,7 +52,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-### Addresses
+### Adresses
 
 ``` text
 example01-01-1
@@ -114,8 +113,9 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                             `first_name` String,
                             `last_name` String,
                             `gender` FixedString(1))
-                  ENGINE = MergeTree
-                  ORDER BY (id, first_name, last_name, gender);
+                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+                  ORDER BY (id, first_name, last_name, gender)
+                  SETTINGS index_granularity = 8192
   ```
 
 #### On the destination ClickHouse system:
@@ -131,8 +131,9 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                             `first_name` String,
                             `last_name` String,
                             `gender` FixedString(1))
-                  ENGINE = MergeTree
-                  ORDER BY (id, first_name, last_name, gender);
+                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+                  ORDER BY (id, first_name, last_name, gender)
+                  SETTINGS index_granularity = 8192
   ```
 
 #### Back on the source deployment:
@@ -140,7 +141,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
 Insert into the new database and table created on the remote system.  You will need the host, port, username, password, destination database, and destination table.
 ```sql
 INSERT INTO FUNCTION
-remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
+remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD', rand())
 SELECT * from imdb.actors
 ```
 

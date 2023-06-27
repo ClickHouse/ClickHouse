@@ -132,7 +132,6 @@ public:
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
-    UInt64 getNumberOfDefaultRows() const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
@@ -140,8 +139,8 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -151,6 +150,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return values->sizeOfValueIfFixed() + values->sizeOfValueIfFixed(); }
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
+    size_t getNumberOfDefaults() const { return _size - offsets->size(); }
     size_t getNumberOfTrailingDefaults() const
     {
         return offsets->empty() ? _size : _size - getOffsetsData().back() - 1;

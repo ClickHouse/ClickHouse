@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/statements/select/all
----
 # ALL 子句 {#select-all}
 
 `SELECT ALL` 和 `SELECT` 不带 `DISTINCT` 是一样的。

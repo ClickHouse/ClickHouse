@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/functions/
 sidebar_label: 函数
 sidebar_position: 32
 ---
@@ -68,3 +67,5 @@ ClickHouse中至少存在两种类型的函数 - 常规函数（它们称之为�
 另一个例子是`hostName`函数，它返回运行它的服务器的名称，以便在`SELECT`查询中对服务器进行`GROUP BY`。
 
 如果查询中的函数在请求服务器上执行，但您需要在远程服务器上执行它，则可以将其包装在«any»聚合函数中，或将其添加到«GROUP BY»中。
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/) <!--hide-->

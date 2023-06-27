@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -40,7 +41,7 @@ struct FilesystemCacheLogElement
     std::pair<size_t, size_t> requested_range{};
     CacheType cache_type{};
     size_t file_segment_size;
-    bool read_from_cache_attempted;
+    bool cache_attempted;
     String read_buffer_id;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
