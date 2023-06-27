@@ -212,6 +212,7 @@ Deduplication
 DelayedInserts
 DeliveryTag
 DeltaLake
+deltaSumTimestmap
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
