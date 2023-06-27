@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/redis
-sidebar_position: 43
+sidebar_position: 175
 sidebar_label: Redis
 ---
 
