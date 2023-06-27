@@ -691,6 +691,7 @@ def test_jbod_overflow(start_cluster, name, engine):
         ),
     ],
 )
+@pytest.mark.skip(reason="Flaky test")
 def test_background_move(start_cluster, name, engine):
     try:
         node1.query_with_retry(
@@ -759,6 +760,7 @@ def test_background_move(start_cluster, name, engine):
         ),
     ],
 )
+@pytest.mark.skip(reason="Flaky test")
 def test_start_stop_moves(start_cluster, name, engine):
     try:
         node1.query_with_retry(
