@@ -296,7 +296,7 @@ Block InterpreterSelectWithUnionQueryFragments::getSampleBlock(const ASTPtr & qu
     return cache[key] = InterpreterSelectWithUnionQueryFragments(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
 }
 
-
+/// maybe abstract createFragments to here
 void InterpreterSelectWithUnionQueryFragments::buildFragments()
 {
     size_t num_child_fragments = nested_interpreters.size();

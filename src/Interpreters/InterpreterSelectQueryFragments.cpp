@@ -1022,7 +1022,7 @@ JoinStep (DB)
 UnionStep (DB)
  *
  * */
-
+/// maybe need abstract createFragments. because InterpreterSelectWithUnionQueryFragments may need this process, and me need this process too.
 PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments)
 {
     PlanFragmentPtrs childFragments;
