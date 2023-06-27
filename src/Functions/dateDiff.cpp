@@ -399,7 +399,7 @@ public:
             impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "millisecond" || unit == "ms")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<millisecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
-         else if (unit == "microsecond" || unit == "us" || unit == "u")
+        else if (unit == "microsecond" || unit == "us" || unit == "u")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
