@@ -66,19 +66,13 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
-    Chain buildSink(
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        ThreadStatusesHolderPtr thread_status_holder,
-        ThreadGroupPtr running_group,
-        std::atomic_uint64_t * elapsed_counter_ms);
-
-    Chain buildPreSinkChain(
-        const Block & subsequent_header,
+    Chain buildChainImpl(
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Block & query_sample_block,
-        ThreadStatusesHolderPtr thread_status_holder);
+        ThreadStatusesHolderPtr thread_status_holder,
+        ThreadGroupPtr running_group,
+        std::atomic_uint64_t * elapsed_counter_ms);
 };
 
 

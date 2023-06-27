@@ -314,14 +314,7 @@ struct integer<Bits, Signed>::_impl
 
         const T alpha = t / static_cast<T>(max_int);
 
-        /** Here we have to use strict comparison.
-          * The max_int is 2^64 - 1.
-          * When casted to floating point type, it will be rounded to the closest representable number,
-          * which is 2^64.
-          * But 2^64 is not representable in uint64_t,
-          * so the maximum representable number will be strictly less.
-          */
-        if (alpha < static_cast<T>(max_int))
+        if (alpha <= static_cast<T>(max_int))
             self = static_cast<uint64_t>(alpha);
         else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
             set_multiplier<double>(self, static_cast<double>(alpha));

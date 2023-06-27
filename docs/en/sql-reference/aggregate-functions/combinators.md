@@ -30,34 +30,7 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
 
-**Example**
-
-```sql
-CREATE TABLE map_map(
-    date Date,
-    timeslot DateTime,
-    status Map(String, UInt64)
-) ENGINE = Log;
-
-INSERT INTO map_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
-    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
-    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
-    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
-    
-SELECT
-    timeslot,
-    sumMap(status),
-    avgMap(status),
-    minMap(status)
-FROM map_map
-GROUP BY timeslot;
-
-┌────────────timeslot─┬─sumMap(status)───────────────────────┬─avgMap(status)───────────────────────┬─minMap(status)───────────────────────┐
-│ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
-│ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
-└─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
-```
+Examples: `sumMap(map(1,1))`, `avgMap(map('a', 1))`.
 
 ## -SimpleState
 

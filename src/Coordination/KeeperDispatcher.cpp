@@ -471,9 +471,9 @@ void KeeperDispatcher::shutdown()
             const auto raft_result = server->putRequestBatch(close_requests);
             auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
             auto sessions_closing_done = sessions_closing_done_promise->get_future();
-            raft_result->when_ready([my_sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
+            raft_result->when_ready([sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
                                         nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
-                                        nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
+                                        nuraft::ptr<std::exception> & /*exception*/) { sessions_closing_done_promise->set_value(); });
 
             auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
             if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)

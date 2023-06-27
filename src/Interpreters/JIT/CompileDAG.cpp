@@ -16,14 +16,19 @@
 namespace DB
 {
 
-ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values) const
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+llvm::Value * CompileDAG::compile(llvm::IRBuilderBase & builder, Values input_nodes_values) const
 {
     assert(input_nodes_values.size() == getInputNodesCount());
 
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-    ValuesWithType compiled_values;
-    compiled_values.resize(nodes.size());
+    PaddedPODArray<llvm::Value *> compiled_values;
+    compiled_values.resize_fill(nodes.size());
 
     size_t input_nodes_values_index = 0;
     size_t compiled_values_index = 0;
@@ -39,26 +44,31 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
             case CompileType::CONSTANT:
             {
                 auto * native_value = getColumnNativeValue(b, node.result_type, *node.column, 0);
-                compiled_values[compiled_values_index] = {native_value, node.result_type};
+                if (!native_value)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find native value for constant column with type {}",
+                    node.result_type->getName());
+
+                compiled_values[compiled_values_index] = native_value;
                 break;
             }
             case CompileType::FUNCTION:
             {
-                ValuesWithType temporary_values;
+                Values temporary_values;
                 temporary_values.reserve(node.arguments.size());
 
                 for (auto argument_index : node.arguments)
                 {
-                    assert(compiled_values[argument_index].value != nullptr);
+                    assert(compiled_values[argument_index] != nullptr);
                     temporary_values.emplace_back(compiled_values[argument_index]);
                 }
 
-                compiled_values[compiled_values_index] = {node.function->compile(builder, temporary_values), node.result_type};
+                compiled_values[compiled_values_index] = node.function->compile(builder, temporary_values);
                 break;
             }
             case CompileType::INPUT:
             {
-                compiled_values[compiled_values_index] = {input_nodes_values[input_nodes_values_index].value, node.result_type};
+                compiled_values[compiled_values_index] = input_nodes_values[input_nodes_values_index];
                 ++input_nodes_values_index;
                 break;
             }

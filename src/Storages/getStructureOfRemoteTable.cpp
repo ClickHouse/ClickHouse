@@ -60,15 +60,6 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     ColumnsDescription res;
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
 
-    /// Ignore limit for result number of rows (that could be set during handling CSE/CTE),
-    /// since this is a service query and should not lead to query failure.
-    {
-        Settings new_settings = new_context->getSettings();
-        new_settings.max_result_rows = 0;
-        new_settings.max_result_bytes = 0;
-        new_context->setSettings(new_settings);
-    }
-
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
     {

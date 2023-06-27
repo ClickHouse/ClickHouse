@@ -135,7 +135,7 @@ public:
 
         size_t num_function_arguments = function_type->getArgumentTypes().size();
         if (is_single_array_argument
-            && tuple_argument_size > 1
+            && tuple_argument_size
             && tuple_argument_size == num_function_arguments)
         {
             assert(nested_types.size() == 1);
@@ -337,13 +337,12 @@ public:
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
-                size_t tuple_size = column_tuple ? column_tuple->getColumns().size() : 0;
-
-                if (is_single_array_argument && tuple_size > 1 && tuple_size == num_function_arguments)
+                if (is_single_array_argument && column_tuple && column_tuple->getColumns().size() == num_function_arguments)
                 {
                     const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_type->getNestedType());
                     const auto & tuple_names = type_tuple.getElementNames();
 
+                    size_t tuple_size = column_tuple->getColumns().size();
                     arrays.reserve(column_tuple->getColumns().size());
                     for (size_t j = 0; j < tuple_size; ++j)
                     {

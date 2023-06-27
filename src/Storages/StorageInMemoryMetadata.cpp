@@ -236,10 +236,7 @@ bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
     return !table_ttl.group_by_ttl.empty();
 }
 
-ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
-    const NameSet & updated_columns,
-    bool include_ttl_target,
-    const std::function<bool(const String & file_name)> & has_indice_or_projection) const
+ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const
 {
     if (updated_columns.empty())
         return {};
@@ -267,16 +264,10 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     };
 
     for (const auto & index : getSecondaryIndices())
-    {
-        if (has_indice_or_projection("skp_idx_" + index.name + ".idx") || has_indice_or_projection("skp_idx_" + index.name + ".idx2"))
-            add_dependent_columns(index.expression, indices_columns);
-    }
+        add_dependent_columns(index.expression, indices_columns);
 
     for (const auto & projection : getProjections())
-    {
-        if (has_indice_or_projection(projection.getDirectoryName()))
-            add_dependent_columns(&projection, projections_columns);
-    }
+        add_dependent_columns(&projection, projections_columns);
 
     auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
     {
@@ -321,6 +312,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         res.emplace(column, ColumnDependency::TTL_TARGET);
 
     return res;
+
 }
 
 Block StorageInMemoryMetadata::getSampleBlockInsertable() const

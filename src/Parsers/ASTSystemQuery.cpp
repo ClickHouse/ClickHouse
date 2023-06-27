@@ -104,12 +104,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
-        if (!shard.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM SHARD "
-                          << (settings.hilite ? hilite_none : "") << quoteString(shard);
-        }
-
         if (table)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"

@@ -74,8 +74,6 @@ protected:
 
     size_t getTotalRows() const { return total_rows; }
 
-    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
-
     Serializations serializations;
 
 private:
@@ -85,7 +83,6 @@ private:
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
 };
 
 }

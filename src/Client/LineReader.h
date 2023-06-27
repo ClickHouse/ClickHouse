@@ -18,19 +18,14 @@ public:
     struct Suggest
     {
         using Words = std::vector<std::string>;
-        using Callback = std::function<Words(const String & prefix, size_t prefix_length)>;
 
         /// Get vector for the matched range of words if any.
         replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length);
         void addWords(Words && new_words);
 
-        void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }
-
     private:
         Words words TSA_GUARDED_BY(mutex);
         Words words_no_case TSA_GUARDED_BY(mutex);
-
-        Callback custom_completions_callback = nullptr;
 
         std::mutex mutex;
     };

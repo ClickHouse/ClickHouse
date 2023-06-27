@@ -224,8 +224,6 @@ namespace DB
 
             /// Flush all the data to handmade buffer.
             formatter->flush();
-            formatter->finalizeBuffers();
-            out_buffer.finalize();
             unit.actual_memory_size = out_buffer.getActualSize();
 
             {

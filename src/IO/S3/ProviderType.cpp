@@ -22,17 +22,20 @@ std::string_view toString(ProviderType provider_type)
     }
 }
 
-std::string_view toString(ApiMode api_mode)
+bool supportsMultiPartCopy(ProviderType provider_type)
 {
-    using enum ApiMode;
+    return provider_type != ProviderType::GCS;
+}
 
-    switch (api_mode)
-    {
-        case AWS:
-            return "AWS";
-        case GCS:
-            return "GCS";
-    }
+ProviderType getProviderTypeFromURL(const std::string & url)
+{
+    if (url.find(".amazonaws.com") != std::string::npos)
+        return ProviderType::AWS;
+
+    if (url.find("storage.googleapis.com") != std::string::npos)
+        return ProviderType::GCS;
+
+    return ProviderType::UNKNOWN;
 }
 
 }
