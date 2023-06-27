@@ -13,6 +13,7 @@
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include <unistd.h>
 #include <bit>
@@ -545,7 +546,7 @@ String FeatureFlagsCommand::run()
 
     StringBuffer ret;
 
-    auto append = [&ret] (String key, uint8_t value) -> void
+    auto append = [&ret] (const String & key, uint8_t value) -> void
     {
         writeText(key, ret);
         writeText('\t', ret);
@@ -553,8 +554,12 @@ String FeatureFlagsCommand::run()
         writeText('\n', ret);
     };
 
-    for (const auto feature : all_keeper_feature_flags)
-        append(SettingFieldKeeperFeatureFlagTraits::toString(feature), feature_flags.isEnabled(feature));
+    for (const auto & [feature_flag, name] : magic_enum::enum_entries<KeeperFeatureFlag>())
+    {
+        std::string feature_flag_string(name);
+        boost::to_lower(feature_flag_string);
+        append(feature_flag_string, feature_flags.isEnabled(feature_flag));
+    }
 
     return ret.str();
 

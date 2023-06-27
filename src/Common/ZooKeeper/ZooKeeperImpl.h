@@ -202,6 +202,8 @@ public:
 
     void setServerCompletelyStarted();
 
+    const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
+
 private:
     ACLs default_acls;
     Poco::Net::SocketAddress connected_zk_address;

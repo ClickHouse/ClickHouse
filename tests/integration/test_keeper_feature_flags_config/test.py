@@ -69,12 +69,12 @@ def test_keeper_feature_flags(started_cluster):
 
         for feature, is_enabled in feature_flags:
             node.wait_for_log_line(
-                f"ZooKeeperClient: Keeper feature flag {feature}: {'enabled' if is_enabled else 'disabled'}",
+                f"ZooKeeperClient: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
                 look_behind_lines=1000,
             )
 
             node.wait_for_log_line(
-                f"KeeperContext: Keeper feature flag {feature}: {'enabled' if is_enabled else 'disabled'}",
+                f"KeeperContext: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
                 look_behind_lines=1000,
             )
 

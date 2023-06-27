@@ -1,27 +1,17 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Core/SettingsFields.h>
 #include <Coordination/KeeperConstants.h>
 
 namespace DB
 {
 
-enum KeeperFeatureFlag
+/// these values cannot be reordered or removed, only new values can be added
+enum class KeeperFeatureFlag : size_t
 {
     FILTERED_LIST = 0,
     MULTI_READ,
     CHECK_NOT_EXISTS,
 };
-
-static inline constexpr std::array all_keeper_feature_flags
-{
-    KeeperFeatureFlag::FILTERED_LIST,
-    KeeperFeatureFlag::MULTI_READ,
-    KeeperFeatureFlag::CHECK_NOT_EXISTS,
-};
-
-DECLARE_SETTING_ENUM(KeeperFeatureFlag);
 
 class KeeperFeatureFlags
 {
