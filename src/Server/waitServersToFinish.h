@@ -5,6 +5,6 @@ namespace DB
 {
 class ProtocolServerAdapter;
 
-size_t waitServersToFinish(std::vector<ProtocolServerAdapter> & servers, size_t seconds_to_wait);
+size_t waitServersToFinish(std::vector<ProtocolServerAdapter> & servers, std::mutex & mutex, size_t seconds_to_wait);
 
 }
