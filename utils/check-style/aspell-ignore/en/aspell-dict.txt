@@ -772,6 +772,7 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
+SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
@@ -1936,6 +1937,7 @@ prefertch
 prefetch
 prefetchsize
 preloaded
+prem
 prepend
 prepended
 prepends
@@ -2134,6 +2136,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+serverTimeZone
+serverTimezone
 serverUUID
 sessionCacheSize
 sessionIdContext
@@ -2165,6 +2169,7 @@ snowflakeToDateTime
 socketcache
 soundex
 sparkbar
+sparkBar
 sparsehash
 speedscope
 splitByChar
