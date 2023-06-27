@@ -18,6 +18,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -31,6 +33,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+std::vector<size_t> TableFunctionS3::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+{
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
+    std::vector<size_t> result;
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "headers")
+            result.push_back(i);
+    }
+
+    return result;
+}
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
