@@ -43,8 +43,7 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>()},
         {"is_currently_used", std::make_shared<DataTypeUInt8>()},
         {"rdkafka_stat", std::make_shared<DataTypeString>()},
-        {"json", std::make_shared<DataTypeObject>("json", false)}};
-
+        // {"json", std::make_shared<DataTypeObject>("json", false)}}
     };
     return names_and_types;
 }
