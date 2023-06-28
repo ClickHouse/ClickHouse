@@ -218,7 +218,7 @@ void DatabaseCatalog::shutdownImpl()
 
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
     /// Because some databases might use them until their shutdown is called, but calling shutdown
-    /// on temporary database means clearing its set of tables, which will lead to unneseccary errors like "table not found".
+    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
     std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
     {
