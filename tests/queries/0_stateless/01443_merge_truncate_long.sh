@@ -23,7 +23,8 @@ function thread()
     done
 }
 
-thread &
+export -f thread
+bash -c thread &
 pid=$!
 
 for i in {1..100}; do
