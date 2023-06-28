@@ -321,7 +321,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , writer(*this)
     , merger_mutator(*this)
     , merge_strategy_picker(*this)
-    , currently_restoring_from_backup(std::make_unique<ReplicatedMergeTreeCurrentlyRestoringFromBackup>(*this))
+    , currently_restoring_from_backup(
+          /// `currently_restoring_from_backup` is required only when the batch allocation for block numbers is enabled.
+          restore_allocates_block_numbers_in_batch ? std::make_unique<ReplicatedMergeTreeCurrentlyRestoringFromBackup>(*this) : nullptr)
     , queue(*this, merge_strategy_picker, currently_restoring_from_backup.get())
     , fetcher(*this)
     , cleanup_thread(*this)
@@ -10217,10 +10219,34 @@ scope_guard StorageReplicatedMergeTree::allocateBlockNumbersForRestoringFromBack
     bool check_table_is_empty,
     ContextMutablePtr local_context)
 {
+    if (!restore_allocates_block_numbers_in_batch)
+    {
+        if (check_table_is_empty)
+            checkTableIsEmptyBeforeRestoringParts();
+        return {};
+    }
+
     String zookeeper_path_for_checking;
     return currently_restoring_from_backup->allocateBlockNumbers(
         part_infos, part_names_in_backup, mutation_infos, mutation_names_in_backup,
         check_table_is_empty, zookeeper_path_for_checking, local_context);
+}
+
+void StorageReplicatedMergeTree::checkTableIsEmptyBeforeRestoringParts()
+{
+    /// NOTE: If `restore_allocates_block_numbers_in_batch` is true, this check must be performed in
+    /// ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers().
+    chassert (!restore_allocates_block_numbers_in_batch);
+
+    if (getTotalActiveSizeInBytes())
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+
+    /// New parts could be in the replication queue but not fetched yet.
+    /// In that case we consider the table as not empty.
+    ReplicatedTableStatus status;
+    getStatus(status, /* with_zk_fields = */ false);
+    if (status.queue.inserts_in_queue)
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 }
 
 std::shared_ptr<SinkToStorage> StorageReplicatedMergeTree::createSinkForPartsFromBackup()
@@ -10229,8 +10255,11 @@ std::shared_ptr<SinkToStorage> StorageReplicatedMergeTree::createSinkForPartsFro
     return std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false, getContext(), /*is_attach*/true);
 }
 
-void StorageReplicatedMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage> sink)
+void StorageReplicatedMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage> sink, bool check_table_is_empty)
 {
+    if (check_table_is_empty)
+        checkTableIsEmptyBeforeRestoringParts();
+
     if (currently_restoring_from_backup && !currently_restoring_from_backup->containsPart(part->info))
     {
         LOG_INFO(log, "Cancelled restoring part {}", part->name);
@@ -10239,12 +10268,15 @@ void StorageReplicatedMergeTree::attachPartFromBackup(MutableDataPartPtr && part
 
     auto & replicated_merge_tree_sink = assert_cast<ReplicatedMergeTreeSink &>(*sink);
 
-    /// A block number was allocated already in allocateBlockNumbersForRestoringFromBackup().
-    replicated_merge_tree_sink.writeExistingPart(part, /* allocate_block_number= */ false);
+    /// A block number was allocated already in allocateBlockNumbersForRestoringFromBackup() if `restore_allocates_block_numbers_in_batch == true`.
+    replicated_merge_tree_sink.writeExistingPart(part, /* allocate_block_number= */ !restore_allocates_block_numbers_in_batch);
 }
 
 void StorageReplicatedMergeTree::attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr local_context)
 {
+    if (!restore_allocates_block_numbers_in_batch)
+        return;
+
     if (currently_restoring_from_backup && !currently_restoring_from_backup->containsMutation(mutation_info.name))
     {
         LOG_INFO(log, "Cancelled restoring mutation {}", mutation_info.name);

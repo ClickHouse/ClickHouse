@@ -763,6 +763,8 @@ public:
     void setMacros(std::unique_ptr<Macros> && macros);
 
     bool displaySecretsInShowAndSelect() const;
+    bool shouldRestoreAllocateBlockNumbersInBatch() const;
+
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 

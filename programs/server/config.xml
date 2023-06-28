@@ -1248,6 +1248,10 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </backup_log>
 
+    <!-- Uncomment to enable restoring mutations from backups.
+    <restore_allocates_block_numbers_in_batch>true</restore_allocates_block_numbers_in_batch>
+    -->
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>

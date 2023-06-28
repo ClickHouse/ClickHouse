@@ -1124,6 +1124,10 @@ protected:
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
 
+    /// Should RESTORE allocate all block numbers in a batch before attaching any restored parts.
+    /// This mode allows to restore mutations from backup.
+    bool restore_allocates_block_numbers_in_batch = false;
+
     /// Used to determine which UUIDs to send to root query executor for deduplication.
     mutable SharedMutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;
@@ -1381,7 +1385,7 @@ protected:
     virtual std::shared_ptr<SinkToStorage> createSinkForPartsFromBackup() { return nullptr; }
 
     /// Attaches a restored part with already assigned block number to the storage.
-    virtual void attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage> sink) = 0;
+    virtual void attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage> sink, bool check_table_is_empty) = 0;
 
     /// Attaches a restored mutation with already assigned block number to the storage.
     virtual void attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr local_context) = 0;

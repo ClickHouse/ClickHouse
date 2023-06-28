@@ -114,7 +114,6 @@ StorageMergeTree::StorageMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
-    , currently_restoring_from_backup(std::make_unique<MergeTreeCurrentlyRestoringFromBackup>(*this))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
 
@@ -132,6 +131,12 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
+
+    if (restore_allocates_block_numbers_in_batch)
+    {
+        /// `currently_restoring_from_backup` is required only when the batch allocation for block numbers is enabled.
+        currently_restoring_from_backup = std::make_unique<MergeTreeCurrentlyRestoringFromBackup>(*this);
+    }
 }
 
 
@@ -2371,11 +2376,31 @@ scope_guard StorageMergeTree::allocateBlockNumbersForRestoringFromBackup(
     bool check_table_is_empty,
     ContextMutablePtr)
 {
+    if (!restore_allocates_block_numbers_in_batch)
+    {
+        if (check_table_is_empty)
+            checkTableIsEmptyBeforeRestoringParts();
+        return {};
+    }
+
     return currently_restoring_from_backup->allocateBlockNumbers(part_infos, part_names_in_backup, mutation_infos, mutation_names_in_backup, check_table_is_empty);
 }
 
-void StorageMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage>)
+void StorageMergeTree::checkTableIsEmptyBeforeRestoringParts()
 {
+    /// NOTE: If `restore_allocates_block_numbers_in_batch` is true, this check must be performed in
+    /// MergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers().
+    chassert (!restore_allocates_block_numbers_in_batch);
+
+    if (getTotalActiveSizeInBytes())
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+}
+
+void StorageMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage>, bool check_table_is_empty)
+{
+    if (check_table_is_empty)
+        checkTableIsEmptyBeforeRestoringParts();
+
     if (currently_restoring_from_backup && !currently_restoring_from_backup->containsPart(part->info))
     {
         LOG_INFO(log, "Cancelled restoring part {}", part->name);
@@ -2388,6 +2413,10 @@ void StorageMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::sha
 
     {
         auto lock = lockParts();
+        /// Make a new part name only if `restore_allocates_block_numbers_in_batch == false`.
+        /// (If it's true then it was already made in allocateBlockNumbersForRestoringFromBackup()).
+        if (!restore_allocates_block_numbers_in_batch)
+            fillNewPartName(part, lock);
         renameTempPartAndAdd(part, transaction, lock);
         transaction.commit(&lock);
     }
@@ -2395,6 +2424,9 @@ void StorageMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::sha
 
 void StorageMergeTree::attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr)
 {
+    if (!restore_allocates_block_numbers_in_batch)
+        return;
+
     if (currently_restoring_from_backup && !currently_restoring_from_backup->containsMutation(mutation_info.number))
     {
         LOG_INFO(log, "Cancelled restoring mutation {}", mutation_info.name);
