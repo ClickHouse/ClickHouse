@@ -6,6 +6,7 @@ import urllib.request, urllib.parse
 import ssl
 import os.path
 from os import remove
+import logging
 
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
