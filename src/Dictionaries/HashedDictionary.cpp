@@ -236,6 +236,11 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
             /// Do not account memory that was occupied by the dictionaries for the query/user context.
             MemoryTrackerBlockerInThread memory_blocker;
 
