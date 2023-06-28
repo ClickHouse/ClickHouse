@@ -244,6 +244,7 @@ public:
         bool keep_metadata_version = false;
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
+        std::optional<int32_t> metadata_version_to_write = std::nullopt;
     };
 
     virtual std::shared_ptr<IDataPartStorage> freeze(

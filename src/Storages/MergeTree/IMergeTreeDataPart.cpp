@@ -1363,7 +1363,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
-        LOG_WARNING(storage.log, "Part {} doesn't have metadata version on disk, setting it to {}. "
+        if (storage.supportsReplication())
+            LOG_WARNING(storage.log, "Part {} doesn't have metadata version on disk, setting it to {}. "
                     "It's okay if the part was created by an old version of ClickHouse", name, loaded_metadata_version);
     }
 
