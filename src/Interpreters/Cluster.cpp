@@ -525,7 +525,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
         ++current_shard_num;
     }
 
@@ -553,7 +553,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
         ++current_shard_num;
     }
 
@@ -715,6 +715,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
                 ShardInfo info;
                 info.shard_num = ++shard_num;
+                info.weight = 1;
 
                 if (address.is_local)
                     info.local_addresses.push_back(address);
@@ -740,6 +741,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 info.per_replica_pools = {std::move(pool)};
 
                 addresses_with_failover.emplace_back(Addresses{address});
+
+                slot_to_shard.insert(std::end(slot_to_shard), info.weight, shards_info.size());
                 shards_info.emplace_back(std::move(info));
             }
         };
@@ -769,7 +772,11 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 {
     for (size_t index : indices)
     {
-        shards_info.emplace_back(from.shards_info.at(index));
+        const auto & from_shard = from.shards_info.at(index);
+
+        if (from_shard.weight)
+            slot_to_shard.insert(std::end(slot_to_shard), from_shard.weight, shards_info.size());
+        shards_info.emplace_back(from_shard);
 
         if (!from.addresses_with_failover.empty())
             addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
