@@ -8,6 +8,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/DOM/Document.h>

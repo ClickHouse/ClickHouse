@@ -210,7 +210,15 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_name.empty())
+        {
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
+            if (!delete_key.empty())
+            {
+                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << delete_key;
+                if (delete_offset.has_value())
+                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << delete_offset.value();
+            }
+        }
     }
     else if (type == Type::UNFREEZE)
     {

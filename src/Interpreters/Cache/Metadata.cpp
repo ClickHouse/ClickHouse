@@ -381,17 +381,32 @@ void LockedKey::removeAllReleasable()
     }
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock());
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
+
+    return removeFileSegmentImpl(it, segment_lock);
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock)
+{
+    auto file_segment = it->second->file_segment;
 
     LOG_DEBUG(
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), offset, file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
