@@ -872,6 +872,7 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     cache = nullptr;
+    queue_iterator = nullptr;
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
@@ -890,7 +891,7 @@ void FileSegment::use()
 
     if (!cache)
     {
-        chassert(isCompleted(true));
+        chassert(isDetached());
         return;
     }
 
