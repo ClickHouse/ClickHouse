@@ -945,7 +945,7 @@ configuration files; all the settings are in the CREATE/ATTACH query.
 The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
 :::
 
-#### Example dynamic web storage {#web-storage}
+#### Example dynamic web storage
 
 ```sql
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
@@ -1248,6 +1248,57 @@ Examples of working configurations can be found in integration tests directory (
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
+
+## Web storage (read-only) {#web-storage}
+
+Web storage can be used for read-only purposes. An example use is for hosting sample
+data, or for migrating data.
+
+:::tip
+Storage can also be configured temporarily within a query, if a web dataset is not expected
+to be used routinely, see [dynamic storage](#dynamic-storage) and skip editing the
+configuration file.
+:::
+
+In this sample configuration:
+- the disk is of type `web`
+- the data is hosted at `http://nginx:80/test1/`
+- a cache on local storage is used 
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
 
 ## Virtual Columns {#virtual-columns}
 
