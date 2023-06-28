@@ -46,7 +46,7 @@ public:
 ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
 {
     /// ignore buffer, write all data to file and reread it
-    finalize();
+    next();
 
     auto res = ReadBufferFromTemporaryWriteBuffer::createFrom(this);
 

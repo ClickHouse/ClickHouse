@@ -64,22 +64,20 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index] != Block::NameMap::const_iterator{}
-        && name == prev_positions[key_index]->first)
+    if (prev_positions.size() > key_index && prev_positions[key_index] && name == prev_positions[key_index]->getKey())
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index]->getMapped();
     }
     else
     {
-        const auto it = name_map.find(name);
+        auto * it = name_map.find(name);
 
-        if (it != name_map.end())
+        if (it)
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->second;
+            return it->getMapped();
         }
         else
             return UNKNOWN_FIELD;

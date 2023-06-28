@@ -15,6 +15,7 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
+class SeekableReadBufferFactory;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -47,7 +48,9 @@ class ParquetBlockInputFormat : public IInputFormat
 {
 public:
     ParquetBlockInputFormat(
-        ReadBuffer & buf,
+        // exactly one of these two is nullptr
+        ReadBuffer * buf,
+        std::unique_ptr<SeekableReadBufferFactory> buf_factory,
         const Block & header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
@@ -59,8 +62,6 @@ public:
     String getName() const override { return "ParquetBlockInputFormat"; }
 
     const BlockMissingValues & getMissingValues() const override;
-
-    size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
 private:
     Chunk generate() override;
@@ -202,9 +203,6 @@ private:
         size_t next_chunk_idx = 0;
         size_t num_pending_chunks = 0;
 
-        size_t row_group_bytes_uncompressed = 0;
-        size_t row_group_rows = 0;
-
         // These are only used by the decoding thread, so don't require locking the mutex.
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
@@ -218,7 +216,6 @@ private:
         BlockMissingValues block_missing_values;
         size_t chunk_idx; // within row group
         size_t row_group_idx;
-        size_t approx_original_chunk_size;
 
         // For priority_queue.
         // In ordered mode we deliver strictly in order of increasing row group idx,
@@ -237,6 +234,7 @@ private:
         };
     };
 
+    std::unique_ptr<SeekableReadBufferFactory> buf_factory;
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
     size_t max_decoding_threads;
@@ -273,7 +271,6 @@ private:
     std::unique_ptr<ThreadPool> pool;
 
     BlockMissingValues previous_block_missing_values;
-    size_t previous_approx_bytes_read_for_chunk;
 
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};

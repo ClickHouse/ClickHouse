@@ -119,10 +119,8 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 }
             }
         }
-    }
 
-    if (saved_exception)
-        std::rethrow_exception(saved_exception);
+    }
 
     return false;
 }

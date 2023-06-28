@@ -34,7 +34,7 @@ struct ParallelReadingExtension
     /// This is needed to estimate the number of bytes
     /// between a pair of marks to perform one request
     /// over the network for a 1Gb of data.
-    Names columns_to_read;
+    Names colums_to_read;
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
@@ -74,7 +74,7 @@ public:
 
     virtual std::string getName() const = 0;
 
-    static PrewhereExprInfo getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps);
+    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps);
 
 protected:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
@@ -110,7 +110,8 @@ protected:
     static void initializeRangeReadersImpl(
          MergeTreeRangeReader & range_reader,
          std::deque<MergeTreeRangeReader> & pre_range_readers,
-         const PrewhereExprInfo & prewhere_actions,
+         PrewhereInfoPtr prewhere_info,
+         const PrewhereExprInfo * prewhere_actions,
          IMergeTreeReader * reader,
          bool has_lightweight_delete,
          const MergeTreeReaderSettings & reader_settings,
@@ -125,8 +126,7 @@ protected:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
     void initializeMergeTreeReadersForPart(
-        const MergeTreeData::DataPartPtr & data_part,
-        const AlterConversionsPtr & alter_conversions,
+        MergeTreeData::DataPartPtr & data_part,
         const MergeTreeReadTaskColumns & task_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
@@ -140,19 +140,10 @@ protected:
     StorageSnapshotPtr storage_snapshot;
 
     /// This step is added when the part has lightweight delete mask
-    const PrewhereExprStep lightweight_delete_filter_step
-    {
-        .type = PrewhereExprStep::Filter,
-        .actions = nullptr,
-        .filter_column_name = LightweightDeleteDescription::FILTER_COLUMN.name,
-        .remove_filter_column = true,
-        .need_filter = true,
-        .perform_alter_conversions = true,
-    };
-
+    const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, true };
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
-    PrewhereExprInfo prewhere_actions;
+    std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;
@@ -204,8 +195,7 @@ private:
 
     /// Initialize pre readers.
     void initializeMergeTreePreReadersForPart(
-        const MergeTreeData::DataPartPtr & data_part,
-        const AlterConversionsPtr & alter_conversions,
+        MergeTreeData::DataPartPtr & data_part,
         const MergeTreeReadTaskColumns & task_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,

@@ -1,7 +1,6 @@
 #include <Storages/DataLakes/HudiMetadataParser.h>
 #include <Common/logger_useful.h>
 #include <ranges>
-#include <base/find_symbols.h>
 #include <Poco/String.h>
 #include "config.h"
 #include <filesystem>

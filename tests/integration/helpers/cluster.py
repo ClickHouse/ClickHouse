@@ -17,6 +17,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+import pyspark
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -32,7 +33,6 @@ try:
     import nats
     import ssl
     import meilisearch
-    import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -1963,9 +1963,9 @@ class ClickHouseCluster:
             return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
-        with open(local_path, "rb") as fdata:
+        with open(local_path, "r") as fdata:
             data = fdata.read()
-            encodedBytes = base64.b64encode(data)
+            encodedBytes = base64.b64encode(data.encode("utf-8"))
             encodedStr = str(encodedBytes, "utf-8")
             self.exec_in_container(
                 container_id,
@@ -1974,6 +1974,7 @@ class ClickHouseCluster:
                     "-c",
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
+                user="root",
             )
 
     def wait_for_url(
@@ -3376,7 +3377,6 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
-        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(
@@ -3387,7 +3387,6 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
-            query_id=query_id,
         )
 
     def query_and_get_error_with_retry(

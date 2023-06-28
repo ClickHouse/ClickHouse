@@ -21,10 +21,10 @@ using TableFunctionDeltaLake = ITableFunctionDataLake<TableFunctionDeltaLakeName
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionDeltaLake>(
-        {.documentation = {
-            .description=R"(The table function can be used to read the DeltaLake table stored on object store.)",
-            .examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)", ""}},
-            .categories{"DataLake"}},
+        {.documentation
+         = {R"(The table function can be used to read the DeltaLake table stored on object store.)",
+            Documentation::Examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)"}},
+            Documentation::Categories{"DataLake"}},
          .allow_readonly = false});
 }
 

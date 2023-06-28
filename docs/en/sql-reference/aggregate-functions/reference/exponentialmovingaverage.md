@@ -6,7 +6,7 @@ sidebar_title: exponentialMovingAverage
 
 ## exponentialMovingAverage
 
-Calculates the exponential moving average of values for the determined time.
+Сalculates the exponential moving average of values for the determined time.
 
 **Syntax**
 
@@ -27,7 +27,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 
 **Returned values**
 
-- Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
+- Returnes an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
 
 Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 

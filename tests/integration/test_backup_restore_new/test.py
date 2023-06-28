@@ -158,6 +158,8 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
+    assert instance.contains_in_log("using native copy")
+
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -198,6 +200,8 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
+    assert instance.contains_in_log("using native copy")
+
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -210,6 +214,8 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
+
+    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -238,6 +244,8 @@ def test_incremental_backup():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert instance.contains_in_log("using native copy")
 
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
@@ -465,29 +473,6 @@ def test_incremental_backup_for_log_family():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
-def test_incremental_backup_append_table_def():
-    backup_name = new_backup_name()
-    create_and_fill_table()
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    instance.query("ALTER TABLE test.table MODIFY SETTING parts_to_throw_insert=100")
-
-    incremental_backup_name = new_backup_name()
-    instance.query(
-        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
-    )
-
-    instance.query("DROP TABLE test.table")
-    instance.query(f"RESTORE TABLE test.table FROM {incremental_backup_name}")
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    assert "parts_to_throw_insert = 100" in instance.query(
-        "SHOW CREATE TABLE test.table"
-    )
-
-
 def test_backup_not_found_or_already_exists():
     backup_name = new_backup_name()
 
@@ -516,6 +501,8 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
+    assert instance.contains_in_log("using native copy")
+
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -529,6 +516,8 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
+
+    assert instance.contains_in_log("using native copy")
 
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
@@ -1493,23 +1482,23 @@ def test_tables_dependency():
 
     # Drop everything in reversive order.
     def drop():
-        instance.query(f"DROP TABLE {t15} SYNC")
-        instance.query(f"DROP TABLE {t14} SYNC")
-        instance.query(f"DROP TABLE {t13} SYNC")
-        instance.query(f"DROP TABLE {t12} SYNC")
-        instance.query(f"DROP TABLE {t11} SYNC")
-        instance.query(f"DROP TABLE {t10} SYNC")
-        instance.query(f"DROP TABLE {t9} SYNC")
+        instance.query(f"DROP TABLE {t15} NO DELAY")
+        instance.query(f"DROP TABLE {t14} NO DELAY")
+        instance.query(f"DROP TABLE {t13} NO DELAY")
+        instance.query(f"DROP TABLE {t12} NO DELAY")
+        instance.query(f"DROP TABLE {t11} NO DELAY")
+        instance.query(f"DROP TABLE {t10} NO DELAY")
+        instance.query(f"DROP TABLE {t9} NO DELAY")
         instance.query(f"DROP DICTIONARY {t8}")
-        instance.query(f"DROP TABLE {t7} SYNC")
-        instance.query(f"DROP TABLE {t6} SYNC")
-        instance.query(f"DROP TABLE {t5} SYNC")
+        instance.query(f"DROP TABLE {t7} NO DELAY")
+        instance.query(f"DROP TABLE {t6} NO DELAY")
+        instance.query(f"DROP TABLE {t5} NO DELAY")
         instance.query(f"DROP DICTIONARY {t4}")
-        instance.query(f"DROP TABLE {t3} SYNC")
-        instance.query(f"DROP TABLE {t2} SYNC")
-        instance.query(f"DROP TABLE {t1} SYNC")
-        instance.query("DROP DATABASE test SYNC")
-        instance.query("DROP DATABASE test2 SYNC")
+        instance.query(f"DROP TABLE {t3} NO DELAY")
+        instance.query(f"DROP TABLE {t2} NO DELAY")
+        instance.query(f"DROP TABLE {t1} NO DELAY")
+        instance.query("DROP DATABASE test NO DELAY")
+        instance.query("DROP DATABASE test2 NO DELAY")
 
     drop()
 

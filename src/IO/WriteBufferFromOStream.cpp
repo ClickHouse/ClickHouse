@@ -1,5 +1,4 @@
 #include <IO/WriteBufferFromOStream.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -19,14 +18,7 @@ void WriteBufferFromOStream::nextImpl()
     ostr->flush();
 
     if (!ostr->good())
-    {
-        /// FIXME do not call finalize in dtors (and remove iostreams)
-        bool avoid_throwing_exceptions = std::uncaught_exceptions();
-        if (avoid_throwing_exceptions)
-            LOG_ERROR(&Poco::Logger::get("WriteBufferFromOStream"), "Cannot write to ostream at offset {}. Stack trace: {}", count(), StackTrace().toString());
-        else
-            throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Cannot write to ostream at offset {}", count());
-    }
+        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Cannot write to ostream at offset {}", count());
 }
 
 WriteBufferFromOStream::WriteBufferFromOStream(

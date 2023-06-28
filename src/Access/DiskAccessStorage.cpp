@@ -742,9 +742,9 @@ void DiskAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
 
-    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
+    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
-        for (const auto & [id, entity] : my_entities)
+        for (const auto & [id, entity] : entities)
             insertWithID(id, entity, replace_if_exists, throw_if_exists, /* write_on_disk= */ true);
     });
 }

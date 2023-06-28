@@ -40,7 +40,6 @@ public:
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
-    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
@@ -96,7 +95,6 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
 };
 
 class ValuesSchemaReader : public IRowSchemaReader

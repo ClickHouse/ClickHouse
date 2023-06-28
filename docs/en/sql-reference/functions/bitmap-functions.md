@@ -256,7 +256,7 @@ Result:
 
 ## bitmapCardinality
 
-Returns the cardinality of a bitmap.
+Rerturn the cardinality of a bitmap.
 
 **Syntax**
 

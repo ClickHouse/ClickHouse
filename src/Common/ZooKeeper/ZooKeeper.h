@@ -49,7 +49,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    Priority priority;
+    Int64 priority = 0;
     UInt64 random = 0;
 
     void randomize()
@@ -215,7 +215,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    DB::KeeperApiVersion getApiVersion() const;
+    DB::KeeperApiVersion getApiVersion();
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -236,8 +236,6 @@ public:
     /// Creates all non-existent ancestors of the given path with empty contents.
     /// Does not create the node itself.
     void createAncestors(const std::string & path);
-
-    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
 
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
@@ -523,12 +521,9 @@ public:
 
     void setServerCompletelyStarted();
 
-    String getConnectedZooKeeperHost() const { return connected_zk_host; }
-    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
-    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
-    UInt64 getConnectedTime() const { return connected_time; }
-
 private:
+    friend class EphemeralNodeHolder;
+
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
@@ -590,11 +585,6 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
-
-    String connected_zk_host;
-    UInt16 connected_zk_port;
-    size_t connected_zk_index;
-    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 
@@ -683,21 +673,5 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
-
-template <typename Client>
-void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
-{
-    if (client.getApiVersion() >= DB::KeeperApiVersion::WITH_CHECK_NOT_EXISTS)
-    {
-        auto request = std::make_shared<Coordination::CheckRequest>();
-        request->path = path;
-        request->not_exists = true;
-        requests.push_back(std::move(request));
-        return;
-    }
-
-    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
-    requests.push_back(makeRemoveRequest(path, -1));
-}
 
 }

@@ -150,7 +150,7 @@ namespace
             if (text == "bc")
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
             else if (text != "ad")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {}", text);
         }
 
         void setCentury(Int32 century)

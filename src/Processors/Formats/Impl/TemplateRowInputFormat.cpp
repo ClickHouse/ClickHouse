@@ -169,7 +169,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 {
     out << "Suffix does not match: ";
     size_t last_successfully_parsed_idx = format_reader->getFormatDataIdx() + 1;
-    auto * const row_begin_pos = buf->position();
+    const ReadBuffer::Position row_begin_pos = buf->position();
     bool caught = false;
     try
     {

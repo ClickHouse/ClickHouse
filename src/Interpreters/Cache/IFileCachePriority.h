@@ -5,35 +5,33 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/Guards.h>
-#include <Interpreters/Cache/FileCache_fwd_internal.h>
 
 namespace DB
 {
 
+class IFileCachePriority;
+using FileCachePriorityPtr = std::shared_ptr<IFileCachePriority>;
+
 /// IFileCachePriority is used to maintain the priority of cached data.
-class IFileCachePriority : private boost::noncopyable
+class IFileCachePriority
 {
 public:
+    class IIterator;
     using Key = FileCacheKey;
-    using KeyAndOffset = FileCacheKeyAndOffset;
+    using ReadIterator = std::unique_ptr<const IIterator>;
+    using WriteIterator = std::shared_ptr<IIterator>;
 
-    struct Entry
+    struct FileCacheRecord
     {
-        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_)
-            : key(key_), offset(offset_), size(size_), key_metadata(key_metadata_) {}
-
-        Entry(const Entry & other)
-            : key(other.key), offset(other.offset), size(other.size.load()), hits(other.hits), key_metadata(other.key_metadata) {}
-
-        const Key key;
-        const size_t offset;
-        std::atomic<size_t> size;
+        Key key;
+        size_t offset;
+        size_t size;
         size_t hits = 0;
-        const KeyMetadataPtr key_metadata;
+
+        FileCacheRecord(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) { }
     };
 
-    /// Provides an iterator to traverse the cache priority. Under normal circumstances,
+    /// It provides an iterator to traverse the cache priority. Under normal circumstances,
     /// the iterator can only return the records that have been directly swapped out.
     /// For example, in the LRU algorithm, it can traverse all records, but in the LRU-K, it
     /// can only traverse the records in the low priority queue.
@@ -42,55 +40,56 @@ public:
     public:
         virtual ~IIterator() = default;
 
-        virtual size_t use(const CacheGuard::Lock &) = 0;
+        virtual const Key & key() const = 0;
 
-        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
+        virtual size_t offset() const = 0;
 
-        virtual const Entry & getEntry() const = 0;
+        virtual size_t size() const = 0;
 
-        virtual Entry & getEntry() = 0;
+        virtual size_t hits() const = 0;
 
-        virtual void invalidate() = 0;
+        /// Point the iterator to the next higher priority cache record.
+        virtual void next() const = 0;
 
-        virtual void updateSize(int64_t size) = 0;
+        virtual bool valid() const = 0;
+
+        /// Mark a cache record as recently used, it will update the priority
+        /// of the cache record according to different cache algorithms.
+        virtual void use(std::lock_guard<std::mutex> &) = 0;
+
+        /// Deletes an existing cached record. And to avoid pointer suspension
+        /// the iterator should automatically point to the next record.
+        virtual void removeAndGetNext(std::lock_guard<std::mutex> &) = 0;
+
+        virtual void updateSize(int64_t, std::lock_guard<std::mutex> &) = 0;
     };
 
-    using Iterator = std::shared_ptr<IIterator>;
-    using ConstIterator = std::shared_ptr<const IIterator>;
-
-    enum class IterationResult
-    {
-        BREAK,
-        CONTINUE,
-        REMOVE_AND_CONTINUE,
-    };
-    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
-
-    IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
-
+public:
     virtual ~IFileCachePriority() = default;
 
-    size_t getElementsLimit() const { return max_elements; }
+    /// Add a cache record that did not exist before, and throw a
+    /// logical exception if the cache block already exists.
+    virtual WriteIterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock) = 0;
 
-    size_t getSizeLimit() const { return max_size; }
+    /// This method is used for assertions in debug mode. So we do not care about complexity here.
+    /// Query whether a cache record exists. If it exists, return true. If not, return false.
+    virtual bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) = 0;
 
-    virtual size_t getSize(const CacheGuard::Lock &) const = 0;
+    virtual void removeAll(std::lock_guard<std::mutex> & cache_lock) = 0;
 
-    virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
+    /// Returns an iterator pointing to the lowest priority cached record.
+    /// We can traverse all cached records through the iterator's next().
+    virtual ReadIterator getLowestPriorityReadIterator(std::lock_guard<std::mutex> & cache_lock) = 0;
 
-    virtual Iterator add(
-        KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) = 0;
+    /// The same as getLowestPriorityReadIterator(), but it is writeable.
+    virtual WriteIterator getLowestPriorityWriteIterator(std::lock_guard<std::mutex> & cache_lock) = 0;
 
-    virtual void pop(const CacheGuard::Lock &) = 0;
+    virtual size_t getElementsNum(std::lock_guard<std::mutex> & cache_lock) const = 0;
 
-    virtual void removeAll(const CacheGuard::Lock &) = 0;
+    size_t getCacheSize(std::lock_guard<std::mutex> &) const { return cache_size; }
 
-    /// From lowest to highest priority.
-    virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
-
-private:
-    const size_t max_size = 0;
-    const size_t max_elements = 0;
+protected:
+    size_t max_cache_size = 0;
+    size_t cache_size = 0;
 };
-
-}
+};
