@@ -10,16 +10,16 @@ EXPLAIN SYNTAX SELECT tupleElement(t1, 'z', 0) FROM t_tuple_element_default;
 SELECT tupleElement(t2, 'z', 'z') FROM t_tuple_element_default;
 EXPLAIN SYNTAX SELECT tupleElement(t2, 'z', 'z') FROM t_tuple_element_default;
 
-SELECT tupleElement(t1, 3, 'z') FROM t_tuple_element_default; -- { serverError 127 }
-SELECT tupleElement(t1, 0, 'z') FROM t_tuple_element_default; -- { serverError 127 }
+SELECT tupleElement(t1, 3, 'z') FROM t_tuple_element_default; -- { serverError ILLEGAL_INDEX }
+SELECT tupleElement(t1, 0, 'z') FROM t_tuple_element_default; -- { serverError ILLEGAL_INDEX }
 
 DROP TABLE t_tuple_element_default;
 
 SELECT '--------------------';
 
-SELECT tupleElement(array(tuple(1, 2)), 'a', 0); -- { serverError 645 }
-SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(1, 2), tuple(3, 4))); -- { serverError 190 }
-SELECT tupleElement(array(array(tuple(1))), 'a', array(array(1, 2, 3))); -- { serverError 190 }
+SELECT tupleElement(array(tuple(1, 2)), 'a', 0); -- { serverError NUMBER_OF_DIMENSIONS_MISMATCHED }
+SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(1, 2), tuple(3, 4))); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT tupleElement(array(array(tuple(1))), 'a', array(array(1, 2, 3))); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(3, 4)));
 EXPLAIN SYNTAX SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(3, 4)));
