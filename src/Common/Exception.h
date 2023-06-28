@@ -43,6 +43,7 @@ public:
     }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
+    static thread_local bool enable_job_stack_trace;
     static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
 
 protected:

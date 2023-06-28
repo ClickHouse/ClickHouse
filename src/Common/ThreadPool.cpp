@@ -191,7 +191,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                      /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
                      propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
                      /// capture_frame_pointers
-                     true);
+                     DB::Exception::enable_job_stack_trace);
 
         ++scheduled_jobs;
     }
@@ -397,7 +397,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
             job = std::move(const_cast<Job &>(jobs.top().job));
             parent_thread_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
-            thread_frame_pointers = std::move(const_cast<std::vector<StackTrace::FramePointers> &>(jobs.top().frame_pointers));
+            DB::Exception::enable_job_stack_trace = jobs.top().enable_job_stack_trace;
+            if (DB::Exception::enable_job_stack_trace)
+                thread_frame_pointers = std::move(const_cast<std::vector<StackTrace::FramePointers> &>(jobs.top().frame_pointers));
             jobs.pop();
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
@@ -416,7 +418,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         /// Run the job.
         try
         {
-            DB::Exception::thread_frame_pointers = std::move(thread_frame_pointers);
+            if (DB::Exception::enable_job_stack_trace)
+                DB::Exception::thread_frame_pointers = std::move(thread_frame_pointers);
+            
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 

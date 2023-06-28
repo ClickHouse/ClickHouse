@@ -131,9 +131,10 @@ private:
 
         /// Call stacks of all jobs' schedulings leading to this one
         std::vector<StackTrace::FramePointers> frame_pointers;
+        bool enable_job_stack_trace = false;
 
         JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool capture_frame_pointers = false)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_)
+            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
         {
             if (!capture_frame_pointers)
                 return;
