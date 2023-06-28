@@ -39,6 +39,8 @@ struct FilesystemCacheLogElement
     std::pair<size_t, size_t> file_segment_range{};
     std::pair<size_t, size_t> requested_range{};
     CacheType cache_type{};
+    std::string file_segment_key;
+    size_t file_segment_offset;
     size_t file_segment_size;
     bool read_from_cache_attempted;
     String read_buffer_id;

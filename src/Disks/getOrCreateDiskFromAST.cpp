@@ -2,6 +2,7 @@
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Parsers/isDiskFunction.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Parsers/formatAST.h>
@@ -9,7 +10,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -26,12 +26,20 @@ namespace
 {
     std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context)
     {
-        /// We need a unique name for a created custom disk, but it needs to be the same
-        /// after table is reattached or server is restarted, so take a hash of the disk
-        /// configuration serialized ast as a disk name suffix.
-        auto disk_setting_string = serializeAST(function, true);
-        auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
-            + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
+        std::string disk_name;
+        if (function.name == "disk")
+        {
+            /// We need a unique name for a created custom disk, but it needs to be the same
+            /// after table is reattached or server is restarted, so take a hash of the disk
+            /// configuration serialized ast as a disk name suffix.
+            auto disk_setting_string = serializeAST(function, true);
+            disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
+                + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
+        }
+        else
+        {
+            disk_name = function.name.substr(std::strlen("disk_"));
+        }
 
         auto result_disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function.arguments.get());
@@ -42,6 +50,9 @@ namespace
             disk->markDiskAsCustom();
             return disk;
         });
+
+        if (!result_disk->isCustomDisk())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk with name `{}` already exist", disk_name);
 
         if (!result_disk->isRemote())
         {
@@ -91,8 +102,8 @@ namespace
 
 std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr context)
 {
-    if (!isDiskFunction(disk_function))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
+    if (!disk_function->as<ASTFunction>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function");
 
     auto ast = disk_function->clone();
 
