@@ -168,15 +168,20 @@ namespace
         if (startsWith(str, "auto"))
             return 0;
 
-        UInt64 result;
+        UInt64 result = 0;
         ReadBufferFromString in{str};
-        if (!tryReadIntText(result, in))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overflow while trying to read setting value from {}", str);
+        readIntText(result, in);
         return result;
     }
 
     UInt64 fieldToMaxThreads(const Field & f)
     {
+        if (f.getType() == Field::Types::String)
+            return stringToMaxThreads(f.get<const String &>());
+        if (f.getType() != Field::Types::UInt64)
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unsupported type of settings value. Got: {}, expected: {}",
+                fieldTypeToString(f.getType()),
+                fieldTypeToString(Field::Types::UInt64));
         return stringToMaxThreads(applyVisitor(FieldVisitorToString(), f));
     }
 }

@@ -426,11 +426,11 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    if (has_sign && !has_number)
+    if (!has_number)
     {
         if constexpr (throw_exception)
             throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER,
-                "Cannot parse number with a sign character but without any numeric character");
+                "Cannot parse number without any numeric character");
         else
             return ReturnType(false);
     }
