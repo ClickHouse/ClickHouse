@@ -443,7 +443,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
         return {};
     }
-    
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
