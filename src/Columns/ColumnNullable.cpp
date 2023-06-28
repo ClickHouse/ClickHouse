@@ -140,9 +140,9 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     const bool is_null = arr[n];
     static constexpr auto s = sizeof(arr[0]);
     char * pos;
-    if (const ColumnString * string_col = checkAndGetColumn<ColumnString>(getNestedColumn()))
+    if (isString(nested_column->getDataType()))
     {
-        auto data = string_col->getDataAt(n);
+        auto data = nested_column->getDataAt(n);
         size_t string_size = data.size + 1;
         auto memory_size = is_null ? s : s + sizeof(string_size) + string_size;
         pos = arena.allocContinue(memory_size, begin);
@@ -151,6 +151,19 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
         {
             memcpy(pos + s, &string_size, sizeof(string_size));
             memcpy(pos + s + sizeof(string_size), data.data, string_size);
+        }
+        return StringRef(pos, memory_size);
+    }
+    else if (isNumber(nested_column->getDataType()) || isFixedString(nested_column->getDataType()))
+    {
+        auto data = nested_column->getDataAt(n);
+        auto size = data.size;
+        auto memory_size = is_null ? s : s + size;
+        pos = arena.allocContinue(memory_size, begin);
+        memcpy(pos, &arr[n], s);
+        if (!is_null)
+        {
+            memcpy(pos + s, data.data, size);
         }
         return StringRef(pos, memory_size);
     }
