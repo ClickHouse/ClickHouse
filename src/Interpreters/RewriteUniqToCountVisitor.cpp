@@ -4,15 +4,11 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/Lexer.h>
-#include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -21,28 +17,48 @@ namespace DB
 namespace
 {
 
-static bool matchFnUniq(String func_name)
+bool matchFnUniq(String func_name)
 {
     auto name = Poco::toLower(func_name);
-    return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta";
+    return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined" || name == "uniqCombined64";
 }
 
-class PrintTreeMatcher
+bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs)
 {
-public:
-    struct Data {String prefix;};
-    static void visit(ASTPtr & ast, Data &)
+    if (!lhs || !rhs)
+        return false;
+    if (lhs->children.size() != rhs->children.size())
+        return false;
+    for (size_t i = 0; i < lhs->children.size(); i++)
     {
-        ast->getID();
+        if (lhs->children[i]->formatForLogging() != rhs->children[i]->formatForLogging()) // TODO not a elegant way
+            return false;
     }
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
-};
+    return true;
+}
 
-using PrintTreeVisitor = InDepthNodeVisitor<PrintTreeMatcher, true>;
+/// Test whether lhs contains all expr in rhs.
+bool expressionListContainsAll(ASTExpressionList * lhs, ASTExpressionList * rhs)
+{
+    if (!lhs || !rhs)
+        return false;
+    if (lhs->children.size() < rhs->children.size())
+        return false;
+    std::vector<String> lhs_strs;
+    for (const auto & le : lhs->children)
+    {
+        lhs_strs.emplace_back(le->formatForLogging());
+    }
+    for (const auto & re : rhs->children)
+    {
+        if (std::find(lhs_strs.begin(), lhs_strs.end(), re->formatForLogging()) != lhs_strs.end())
+            return false;
+    }
+    return true;
+}
 
 }
 
-/// 'SELECT uniq(x) FROM (SELECT DISTINCT x ...)' to 'SELECT count() FROM (SELECT DISTINCT x ...)'
 void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
 {
     auto * selectq = ast->as<ASTSelectQuery>();
@@ -60,40 +76,43 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
     if (!table_expr || table_expr->children.size() != 1 || !table_expr->subquery)
         return;
     auto * subquery = table_expr->subquery->as<ASTSubquery>();
-    subquery->formatForLogging(0);
+    if (!subquery)
+        return;
+    auto * sub_selectq = subquery->children[0]->as<ASTSelectWithUnionQuery>()->children[0]->as<ASTExpressionList>()->children[0]->as<ASTSelectQuery>();
+    if (!sub_selectq)
+        return;
 
-    // Check done, we now rewrite the AST
-    auto cloned_select_query = selectq->clone();
-    expr_list->children[0] = makeASTFunction("count");
+    auto match_distinct = [&]() -> bool
+    {
+        if (!sub_selectq->distinct)
+            return false;
+        auto sub_expr_list = sub_selectq->select();
+        if (!sub_expr_list)
+            return false;
+        /// uniq expression list == subquery group by expression list
+        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), sub_expr_list->as<ASTExpressionList>()))
+            return false;
+        return true;
+    };
 
-//    auto table_name = table_expr->database_and_table_name->as<ASTTableIdentifier>()->name();
-    table_expr->children.clear();
-    table_expr->children.emplace_back(std::make_shared<ASTSubquery>());
-    table_expr->database_and_table_name = nullptr;
-    table_expr->table_function = nullptr;
-    table_expr->subquery = table_expr->children[0];
+    auto match_group_by = [&]() -> bool
+    {
+        auto group_by = sub_selectq->groupBy();
+        if (!group_by)
+            return false;
+        auto sub_expr_list = sub_selectq->select();
+        if (!sub_expr_list)
+            return false;
+        /// uniq expression list == subquery group by expression list 
+        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), group_by->as<ASTExpressionList>()))
+            return false;
+        /// subquery select expression list must contain all columns in uniq expression list
+        expressionListContainsAll(sub_expr_list->as<ASTExpressionList>(), func->children[0]->as<ASTExpressionList>());
+        return true;
+    };
 
-//    auto column_name = arg[0]->as<ASTIdentifier>()->name();
-//    // Form AST for subquery
-//    {
-//        auto * select_ptr = cloned_select_query->as<ASTSelectQuery>();
-//        select_ptr->refSelect()->children.clear();
-//        select_ptr->refSelect()->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-//        auto exprlist = std::make_shared<ASTExpressionList>();
-//        exprlist->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-//        cloned_select_query->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, exprlist);
-//
-//        auto expr = std::make_shared<ASTExpressionList>();
-//        expr->children.emplace_back(cloned_select_query);
-//        auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
-//        select_with_union->union_mode = SelectUnionMode::UNION_DEFAULT;
-//        select_with_union->is_normalized = false;
-//        select_with_union->list_of_modes.clear();
-//        select_with_union->set_of_modes.clear();
-//        select_with_union->children.emplace_back(expr);
-//        select_with_union->list_of_selects = expr;
-//        table_expr->children[0]->as<ASTSubquery>()->children.emplace_back(select_with_union);
-//    }
+    if (match_distinct() || match_group_by())
+        expr_list->children[0] = makeASTFunction("count");
 }
 
 }
