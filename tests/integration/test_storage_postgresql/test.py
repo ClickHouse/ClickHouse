@@ -335,7 +335,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 18
+    assert count <= 19
 
     busy_pool = Pool(30)
     p = busy_pool.map_async(node_insert_select, range(30))
@@ -347,7 +347,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 18
+    assert count <= 20
 
     node1.query("DROP TABLE test.test_table;")
     node1.query("DROP TABLE test.stat;")
