@@ -39,7 +39,7 @@ struct BackupSettings
     bool deduplicate_files = true;
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
-    bool native_copy = true;
+    bool allow_s3_native_copy = true;
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
