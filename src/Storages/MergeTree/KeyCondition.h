@@ -125,17 +125,20 @@ public:
     bool intersectsRange(const Range & r) const;
     bool containsRange(const Range & r) const;
 
+    /// Invert left and right
     void invert();
+
+    /// Invert the range.
+    /// Example:
+    ///     [1, 3] -> (-inf, 1), (3, +inf)
+    std::vector<Range> invertRange() const;
 
     std::optional<Range> intersectWith(const Range & r) const;
     std::optional<Range> unionWith(const Range & r) const;
 
     /// If near by r, they can be combined to a continuous range.
-    /// TODO If filed is integer, case like [2, 3], [4, 5] is excluded.
+    /// TODO If field is integer, case like [2, 3], [4, 5] is excluded.
     bool nearByWith(const Range & r) const;
-
-    /// Invert me.
-    std::vector<Range> invertToRanges() const;
 
     String toString() const;
 };
@@ -143,8 +146,8 @@ public:
 
 using Ranges = std::vector<Range>;
 
-/** A plain ranges is a serious of ranges who
- *      1. have no intersection in all ranges
+/** A plain ranges is a series of ranges who
+ *      1. have no intersection in any two of the ranges
  *      2. ordered by left side
  *      3. does not contain blank range
  *
@@ -157,28 +160,24 @@ using Ranges = std::vector<Range>;
  */
 struct PlainRanges
 {
-    /// How to handle ranges when make it plain.
-    enum class Relation
-    {
-        UNION,
-        INTERSECT
-    };
-
     Ranges ranges;
 
-    PlainRanges(const Ranges & ranges_, Relation relation = Relation::INTERSECT, bool ordered = true);
+    explicit PlainRanges(const Range & range);
+    explicit PlainRanges(const Ranges & ranges_, bool may_has_intersection = false, bool ordered = true);
 
     PlainRanges unionWith(const PlainRanges & other);
     PlainRanges intersectWith(const PlainRanges & other);
 
     /// Union ranges and return a new plain(ordered and no intersection) ranges.
-    static Ranges makePlainByUnion(const Ranges & ranges_, bool ordered);
-    static Ranges makePlainByIntersect(const Ranges & ranges_, bool ordered);
+    /// Example:
+    ///         [1, 3], [2, 4], [6, 8] -> [1, 4], [6, 8]
+    ///         [1, 3], [2, 4], (4, 5] -> [1, 4], [5, 5]
+    static Ranges makePlain(const Ranges & ranges_, bool ordered);
 
     static bool compareByLeftBound(const Range & lhs, const Range & rhs);
     static bool compareByRightBound(const Range & lhs, const Range & rhs);
 
-    static std::vector<Ranges> revertRanges(const Ranges & to_invert_ranges);
+    static std::vector<Ranges> inverse(const Ranges & to_invert_ranges);
 
     static PlainRanges makeBlank() { return PlainRanges({}); }
     static PlainRanges makeUniverse() { return PlainRanges({Range::createWholeUniverseWithoutNull()}); }

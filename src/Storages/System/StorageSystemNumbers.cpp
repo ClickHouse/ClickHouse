@@ -159,7 +159,7 @@ protected:
 
 private:
     Ranges ranges;
-    /// Base block size, will change if there is no enough numbers
+    /// Base block size
     UInt64 base_block_size;
 
     RangesPos cursor;
