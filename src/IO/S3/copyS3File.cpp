@@ -810,7 +810,6 @@ void copyDataToS3File(
 
 
 void copyS3File(
-    const CreateReadBuffer & create_read_buffer,
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -829,7 +828,13 @@ void copyS3File(
         helper.performCopy();
     }
     else
+    {
+        auto create_read_buffer = [&]
+        {
+            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, Context::getGlobalContextInstance()->getReadSettings());
+        };
         copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
+    }
 }
 
 }

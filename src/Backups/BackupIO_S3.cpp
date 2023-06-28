@@ -152,13 +152,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                                 "Blob writing function called with unexpected blob_path.size={} or mode={}",
                                 blob_path.size(), mode);
 
-            auto create_read_buffer = [this, path_in_backup]
-            {
-                return readFile(path_in_backup);
-            };
-
             copyS3File(
-                create_read_buffer,
                 client,
                 s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
@@ -208,17 +202,8 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         /// In this case we can't use the native copy.
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
-            auto create_read_buffer = [src_disk, src_path, copy_encrypted, settings = read_settings.adjustBufferSize(start_pos + length)]
-            {
-                if (copy_encrypted)
-                    return src_disk->readEncryptedFile(src_path, settings);
-                else
-                    return src_disk->readFile(src_path, settings);
-            };
-
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
-                create_read_buffer,
                 client,
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],

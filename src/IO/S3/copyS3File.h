@@ -23,10 +23,10 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 ///
 /// Note, that it tries to copy file using native copy (CopyObject), but if it
-/// has been disabled (with settings.allow_native_copy) it is fallbacks to
-/// read-write copy (copyDataToS3File()).
+/// has been disabled (with settings.allow_native_copy) or request failed
+/// because it is a known issue, it is fallbacks to read-write copy
+/// (copyDataToS3File()).
 void copyS3File(
-    const CreateReadBuffer & create_read_buffer,
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
