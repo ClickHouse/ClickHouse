@@ -960,7 +960,7 @@ void registerStorageKafka(StorageFactory & factory)
                             "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
                             "and ensure you have enough threads "
                             "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
-                            "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
+                            "See also https://clickhouse.com/docs/en/integrations/kafka#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {
