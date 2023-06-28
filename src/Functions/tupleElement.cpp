@@ -203,13 +203,15 @@ private:
         {
             const size_t index = index_column->getUInt(0);
 
-            if (index == 0)
-                throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indices in tuples are 1-based.");
+            if (index > 0 && index <= tuple.getElements().size())
+                return {index - 1};
+            else
+            {
+                if (argument_size == 2)
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                return std::nullopt;
+            }
 
-            if (index > tuple.getElements().size())
-                throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index for tuple element is out of range.");
-
-            return {index - 1};
         }
         else if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
         {
