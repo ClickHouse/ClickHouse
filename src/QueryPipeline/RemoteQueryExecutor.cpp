@@ -434,11 +434,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
-            processMergeTreeReadTaskRequest(packet.request);
+            chassert(packet.request.has_value());
+            processMergeTreeReadTaskRequest(packet.request.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
-            processMergeTreeInitialReadAnnounecement(packet.announcement);
+            chassert(packet.announcement.has_value());
+            processMergeTreeInitialReadAnnounecement(packet.announcement.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
