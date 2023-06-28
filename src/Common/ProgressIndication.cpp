@@ -83,7 +83,7 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
         [](MemoryUsage const & acc, auto const & host_data)
         {
             UInt64 host_usage = host_data.second.memory_usage;
-            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
+            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage), .peak = std::max(acc.peak, host_data.second.peak_memory_usage)};
         });
 }
 
@@ -99,8 +99,8 @@ void ProgressIndication::writeFinalProgress()
     if (elapsed_ns)
         std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
-    else
-        std::cout << ". ";
+    auto peak_memory_usage = getMemoryUsage().peak;
+    std::cout << ".\nPeak memory usage (for query) " << formatReadableSizeWithDecimalSuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
@@ -152,7 +152,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
     std::string profiling_msg;
 
     double cpu_usage = getCPUUsage();
-    auto [memory_usage, max_host_usage] = getMemoryUsage();
+    auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
 
     if (cpu_usage > 0 || memory_usage > 0)
     {
@@ -166,6 +166,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
         if (memory_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
+        //    profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << ", " 
+        //                                    << formatReadableSizeWithDecimalSuffix(peak_usage) << " Peak RAM";
         if (max_host_usage < memory_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
 

@@ -95,6 +95,7 @@ private:
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+    static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
