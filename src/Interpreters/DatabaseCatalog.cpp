@@ -424,6 +424,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (databases.end() != it)
             database = it->second;
     }
+
     if (!database)
     {
         if (exception)
