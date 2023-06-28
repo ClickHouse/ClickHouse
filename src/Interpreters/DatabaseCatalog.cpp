@@ -374,7 +374,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 else
                 {
                     TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
-                    std::vector<String> names = hints.getHints(table_id.getTableName(), hints.getAllRegisteredNames());
+                    std::vector<String> names = hints.getHints(table_id.getTableName());
                     if (!names.empty())
                     {
                     std::string suggested_name = names[0];
