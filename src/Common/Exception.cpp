@@ -200,6 +200,7 @@ Exception::FramePointers Exception::getStackFramePointers() const
     return frame_pointers;
 }
 
+thread_local bool Exception::enable_job_stack_trace = false;
 thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
 
 
