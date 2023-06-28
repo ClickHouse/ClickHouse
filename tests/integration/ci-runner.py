@@ -10,6 +10,7 @@ import random
 import shutil
 import subprocess
 import time
+import shlex
 import zlib  # for crc32
 
 
@@ -646,7 +647,7 @@ class ClickhouseIntegrationTestsRunner:
             info_basename = test_group_str + "_" + str(i) + ".nfo"
             info_path = os.path.join(repo_path, "tests/integration", info_basename)
 
-            test_cmd = " ".join([test for test in sorted(test_names)])
+            test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = (
                 " --parallel {} ".format(num_workers) if num_workers > 0 else ""
             )
