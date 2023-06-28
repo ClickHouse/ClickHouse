@@ -852,9 +852,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(file_segments->front());
-
-        if (read_type == ReadType::CACHED)
-            file_segments->front().use();
+        file_segments->front().use();
     }
 
     chassert(!internal_buffer.empty());
