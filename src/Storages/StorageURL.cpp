@@ -35,6 +35,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <regex>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -464,10 +465,18 @@ void StorageURLSink::onCancel()
     cancelled = true;
 }
 
-void StorageURLSink::onException()
+void StorageURLSink::onException(std::exception_ptr exception)
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (...)
+    {
+        /// An exception context is needed to proper delete write buffers without finalization
+        release();
+    }
 }
 
 void StorageURLSink::onFinish()
@@ -490,10 +499,15 @@ void StorageURLSink::finalize()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        writer.reset();
-        write_buf->finalize();
+        release();
         throw;
     }
+}
+
+void StorageURLSink::release()
+{
+    writer.reset();
+    write_buf->finalize();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
