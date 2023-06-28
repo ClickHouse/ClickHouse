@@ -35,6 +35,7 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 #else
     const auto * begin = pos->begin;
 
+    // The same parsers are used in the client and the server, so the parser have to detect the end of a single query in case of multiquery queries
     while (!pos->isEnd() && pos->type != TokenType::Semicolon)
         ++pos;
 
