@@ -11,6 +11,7 @@ import subprocess
 import sys
 import string
 import random
+import shlex
 
 
 def random_str(length=6):
@@ -407,8 +408,14 @@ if __name__ == "__main__":
     if args.analyzer:
         use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
 
-    pytest_opts = " ".join(args.pytest_args).replace("'", "\\'")
-    tests_list = " ".join(args.tests_list)
+    # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
+    pytest_opts = " ".join(
+        map(lambda x: shlex.quote(x).replace('"', '\\"'), args.pytest_args)
+    )
+    tests_list = " ".join(
+        map(lambda x: shlex.quote(x).replace('"', '\\"'), args.tests_list)
+    )
+
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
         "--privileged --dns-search='.' "  # since recent dns search leaks from host
@@ -420,7 +427,7 @@ if __name__ == "__main__":
         f"--volume={args.src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "
-        f"-e PYTEST_OPTS='{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv'"
+        f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
