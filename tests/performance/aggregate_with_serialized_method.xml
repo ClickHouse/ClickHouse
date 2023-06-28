@@ -11,13 +11,19 @@
         key_string1 Nullable(String),
         key_string2 Nullable(String),
         key_string3 Nullable(String),
+        key_int64_1 Nullable(Int64),
+        key_int64_2 Nullable(Int64),
+        key_int64_3 Nullable(Int64),
+        key_int64_4 Nullable(Int64),
+        key_int64_5 Nullable(Int64),
         m1 Int64,
-        m2 Int64,
+        m2 Int64
         )
         ENGINE = Memory
     </create_query>
-    <fill_query>insert into t_nullable select ['aaaaaa','bbaaaa','ccaaaa','ddaaaa'][number % 101 + 1], ['aa','bb','cc','dd'][number % 100 + 1], ['aa','bb','cc','dd'][number % 102 + 1], number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
+    <fill_query>insert into t_nullable select ['aaaaaa','bbaaaa','ccaaaa','ddaaaa'][number % 101 + 1], ['aa','bb','cc','dd'][number % 100 + 1], ['aa','bb','cc','dd'][number % 102 + 1], number%1000+1, number%1000+2, number%1000+3, number%1000+4,number%1000+5, number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
     <query>select key_string1,key_string2,key_string3, min(m1) from t_nullable group by key_string1,key_string2,key_string3</query>
+    <query>select key_string3,key_int64_1,key_int64_2, min(m1) from t_nullable group by key_string3,key_int64_1,key_int64_2</query>
 
     <drop_query>drop table if exists t_nullable</drop_query>
 </test>
