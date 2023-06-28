@@ -9,6 +9,7 @@
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -275,7 +276,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 namespace
 {
 
-ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
+FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
 {
     if (!dag_node->column)
         return {};
@@ -285,28 +286,26 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
         column = &column_const->getDataColumn();
 
     if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
-    {
-        auto set = column_set->getData();
-
-        if (set && set->isCreated())
-            return set;
-    }
+        return column_set->getData();
 
     return {};
 }
 
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
     if (ast_node && prepared_sets)
     {
-        auto prepared_sets_with_same_hash = prepared_sets->getByTreeHash(ast_node->getTreeHash());
-        for (auto & set : prepared_sets_with_same_hash)
-            if (set.isCreated())
-                return set.get();
+        auto key = ast_node->getTreeHash();
+        const auto & sets = prepared_sets->getSetsFromTuple();
+        auto it = sets.find(key);
+        if (it != sets.end() && !it->second.empty())
+            return it->second.at(0);
+
+        return prepared_sets->findSubquery(key);
     }
     else if (dag_node)
     {
@@ -317,16 +316,16 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
     return {};
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->get(PreparedSetKey::forSubquery(*ast_node));
+            return prepared_sets->findSubquery(ast_node->getTreeHash());
 
-        return prepared_sets->get(PreparedSetKey::forLiteral(*ast_node, data_types));
+        return prepared_sets->findTuple(ast_node->getTreeHash(), data_types);
     }
     else if (dag_node)
     {
@@ -337,46 +336,61 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) 
     return nullptr;
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     const DataTypes & data_types) const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
+    /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+    /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+    /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+    /// that the types it was prepared with are compatible with the types of the primary key.
+    auto types_match = [&indexes_mapping, &data_types](const DataTypes & set_types)
+    {
+        assert(indexes_mapping.size() == data_types.size());
+
+        for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        {
+            if (indexes_mapping[i].tuple_index >= set_types.size())
+                return false;
+
+            auto lhs = removeNullable(recursiveRemoveLowCardinality(data_types[i]));
+            auto rhs = removeNullable(recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]));
+
+            if (!lhs->equals(*rhs))
+                return false;
+        }
+
+        return true;
+    };
+
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->get(PreparedSetKey::forSubquery(*ast_node));
-
-        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-        /// that the types it was prepared with are compatible with the types of the primary key.
-        auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
-        {
-            assert(indexes_mapping.size() == data_types.size());
-
-            for (size_t i = 0; i < indexes_mapping.size(); ++i)
-            {
-                if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                    return false;
-            }
-
-            return true;
-        };
+            return prepared_sets->findSubquery(ast_node->getTreeHash());
 
         auto tree_hash = ast_node->getTreeHash();
-        for (const auto & set : prepared_sets->getByTreeHash(tree_hash))
-        {
-            if (set.isCreated() && types_match(set.get()))
-                return set.get();
-        }
+        const auto & sets = prepared_sets->getSetsFromTuple();
+        auto it = sets.find(tree_hash);
+        if (it == sets.end())
+            return nullptr;
+
+        for (const auto & future_set : it->second)
+            if (types_match(future_set->getTypes()))
+                return future_set;
     }
     else
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         if (node_without_alias->column)
+        {
+            /// It's ok to returning a set with type mismatch here as long as types are comparable (e.g. UInt32 vs UInt64)
+            /// If the type is non-comparable, let the caller ignore the set.
+            /// Helpful for index analysis, e.g. query `SELECT count() FROM tst_in WHERE key IN (SELECT number FROM numbers(1000))`
+            /// with `key` is UInt32
             return tryGetSetFromDAGNode(node_without_alias);
+        }
     }
 
     return nullptr;

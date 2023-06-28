@@ -1333,14 +1333,14 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto prepared_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    auto future_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    if (!future_set)
+        return false;
 
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
-
-    ActionsDAG::Node temp_cast_holder;
-    temp_cast_holder.type = ActionsDAG::ActionType::FUNCTION;
 
     prepared_set->checkColumnsNumber(left_args_count);
      std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> final_indexes_mapping;
