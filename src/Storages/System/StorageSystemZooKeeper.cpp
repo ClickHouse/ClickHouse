@@ -16,12 +16,14 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <boost/algorithm/string/join.hpp>
@@ -162,6 +164,17 @@ public:
     }
 };
 
+/// Type of path to be fetched
+enum class ZkPathType
+{
+    Exact,   /// Fetch all nodes under this path
+    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
+    Recurse, /// Fatch all nodes under this path, recursively
+};
+
+/// List of paths to be feched from zookeeper
+using Paths = std::deque<std::pair<String, ZkPathType>>;
+
 class ReadFromSystemZooKeeper final : public SourceStepWithFilter
 {
 public:
@@ -171,11 +184,14 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
+    void onAddFilterFinish() override;
+
 private:
-    void fillData(MutableColumns & res_columns) const;
+    void fillData(MutableColumns & res_columns);
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
     ContextPtr context;
+    Paths paths;
 };
 
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
@@ -247,17 +263,6 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
     };
 }
 
-/// Type of path to be fetched
-enum class ZkPathType
-{
-    Exact,   /// Fetch all nodes under this path
-    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
-    Recurse, /// Fatch all nodes under this path, recursively
-};
-
-/// List of paths to be feched from zookeeper
-using Paths = std::deque<std::pair<String, ZkPathType>>;
-
 static String pathCorrected(const String & path)
 {
     String path_corrected;
@@ -314,11 +319,12 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!column_set)
             return;
 
-        auto set = column_set->getData();
-        if (!set || !set->isCreated())
+        auto future_set = column_set->getData();
+        if (!future_set)
             return;
 
-        if (!set->hasExplicitSetElements())
+        auto set = future_set->buildOrderedSetInplace(context);
+        if (!set || !set->hasExplicitSetElements())
             return;
 
         set->checkColumnsNumber(1);
@@ -415,10 +421,13 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 }
 
 
-void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
+void ReadFromSystemZooKeeper::onAddFilterFinish()
 {
-    Paths paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+}
 
+void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
+{
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     if (paths.empty())
