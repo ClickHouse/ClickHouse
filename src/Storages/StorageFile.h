@@ -2,16 +2,20 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Common/FileRenamer.h>
+
+#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
+
 
 namespace DB
 {
 
 class StorageFile final : public IStorage
 {
+friend class partitionedstoragefilesink;
+
 public:
     struct CommonArguments : public WithContext
     {
@@ -22,8 +26,6 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
-
-        const std::string rename_after_processing;
     };
 
     /// From file descriptor
@@ -51,8 +53,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     void truncate(
         const ASTPtr & /*query*/,
@@ -74,10 +75,6 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns() const override;
-
-    bool prefersLargeBlocks() const override;
-
-    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -141,11 +138,6 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
-
-    // Counts the number of readers
-    std::atomic<int32_t> readers_counter = 0;
-    FileRenamer file_renamer;
-    bool was_renamed = false;
 };
 
 }

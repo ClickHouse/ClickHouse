@@ -32,7 +32,6 @@ try:
     import nats
     import ssl
     import meilisearch
-    import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -116,11 +115,14 @@ def run_and_check(
     return out
 
 
-# Based on https://stackoverflow.com/a/1365284/3706827
+# Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_free_port():
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
@@ -329,7 +331,6 @@ class ClickHouseCluster:
         custom_dockerd_host=None,
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
-        with_spark=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -372,11 +373,8 @@ class ClickHouseCluster:
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
-        # Problems with glibc 2.36+ [1]
-        #
-        #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
+        self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
@@ -448,8 +446,6 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
 
-        self.spark_session = None
-
         self.with_azurite = False
 
         # available when with_hdfs == True
@@ -474,10 +470,10 @@ class ClickHouseCluster:
         # available when with_kafka == True
         self.kafka_host = "kafka1"
         self.kafka_dir = os.path.join(self.instances_dir, "kafka")
-        self._kafka_port = 0
+        self.kafka_port = get_free_port()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
-        self._schema_registry_port = 0
+        self.schema_registry_port = get_free_port()
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
@@ -485,7 +481,7 @@ class ClickHouseCluster:
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
-        self._kerberized_kafka_port = 0
+        self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
             self.kerberized_kafka_host
         )
@@ -496,15 +492,15 @@ class ClickHouseCluster:
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
-        self._mongo_port = 0
+        self.mongo_port = get_free_port()
         self.mongo_no_cred_host = "mongo2"
-        self._mongo_no_cred_port = 0
+        self.mongo_no_cred_port = get_free_port()
 
         # available when with_meili == True
         self.meili_host = "meili1"
-        self._meili_port = 0
+        self.meili_port = get_free_port()
         self.meili_secure_host = "meili_secure"
-        self._meili_secure_port = 0
+        self.meili_secure_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -534,7 +530,7 @@ class ClickHouseCluster:
 
         # available when with_redis == True
         self.redis_host = "redis1"
-        self._redis_port = 0
+        self.redis_port = get_free_port()
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -619,75 +615,6 @@ class ClickHouseCluster:
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
-
-        if with_spark:
-            # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
-            (
-                pyspark.sql.SparkSession.builder.appName("spark_test")
-                .config(
-                    "spark.jars.packages",
-                    "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                )
-                .master("local")
-                .getOrCreate()
-                .stop()
-            )
-
-    @property
-    def kafka_port(self):
-        if self._kafka_port:
-            return self._kafka_port
-        self._kafka_port = get_free_port()
-        return self._kafka_port
-
-    @property
-    def schema_registry_port(self):
-        if self._schema_registry_port:
-            return self._schema_registry_port
-        self._schema_registry_port = get_free_port()
-        return self._schema_registry_port
-
-    @property
-    def kerberized_kafka_port(self):
-        if self._kerberized_kafka_port:
-            return self._kerberized_kafka_port
-        self._kerberized_kafka_port = get_free_port()
-        return self._kerberized_kafka_port
-
-    @property
-    def mongo_port(self):
-        if self._mongo_port:
-            return self._mongo_port
-        self._mongo_port = get_free_port()
-        return self._mongo_port
-
-    @property
-    def mongo_no_cred_port(self):
-        if self._mongo_no_cred_port:
-            return self._mongo_no_cred_port
-        self._mongo_no_cred_port = get_free_port()
-        return self._mongo_no_cred_port
-
-    @property
-    def meili_port(self):
-        if self._meili_port:
-            return self._meili_port
-        self._meili_port = get_free_port()
-        return self._meili_port
-
-    @property
-    def meili_secure_port(self):
-        if self._meili_secure_port:
-            return self._meili_secure_port
-        self._meili_secure_port = get_free_port()
-        return self._meili_secure_port
-
-    @property
-    def redis_port(self):
-        if self._redis_port:
-            return self._redis_port
-        self._redis_port = get_free_port()
-        return self._redis_port
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1963,9 +1890,9 @@ class ClickHouseCluster:
             return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
-        with open(local_path, "rb") as fdata:
+        with open(local_path, "r") as fdata:
             data = fdata.read()
-            encodedBytes = base64.b64encode(data)
+            encodedBytes = base64.b64encode(data.encode("utf-8"))
             encodedStr = str(encodedBytes, "utf-8")
             self.exec_in_container(
                 container_id,
@@ -1974,6 +1901,7 @@ class ClickHouseCluster:
                     "-c",
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
+                user="root",
             )
 
     def wait_for_url(
@@ -3376,7 +3304,6 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
-        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(
@@ -3387,7 +3314,6 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
-            query_id=query_id,
         )
 
     def query_and_get_error_with_retry(
@@ -4182,10 +4108,9 @@ class ClickHouseInstance:
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
+            need_fix_log_level = self.tag != "latest"
             write_embedded_config(
-                "0_common_instance_config.xml",
-                self.config_d_dir,
-                self.with_installed_binary,
+                "0_common_instance_config.xml", self.config_d_dir, need_fix_log_level
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)

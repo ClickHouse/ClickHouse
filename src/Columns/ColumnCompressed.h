@@ -64,7 +64,7 @@ public:
         return ColumnCompressed::create(
             size,
             bytes,
-            [my_column = std::move(column)]{ return my_column; });
+            [column = std::move(column)]{ return column; });
     }
 
     /// Helper methods for compression.

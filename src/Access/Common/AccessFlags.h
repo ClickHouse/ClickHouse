@@ -4,7 +4,6 @@
 #include <bitset>
 #include <cstring>
 #include <vector>
-#include <unordered_map>
 
 
 namespace DB

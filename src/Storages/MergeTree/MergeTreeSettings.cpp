@@ -175,29 +175,5 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
-
-    if (max_cleanup_delay_period < cleanup_delay_period)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period, cleanup_delay_period);
-    }
-
-    if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
-    }
-
-    if (merge_selecting_sleep_slowdown_factor < 1.f)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor);
-    }
 }
 }

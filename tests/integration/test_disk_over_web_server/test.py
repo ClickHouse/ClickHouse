@@ -10,48 +10,34 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node1",
-            main_configs=["configs/storage_conf.xml"],
-            with_nginx=True,
+            "node1", main_configs=["configs/storage_conf.xml"], with_nginx=True
         )
         cluster.add_instance(
             "node2",
             main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             stay_alive=True,
-            with_zookeeper=True,
         )
         cluster.add_instance(
-            "node3",
-            main_configs=["configs/storage_conf_web.xml"],
-            with_nginx=True,
-            with_zookeeper=True,
+            "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True
         )
-
-        cluster.add_instance(
-            "node4",
-            main_configs=["configs/storage_conf.xml"],
-            with_nginx=True,
-            stay_alive=True,
-            with_installed_binary=True,
-            image="clickhouse/clickhouse-server",
-            tag="22.8.14.53",
-        )
-
         cluster.start()
 
-        def create_table_and_upload_data(node, i):
-            node.query(
+        node1 = cluster.instances["node1"]
+        expected = ""
+        global uuids
+        for i in range(3):
+            node1.query(
                 f"CREATE TABLE data{i} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;"
             )
 
             for _ in range(10):
-                node.query(
+                node1.query(
                     f"INSERT INTO data{i} SELECT number FROM numbers(500000 * {i+1})"
                 )
-            node.query(f"SELECT * FROM data{i} ORDER BY id")
+            expected = node1.query(f"SELECT * FROM data{i} ORDER BY id")
 
-            metadata_path = node.query(
+            metadata_path = node1.query(
                 f"SELECT data_paths FROM system.tables WHERE name='data{i}'"
             )
             metadata_path = metadata_path[
@@ -59,7 +45,7 @@ def cluster():
             ]
             print(f"Metadata: {metadata_path}")
 
-            node.exec_in_container(
+            node1.exec_in_container(
                 [
                     "bash",
                     "-c",
@@ -70,20 +56,8 @@ def cluster():
                 user="root",
             )
             parts = metadata_path.split("/")
+            uuids.append(parts[3])
             print(f"UUID: {parts[3]}")
-            return parts[3]
-
-        node1 = cluster.instances["node1"]
-
-        global uuids
-        for i in range(2):
-            uuid = create_table_and_upload_data(node1, i)
-            uuids.append(uuid)
-
-        node4 = cluster.instances["node4"]
-
-        uuid = create_table_and_upload_data(node4, 2)
-        uuids.append(uuid)
 
         yield cluster
 
@@ -94,14 +68,13 @@ def cluster():
 @pytest.mark.parametrize("node_name", ["node2"])
 def test_usage(cluster, node_name):
     node1 = cluster.instances["node1"]
-    node4 = cluster.instances["node4"]
     node2 = cluster.instances[node_name]
     global uuids
     assert len(uuids) == 3
     for i in range(3):
         node2.query(
             """
-            CREATE TABLE test{} UUID '{}'
+            ATTACH TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
@@ -117,11 +90,7 @@ def test_usage(cluster, node_name):
         result = node2.query(
             "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
-        node = node1
-        if i == 2:
-            node = node4
-
-        assert result == node.query(
+        assert result == node1.query(
             "SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
 
@@ -130,7 +99,7 @@ def test_usage(cluster, node_name):
                 i
             )
         )
-        assert result == node.query(
+        assert result == node1.query(
             "SELECT id FROM data{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(
                 i
             )
@@ -146,7 +115,7 @@ def test_incorrect_usage(cluster):
     global uuids
     node2.query(
         """
-        CREATE TABLE test0 UUID '{}'
+        ATTACH TABLE test0 UUID '{}'
         (id Int32) ENGINE = MergeTree() ORDER BY id
         SETTINGS storage_policy = 'web';
     """.format(
@@ -172,14 +141,13 @@ def test_incorrect_usage(cluster):
 @pytest.mark.parametrize("node_name", ["node2"])
 def test_cache(cluster, node_name):
     node1 = cluster.instances["node1"]
-    node4 = cluster.instances["node4"]
     node2 = cluster.instances[node_name]
     global uuids
     assert len(uuids) == 3
     for i in range(3):
         node2.query(
             """
-            CREATE TABLE test{} UUID '{}'
+            ATTACH TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'cached_web';
         """.format(
@@ -210,12 +178,7 @@ def test_cache(cluster, node_name):
         result = node2.query(
             "SELECT id FROM test{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
-
-        node = node1
-        if i == 2:
-            node = node4
-
-        assert result == node.query(
+        assert result == node1.query(
             "SELECT id FROM data{} WHERE id % 56 = 3 ORDER BY id".format(i)
         )
 
@@ -224,7 +187,7 @@ def test_cache(cluster, node_name):
                 i
             )
         )
-        assert result == node.query(
+        assert result == node1.query(
             "SELECT id FROM data{} WHERE id > 789999 AND id < 999999 ORDER BY id".format(
                 i
             )
@@ -244,7 +207,7 @@ def test_unavailable_server(cluster):
     global uuids
     node2.query(
         """
-        CREATE TABLE test0 UUID '{}'
+        ATTACH TABLE test0 UUID '{}'
         (id Int32) ENGINE = MergeTree() ORDER BY id
         SETTINGS storage_policy = 'web';
     """.format(
@@ -282,35 +245,3 @@ def test_unavailable_server(cluster):
         )
         node2.start_clickhouse()
         node2.query("DROP TABLE test0 SYNC")
-
-
-def test_replicated_database(cluster):
-    node1 = cluster.instances["node3"]
-    node1.query(
-        "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
-        settings={"allow_experimental_database_replicated": 1},
-    )
-
-    global uuids
-    node1.query(
-        """
-        CREATE TABLE rdb.table0 UUID '{}'
-        (id Int32) ENGINE = MergeTree() ORDER BY id
-        SETTINGS storage_policy = 'web';
-    """.format(
-            uuids[0]
-        )
-    )
-
-    node2 = cluster.instances["node2"]
-    node2.query(
-        "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r2')",
-        settings={"allow_experimental_database_replicated": 1},
-    )
-    node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
-
-    assert node1.query("SELECT count() FROM rdb.table0") == "5000000\n"
-    assert node2.query("SELECT count() FROM rdb.table0") == "5000000\n"
-
-    node1.query("DROP DATABASE rdb SYNC")
-    node2.query("DROP DATABASE rdb SYNC")

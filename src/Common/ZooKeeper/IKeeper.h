@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Coordination/KeeperConstants.h>
-#include <Poco/Net/SocketAddress.h>
 
 #include <vector>
 #include <memory>
@@ -274,7 +273,7 @@ struct SetRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size() + sizeof(version); }
+    size_t bytesSize() const override { return data.size() + data.size() + sizeof(version); }
 };
 
 struct SetResponse : virtual Response
@@ -319,9 +318,6 @@ struct CheckRequest : virtual Request
 {
     String path;
     int32_t version = -1;
-
-    /// should it check if a node DOES NOT exist
-    bool not_exists = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -467,8 +463,6 @@ public:
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
-    virtual Poco::Net::SocketAddress getConnectedAddress() const = 0;
-
     /// If the method will throw an exception, callbacks won't be called.
     ///
     /// After the method is executed successfully, you must wait for callbacks
@@ -530,7 +524,7 @@ public:
         const Requests & requests,
         MultiCallback callback) = 0;
 
-    virtual DB::KeeperApiVersion getApiVersion() const = 0;
+    virtual DB::KeeperApiVersion getApiVersion() = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;

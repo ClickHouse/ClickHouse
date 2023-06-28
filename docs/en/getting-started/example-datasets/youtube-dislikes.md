@@ -22,7 +22,7 @@ The steps below will easily work on a local install of ClickHouse too. The only 
 
 ## Step-by-step instructions
 
-1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the result:
+1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the reult:
 
 ```sql
 DESCRIBE s3Cluster(
@@ -67,8 +67,7 @@ CREATE TABLE youtube
 (
     `id` String,
     `fetch_date` DateTime,
-    `upload_date_str` String,
-    `upload_date` Date,
+    `upload_date` String,
     `title` String,
     `uploader_id` String,
     `uploader` String,
@@ -88,7 +87,7 @@ CREATE TABLE youtube
     `video_badges` String
 )
 ENGINE = MergeTree
-ORDER BY (uploader, upload_date);
+ORDER BY (upload_date, uploader);
 ```
 
 3. The following command streams the records from the S3 files into the `youtube` table.
@@ -102,9 +101,8 @@ INSERT INTO youtube
 SETTINGS input_format_null_as_default = 1
 SELECT
     id,
-    parseDateTimeBestEffortUSOrZero(toString(fetch_date)) AS fetch_date,
-    upload_date AS upload_date_str,
-    toDate(parseDateTimeBestEffortUSOrZero(upload_date::String)) AS upload_date,
+    parseDateTimeBestEffortUS(toString(fetch_date)) AS fetch_date,
+    upload_date,
     ifNull(title, '') AS title,
     uploader_id,
     ifNull(uploader, '') AS uploader,
@@ -122,19 +120,14 @@ SELECT
     super_titles,
     ifNull(uploader_badges, '') AS uploader_badges,
     ifNull(video_badges, '') AS video_badges
-FROM s3(
-    'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
-    'JSONLines'
-)
+FROM s3Cluster(
+       'default',
+       'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
+       'JSONLines'
+    );
 ```
 
-Some comments about our `INSERT` command:
-
-- The `parseDateTimeBestEffortUSOrZero` function is handy when the incoming date fields may not be in the proper format. If `fetch_date` does not get parsed properly, it will be set to `0`
-- The `upload_date` column contains valid dates, but it also contains strings like "4 hours ago" - which is certainly not a valid date. We decided to store the original value in `upload_date_str` and attempt to parse it with `toDate(parseDateTimeBestEffortUSOrZero(upload_date::String))`. If the parsing fails we just get `0`
-- We used `ifNull` to avoid getting `NULL` values in our table. If an incoming value is `NULL`, the `ifNull` function is setting the value to an empty string
-
-4. Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase. It will take a while to insert 4.56B rows, depending on your server resources. (Without any tweaking of settings, it takes about 4.5 hours.)
+4. Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase. It will take a while to insert 4.56B rows, depending on your server resources. (Withtout any tweaking of settings, it takes about 4.5 hours.)
 
 ```sql
 SELECT formatReadableQuantity(count())
@@ -207,7 +200,7 @@ FROM youtube
 WHERE (title ILIKE '%ClickHouse%') OR (description ILIKE '%ClickHouse%')
 ORDER BY
     like_count DESC,
-    view_count DESC;
+    view_count DESC
 ```
 
 This query has to process every row, and also parse through two columns of strings. Even then, we get decent performance at 4.15M rows/second:
@@ -231,6 +224,7 @@ The results look like:
 
 When commenting is disabled, are people more likely to like or dislike to express their feelings about a video?
 
+
 ```sql
 SELECT
     concat('< ', formatReadableQuantity(view_range)) AS views,
@@ -250,10 +244,11 @@ FROM
 ) WHERE view_range > 1
 ORDER BY
     is_comments_enabled ASC,
-    num_views ASC;
+    num_views ASC
 ```
 
 ```response
+
 ┌─views─────────────┬─is_comments_enabled─┬────prob_like_dislike─┐
 │ < 10.00           │ false               │  0.08224180712685371 │
 │ < 100.00          │ false               │  0.06346337759167248 │
@@ -278,6 +273,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴──────────────────────┘
 
 22 rows in set. Elapsed: 8.460 sec. Processed 4.56 billion rows, 77.48 GB (538.73 million rows/s., 9.16 GB/s.)
+
 ```
 
 Enabling comments seems to be correlated with a higher rate of engagement.
@@ -288,12 +284,13 @@ Enabling comments seems to be correlated with a higher rate of engagement.
 ```sql
 SELECT
     toStartOfMonth(toDateTime(upload_date)) AS month,
-    uniq(uploader_id) AS uploaders,
-    count() as num_videos,
+    uniq(uploader_id) AS uploaders, 
+    count() as num_videos, 
     sum(view_count) as view_count
 FROM youtube
+WHERE (month >= '2005-01-01') AND (month < '2021-12-01')
 GROUP BY month
-ORDER BY month ASC;
+ORDER BY month ASC
 ```
 
 ```response
@@ -322,7 +319,7 @@ ORDER BY month ASC;
 A spike of uploaders [around covid is noticeable](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
 
-### More subtitles over time and when
+### More subtitiles over time and when
 
 With advances in speech recognition, it’s easier than ever to create subtitles for video with youtube adding auto-captioning in late 2009 - was the jump then?
 
@@ -330,12 +327,11 @@ With advances in speech recognition, it’s easier than ever to create subtitles
 SELECT
     toStartOfMonth(upload_date) AS month,
     countIf(has_subtitles) / count() AS percent_subtitles,
-    percent_subtitles - any(percent_subtitles) OVER (
-        ORDER BY month ASC ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING
-    ) AS previous
+    percent_subtitles - any(percent_subtitles) OVER (ORDER BY month ASC ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING) AS previous
 FROM youtube
+WHERE (month >= '2015-01-01') AND (month < '2021-12-02')
 GROUP BY month
-ORDER BY month ASC;
+ORDER BY month ASC
 ```
 
 ```response
@@ -356,7 +352,7 @@ ORDER BY month ASC;
 
 ```
 
-The data results show a spike in 2009. Apparently at that, time YouTube was removing their community captions feature, which allowed you to upload captions for other people's video.
+The data results show a spike in 2009. Apparently at that, time YouTube was removing their community captions feature, which allowed you to upload captions for other people's video. 
 This prompted a very successful campaign to have creators add captions to their videos for hard of hearing and deaf viewers.
 
 
@@ -383,7 +379,9 @@ GROUP BY
     uploader
 ORDER BY
     month ASC,
-    total_views DESC;
+    total_views DESC
+
+1001 rows in set. Elapsed: 34.917 sec. Processed 4.58 billion rows, 69.08 GB (131.15 million rows/s., 1.98 GB/s.)
 ```
 
 ```response
@@ -423,10 +421,13 @@ GROUP BY
 ORDER BY
     view_range ASC,
     is_comments_enabled ASC
-);
+) 
+
+20 rows in set. Elapsed: 9.043 sec. Processed 4.56 billion rows, 77.48 GB (503.99 million rows/s., 8.57 GB/s.)
 ```
 
 ```response
+
 ┌─view_range────────┬─is_comments_enabled─┬─like_ratio─┐
 │ < 10.00           │ false               │       0.66 │
 │ < 10.00           │ true                │       0.66 │
@@ -449,6 +450,7 @@ ORDER BY
 │ < 10.00 billion   │ false               │       1.77 │
 │ < 10.00 billion   │ true                │       19.5 │
 └───────────────────┴─────────────────────┴────────────┘
+
 ```
 
 ### How are views distributed?
@@ -466,7 +468,9 @@ FROM
 )
 ARRAY JOIN
     quantiles,
-    labels;
+    labels
+
+12 rows in set. Elapsed: 1.864 sec. Processed 4.56 billion rows, 36.46 GB (2.45 billion rows/s., 19.56 GB/s.)
 ```
 
 ```response

@@ -5,8 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -23,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 /** Transformations.
@@ -1428,15 +1425,12 @@ struct ToDateTimeComponentsImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct DateTimeAccurateConvertStrategyAdditions {};
-struct DateTimeAccurateOrNullConvertStrategyAdditions {};
 
-template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false, typename Additions = void *>
+template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
 struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
-    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
-        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to)
+    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
     {
         using ValueType = typename ToTypeVector::value_type;
         size_t size = vec_from.size();
@@ -1444,30 +1438,6 @@ struct Transformer
 
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
-            {
-                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-                {
-                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-
-                    if (!is_valid_input)
-                    {
-                        if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-                        {
-                            vec_to[i] = 0;
-                            (*vec_null_map_to)[i] = true;
-                            continue;
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                vec_from[i], TypeName<ValueType>);
-                        }
-                    }
-                }
-            }
-
             if constexpr (is_extended_result)
                 vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], time_zone));
             else
@@ -1476,26 +1446,18 @@ struct Transformer
     }
 };
 
+
 template <typename FromDataType, typename ToDataType, typename Transform, bool is_extended_result = false>
 struct DateTimeTransformImpl
 {
-    template <typename Additions = void *>
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
-        using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
+        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>;
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
-            ColumnUInt8::MutablePtr col_null_map_to;
-            ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-            {
-                col_null_map_to = ColumnUInt8::create(sources->getData().size(), false);
-                vec_null_map_to = &col_null_map_to->getData();
-            }
-
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
@@ -1503,7 +1465,7 @@ struct DateTimeTransformImpl
             if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             }
             else
             {
@@ -1512,15 +1474,7 @@ struct DateTimeTransformImpl
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
-            }
-
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
-            {
-                if (vec_null_map_to)
-                {
-                    return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
-                }
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             }
 
             return mutable_result_col;

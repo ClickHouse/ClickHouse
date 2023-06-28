@@ -128,14 +128,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
 
     for (const auto & name : {"Protobuf", "ProtobufSingle"})
         factory.registerAdditionalInfoForSchemaCacheGetter(
-            name,
-            [](const FormatSettings & settings)
-            {
-                return fmt::format(
-                    "format_schema={}, skip_fields_with_unsupported_types_in_schema_inference={}",
-                    settings.schema.format_schema,
-                    settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
-            });
+            name, [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 }

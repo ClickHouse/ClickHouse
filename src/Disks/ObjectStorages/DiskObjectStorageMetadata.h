@@ -21,7 +21,7 @@ private:
     const std::string & common_metadata_path;
 
     /// Relative paths of blobs.
-    RelativePathsWithMetadata storage_objects;
+    RelativePathsWithSize storage_objects;
 
     const std::string object_storage_root_path;
 
@@ -63,7 +63,7 @@ public:
         return object_storage_root_path;
     }
 
-    RelativePathsWithMetadata getBlobsRelativePaths() const
+    RelativePathsWithSize getBlobsRelativePaths() const
     {
         return storage_objects;
     }

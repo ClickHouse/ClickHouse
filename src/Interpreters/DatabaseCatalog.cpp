@@ -8,17 +8,16 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
+#include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
@@ -110,7 +109,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -216,24 +215,8 @@ void DatabaseCatalog::shutdownImpl()
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
-    /// Delay shutdown of temporary and system databases. They will be shutdown last.
-    /// Because some databases might use them until their shutdown is called, but calling shutdown
-    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
-    std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
-    {
-        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
-        {
-            databases_with_delayed_shutdown.push_back(database.second);
-            continue;
-        }
         database.second->shutdown();
-    }
-
-    for (auto & database : databases_with_delayed_shutdown)
-    {
-        database->shutdown();
-    }
 
     {
         std::lock_guard lock(tables_marked_dropped_mutex);

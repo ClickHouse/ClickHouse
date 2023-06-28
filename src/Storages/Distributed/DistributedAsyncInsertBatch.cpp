@@ -8,6 +8,13 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
+namespace
+{
+
+namespace fs = std::filesystem;
+
+}
+
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
@@ -133,7 +140,7 @@ void DistributedAsyncInsertBatch::send()
     total_bytes = 0;
     recovered = false;
 
-    std::filesystem::resize_file(parent.current_batch_file_path, 0);
+    fs::resize_file(parent.current_batch_file_path, 0);
 }
 
 void DistributedAsyncInsertBatch::serialize()
@@ -142,7 +149,7 @@ void DistributedAsyncInsertBatch::serialize()
     String tmp_file{parent.current_batch_file_path + ".tmp"};
 
     auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
-    if (std::filesystem::exists(tmp_file))
+    if (fs::exists(tmp_file))
         LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
 
     {
@@ -154,7 +161,7 @@ void DistributedAsyncInsertBatch::serialize()
             out.sync();
     }
 
-    std::filesystem::rename(tmp_file, parent.current_batch_file_path);
+    fs::rename(tmp_file, parent.current_batch_file_path);
 }
 
 void DistributedAsyncInsertBatch::deserialize()
@@ -167,7 +174,7 @@ void DistributedAsyncInsertBatch::writeText(WriteBuffer & out)
 {
     for (const auto & file : files)
     {
-        UInt64 file_index = parse<UInt64>(std::filesystem::path(file).stem());
+        UInt64 file_index = parse<UInt64>(fs::path(file).stem());
         out << file_index << '\n';
     }
 }
@@ -178,7 +185,7 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
     {
         UInt64 idx;
         in >> idx >> "\n";
-        files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
+        files.push_back(fs::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
     }
 
     recovered = true;
@@ -201,14 +208,6 @@ void DistributedAsyncInsertBatch::sendBatch()
     {
         for (const auto & file : files)
         {
-            /// In case of recovery it is possible that some of files will be
-            /// missing, if server had been restarted abnormally
-            if (recovered && !fs::exists(file))
-            {
-                LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
-                continue;
-            }
-
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
