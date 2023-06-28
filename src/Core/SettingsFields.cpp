@@ -182,7 +182,7 @@ namespace
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unsupported type of settings value. Got: {}, expected: {}",
                 fieldTypeToString(f.getType()),
                 fieldTypeToString(Field::Types::UInt64));
-        return stringToMaxThreads(applyVisitor(FieldVisitorToString(), f));
+        return f.safeGet<UInt64>();
     }
 }
 
