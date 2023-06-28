@@ -173,8 +173,8 @@ private:
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
-    Poco::Timespan send_timeout = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
-    Poco::Timespan receive_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
+    Poco::Timespan send_timeout = DBMS_DEFAULT_SEND_TIMEOUT_SEC;
+    Poco::Timespan receive_timeout = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC;
     UInt64 poll_interval = DBMS_DEFAULT_POLL_INTERVAL;
     UInt64 idle_connection_timeout = 3600;
     UInt64 interactive_delay = 100000;
@@ -274,7 +274,6 @@ private:
     void sendProfileEvents();
     void sendSelectProfileEvents();
     void sendInsertProfileEvents();
-    void sendTimezone();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

@@ -66,20 +66,13 @@ bool traverseASTFilter(
                 return false;
             value = args.children.at(1);
 
-            PreparedSets::Hash set_key = value->getTreeHash();
-            FutureSetPtr future_set;
-
+            PreparedSetKey set_key;
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))
-                future_set = prepared_sets->findSubquery(set_key);
+                set_key = PreparedSetKey::forSubquery(*value);
             else
-                future_set = prepared_sets->findTuple(set_key, {primary_key_type});
+                set_key = PreparedSetKey::forLiteral(*value, {primary_key_type});
 
-            if (!future_set)
-                return false;
-
-            future_set->buildOrderedSetInplace(context);
-
-            auto set = future_set->get();
+            SetPtr set = prepared_sets->get(set_key);
             if (!set)
                 return false;
 
@@ -182,7 +175,7 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
     return result;
 }
 
-/// In current implementation rocks db/redis can have key with only one column.
+/// In current implementation rocks db can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
 {
     if (primary_key.size() != 1)

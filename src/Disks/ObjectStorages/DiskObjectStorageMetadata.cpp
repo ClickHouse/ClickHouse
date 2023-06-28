@@ -54,7 +54,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         assertChar('\n', buf);
 
         storage_objects[i].relative_path = object_relative_path;
-        storage_objects[i].metadata.size_bytes = object_size;
+        storage_objects[i].bytes_size = object_size;
     }
 
     readIntText(ref_count, buf);
@@ -93,9 +93,9 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeIntText(total_size, buf);
     writeChar('\n', buf);
 
-    for (const auto & [object_relative_path, object_metadata] : storage_objects)
+    for (const auto & [object_relative_path, object_size] : storage_objects)
     {
-        writeIntText(object_metadata.size_bytes, buf);
+        writeIntText(object_size, buf);
         writeChar('\t', buf);
         writeEscapedString(object_relative_path, buf);
         writeChar('\n', buf);
@@ -139,7 +139,7 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
     total_size += size;
-    storage_objects.emplace_back(path, ObjectMetadata{size, {}, {}});
+    storage_objects.emplace_back(path, size);
 }
 
 

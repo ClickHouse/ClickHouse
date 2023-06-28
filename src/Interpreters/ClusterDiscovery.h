@@ -3,6 +3,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/Cluster.h>
 
 #include <Poco/Logger.h>
@@ -31,9 +32,6 @@ public:
         const String & config_prefix = "remote_servers");
 
     void start();
-
-    ClusterPtr getCluster(const String & cluster_name) const;
-    std::unordered_map<String, ClusterPtr> getClusters() const;
 
     ~ClusterDiscovery();
 
@@ -77,24 +75,16 @@ private:
         /// Current node may not belong to cluster, to be just an observer.
         bool current_node_is_observer = false;
 
-        /// For internal management need.
-        /// Is it designed that when deploying multiple compute groups,
-        /// they are mutually invisible to each other.
-        bool current_cluster_is_invisible = false;
-
         explicit ClusterInfo(const String & name_,
                              const String & zk_root_,
-                             const String & host_name,
                              UInt16 port,
                              bool secure,
                              size_t shard_id,
-                             bool observer_mode,
-                             bool invisible)
+                             bool observer_mode)
             : name(name_)
             , zk_root(zk_root_)
-            , current_node(host_name + ":" + toString(port), secure, shard_id)
+            , current_node(getFQDNOrHostName() + ":" + toString(port), secure, shard_id)
             , current_node_is_observer(observer_mode)
-            , current_cluster_is_invisible(invisible)
         {
         }
     };
@@ -133,9 +123,6 @@ private:
     /// The `shared_ptr` is used because it's passed to watch callback.
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
-
-    mutable std::mutex mutex;
-    std::unordered_map<String, ClusterPtr> cluster_impls;
 
     ThreadFromGlobalPool main_thread;
 

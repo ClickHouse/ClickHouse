@@ -5,8 +5,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/PartitionPruner.h>
 
 namespace DB
 {
@@ -24,35 +22,6 @@ struct MergeTreeDataSelectSamplingData
     Float64 used_sample_factor = 1.0;
     std::shared_ptr<ASTFunction> filter_function;
     ActionsDAGPtr filter_expression;
-};
-
-struct UsefulSkipIndexes
-{
-    struct DataSkippingIndexAndCondition
-    {
-        MergeTreeIndexPtr index;
-        MergeTreeIndexConditionPtr condition;
-
-        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-            : index(index_), condition(condition_)
-        {
-        }
-    };
-
-    struct MergedDataSkippingIndexAndCondition
-    {
-        std::vector<MergeTreeIndexPtr> indices;
-        MergeTreeIndexMergedConditionPtr condition;
-
-        void addIndex(const MergeTreeIndexPtr & index)
-        {
-            indices.push_back(index);
-            condition->addIndex(indices.back());
-        }
-    };
-
-    std::vector<DataSkippingIndexAndCondition> useful_indices;
-    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
 };
 
 struct MergeTreeDataSelectAnalysisResult;
@@ -128,7 +97,6 @@ public:
 
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
-        std::vector<AlterConversionsPtr> alter_conversions_,
         Names real_column_names_,
         Names virt_column_names_,
         const MergeTreeData & data_,
@@ -164,18 +132,8 @@ public:
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
 
-    struct Indexes
-    {
-        KeyCondition key_condition;
-        std::optional<PartitionPruner> partition_pruner;
-        std::optional<KeyCondition> minmax_idx_condition;
-        UsefulSkipIndexes skip_indexes;
-        bool use_skip_indexes;
-    };
-
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
         const PrewhereInfoPtr & prewhere_info,
         const ActionDAGNodes & added_filter_nodes,
         const StorageMetadataPtr & metadata_snapshot_base,
@@ -187,12 +145,9 @@ public:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
-        std::optional<Indexes> & indexes);
+        Poco::Logger * log);
 
-    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions) const;
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
 
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
@@ -204,6 +159,8 @@ public:
     bool readsInOrder() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
+
+    static bool isFinal(const SelectQueryInfo & query_info);
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
@@ -213,12 +170,7 @@ public:
 
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
-
-    void resetParts(MergeTreeData::DataPartsVector parts)
-    {
-        prepared_parts = std::move(parts);
-        alter_conversions_for_parts = {};
-    }
+    void resetParts(MergeTreeData::DataPartsVector parts) { prepared_parts = std::move(parts); }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -226,12 +178,9 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
-    void onAddFilterFinish() override;
-
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -241,8 +190,7 @@ private:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
-        std::optional<Indexes> & indexes);
+        Poco::Logger * log);
 
     int getSortDirection() const
     {
@@ -256,8 +204,6 @@ private:
     MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
-    std::vector<AlterConversionsPtr> alter_conversions_for_parts;
-
     Names real_column_names;
     Names virt_column_names;
 
@@ -282,9 +228,6 @@ private:
     bool output_each_partition_through_separate_port = false;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
-
-    /// Pre-computed value, needed to trigger sets creating for PK
-    mutable std::optional<Indexes> indexes;
 
     Poco::Logger * log;
     UInt64 selected_parts = 0;

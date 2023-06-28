@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/null
-sidebar_position: 140
+sidebar_position: 53
 sidebar_label: null function
 title: 'null'
 ---
@@ -15,7 +15,7 @@ null('structure')
 
 **Parameter**
 
-- `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
+-   `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -38,4 +38,4 @@ DROP TABLE IF EXISTS t;
 
 See also:
 
-- [Null table engine](../../engines/table-engines/special/null.md)
+-   [Null table engine](../../engines/table-engines/special/null.md)

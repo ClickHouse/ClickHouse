@@ -136,11 +136,68 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     const AllowedMergingPredicate & can_merge_callback,
     bool merge_with_ttl_allowed,
     const MergeTreeTransactionPtr & txn,
-    String * out_disable_reason,
-    const PartitionIdsHint * partitions_hint)
+    String * out_disable_reason)
 {
-    MergeTreeData::DataPartsVector data_parts = getDataPartsToSelectMergeFrom(txn, partitions_hint);
+    MergeTreeData::DataPartsVector data_parts;
+    if (txn)
+    {
+        /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
+        /// So at the first glance we could just get all active parts.
+        /// Active parts include uncommitted parts, but it's ok and merge predicate handles it.
+        /// However, it's possible that some transaction is trying to remove a part in the middle, for example, all_2_2_0.
+        /// If parts all_1_1_0 and all_3_3_0 are active and visible for merge transaction, then we would try to merge them.
+        /// But it's wrong, because all_2_2_0 may become active again if transaction will roll back.
+        /// That's why we must include some outdated parts into `data_part`, more precisely, such parts that removal is not committed.
+        MergeTreeData::DataPartsVector active_parts;
+        MergeTreeData::DataPartsVector outdated_parts;
 
+        {
+            auto lock = data.lockParts();
+            active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, lock);
+            outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, lock);
+        }
+
+        ActiveDataPartSet active_parts_set{data.format_version};
+        for (const auto & part : active_parts)
+            active_parts_set.add(part->name);
+
+        for (const auto & part : outdated_parts)
+        {
+            /// We don't need rolled back parts.
+            /// NOTE When rolling back a transaction we set creation_csn to RolledBackCSN at first
+            /// and then remove part from working set, so there's no race condition
+            if (part->version.creation_csn == Tx::RolledBackCSN)
+                continue;
+
+            /// We don't need parts that are finally removed.
+            /// NOTE There's a minor race condition: we may get UnknownCSN if a transaction has been just committed concurrently.
+            /// But it's not a problem if we will add such part to `data_parts`.
+            if (part->version.removal_csn != Tx::UnknownCSN)
+                continue;
+
+            active_parts_set.add(part->name);
+        }
+
+        /// Restore "active" parts set from selected active and outdated parts
+        auto remove_pred = [&](const MergeTreeData::DataPartPtr & part) -> bool
+        {
+            return active_parts_set.getContainingPart(part->info) != part->name;
+        };
+
+        std::erase_if(active_parts, remove_pred);
+
+        std::erase_if(outdated_parts, remove_pred);
+
+        std::merge(active_parts.begin(), active_parts.end(),
+                   outdated_parts.begin(), outdated_parts.end(),
+                   std::back_inserter(data_parts), MergeTreeData::LessDataPart());
+    }
+    else
+    {
+        /// Simply get all active parts
+        data_parts = data.getDataPartsVectorForInternalUsage();
+    }
+    const auto data_settings = data.getSettings();
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     if (data_parts.empty())
@@ -150,193 +207,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         return SelectPartsDecision::CANNOT_SELECT;
     }
 
-    MergeSelectingInfo info = getPossibleMergeRanges(data_parts, can_merge_callback, txn, out_disable_reason);
+    time_t current_time = std::time(nullptr);
 
-    if (info.parts_selected_precondition == 0)
-    {
-        if (out_disable_reason)
-            *out_disable_reason = "No parts satisfy preconditions for merge";
-        return SelectPartsDecision::CANNOT_SELECT;
-    }
-
-    auto res = selectPartsToMergeFromRanges(future_part, aggressive, max_total_size_to_merge, merge_with_ttl_allowed,
-                                            metadata_snapshot, info.parts_ranges, info.current_time, out_disable_reason);
-
-    if (res == SelectPartsDecision::SELECTED)
-        return res;
-
-    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
-    if (!best_partition_id_to_optimize.empty())
-    {
-            return selectAllPartsToMergeWithinPartition(
-                future_part,
-                can_merge_callback,
-                best_partition_id_to_optimize,
-                /*final=*/true,
-                metadata_snapshot,
-                txn,
-                out_disable_reason,
-                /*optimize_skip_merged_partitions=*/true);
-    }
-
-    if (out_disable_reason)
-        *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
-    return SelectPartsDecision::CANNOT_SELECT;
-}
-
-MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
-    size_t max_total_size_to_merge,
-    const AllowedMergingPredicate & can_merge_callback,
-    bool merge_with_ttl_allowed,
-    const MergeTreeTransactionPtr & txn) const
-{
-    PartitionIdsHint res;
-    MergeTreeData::DataPartsVector data_parts = getDataPartsToSelectMergeFrom(txn);
-    if (data_parts.empty())
-        return res;
-
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
-
-    MergeSelectingInfo info = getPossibleMergeRanges(data_parts, can_merge_callback, txn);
-
-    if (info.parts_selected_precondition == 0)
-        return res;
-
-    Strings all_partition_ids;
-    std::vector<IMergeSelector::PartsRanges> ranges_per_partition;
-
-    String curr_partition;
-    for (auto & range : info.parts_ranges)
-    {
-        if (range.empty())
-            continue;
-        const String & partition_id = range.front().getDataPartPtr()->info.partition_id;
-        if (partition_id != curr_partition)
-        {
-            curr_partition = partition_id;
-            all_partition_ids.push_back(curr_partition);
-            ranges_per_partition.emplace_back();
-        }
-        ranges_per_partition.back().emplace_back(std::move(range));
-    }
-
-    for (size_t i = 0; i < all_partition_ids.size(); ++i)
-    {
-        auto future_part = std::make_shared<FutureMergedMutatedPart>();
-        String out_disable_reason;
-        /// This method should have been const, but something went wrong... it's const with dry_run = true
-        auto status = const_cast<MergeTreeDataMergerMutator *>(this)->selectPartsToMergeFromRanges(
-                future_part, /*aggressive*/ false, max_total_size_to_merge, merge_with_ttl_allowed,
-                metadata_snapshot, ranges_per_partition[i], info.current_time, &out_disable_reason,
-                /* dry_run */ true);
-        if (status == SelectPartsDecision::SELECTED)
-            res.insert(all_partition_ids[i]);
-        else
-            LOG_TEST(log, "Nothing to merge in partition {}: {}", all_partition_ids[i], out_disable_reason);
-    }
-
-    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
-    if (!best_partition_id_to_optimize.empty())
-        res.emplace(std::move(best_partition_id_to_optimize));
-
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: {}",
-              all_partition_ids.size(), res.size(), fmt::join(res, ", "));
-    return res;
-}
-
-MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectMergeFrom(
-    const MergeTreeTransactionPtr & txn, const PartitionIdsHint * partitions_hint) const
-{
-    auto res = getDataPartsToSelectMergeFrom(txn);
-    if (!partitions_hint)
-        return res;
-
-    std::erase_if(res, [partitions_hint](const auto & part)
-    {
-        return !partitions_hint->contains(part->info.partition_id);
-    });
-    return res;
-}
-
-MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const
-{
-    MergeTreeData::DataPartsVector res;
-    if (!txn)
-    {
-        /// Simply get all active parts
-        return data.getDataPartsVectorForInternalUsage();
-    }
-
-    /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
-    /// So at the first glance we could just get all active parts.
-    /// Active parts include uncommitted parts, but it's ok and merge predicate handles it.
-    /// However, it's possible that some transaction is trying to remove a part in the middle, for example, all_2_2_0.
-    /// If parts all_1_1_0 and all_3_3_0 are active and visible for merge transaction, then we would try to merge them.
-    /// But it's wrong, because all_2_2_0 may become active again if transaction will roll back.
-    /// That's why we must include some outdated parts into `data_part`, more precisely, such parts that removal is not committed.
-    MergeTreeData::DataPartsVector active_parts;
-    MergeTreeData::DataPartsVector outdated_parts;
-
-    {
-        auto lock = data.lockParts();
-        active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, lock);
-        outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, lock);
-    }
-
-    ActiveDataPartSet active_parts_set{data.format_version};
-    for (const auto & part : active_parts)
-        active_parts_set.add(part->name);
-
-    for (const auto & part : outdated_parts)
-    {
-        /// We don't need rolled back parts.
-        /// NOTE When rolling back a transaction we set creation_csn to RolledBackCSN at first
-        /// and then remove part from working set, so there's no race condition
-        if (part->version.creation_csn == Tx::RolledBackCSN)
-            continue;
-
-        /// We don't need parts that are finally removed.
-        /// NOTE There's a minor race condition: we may get UnknownCSN if a transaction has been just committed concurrently.
-        /// But it's not a problem if we will add such part to `data_parts`.
-        if (part->version.removal_csn != Tx::UnknownCSN)
-            continue;
-
-        active_parts_set.add(part->name);
-    }
-
-    /// Restore "active" parts set from selected active and outdated parts
-    auto remove_pred = [&](const MergeTreeData::DataPartPtr & part) -> bool
-    {
-        return active_parts_set.getContainingPart(part->info) != part->name;
-    };
-
-    std::erase_if(active_parts, remove_pred);
-
-    std::erase_if(outdated_parts, remove_pred);
-
-    MergeTreeData::DataPartsVector data_parts;
-    std::merge(
-        active_parts.begin(),
-        active_parts.end(),
-        outdated_parts.begin(),
-        outdated_parts.end(),
-        std::back_inserter(data_parts),
-        MergeTreeData::LessDataPart());
-
-    return data_parts;
-}
-
-MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPossibleMergeRanges(
-    const MergeTreeData::DataPartsVector & data_parts,
-    const AllowedMergingPredicate & can_merge_callback,
-    const MergeTreeTransactionPtr & txn,
-    String * out_disable_reason) const
-{
-    MergeSelectingInfo res;
-
-    res.current_time = std::time(nullptr);
-
-    IMergeSelector::PartsRanges & parts_ranges = res.parts_ranges;
+    IMergeSelector::PartsRanges parts_ranges;
 
     StoragePolicyPtr storage_policy = data.getStoragePolicy();
     /// Volumes with stopped merges are extremely rare situation.
@@ -348,8 +221,14 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
     /// collect min_age for each partition while iterating parts
-    PartitionsInfo & partitions_info = res.partitions_info;
+    struct PartitionInfo
+    {
+        time_t min_age{std::numeric_limits<time_t>::max()};
+    };
 
+    std::unordered_map<std::string, PartitionInfo> partitions_info;
+
+    size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         const String & partition_id = part->info.partition_id;
@@ -405,7 +284,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
         IMergeSelector::Part part_info;
         part_info.size = part->getBytesOnDisk();
-        part_info.age = res.current_time - part->modification_time;
+        part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
         part_info.ttl_infos = &part->ttl_infos;
@@ -415,7 +294,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         auto & partition_info = partitions_info[partition_id];
         partition_info.min_age = std::min(partition_info.min_age, part_info.age);
 
-        ++res.parts_selected_precondition;
+        ++parts_selected_precondition;
 
         parts_ranges.back().emplace_back(part_info);
 
@@ -432,21 +311,13 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         prev_part = &part;
     }
 
-    return res;
-}
+    if (parts_selected_precondition == 0)
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "No parts satisfy preconditions for merge";
+        return SelectPartsDecision::CANNOT_SELECT;
+    }
 
-SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
-    FutureMergedMutatedPartPtr future_part,
-    bool aggressive,
-    size_t max_total_size_to_merge,
-    bool merge_with_ttl_allowed,
-    const StorageMetadataPtr & metadata_snapshot,
-    const IMergeSelector::PartsRanges & parts_ranges,
-    const time_t & current_time,
-    String * out_disable_reason,
-    bool dry_run)
-{
-    const auto data_settings = data.getSettings();
     IMergeSelector::PartsRange parts_to_merge;
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
@@ -456,8 +327,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
-                /*only_drop_parts*/ true,
-                dry_run);
+                true);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         parts_to_merge = drop_ttl_selector.select(parts_ranges, data_settings->max_bytes_to_merge_at_max_space_in_pool);
@@ -471,8 +341,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
-                /*only_drop_parts*/ false,
-                dry_run);
+                false);
 
             parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
@@ -485,8 +354,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
                     next_recompress_ttl_merge_times_by_partition,
                     current_time,
                     data_settings->merge_with_recompression_ttl_timeout,
-                    metadata_snapshot->getRecompressionTTLs(),
-                    dry_run);
+                    metadata_snapshot->getRecompressionTTLs());
 
             parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
@@ -514,8 +382,29 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         if (parts_to_merge.empty())
         {
+            if (data_settings->min_age_to_force_merge_on_partition_only && data_settings->min_age_to_force_merge_seconds)
+            {
+                auto best_partition_it = std::max_element(
+                    partitions_info.begin(),
+                    partitions_info.end(),
+                    [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
+
+                assert(best_partition_it != partitions_info.end());
+
+                if (static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
+                    return selectAllPartsToMergeWithinPartition(
+                        future_part,
+                        can_merge_callback,
+                        best_partition_it->first,
+                        /*final=*/true,
+                        metadata_snapshot,
+                        txn,
+                        out_disable_reason,
+                        /*optimize_skip_merged_partitions=*/true);
+            }
+
             if (out_disable_reason)
-                *out_disable_reason = "Did not find any parts to merge (with usual merge selectors)";
+                *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return SelectPartsDecision::CANNOT_SELECT;
         }
     }
@@ -524,35 +413,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
     parts.reserve(parts_to_merge.size());
     for (IMergeSelector::Part & part_info : parts_to_merge)
     {
-        const MergeTreeData::DataPartPtr & part = part_info.getDataPartPtr();
+        const MergeTreeData::DataPartPtr & part = *static_cast<const MergeTreeData::DataPartPtr *>(part_info.data);
         parts.push_back(part);
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part->assign(std::move(parts));
     return SelectPartsDecision::SELECTED;
-}
-
-String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
-    const PartitionsInfo & partitions_info) const
-{
-    const auto data_settings = data.getSettings();
-    if (!data_settings->min_age_to_force_merge_on_partition_only)
-        return {};
-    if (!data_settings->min_age_to_force_merge_seconds)
-        return {};
-
-    auto best_partition_it = std::max_element(
-        partitions_info.begin(),
-        partitions_info.end(),
-        [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
-
-    assert(best_partition_it != partitions_info.end());
-
-    if (static_cast<size_t>(best_partition_it->second.min_age) < data_settings->min_age_to_force_merge_seconds)
-        return {};
-
-    return best_partition_it->first;
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(

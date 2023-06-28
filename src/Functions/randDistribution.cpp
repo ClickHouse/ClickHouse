@@ -310,96 +310,96 @@ public:
 REGISTER_FUNCTION(Distribution)
 {
     factory.registerFunction<FunctionRandomDistribution<UniformDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the uniform distribution in the specified range.
 Accepts two parameters - minimum bound and maximum bound.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the normal distribution.
 Accepts two parameters - mean and variance.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<LogNormalDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the lognormal distribution (a distribution of a random variable whose logarithm is normally distributed).
 Accepts two parameters - mean and variance.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<ExponentialDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the exponential distribution.
 Accepts one parameter - lambda value.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<ChiSquaredDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the chi-squared distribution (a distribution of a sum of the squares of k independent standard normal random variables).
 Accepts one parameter - degree of freedom.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randChiSquared(5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randChiSquared(5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the t-distribution.
 Accepts one parameter - degree of freedom.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randStudentT(5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randStudentT(5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<FisherFDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the f-distribution.
 The F-distribution is the distribution of X = (S1 / d1) / (S2 / d2) where d1 and d2 are degrees of freedom.
 Accepts two parameters - degrees of freedom.
@@ -407,69 +407,69 @@ Accepts two parameters - degrees of freedom.
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randFisherF(5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randFisherF(5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<BernoulliDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the Bernoulli distribution.
 Accepts one parameter - probability of success.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<BinomialDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the binomial distribution.
 Accepts two parameters - number of experiments and probability of success in each experiment.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<NegativeBinomialDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the negative binomial distribution.
 Accepts two parameters - number of experiments and probability of success in each experiment.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<PoissonDistribution>>(
-    FunctionDocumentation{
-    .description=R"(
+    {
+    R"(
 Returns a random number from the poisson distribution.
 Accepts one parameter - the mean number of occurrences.
 
 Typical usage:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT randPoisson(3) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    Documentation::Examples{
+        {"typical", "SELECT randPoisson(3) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
     });
 }
 
