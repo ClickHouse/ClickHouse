@@ -832,6 +832,7 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
         blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
+        is_finished = true;
         return;
     }
 
@@ -850,8 +851,10 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 {
     std::lock_guard lock(next_mutex);
 
-    if (is_finished)
+    if (is_finished && index >= blobs_with_metadata.size())
+    {
         return {};
+    }
 
     bool need_new_batch = blobs_with_metadata.empty() || index >= blobs_with_metadata.size();
 
