@@ -447,7 +447,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     {
         std::string exception_message;
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
-        std::vector<String> names = hints.getHints(table_id.getTableName(), hints.getAllRegisteredNames());
+        std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
         {
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
