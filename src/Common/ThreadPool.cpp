@@ -420,7 +420,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         {
             if (DB::Exception::enable_job_stack_trace)
                 DB::Exception::thread_frame_pointers = std::move(thread_frame_pointers);
-            
+
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
