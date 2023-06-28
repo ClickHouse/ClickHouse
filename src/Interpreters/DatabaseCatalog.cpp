@@ -362,7 +362,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     std::vector<String> names = hints.getHints(table_id.getTableName(), hints.getAllRegisteredNames());
                     if (!names.empty())
                     {
-                    const std::string suggested_name = names[0];
+                    std::string suggested_name = names[0];
                     /// There is two options: first is to print just the name of the table
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
@@ -416,14 +416,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             if (exception)
             {
                 DatabaseNameHints hints(*this);
-                std::vector<String> names = hints.getHints(table_id.getDatabaseName(), hints.getAllRegisteredNames());
+                auto suggested_names = hints.getAllRegisteredNames();
+                std::vector<String> names = hints.getHints(table_id.getDatabaseName(), suggested_names);
                 if (names.empty())
                 {
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
                 }
                 else
                 {
-                    const std::string suggested_name = names[0];
+                    std::string suggested_name = names[0];
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(suggested_name)));
                 }
             }
@@ -444,7 +445,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
         else
         {
-            const std::string suggested_name = names[0];
+            std::string suggested_name = names[0];
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(suggested_name)));
         }
     }
@@ -486,7 +487,7 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             if (storage->isSystemStorage())
                 return true;
             auto res_id = storage->getStorageID();
-            const String & database_name = res_id.getDatabaseName();
+            String database_name = res_id.getDatabaseName();
             if (database_name != SYSTEM_DATABASE) /// If (database_name == SYSTEM_DATABASE) then we have already checked it (see isSystemStorage() above).
                 return check_database_and_table_name(database_name, res_id.getTableName());
         }
@@ -521,13 +522,12 @@ void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name,
         }
         else
         {
-            const std::string & suggested_name = names[0];
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(suggested_name));
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
         }
     }
 }
 
-void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const std::string & database_name) const
+void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
 {
     assert(!database_name.empty());
     if (databases.end() != databases.find(database_name))
