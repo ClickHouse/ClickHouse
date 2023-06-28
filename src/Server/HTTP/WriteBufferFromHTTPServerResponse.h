@@ -45,6 +45,9 @@ public:
     /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress);
 
+    void onMemoryUsage(Int64 peak_memory_usage);
+
+
     /// Turn compression on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
     void setCompression(bool enable_compression)
@@ -125,6 +128,8 @@ private:
     Stopwatch progress_watch;
 
     int exception_code = 0;
+
+    Int64 peak_memory_usage = 0;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

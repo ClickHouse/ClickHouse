@@ -100,7 +100,7 @@ void ProgressIndication::writeFinalProgress()
         std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     auto peak_memory_usage = getMemoryUsage().peak;
-    std::cout << ".\nPeak memory usage (for query) " << formatReadableSizeWithDecimalSuffix(peak_memory_usage) << ".";
+    std::cout << ".\nPeak memory usage (for query) " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
@@ -166,7 +166,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
         if (memory_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
-        //    profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << ", " 
+        //    profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << ", "
         //                                    << formatReadableSizeWithDecimalSuffix(peak_usage) << " Peak RAM";
         if (max_host_usage < memory_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
