@@ -762,7 +762,7 @@ In addition to local block devices, ClickHouse supports other device types throu
 - [S3](#table_engine-mergetree-s3)
 - GCS (also supported using the [S3 table engine](#table_engine-mergetree-s3))
 - [Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
-- [HDFS](/docs/en/sql-reference/table-functions/hdfs.md)
+- [HDFS](#hdfs-storage)
 - [Web (read-only)](#web-storage)
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
@@ -1248,6 +1248,42 @@ Examples of working configurations can be found in integration tests directory (
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
+
+## HDFS storage {#hdfs-storage}
+
+In this sample configuration:
+- the disk is of type `hdfs`
+- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
 
 ## Web storage (read-only) {#web-storage}
 
