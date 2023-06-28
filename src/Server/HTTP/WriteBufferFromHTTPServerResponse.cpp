@@ -38,7 +38,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
     accumulated_progress.writeJSON(progress_string_writer);
 
     if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << " Mem " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\r\n" << std::flush;
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
@@ -167,6 +167,11 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         startSendHeaders();
         writeHeaderProgress();
     }
+}
+
+void WriteBufferFromHTTPServerResponse::onMemoryUsage(Int64 usage)
+{
+    peak_memory_usage = usage;
 }
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
