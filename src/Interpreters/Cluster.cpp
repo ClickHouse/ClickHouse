@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -614,6 +615,12 @@ Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 
 void Cluster::initMisc()
 {
+    /// NOTE: It is possible to have cluster w/o shards for
+    /// optimize_skip_unused_shards (i.e. WHERE 0 expression), so check the
+    /// slots only if shards is not empty.
+    if (!shards_info.empty() && slot_to_shard.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cluster with zero weight on all shards is prohibited");
+
     for (const auto & shard_info : shards_info)
     {
         if (!shard_info.isLocal() && !shard_info.hasRemoteConnections())
