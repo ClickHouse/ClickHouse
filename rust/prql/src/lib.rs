@@ -28,7 +28,7 @@ pub unsafe extern "C" fn prql_to_sql(
             out,
             out_size,
         );
-        return 0;
+        return 1;
     }
     let prql_query = maybe_prql_query.unwrap();
     let opts = &Options {
