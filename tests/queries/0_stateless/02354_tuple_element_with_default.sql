@@ -10,8 +10,8 @@ EXPLAIN SYNTAX SELECT tupleElement(t1, 'z', 0) FROM t_tuple_element_default;
 SELECT tupleElement(t2, 'z', 'z') FROM t_tuple_element_default;
 EXPLAIN SYNTAX SELECT tupleElement(t2, 'z', 'z') FROM t_tuple_element_default;
 
-SELECT tupleElement(t1, 3, 'z') FROM t_tuple_element_default; -- { serverError ILLEGAL_INDEX }
-SELECT tupleElement(t1, 0, 'z') FROM t_tuple_element_default; -- { serverError ILLEGAL_INDEX }
+SELECT tupleElement(t1, 3, 'z') FROM t_tuple_element_default;
+SELECT tupleElement(t1, 0, 'z') FROM t_tuple_element_default;
 
 DROP TABLE t_tuple_element_default;
 
