@@ -110,7 +110,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -216,8 +216,22 @@ void DatabaseCatalog::shutdownImpl()
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
+    /// Delay shutdown of temporary and system databases. They will be shutdown last.
+    std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
+    {
+        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
+        {
+            databases_with_delayed_shutdown.push_back(database.second);
+            continue;
+        }
         database.second->shutdown();
+    }
+
+    for (auto & database : databases_with_delayed_shutdown)
+    {
+        database->shutdown();
+    }
 
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
