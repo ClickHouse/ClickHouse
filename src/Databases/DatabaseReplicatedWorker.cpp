@@ -91,7 +91,6 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
-        LOG_TRACE(log, "Metadata digest in ZooKeeper: {}", digest);
         std::lock_guard lock{database->metadata_mutex};
         local_digest = database->tables_metadata_digest;
     }

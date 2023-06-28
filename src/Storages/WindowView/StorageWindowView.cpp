@@ -1340,7 +1340,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         time_zone = &DateLUT::instance(window_view_timezone);
     }
     else
-        time_zone = &DateLUT::serverTimezoneInstance();
+        time_zone = &DateLUT::instance();
 
     return result;
 }

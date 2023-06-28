@@ -588,7 +588,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1022,11 +1022,6 @@ Packet Connection::receivePacket()
                 res.block = receiveProfileEvents();
                 return res;
 
-            case Protocol::Server::TimezoneUpdate:
-                readStringBinary(server_timezone, *in);
-                res.server_timezone = server_timezone;
-                return res;
-
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -1175,12 +1170,16 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in);
+    ParallelReadRequest request;
+    request.deserialize(*in);
+    return request;
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in);
+    InitialAllRangesAnnouncement announcement;
+    announcement.deserialize(*in);
+    return announcement;
 }
 
 

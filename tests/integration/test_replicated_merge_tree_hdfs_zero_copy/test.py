@@ -128,7 +128,7 @@ def test_hdfs_zero_copy_replication_single_move(cluster, storage_policy, init_ob
             CREATE TABLE single_node_move_test (dt DateTime, id Int64)
             ENGINE=ReplicatedMergeTree('/clickhouse/tables/{cluster}/{shard}/single_node_move_test', '{replica}')
             ORDER BY (dt, id)
-            SETTINGS storage_policy='$policy',temporary_directories_lifetime=1
+            SETTINGS storage_policy='$policy'
             """
             ).substitute(policy=storage_policy)
         )

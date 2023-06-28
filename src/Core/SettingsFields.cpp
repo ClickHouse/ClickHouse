@@ -13,6 +13,7 @@
 
 #include <cmath>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -450,17 +451,6 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
-void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(value, out);
-}
-
-void SettingFieldTimezone::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinary(str, in);
-    *this = std::move(str);
-}
 
 String SettingFieldCustom::toString() const
 {

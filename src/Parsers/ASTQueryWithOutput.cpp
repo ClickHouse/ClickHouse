@@ -39,8 +39,6 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
         s.ostr << (s.hilite ? hilite_keyword : "");
         if (is_outfile_append)
             s.ostr << " APPEND";
-        if (is_outfile_truncate)
-            s.ostr << " TRUNCATE";
         if (is_into_outfile_with_stdout)
             s.ostr << " AND STDOUT";
         s.ostr << (s.hilite ? hilite_none : "");

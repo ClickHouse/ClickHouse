@@ -26,8 +26,7 @@ SELECT
 
 ## timeZone {#timezone}
 
-Возвращает часовой пояс сервера, считающийся умолчанием для текущей сессии: значение параметра [session_timezone](../../operations/settings/settings.md#session_timezone), если установлено.
-
+Возвращает часовой пояс сервера.
 Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
@@ -43,33 +42,6 @@ timeZone()
 -   Часовой пояс.
 
 Тип: [String](../../sql-reference/data-types/string.md).
-
-**Смотрите также**
-
-- [serverTimeZone](#servertimezone)
-
-## serverTimeZone {#servertimezone}
-
-Возвращает часовой пояс сервера по умолчанию, в т.ч. установленный [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
-Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
-
-**Синтаксис**
-
-``` sql
-serverTimeZone()
-```
-
-Синонимы: `serverTimezone`.
-
-**Возвращаемое значение**
-
--   Часовой пояс.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Смотрите также**
-
-- [timeZone](#timezone)
 
 ## toTimeZone {#totimezone}
 

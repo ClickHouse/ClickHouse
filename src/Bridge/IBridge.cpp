@@ -165,7 +165,7 @@ void IBridge::initialize(Application & self)
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
     keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
-    http_max_field_value_size = config().getUInt64("http-max-field-value-size", 128 * 1024);
+    http_max_field_value_size = config().getUInt64("http-max-field-value-size", 1048576);
 
     struct rlimit limit;
     const UInt64 gb = 1024 * 1024 * 1024;

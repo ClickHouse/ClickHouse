@@ -79,11 +79,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     catch (Exception & e)
     {
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
-        e.addMessage(
-            "(while reading from part " + part_storage->getFullPath()
-            + " located on disk " + part_storage->getDiskName()
-            + " of type " + part_storage->getDiskType() + ")");
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
         throw;
     }
 }
@@ -128,11 +124,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     catch (Exception & e)
     {
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
-        e.addMessage(
-            "(while reading from part " + part_storage->getFullPath()
-            + " located on disk " + part_storage->getDiskName()
-            + " of type " + part_storage->getDiskType() + ")");
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
         throw;
     }
 }
@@ -207,11 +199,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     catch (Exception & e)
     {
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
-        e.addMessage(
-            "(while reading from part " + part_storage->getFullPath()
-            + " located on disk " + part_storage->getDiskName()
-            + " of type " + part_storage->getDiskType() + ")");
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
         throw;
     }
 }
@@ -276,19 +264,6 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
     if (num_columns_to_read != requested_columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::readRows. "
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
-}
-
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
-{
-    const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
-    return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
-        data_part_storage->getFullPath(),
-        data_part_info_for_read->getTableName(),
-        data_part_storage->getDiskName(),
-        data_part_storage->getDiskType(),
-        from_mark,
-        max_rows_to_read);
 }
 
 }

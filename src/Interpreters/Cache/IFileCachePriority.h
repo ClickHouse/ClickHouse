@@ -50,7 +50,7 @@ public:
 
         virtual Entry & getEntry() = 0;
 
-        virtual void invalidate() = 0;
+        virtual void annul() = 0;
 
         virtual void updateSize(int64_t size) = 0;
     };
@@ -64,7 +64,7 @@ public:
         CONTINUE,
         REMOVE_AND_CONTINUE,
     };
-    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    using IterateFunc = std::function<IterationResult(LockedKey &, FileSegmentMetadataPtr)>;
 
     IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
 

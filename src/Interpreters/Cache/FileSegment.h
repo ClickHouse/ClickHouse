@@ -37,6 +37,11 @@ enum class FileSegmentKind
      */
     Regular,
 
+    /* `Persistent` file segment can't be evicted from cache,
+     * it should be removed manually.
+     */
+    Persistent,
+
     /* `Temporary` file segment is removed right after releasing.
      * Also corresponding files are removed during cache loading (if any).
      */
@@ -125,11 +130,9 @@ public:
         size_t left;
         size_t right;
 
-        Range(size_t left_, size_t right_);
+        Range(size_t left_, size_t right_) : left(left_), right(right_) {}
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
-
-        bool operator<(const Range & other) const { return right < other.left; }
 
         size_t size() const { return right - left + 1; }
 
@@ -151,6 +154,8 @@ public:
     size_t offset() const { return range().left; }
 
     FileSegmentKind getKind() const { return segment_kind; }
+
+    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
 
     bool isUnbound() const { return is_unbound; }
 
@@ -288,7 +293,6 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-    FileSegmentGuard::Lock lockFileSegment() const;
 
     Key file_key;
     Range segment_range;

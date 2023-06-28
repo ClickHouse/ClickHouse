@@ -139,8 +139,8 @@ makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, t
 
 ## timeZone
 
-Returns the timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
-If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
+Returns the timezone of the server.
+If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
 
 **Syntax**
 
@@ -155,33 +155,6 @@ Alias: `timezone`.
 - Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
-
-**See also**
-
-- [serverTimeZone](#serverTimeZone)
-
-## serverTimeZone
-
-Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
-If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
-
-**Syntax**
-
-``` sql
-serverTimeZone()
-```
-
-Alias: `serverTimezone`.
-
-**Returned value**
-
--   Timezone.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**See also**
-
-- [timeZone](#timeZone)
 
 ## toTimeZone
 

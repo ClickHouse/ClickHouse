@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/nats
-sidebar_position: 140
+sidebar_position: 14
 sidebar_label: NATS
 ---
 
@@ -83,12 +83,12 @@ You can select one of the subjects the table reads from and publish your data th
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = NATS
+  ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1,subject2',
              nats_format = 'JSONEachRow';
 
-  INSERT INTO queue
+  INSERT INTO queue 
   SETTINGS stream_like_engine_insert_queue = 'subject2'
   VALUES (1, 1);
 ```
@@ -102,7 +102,7 @@ Example:
     key UInt64,
     value UInt64,
     date DateTime
-  ) ENGINE = NATS
+  ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',
@@ -137,7 +137,7 @@ Example:
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = NATS
+  ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',

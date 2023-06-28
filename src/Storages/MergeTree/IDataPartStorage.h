@@ -73,7 +73,7 @@ struct WriteSettings;
 class TemporaryFileOnDisk;
 
 /// This is an abstraction of storage for data part files.
-/// Ideally, it is assumed to contain read-only methods from IDisk.
+/// Ideally, it is assumed to contains read-only methods from IDisk.
 /// It is not fulfilled now, but let's try our best.
 class IDataPartStorage : public boost::noncopyable
 {
@@ -110,9 +110,6 @@ public:
     /// Get metadata for a file inside path dir.
     virtual size_t getFileSize(const std::string & file_name) const = 0;
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
-
-    /// Get path on remote filesystem from file name on local filesystem.
-    virtual std::string getRemotePath(const std::string & file_name) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
@@ -175,6 +172,7 @@ public:
     /// Return some uniq string for file.
     /// Required for distinguish different copies of the same part on remote FS.
     virtual String getUniqueId() const = 0;
+
 
     /// Represents metadata which is required for fetching of part.
     struct ReplicatedFilesDescription
@@ -285,6 +283,7 @@ public:
         Poco::Logger * log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
+
 
     /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;

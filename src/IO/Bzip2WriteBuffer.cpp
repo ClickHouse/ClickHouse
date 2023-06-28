@@ -45,7 +45,10 @@ Bzip2WriteBuffer::Bzip2WriteBuffer(std::unique_ptr<WriteBuffer> out_, int compre
 {
 }
 
-Bzip2WriteBuffer::~Bzip2WriteBuffer() = default;
+Bzip2WriteBuffer::~Bzip2WriteBuffer()
+{
+    finalize();
+}
 
 void Bzip2WriteBuffer::nextImpl()
 {

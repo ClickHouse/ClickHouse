@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/urlCluster
-sidebar_position: 201
+sidebar_position: 55
 sidebar_label: urlCluster
 ---
 

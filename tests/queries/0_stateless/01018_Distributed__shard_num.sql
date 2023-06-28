@@ -3,9 +3,6 @@
 -- make the order static
 SET max_threads = 1;
 
--- data should be inserted into Distributed table synchronously
-SET insert_distributed_sync = 1;
-
 DROP TABLE IF EXISTS mem1;
 DROP TABLE IF EXISTS mem2;
 DROP TABLE IF EXISTS mem3;

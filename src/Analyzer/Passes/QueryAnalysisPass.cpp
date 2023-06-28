@@ -2383,6 +2383,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
 
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
@@ -5209,26 +5210,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
-            const auto & settings = scope.context->getSettingsRef();
-
-            auto result_block = getSetElementsForConstantValue(first_argument_constant_type,
+            auto set = makeSetForConstantValue(first_argument_constant_type,
                 second_argument_constant_literal,
                 second_argument_constant_type,
-                settings.transform_null_in);
-
-            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-
-            auto set = std::make_shared<Set>(size_limits_for_set, 0, settings.transform_null_in);
-
-            set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
-            set->insertFromBlock(result_block.getColumnsWithTypeAndName());
-            set->finishInsert();
-
-            auto future_set = std::make_shared<FutureSetFromStorage>(std::move(set));
+                scope.context->getSettingsRef());
 
             /// Create constant set column for constant folding
 
-            auto column_set = ColumnSet::create(1, std::move(future_set));
+            auto column_set = ColumnSet::create(1, FutureSet(std::move(set)));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
 

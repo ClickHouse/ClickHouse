@@ -34,19 +34,18 @@ public:
     String getContentType() const override { return "application/octet-stream"; }
 
 private:
-    void consumeStaged();
     void consume(Chunk) override;
+    void appendToAccumulatedChunk(Chunk chunk);
+    void write(Chunk chunk, size_t row_group_size);
     void finalizeImpl() override;
     void resetFormatterImpl() override;
-
-    std::vector<Chunk> staging_chunks;
-    size_t staging_rows = 0;
-    size_t staging_bytes = 0;
 
     const FormatSettings format_settings;
 
     std::unique_ptr<parquet::arrow::FileWriter> file_writer;
     std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
+
+    Chunk accumulated_chunk;
 };
 
 }

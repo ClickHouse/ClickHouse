@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/embedded-rocksdb
-sidebar_position: 50
+sidebar_position: 9
 sidebar_label: EmbeddedRocksDB
 ---
 
@@ -99,7 +99,7 @@ INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
 
 ### Deletes
 
-Rows can be deleted using `DELETE` query or `TRUNCATE`.
+Rows can be deleted using `DELETE` query or `TRUNCATE`. 
 
 ```sql
 DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;

@@ -144,7 +144,6 @@ void BackupImpl::open(const ContextPtr & context)
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
         lock_file_name = use_archive ? (archive_params.archive_name + ".lock") : ".lock";
-        lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
         /// Check that we can write a backup there and create the lock file to own this destination.
@@ -834,10 +833,13 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
+    bool should_check_lock_file = false;
     {
         std::lock_guard lock{mutex};
         ++num_files;
         total_size += info.size;
+        if (!num_entries)
+            should_check_lock_file = true;
     }
 
     auto src_disk = entry->getDisk();
@@ -857,7 +859,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         return;
     }
 
-    if (!lock_file_before_first_file_checked.exchange(true))
+    if (!should_check_lock_file)
         checkLockFile(true);
 
     /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.

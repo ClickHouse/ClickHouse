@@ -655,11 +655,7 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = rhs.tryGetPreparedSet();
-    if (!future_set)
-        return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

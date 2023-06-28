@@ -29,8 +29,7 @@ def create_table(cluster, table_name, additional_settings=None):
         SETTINGS
             storage_policy='hdfs',
             old_parts_lifetime=0,
-            index_granularity=512,
-            temporary_directories_lifetime=1
+            index_granularity=512
         """.format(
         table_name
     )

@@ -83,10 +83,6 @@ public:
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }
-
-    /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
-    /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
-    virtual bool seekIsCheap() { return false; }
 };
 
 

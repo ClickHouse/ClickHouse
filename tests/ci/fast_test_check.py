@@ -150,7 +150,7 @@ def main():
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, "run.log")
-    with TeePopen(run_cmd, run_log_path, timeout=90 * 60) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
@@ -214,11 +214,8 @@ def main():
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if state == "error":
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
+        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
 

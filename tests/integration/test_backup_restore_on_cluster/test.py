@@ -2,7 +2,6 @@ from time import sleep
 import pytest
 import re
 import os.path
-import random, string
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
@@ -725,58 +724,6 @@ def test_projection():
         )
         == "2\n"
     )
-
-
-def test_file_deduplication():
-    # Random column name helps finding it in logs.
-    column_name = "".join(random.choice(string.ascii_letters) for x in range(10))
-
-    # Make four replicas in total: 2 on each host.
-    node1.query(
-        f"""
-        CREATE TABLE tbl ON CLUSTER 'cluster' (
-        {column_name} Int32
-        ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{{replica}}')
-        ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0
-        """
-    )
-
-    node1.query(
-        f"""
-        CREATE TABLE tbl2 ON CLUSTER 'cluster' (
-        {column_name} Int32
-        ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{{replica}}-2')
-        ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0
-        """
-    )
-
-    # Unique data.
-    node1.query(
-        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
-    )
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
-
-    backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl, TABLE tbl2 ON CLUSTER 'cluster' TO {backup_name}")
-
-    node1.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
-
-    # The bin file should be written to the backup once, and skipped three times (because there are four replicas in total).
-    bin_file_writing_log_line = (
-        f"Writing backup for file .*{column_name}.bin .* (disk default)"
-    )
-    bin_file_skip_log_line = f"Writing backup for file .*{column_name}.bin .* skipped"
-
-    num_bin_file_writings = int(node1.count_in_log(bin_file_writing_log_line)) + int(
-        node2.count_in_log(bin_file_writing_log_line)
-    )
-    num_bin_file_skips = int(node1.count_in_log(bin_file_skip_log_line)) + int(
-        node2.count_in_log(bin_file_skip_log_line)
-    )
-
-    assert num_bin_file_writings == 1
-    assert num_bin_file_skips == 3
 
 
 def test_replicated_table_with_not_synced_def():

@@ -8,7 +8,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
 

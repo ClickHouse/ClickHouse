@@ -36,7 +36,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/StorageKeeperMap.h>
-#include <Storages/AlterCommands.h>
 
 namespace DB
 {
@@ -253,7 +252,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
-        Priority{1},
+        /*priority=*/ 1,
         TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret};
 
@@ -710,9 +709,8 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
-    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
-    if (!looks_like_replicated || !looks_like_merge_tree)
+    bool looks_like_replicated = metadata.find("ReplicatedMergeTree") != std::string::npos;
+    if (!looks_like_replicated)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -985,7 +983,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
-            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+            assert(create_query_string == readMetadataFile(table_name));
             continue;
         }
 
@@ -1181,7 +1179,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
+    if (txn && !txn->isCreateOrReplaceQuery())
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
@@ -1235,7 +1233,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         new_digest -= DB::getMetadataHash(to_table_name, statement_to);
         new_digest += DB::getMetadataHash(table_name, statement_to);
     }
-    if (txn && !is_recovering)
+    if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
@@ -1261,7 +1259,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest += DB::getMetadataHash(query.getTable(), statement);
-    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
+    if (txn && !txn->isCreateOrReplaceQuery())
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
@@ -1274,7 +1272,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -1285,7 +1283,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_id.table_name);
     new_digest += DB::getMetadataHash(table_id.table_name, statement);
-    if (txn && !is_recovering)
+    if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
@@ -1308,7 +1306,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn && !is_recovering)
+    if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::detachTablePermanently(local_context, table_name);
@@ -1332,7 +1330,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     if (attach)
     {
         new_digest += getMetadataHash(table_name);
-        if (txn && !is_recovering)
+        if (txn)
             txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
     }
 
@@ -1443,49 +1441,9 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         return table->as<StorageKeeperMap>() != nullptr;
     };
 
-    const auto is_replicated_table = [&](const ASTPtr & ast)
-    {
-        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
-        return table->supportsReplication();
-    };
-
-    const auto has_many_shards = [&]()
-    {
-        /// If there is only 1 shard then there is no need to replicate some queries.
-        auto current_cluster = tryGetCluster();
-        return
-            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
-            current_cluster->getShardsInfo().size() > 1;
-    };
-
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-    {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr))
-            return false;
-
-        if (has_many_shards() || !is_replicated_table(query_ptr))
-            return true;
-
-        try
-        {
-            /// Metadata alter should go through database
-            for (const auto & child : alter->command_list->children)
-                if (AlterCommand::parse(child->as<ASTAlterCommand>()))
-                    return true;
-
-            /// It's ALTER PARTITION or mutation, doesn't involve database
-            return false;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-
-        return true;
-    }
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter() && !is_keeper_map_table(query_ptr);
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
@@ -1501,7 +1459,11 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         if (is_keeper_map_table(query_ptr))
             return false;
 
-        return has_many_shards() || !is_replicated_table(query_ptr);
+        /// If there is only 1 shard then there is no need to replicate DELETE query.
+        auto current_cluster = tryGetCluster();
+        return
+            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
+            current_cluster->getShardsInfo().size() > 1;
     }
 
     return true;

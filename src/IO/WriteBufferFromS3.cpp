@@ -235,15 +235,14 @@ WriteBufferFromS3::~WriteBufferFromS3()
 {
     LOG_TRACE(log, "Close WriteBufferFromS3. {}.", getLogDetails());
 
-    /// That destructor could be call with finalized=false in case of exceptions
+    // That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
     {
-        LOG_INFO(
-            log,
-            "WriteBufferFromS3 is not finalized in destructor. "
-            "The file might not be written to S3. "
-            "{}.",
-            getLogDetails());
+        LOG_INFO(log,
+                 "WriteBufferFromS3 is not finalized in destructor. "
+                 "It could be if an exception occurs. File is not written to S3. "
+                 "{}.",
+                 getLogDetails());
     }
 
     task_tracker->safeWaitAll();

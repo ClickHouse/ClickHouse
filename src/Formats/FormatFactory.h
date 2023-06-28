@@ -153,7 +153,6 @@ public:
     ///  * Parallel reading.
     ///    To enable it, make sure `buf` is a SeekableReadBuffer implementing readBigAt().
     ///  * Parallel parsing.
-    /// `buf` must outlive the returned IInputFormat.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
