@@ -17,11 +17,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_INDEX;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace
@@ -79,21 +76,7 @@ public:
             return return_type;
         }
         else
-        {
-            const IDataType * default_type = arguments[2].type.get();
-            size_t default_count_arrays = 0;
-
-            if (const DataTypeArray * default_type_as_array = checkAndGetDataType<DataTypeArray>(default_type))
-                default_count_arrays = default_type_as_array->getNumberOfDimensions();
-
-            if (count_arrays != default_count_arrays)
-                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED,
-                                "Dimension of types mismatched between first argument and third argument. "
-                                "Dimension of 1st argument: {}. "
-                                "Dimension of 3rd argument: {}", count_arrays, default_count_arrays);
-
             return arguments[2].type;
-        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -128,11 +111,7 @@ public:
         std::optional<size_t> index = getElementIndex(arguments[1].column, *input_type_as_tuple, arguments.size());
 
         if (!index.has_value())
-        {
-            if (!array_offsets.empty())
-                recursiveCheckArrayOffsets(arguments[0].column, arguments[2].column, array_offsets.size());
             return arguments[2].column;
-        }
 
         ColumnPtr res = input_col_as_tuple->getColumns()[index.value()];
 
@@ -146,54 +125,6 @@ public:
     }
 
 private:
-    void recursiveCheckArrayOffsets(ColumnPtr col_x, ColumnPtr col_y, size_t depth) const
-    {
-        for (size_t i = 1; i < depth; ++i)
-        {
-            checkArrayOffsets(col_x, col_y);
-            col_x = assert_cast<const ColumnArray *>(col_x.get())->getDataPtr();
-            col_y = assert_cast<const ColumnArray *>(col_y.get())->getDataPtr();
-        }
-        checkArrayOffsets(col_x, col_y);
-    }
-
-    void checkArrayOffsets(ColumnPtr col_x, ColumnPtr col_y) const
-    {
-        if (isColumnConst(*col_x))
-            checkArrayOffsetsWithFirstArgConst(col_x, col_y);
-        else if (isColumnConst(*col_y))
-            checkArrayOffsetsWithFirstArgConst(col_y, col_x);
-        else
-        {
-            const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
-            const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
-            if (!array_x.hasEqualOffsets(array_y))
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "The argument 1 and argument 3 of function {} have different array sizes", getName());
-        }
-    }
-
-    void checkArrayOffsetsWithFirstArgConst(ColumnPtr col_x, ColumnPtr col_y) const
-    {
-        col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
-        col_y = col_y->convertToFullColumnIfConst();
-        const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
-        const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
-
-        const auto & offsets_x = array_x.getOffsets();
-        const auto & offsets_y = array_y.getOffsets();
-
-        ColumnArray::Offset prev_offset = 0;
-        size_t row_size = offsets_y.size();
-        for (size_t row = 0; row < row_size; ++row)
-        {
-            if (offsets_x[0] != offsets_y[row] - prev_offset)
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "The argument 1 and argument 3 of function {} have different array sizes", getName());
-            prev_offset = offsets_y[row];
-        }
-    }
-
     std::optional<size_t> getElementIndex(const ColumnPtr & index_column, const DataTypeTuple & tuple, size_t argument_size) const
     {
         if (checkAndGetColumnConst<ColumnUInt8>(index_column.get())
