@@ -22,6 +22,7 @@ struct ThreadEventData
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
     UInt64 memory_usage = 0;
+    UInt64 peak_memory_usage = 0;
 };
 
 using HostToTimesMap = std::unordered_map<String, ThreadEventData>;
@@ -64,6 +65,7 @@ private:
     {
         UInt64 total = 0;
         UInt64 max   = 0;
+        UInt64 peak  = 0;
     };
 
     MemoryUsage getMemoryUsage() const;
