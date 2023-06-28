@@ -666,6 +666,7 @@ startsWith
 subBitmap
 substring
 substringUTF8
+substringIndex
 subtractDays
 subtractHours
 subtractMicroseconds

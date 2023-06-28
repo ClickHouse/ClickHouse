@@ -17,8 +17,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -163,7 +161,6 @@ namespace
                 StringRef str_ref = str_column->getDataAt(i);
                 StringRef res_ref
                     = !is_utf8 ? substringIndex(str_ref, delim[0], index) : substringIndexUTF8(searcher.get(), str_ref, delim, index);
-                std::cout << "result:" << res_ref.toString() << std::endl;
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
@@ -207,8 +204,6 @@ namespace
         static StringRef substringIndexUTF8(
             const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const StringRef & str_ref, const String & delim, Int64 index)
         {
-            std::cout << "str:" << str_ref.toString() << ", delim" << delim << ",index:" << index << std::endl;
-
             if (index == 0)
                 return {str_ref.data, 0};
 
@@ -244,27 +239,20 @@ namespace
                 if (total + index < 0)
                     return str_ref;
 
-                Int64 index_from_left = total + 1 + index;
-                std::cout << "total:" << total << ", index_from_left" << index_from_left << std::endl;
                 pos = begin;
                 Int64 i = 0;
+                Int64 index_from_left = total + 1 + index;
                 while (i < index_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
                 {
                     pos += delim.size();
                     ++i;
-                    std::cout << "pos offset:" << pos - begin << ", total size:" << end - begin << std::endl;
                 }
-                std::cout << "pos offset:" << pos - begin << ", size:" << end - pos << std::endl;
-                StringRef res = {pos, static_cast<size_t>(end - pos)};
-                std::cout << "result:" << res.toString() << std::endl;
-                return res;
+                return {pos, static_cast<size_t>(end - pos)};
             }
         }
 
         static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 index)
         {
-            std::cout << "str:" << str_ref.toString() << ", delim" << delim << ",index:" << index << std::endl;
-
             if (index == 0)
                 return {str_ref.data, 0};
 

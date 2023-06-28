@@ -573,6 +573,42 @@ Alias:
 
 Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
+
+## substringIndex(s, delim, index)
+
+Returns the substring of `s` before `index` occurrences of the delimiter `delim`, as in Spark or MySQL.
+
+**Syntax**
+
+```sql
+substringIndex(s, delim, index)
+```
+Alias: `SUBSTRING_INDEX`
+
+
+**Arguments**
+
+- s: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
+- delim: The character to split. [String](../../sql-reference/data-types/string.md).
+- index: The number of occurrences of the delimiter to count before extracting the substring. If index is positive, everything to the left of the final delimiter (counting from the left) is returned. If index is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Example**
+
+``` sql
+SELECT substringIndex('www.clickhouse.com', '.', 2)
+```
+
+Result:
+```
+┌─substringIndex('www.clickhouse.com', '.', 2)─┐
+│ www.clickhouse                               │
+└──────────────────────────────────────────────┘
+```
+
+## substringIndexUTF8(s, delim, index)
+
+Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
 ## appendTrailingCharIfAbsent
 
 Appends character `c` to string `s` if `s` is non-empty and does not end with character `c`.
