@@ -101,7 +101,7 @@ namespace
 
 
 BackupReaderS3::BackupReaderS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy, const ContextPtr & context_)
+    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_)
     : BackupReaderDefault(&Poco::Logger::get("BackupReaderS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
@@ -110,7 +110,7 @@ BackupReaderS3::BackupReaderS3(
 {
     request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = native_copy;
+    request_settings.allow_native_copy = allow_s3_native_copy;
 }
 
 BackupReaderS3::~BackupReaderS3() = default;
@@ -184,7 +184,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
 
 BackupWriterS3::BackupWriterS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool native_copy, const ContextPtr & context_)
+    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_)
     : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
@@ -193,7 +193,7 @@ BackupWriterS3::BackupWriterS3(
 {
     request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = native_copy;
+    request_settings.allow_native_copy = allow_s3_native_copy;
 }
 
 void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,

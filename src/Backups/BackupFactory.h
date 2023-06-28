@@ -35,7 +35,7 @@ public:
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;
-        bool native_copy = true;
+        bool allow_s3_native_copy = true;
     };
 
     static BackupFactory & instance();
