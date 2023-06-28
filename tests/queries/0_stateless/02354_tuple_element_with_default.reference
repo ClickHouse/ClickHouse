@@ -7,6 +7,8 @@ FROM t_tuple_element_default
 z
 SELECT tupleElement(t2, \'z\', \'z\')
 FROM t_tuple_element_default
+z
+z
 --------------------
 [(3,4)]
 SELECT tupleElement([(1, 2)], \'a\', [(3, 4)])
