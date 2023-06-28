@@ -367,8 +367,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     /// I also leave possibility to print several suggestions
                     if (!names.empty())
                     {
-                        const std::string suggested_name = names[0];
-                        exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(suggested_name)));
+                        exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
                     }
                     else exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
                 }
@@ -382,9 +381,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     /// There is two options: first is to print just the name of the table
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
-//                    Names names_with_db_name;
-//                    std::transform(names.begin(), names.end(), std::back_inserter(names_with_db_name), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
-//                    exception_message = "Table " + table_id.getNameForLogs() + " doesn't exist. Maybe you wanted to type " + names_with_db_name[0] + "?";
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(suggested_name)));
                     }
                     else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
@@ -427,27 +423,27 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         auto it = databases.find(table_id.getDatabaseName());
         if (databases.end() != it)
             database = it->second;
-        if (!database)
-        {
-            if (exception)
-            {
-                DatabaseNameHints hints(*this);
-                auto suggested_names = hints.getAllRegisteredNames();
-                std::vector<String> names = hints.getHints(table_id.getDatabaseName(), suggested_names);
-                if (names.empty())
-                {
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
-                }
-                else
-                {
-                    std::string suggested_name = names[0];
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(suggested_name)));
-                }
-            }
-            return {};
-        }
-        database = it->second;
     }
+    if (!database)
+    {
+        if (exception)
+        {
+            DatabaseNameHints hints(*this);
+            auto suggested_names = hints.getAllRegisteredNames();
+            std::vector<String> names = hints.getHints(table_id.getDatabaseName(), suggested_names);
+            if (names.empty())
+            {
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
+            }
+            else
+            {
+                std::string suggested_name = names[0];
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(suggested_name)));
+            }
+        }
+        return {};
+    }
+    
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
