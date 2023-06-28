@@ -603,16 +603,6 @@ template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     /// NOTE: No delay in this case. That's Ok.
-
-    part->getDataPartStorage().removeFileIfExists(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    {
-        auto out_metadata = part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
-        writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
-        out_metadata->finalize();
-        if (storage.getSettings()->fsync_after_insert)
-            out_metadata->sync();
-    }
-
     auto origin_zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(origin_zookeeper);
     auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(origin_zookeeper);

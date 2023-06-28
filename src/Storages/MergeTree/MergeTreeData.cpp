@@ -4707,12 +4707,19 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
     return nullptr;
 }
 
-static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
+static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context, int32_t metadata_version, bool sync)
 {
     /// Remove metadata version file and take it from table.
     /// Currently we cannot attach parts with different schema, so
     /// we can assume that it's equal to table's current schema.
     part->removeMetadataVersion();
+    {
+        auto out_metadata = part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, local_context->getWriteSettings());
+        writeText(metadata_version, *out_metadata);
+        out_metadata->finalize();
+        if (sync)
+            out_metadata->sync();
+    }
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
@@ -5844,7 +5851,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             .withPartFormatFromDisk()
             .build();
 
-        loadPartAndFixMetadataImpl(part);
+        loadPartAndFixMetadataImpl(part, local_context, getInMemoryMetadataPtr()->getMetadataVersion(), getSettings()->fsync_after_insert);
         loaded_parts.push_back(part);
     }
 
