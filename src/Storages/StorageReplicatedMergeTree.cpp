@@ -2435,13 +2435,17 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
-        if (part_desc->src_table_part)
+        /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPartOnSameDisk will do full copy.
+        /// It's okay to check the setting for current table and disk for the source table, because src and dst part are on the same disk.
+        bool prefer_fetch_from_other_replica = !part_desc->replica.empty() && storage_settings_ptr->allow_remote_fs_zero_copy_replication
+            && part_desc->src_table_part && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport();
+
+        if (part_desc->src_table_part && !prefer_fetch_from_other_replica)
         {
             if (part_desc->checksum_hex != part_desc->src_table_part->checksums.getTotalChecksumHex())
                 throw Exception(ErrorCodes::UNFINISHED, "Checksums of {} is suddenly changed", part_desc->src_table_part->name);
 
-            bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
-                || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+            bool zero_copy_enabled = dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = zero_copy_enabled && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()
