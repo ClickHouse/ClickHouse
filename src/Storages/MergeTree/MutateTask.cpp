@@ -852,7 +852,7 @@ struct MutationContext
 
     MergeTreeTransactionPtr txn;
 
-    MergeTreeData::HardlinkedFiles hardlinked_files;
+    HardlinkedFiles hardlinked_files;
 
     bool need_prefix = true;
 
@@ -1803,7 +1803,12 @@ bool MutateTask::prepare()
         if (ctx->need_prefix)
             prefix = "tmp_clone_";
 
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
+        };
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params);
         part->getDataPartStorage().beginTransaction();
 
         ctx->temporary_directory_lock = std::move(lock);
@@ -1932,7 +1937,7 @@ bool MutateTask::prepare()
     return true;
 }
 
-const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
+const HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
 }
