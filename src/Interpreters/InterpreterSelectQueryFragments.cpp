@@ -906,6 +906,42 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments()
 }
 
 
+PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments(const QueryPlan & query_plan)
+{
+    const auto & res_fragments = executeDistributedPlan(query_plan);
+
+    /// query_plan resources move to fragments
+    const auto & resources = query_plan.getResources();
+    /// Extend lifetime of context, table lock, storage.
+    /// TODO every fragment need context, table lock, storage ?
+    for (const auto & fragment : res_fragments)
+    {
+        fragment->addInterpreterContext(context);
+        if (table_lock)
+            fragment->addTableLock(table_lock);
+        if (storage)
+            fragment->addStorageHolder(storage);
+
+        for (const auto & context_ : resources.interpreter_context)
+        {
+            fragment->addInterpreterContext(context_);
+        }
+
+        for (const auto & storage_holder : resources.storage_holders)
+        {
+            fragment->addStorageHolder(storage_holder);
+        }
+
+        for (const auto & table_lock_ : resources.table_locks)
+        {
+            fragment->addTableLock(table_lock_);
+        }
+    }
+
+    return res_fragments;
+}
+
+
 void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
 {
     executeSinglePlan(query_plan, std::move(input_pipe));
@@ -934,7 +970,7 @@ void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
         query_plan.addStorageHolder(storage);
 }
 
-PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(QueryPlan & query_plan)
+PlanFragmentPtrs InterpreterSelectQueryFragments::executeDistributedPlan(const QueryPlan & query_plan)
 {
     return createPlanFragments(query_plan, *query_plan.getRootNode());
 }
@@ -957,7 +993,7 @@ bool needPushDownChild(QueryPlanStepPtr step)
 {
     if (dynamic_cast<ExpressionStep *>(step.get()))
     {
-        return step->getStepDescription() != "Projection" && step->getStepDescription() != "Before LIMIT BY";
+        return step->getStepDescription() != "Before LIMIT BY";
     }
 
     return false;
@@ -1037,20 +1073,6 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     {
         result = createScanFragment(root_node.step);
         all_fragments.emplace_back(result);
-        //    } else if (root instanceof TableFunctionNode) {
-        //        result = createTableFunctionFragment(root, childFragments.get(0));
-        //    } else if (root instanceof HashJoinNode) {
-        //        Preconditions.checkState(childFragments.size() == 2);
-        //        result = createHashJoinFragment((HashJoinNode) root,
-        //                                        childFragments.get(1), childFragments.get(0), fragments);
-        //    } else if (root instanceof NestedLoopJoinNode) {
-        //        result = createNestedLoopJoinFragment((NestedLoopJoinNode) root, childFragments.get(1),
-        //                                              childFragments.get(0));
-        //    } else if (root instanceof SelectNode) {
-        //        result = createSelectNodeFragment((SelectNode) root, childFragments);
-        //    } else if (root instanceof SetOperationNode) {
-        //        result = createSetOperationNodeFragment((SetOperationNode) root, childFragments, fragments);
-
     }
     else if (dynamic_cast<AggregatingStep *>(root_node.step.get()))
     {
@@ -1065,26 +1087,11 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
         childFragments[0]->addStep(root_node.step);
         result = childFragments[0];
     }
-    else if (single_plan.getRootNode() == &root_node) /// is root node
-    {
-        if (!childFragments[0]->isPartitioned())
-        {
-            childFragments[0]->addStep(root_node.step);
-            result = childFragments[0];
-        }
-        else
-        {
-            DataPartition partition{.type = PartitionType::UNPARTITIONED};
-
-            result = createParentFragment(childFragments[0], partition);
-            result->addStep(root_node.step);
-            all_fragments.emplace_back(result);
-        }
-    }
     else if (dynamic_cast<SortingStep *>(root_node.step.get()))
     {
         result = createOrderByFragment(root_node.step, childFragments[0]);
-        all_fragments.emplace_back(result);
+        if (result)
+            all_fragments.emplace_back(result);
     }
     else if (isLimitRelated(root_node.step))
     {
@@ -1095,39 +1102,25 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     {
         if (childFragments.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step children fragment size {}", childFragments.size());
-        createJoinFragment(root_node.step, childFragments[0], childFragments[1]);
+        result = createJoinFragment(root_node.step, childFragments[0], childFragments[1]);
+        if (result)
+            all_fragments.emplace_back(result);
     }
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unprocessed step {}", root_node.step->getName());
     }
-        //    } else if (root instanceof SortNode) {
-        //        if (((SortNode) root).isAnalyticSort()) {
-        //            // don't parallelize this like a regular SortNode
-        //            result = createAnalyticFragment((SortNode) root, childFragments.get(0), fragments);
-        //        } else {
-        //            result = createOrderByFragment((SortNode) root, childFragments.get(0));
-        //        }
-        //    } else if (root instanceof AnalyticEvalNode) {
-        //        result = createAnalyticFragment(root, childFragments.get(0), fragments);
-        //    } else if (root instanceof EmptySetNode) {
-        //        result = new PlanFragment(ctx.getNextFragmentId(), root, DataPartition.UNPARTITIONED);
-        //    } else if (root instanceof RepeatNode) {
-        //        result = createRepeatNodeFragment((RepeatNode) root, childFragments.get(0), fragments);
-        //    } else if (root instanceof AssertNumRowsNode) {
-        //        result = createAssertFragment(root, childFragments.get(0));
-        //    } else {
-        //        throw new UserException(
-        //            "Cannot create plan fragment for this node type: " + root.getExplainString());
-        //    }
-        //    // move 'result' to end, it depends on all of its children
-        //    fragments.remove(result);
-        //    fragments.add(result);
-        //    if ((!isPartitioned && result.isPartitioned() && result.getPlanRoot().getNumInstances() > 1)
-        //        || (!(root instanceof SortNode) && root.hasOffset())) {
-        //        result = createMergeFragment(result);
-        //        fragments.add(result);
-        //    }
+
+    if (single_plan.getRootNode() == &root_node) /// is root node
+    {
+        if (result->isPartitioned())
+        {
+            DataPartition partition{.type = PartitionType::UNPARTITIONED};
+
+            result = createParentFragment(childFragments[0], partition);
+            all_fragments.emplace_back(result);
+        }
+    }
 
     return result;
 }
@@ -1194,7 +1187,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlan
     childFragment->addStep(step);
     if (!childFragment->isPartitioned())
     {
-        return childFragment;
+        return {};
     }
 
     /// Create a new fragment for a sort-merging exchange.

@@ -137,6 +137,7 @@ public:
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
     PlanFragmentPtrs buildFragments();
+    PlanFragmentPtrs buildFragments(const QueryPlan & query_plan);
 
 private:
     InterpreterSelectQueryFragments(
@@ -167,7 +168,7 @@ private:
     Block getSampleBlockImpl();
 
     void executeSinglePlan(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
-    PlanFragmentPtrs executeDistributedPlan(QueryPlan & query_plan);
+    PlanFragmentPtrs executeDistributedPlan(const QueryPlan & query_plan);
 
     PlanFragmentPtrs createPlanFragments(const QueryPlan & single_plan, Node & single_node_plan);
     PlanFragmentPtr createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments);

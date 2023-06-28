@@ -6,10 +6,10 @@
 namespace DB
 {
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+std::shared_ptr<IInterpreterUnionOrSelectQuery> interpretSubquery(
     const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns);
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+std::shared_ptr<IInterpreterUnionOrSelectQuery> interpretSubquery(
     const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options);
 
 }

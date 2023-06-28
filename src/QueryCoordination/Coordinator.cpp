@@ -106,6 +106,13 @@ String Coordinator::assignFragmentToHost()
             if (!dest_fragment)
                 return this_fragment_hosts;
 
+            /// dest_fragment scheduling by the left node
+            if (dest_fragment->getChildren().size() > 1)
+            {
+                if (fragment_id != dest_fragment->getChildren()[0]->getFragmentId())
+                    continue;
+            }
+
             if (fragment_hosts_.contains(dest_fragment->getFragmentId()))
                 return this_fragment_hosts;
 
@@ -130,9 +137,13 @@ String Coordinator::assignFragmentToHost()
 
             for (const auto & host : hosts)
             {
-                host_fragments[host].emplace_back(dest_fragment);
-                fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
-                this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                auto & dest_hosts = fragment_hosts[dest_fragment->getFragmentId()];
+                if (!std::count(dest_hosts.begin(), dest_hosts.end(), host))
+                {
+                    host_fragments[host].emplace_back(dest_fragment);
+                    dest_hosts.emplace_back(host);
+                    this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                }
             }
         }
         return this_fragment_hosts;

@@ -133,7 +133,7 @@ PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries()
 
 bool PreparedSets::empty() const { return sets.empty(); }
 
-void SubqueryForSet::createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_)
+void SubqueryForSet::createSource(IInterpreterUnionOrSelectQuery & interpreter, StoragePtr table_)
 {
     source = std::make_unique<QueryPlan>();
     interpreter.buildQueryPlan(*source);

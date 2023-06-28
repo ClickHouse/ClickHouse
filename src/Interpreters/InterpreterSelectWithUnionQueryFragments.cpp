@@ -444,6 +444,7 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
     return res;
 }
 
+/// only to used generate single plan
 void InterpreterSelectWithUnionQueryFragments::buildQueryPlan(QueryPlan & query_plan)
 {
     size_t num_plans = nested_interpreters.size();

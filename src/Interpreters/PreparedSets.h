@@ -19,6 +19,7 @@ class QueryPlan;
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 class InterpreterSelectWithUnionQuery;
+class IInterpreterUnionOrSelectQuery;
 
 /// Represents a set in a query that might be referenced at analysis time and built later during execution.
 /// Also it can represent a constant set that is ready to use.
@@ -56,7 +57,7 @@ class SubqueryForSet
 {
 public:
 
-    void createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
+    void createSource(IInterpreterUnionOrSelectQuery & interpreter, StoragePtr table_ = nullptr);
 
     bool hasSource() const;
 
