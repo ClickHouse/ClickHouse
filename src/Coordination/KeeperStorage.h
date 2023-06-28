@@ -222,8 +222,8 @@ public:
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
-        void addDelta(Delta new_delta);
-        void addDeltas(std::vector<Delta> new_deltas);
+        void addDelta(const Delta & new_delta);
+        void addDeltas(std::list<Delta> new_deltas);
         void commit(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
 
@@ -414,7 +414,7 @@ public:
         session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
     }
 
-    UInt64 calculateNodesDigest(UInt64 current_digest, const std::vector<Delta> & new_deltas) const;
+    UInt64 calculateNodesDigest(UInt64 current_digest, const std::list<Delta> & new_deltas) const;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
