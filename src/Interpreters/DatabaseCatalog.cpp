@@ -429,8 +429,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (exception)
         {
             DatabaseNameHints hints(*this);
-            auto suggested_names = hints.getAllRegisteredNames();
-            std::vector<String> names = hints.getHints(table_id.getDatabaseName(), suggested_names);
+            std::vector<String> names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
