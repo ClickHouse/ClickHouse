@@ -10,14 +10,13 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
+#include <filesystem>
 
 #include <boost/algorithm/string.hpp>
 
@@ -28,23 +27,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
+void TableFunctionS3::parseArgumentsImpl(
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        StorageS3::processNamedCollectionResult(configuration, *named_collection);
+        StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
     }
     else
     {
         if (args.empty() || args.size() > 6)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
+            throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, context);
+        auto * header_it = StorageURL::collectHeaders(args, s3_configuration.headers_from_ast, context);
         if (header_it != args.end())
             args.erase(header_it);
 
@@ -131,165 +130,46 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         }
 
         /// This argument is always the first
-        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+        s3_configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
 
         if (args_to_idx.contains("format"))
-        {
-            auto format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
-            /// Set format to configuration only of it's not 'auto',
-            /// because we can have default format set in configuration.
-            if (format != "auto")
-                configuration.format = format;
-        }
+            s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
 
         if (args_to_idx.contains("structure"))
-            configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
+            s3_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
 
         if (args_to_idx.contains("compression_method"))
-            configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
+            s3_configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
 
         if (args_to_idx.contains("access_key_id"))
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[args_to_idx["access_key_id"]], "access_key_id");
+            s3_configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[args_to_idx["access_key_id"]], "access_key_id");
 
         if (args_to_idx.contains("secret_access_key"))
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
+            s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
 
-        configuration.auth_settings.no_sign_request = no_sign_request;
+        s3_configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
-    configuration.keys = {configuration.url.key};
+    s3_configuration.keys = {s3_configuration.url.key};
 
-    if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.uri.getPath(), true);
+    /// For DataLake table functions, we should specify default format.
+    if (s3_configuration.format == "auto" && get_format_from_file)
+        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    /// Clone ast function, because we can modify its arguments like removing headers.
-    auto ast_copy = ast_function->clone();
-
     /// Parse args
     ASTs & args_func = ast_function->children;
+
+    const auto message = fmt::format("The signature of table function '{}' could be the following:\n{}", getName(), signature);
 
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
     auto & args = args_func.at(0)->children;
 
-    parseArgumentsImpl(args, context);
-}
-
-void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
-{
-    if (tryGetNamedCollectionWithOverrides(args, context))
-    {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
-    }
-    else
-    {
-        /// If arguments contain headers, just remove it and add to the end of arguments later
-        /// (header argument can be at any position).
-        HTTPHeaderEntries tmp_headers;
-        auto * headers_it = StorageURL::collectHeaders(args, tmp_headers, context);
-        ASTPtr headers_ast;
-        if (headers_it != args.end())
-        {
-            headers_ast = *headers_it;
-            args.erase(headers_it);
-        }
-
-        if (args.empty() || args.size() > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
-
-        auto structure_literal = std::make_shared<ASTLiteral>(structure);
-
-        /// s3(s3_url)
-        if (args.size() == 1)
-        {
-            /// Add format=auto before structure argument.
-            args.push_back(std::make_shared<ASTLiteral>("auto"));
-            args.push_back(structure_literal);
-        }
-        /// s3(s3_url, format) or s3(s3_url, NOSIGN)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        else if (args.size() == 2)
-        {
-            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            /// If there is NOSIGN, add format=auto before structure.
-            if (boost::iequals(second_arg, "NOSIGN"))
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-            args.push_back(structure_literal);
-        }
-        /// s3(source, format, structure) or
-        /// s3(source, access_key_id, access_key_id) or
-        /// s3(source, NOSIGN, format)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
-        else if (args.size() == 3)
-        {
-            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            if (boost::iequals(second_arg, "NOSIGN"))
-            {
-                args.push_back(structure_literal);
-            }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
-            {
-                args.back() = structure_literal;
-            }
-            else
-            {
-                /// Add format=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-                args.push_back(structure_literal);
-            }
-        }
-        /// s3(source, format, structure, compression_method) or
-        /// s3(source, access_key_id, access_key_id, format) or
-        /// s3(source, NOSIGN, format, structure)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
-        else if (args.size() == 4)
-        {
-            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            if (boost::iequals(second_arg, "NOSIGN"))
-            {
-                args.back() = structure_literal;
-            }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
-            {
-                args[args.size() - 2] = structure_literal;
-            }
-            else
-            {
-                args.push_back(structure_literal);
-            }
-        }
-        /// s3(source, access_key_id, access_key_id, format, structure) or
-        /// s3(source, NOSIGN, format, structure, compression_method)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
-        else if (args.size() == 5)
-        {
-            auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            if (boost::iequals(sedond_arg, "NOSIGN"))
-            {
-                args[args.size() - 2] = structure_literal;
-            }
-            else
-            {
-                args.back() = structure_literal;
-            }
-        }
-        /// s3(source, access_key_id, access_key_id, format, structure, compression)
-        else if (args.size() == 6)
-        {
-            args[args.size() - 2] = structure_literal;
-        }
-
-        if (headers_ast)
-            args.push_back(headers_ast);
-    }
+    parseArgumentsImpl(message, args, context, configuration);
 }
 
 ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
@@ -335,63 +215,10 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 }
 
 
-class TableFunctionGCS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "gcs";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "GCS"; }
-};
-
-class TableFunctionCOS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "cosn";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "COSN"; }
-};
-
-class TableFunctionOSS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "oss";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "OSS"; }
-};
-
-
-void registerTableFunctionGCS(TableFunctionFactory & factory)
-{
-    factory.registerFunction<TableFunctionGCS>(
-        {.documentation
-         = {.description=R"(The table function can be used to read the data stored on Google Cloud Storage.)",
-            .examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)", ""}},
-            .categories{"DataLake"}},
-         .allow_readonly = false});
-}
-
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3>(
-        {.documentation
-         = {.description=R"(The table function can be used to read the data stored on AWS S3.)",
-            .examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)", ""}},
-            .categories{"DataLake"}},
-         .allow_readonly = false});
+    factory.registerFunction<TableFunctionS3>();
 }
-
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)
 {

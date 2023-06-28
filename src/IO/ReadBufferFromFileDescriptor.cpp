@@ -50,30 +50,30 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset)
+bool ReadBufferFromFileDescriptor::nextImpl()
 {
-    chassert(min_bytes <= max_bytes);
+    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
+    assert(!internal_buffer.empty());
 
-    /// This is a workaround of a read past EOF bug in linux kernel with pread()
-    if (file_size.has_value() && offset >= *file_size)
-         return 0;
+    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
+    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
+         return false;
 
     size_t bytes_read = 0;
-    while (bytes_read < min_bytes)
+    while (!bytes_read)
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
         Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         ssize_t res = 0;
-        size_t to_read = max_bytes - bytes_read;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
             if (use_pread)
-                res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+                res = ::pread(fd, internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end);
             else
-                res = ::read(fd, to + bytes_read, to_read);
+                res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
         }
         if (!res)
             break;
@@ -102,31 +102,18 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         if (profile_callback)
         {
             ProfileInfo info;
-            info.bytes_requested = to_read;
+            info.bytes_requested = internal_buffer.size();
             info.bytes_read = res;
             info.nanoseconds = watch.elapsed();
             profile_callback(info);
         }
     }
 
-    if (bytes_read)
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-
-    return bytes_read;
-}
-
-
-bool ReadBufferFromFileDescriptor::nextImpl()
-{
-    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    assert(!internal_buffer.empty());
-
-    size_t bytes_read = readImpl(internal_buffer.begin(), 1, internal_buffer.size(), file_offset_of_buffer_end);
-
     file_offset_of_buffer_end += bytes_read;
 
     if (bytes_read)
     {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
     }
@@ -137,7 +124,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 }
 
 
-void ReadBufferFromFileDescriptor::prefetch(Priority)
+void ReadBufferFromFileDescriptor::prefetch(int64_t)
 {
 #if defined(POSIX_FADV_WILLNEED)
     /// For direct IO, loading data into page cache is pointless.
@@ -270,19 +257,6 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
 size_t ReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
-}
-
-bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
-{
-    struct stat stat;
-    auto res = ::fstat(fd, &stat);
-    return res == 0 && S_ISREG(stat.st_mode);
-}
-
-size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
-{
-    chassert(use_pread);
-    return readImpl(to, n, n, offset);
 }
 
 }

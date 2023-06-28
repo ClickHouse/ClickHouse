@@ -44,7 +44,7 @@ def started_cluster():
 
 
 def test_create_insert(started_cluster):
-    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'test_cluster' SYNC")
+    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'test_cluster' NO DELAY")
     node1.query(
         """
         CREATE TABLE tbl ON CLUSTER 'test_cluster' (

@@ -18,8 +18,8 @@ public:
     ASTPtr where_expression;
     ASTPtr limit_length;
 
-    String database;
-    String table;
+    String from_database;
+    String from_table;
 
     String like;
 

@@ -16,27 +16,40 @@ select 'runtime exceptions', max2(coalesce(sum(length(message_format_string) = 0
 
 -- FIXME some of the following messages are not informative and it has to be fixed
 create temporary table known_short_messages (s String) as select * from (select
-['', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
-'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
-'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}', 'Removed',
-'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',
-'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}', 'dropIfEmpty',
-'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', '{}%', 'Read object: {}',
-'New segment: {}', 'Convert overflow', 'Division by zero', 'Files set to {}',
-'Bytes set to {}', 'Numeric overflow', 'Invalid mode: {}',
-'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
-'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
-'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
-'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
-'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
-'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
-'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
-'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
-'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
-'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
-'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
-'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
-'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
+['', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue', 'Creating set.',
+'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
+'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
+'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
+'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', 'Query was cancelled',
+'Table {} already exists.', '{}%', 'Cancelled merging parts', 'All replicas are lost',
+'Cancelled mutating parts', 'Read object: {}', 'New segment: {}', 'Unknown geometry type {}',
+'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
+'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
+'No part {} in committed state', 'Files set to {}', 'Bytes set to {}', 'Sharding key {} is not used',
+'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow',
+'Polygon is not valid: {}', 'Decimal math overflow', '{} only accepts maps', 'Dictionary ({}) not found',
+'Unknown format {}', 'Invalid IPv4 value', 'Invalid IPv6 value', 'Unknown setting {}',
+'Unknown table function {}', 'Database {} already exists.', 'Table {} doesn''t exist',
+'Invalid credentials', 'Part {} already exists', 'Invalid mode: {}', 'Log pulling is cancelled',
+'JOIN {} cannot get JOIN keys', 'Unknown function {}{}', 'Cannot parse IPv6 {}',
+'Not found address of host: {}', '{} must contain a tuple', 'Unknown codec family: {}',
+'Expected const String column', 'Invalid partition format: {}', 'Cannot parse IPv4 {}',
+'AST is too deep. Maximum: {}', 'Array sizes are too large: {}', 'Unable to connect to HDFS: {}',
+'Shutdown is called for table', 'File is not inside {}',
+'Table {} doesn''t exist', 'Database {} doesn''t exist', 'Table {}.{} doesn''t exist',
+'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved',
+'Could not find table: {}', 'Detached part "{}" not found', 'Unknown data type family: {}',
+'Unknown input format {}', 'Cannot UPDATE key column {}', 'Substitution {} is not set',
+'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}',
+'Unsupported cipher mode', 'Unknown explain kind ''{}''', 'Table {} was suddenly removed',
+'No cache found by path: {}', 'No such column {} in table {}', 'There is no port named {}',
+'Function {} cannot resize {}', 'Function {} is not parametric', 'Unknown key attribute ''{}''',
+'Transaction was cancelled', 'Unknown parent id {}', 'Session {} not found', 'Mutation {} was killed',
+'Table {}.{} doesn''t exist.', 'Table is not initialized yet', '{} is not an identifier',
+'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
+'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
+'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
+'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist'
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
@@ -45,14 +58,8 @@ select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_st
 -- Same as above. Feel free to update the threshold or remove this query if really necessary
 select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 3) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
 
--- Unlike above, here we look at length of the formatted message, not format string. Most short format strings are fine because they end up decorated with context from outer or inner exceptions, e.g.:
--- "Expected end of line" -> "Code: 117. DB::Exception: Expected end of line: (in file/uri /var/lib/clickhouse/user_files/data_02118): (at row 1)"
--- But we have to cut out the boilerplate, e.g.:
--- "Code: 60. DB::Exception: Table default.a doesn't exist. (UNKNOWN_TABLE), Stack trace" -> "Table default.a doesn't exist."
--- This table currently doesn't have enough information to do this reliably, so we just regex search for " (ERROR_NAME_IN_CAPS)" and hope that's good enough.
--- For the "Code: 123. DB::Exception: " part, we just subtract 26 instead of searching for it. Because sometimes it's not at the start, e.g.:
--- "Unexpected error, will try to restart main thread: Code: 341. DB::Exception: Unexpected error: Code: 57. DB::Exception:[...]"
-select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 3) from logs where message ilike '%DB::Exception%' and if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
+-- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
+select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 30) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%' and message_format_string not in known_short_messages;
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
@@ -71,11 +78,11 @@ select 'noisy Info messages', max2((select count() from logs where level <= 'Inf
 
 -- Same as above for Warning
 with ('Not enabled four letter command {}') as frequent_in_tests
-select 'noisy Warning messages', max2(coalesce((select countOrDefault() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
-    group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.01);
+select 'noisy Warning messages', max2((select countOrDefault() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
+    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.01);
 
 -- Same as above for Error
-select 'noisy Error messages', max2(coalesce((select countOrDefault() from logs where level = 'Error' group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.02);
+select 'noisy Error messages', max2((select countOrDefault() from logs where level = 'Error' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.02);
 
 select 'no Fatal messages', count() from logs where level = 'Fatal';
 
@@ -91,9 +98,7 @@ select 'incorrect patterns', max2(countDistinct(message_format_string), 15) from
     where ((rand() % 8) = 0)
     and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')
-    and message not like ('%Exception: '||s||'%')
-    and message not like ('%(skipped % similar messages)%')
-    group by message_format_string
+    and message not like ('%Exception: '||s||'%') group by message_format_string
 ) where any_message not like '%Poco::Exception%';
 
 drop table logs;

@@ -64,7 +64,6 @@ Chunk ORCBlockInputFormat::generate()
     if (!table || !num_rows)
         return {};
 
-    approx_bytes_read_for_chunk = file_reader->GetRawORCReader()->getStripe(stripe_current)->getDataLength();
     ++stripe_current;
 
     Chunk res;

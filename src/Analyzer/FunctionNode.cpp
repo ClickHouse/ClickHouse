@@ -209,20 +209,15 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
     }
 
-    auto new_options = options;
-    /// To avoid surrounding constants with several internal casts.
-    if (function_name == "_CAST" && (*getArguments().begin())->getNodeType() == QueryTreeNodeType::CONSTANT)
-        new_options.add_cast_for_constants = false;
-
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
-        function_ast->children.push_back(parameters.toAST(new_options));
+        function_ast->children.push_back(parameters.toAST(options));
         function_ast->parameters = function_ast->children.back();
     }
 
     const auto & arguments = getArguments();
-    function_ast->children.push_back(arguments.toAST(new_options));
+    function_ast->children.push_back(arguments.toAST(options));
     function_ast->arguments = function_ast->children.back();
 
     auto window_node = getWindowNode();
@@ -231,7 +226,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-            function_ast->window_definition = window_node->toAST(new_options);
+            function_ast->window_definition = window_node->toAST(options);
     }
 
     return function_ast;

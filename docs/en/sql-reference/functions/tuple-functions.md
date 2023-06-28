@@ -133,7 +133,7 @@ Tuples should have the same type of the elements.
 
 - The Hamming distance.
 
-Type: The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+Type: The result type is calculed the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
 
 ``` sql
 SELECT
@@ -223,7 +223,7 @@ Result:
 └───────────────────────────────────────┘
 ```
 
-It is possible to transform columns to rows using this function:
+It is possible to transform colums to rows using this function:
 
 ``` sql
 CREATE TABLE tupletest (col Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;

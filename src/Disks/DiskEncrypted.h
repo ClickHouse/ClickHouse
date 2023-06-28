@@ -6,14 +6,22 @@
 #include <Disks/IDisk.h>
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
-#include <Disks/DiskEncryptedTransaction.h>
 
 
 namespace DB
 {
-
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+namespace FileEncryption { enum class Algorithm; }
+
+struct DiskEncryptedSettings
+{
+    DiskPtr wrapped_disk;
+    String disk_path;
+    std::unordered_map<UInt64, String> keys;
+    UInt64 current_key_id;
+    FileEncryption::Algorithm current_algorithm;
+};
 
 /// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
 /// And when we read files from an encrypted disk it deciphers them automatically,
@@ -21,8 +29,8 @@ class WriteBufferFromFileBase;
 class DiskEncrypted : public IDisk
 {
 public:
-    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_);
-    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_);
+    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
+    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
 
     const String & getName() const override { return encrypted_name; }
     const String & getPath() const override { return disk_absolute_path; }
@@ -51,30 +59,28 @@ public:
 
     void createDirectory(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->createDirectory(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->createDirectory(wrapped_path);
     }
 
     void createDirectories(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->createDirectories(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->createDirectories(wrapped_path);
     }
+
 
     void clearDirectory(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->clearDirectory(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->clearDirectory(wrapped_path);
     }
 
     void moveDirectory(const String & from_path, const String & to_path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->moveDirectory(from_path, to_path);
-        tx->commit();
+        auto wrapped_from_path = wrappedPath(from_path);
+        auto wrapped_to_path = wrappedPath(to_path);
+        delegate->moveDirectory(wrapped_from_path, wrapped_to_path);
     }
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override
@@ -85,23 +91,22 @@ public:
 
     void createFile(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->createFile(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->createFile(wrapped_path);
     }
 
     void moveFile(const String & from_path, const String & to_path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->moveFile(from_path, to_path);
-        tx->commit();
+        auto wrapped_from_path = wrappedPath(from_path);
+        auto wrapped_to_path = wrappedPath(to_path);
+        delegate->moveFile(wrapped_from_path, wrapped_to_path);
     }
 
     void replaceFile(const String & from_path, const String & to_path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->replaceFile(from_path, to_path);
-        tx->commit();
+        auto wrapped_from_path = wrappedPath(from_path);
+        auto wrapped_to_path = wrappedPath(to_path);
+        delegate->replaceFile(wrapped_from_path, wrapped_to_path);
     }
 
     void listFiles(const String & path, std::vector<String> & file_names) const override
@@ -124,116 +129,67 @@ public:
         const String & path,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings) override
-    {
-        auto tx = createEncryptedTransaction();
-        auto result = tx->writeFile(path, buf_size, mode, settings);
-        return result;
-    }
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeFile(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->removeFile(wrapped_path);
     }
 
     void removeFileIfExists(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeFileIfExists(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->removeFileIfExists(wrapped_path);
     }
 
     void removeDirectory(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeDirectory(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->removeDirectory(wrapped_path);
     }
 
     void removeRecursive(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeRecursive(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->removeRecursive(wrapped_path);
     }
 
     void removeSharedFile(const String & path, bool flag) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeSharedFile(path, flag);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->removeSharedFile(wrapped_path, flag);
     }
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->removeSharedRecursive(wrapped_path, keep_all_batch_data, file_names_remove_metadata_only);
     }
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
-        tx->commit();
+        for (const auto & file : files)
+        {
+            auto wrapped_path = wrappedPath(file.path);
+            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+            if (file.if_exists)
+                delegate->removeSharedFileIfExists(wrapped_path, keep);
+            else
+                delegate->removeSharedFile(wrapped_path, keep);
+        }
     }
 
     void removeSharedFileIfExists(const String & path, bool flag) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->removeSharedFileIfExists(path, flag);
-        tx->commit();
-    }
-
-    Strings getBlobPath(const String & path) const override
-    {
         auto wrapped_path = wrappedPath(path);
-        return delegate->getBlobPath(wrapped_path);
+        delegate->removeSharedFileIfExists(wrapped_path, flag);
     }
-
-    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
-    {
-        auto tx = createEncryptedTransaction();
-        tx->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
-        tx->commit();
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->readFile(wrapped_path, settings);
-    }
-
-    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) const override
-    {
-        auto tx = createEncryptedTransaction();
-        auto buf = tx->writeEncryptedFile(path, buf_size, mode, settings);
-        return buf;
-    }
-
-    size_t getEncryptedFileSize(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->getFileSize(wrapped_path);
-    }
-
-    size_t getEncryptedFileSize(size_t unencrypted_size) const override;
-
-    UInt128 getEncryptedFileIV(const String & path) const override;
-
-    static size_t convertFileSizeToEncryptedFileSize(size_t file_size);
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->setLastModified(path, timestamp);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->setLastModified(wrapped_path, timestamp);
     }
 
     Poco::Timestamp getLastModified(const String & path) const override
@@ -250,16 +206,15 @@ public:
 
     void setReadOnly(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->setReadOnly(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        delegate->setReadOnly(wrapped_path);
     }
 
     void createHardLink(const String & src_path, const String & dst_path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->createHardLink(src_path, dst_path);
-        tx->commit();
+        auto wrapped_src_path = wrappedPath(src_path);
+        auto wrapped_dst_path = wrappedPath(dst_path);
+        delegate->createHardLink(wrapped_src_path, wrapped_dst_path);
     }
 
     void truncateFile(const String & path, size_t size) override;
@@ -294,22 +249,11 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
-    std::shared_ptr<DiskEncryptedTransaction> createEncryptedTransaction() const
-    {
-        auto delegate_transaction = delegate->createTransaction();
-        return std::make_shared<DiskEncryptedTransaction>(delegate_transaction, disk_path, *current_settings.get(), delegate.get());
-    }
-
     DiskTransactionPtr createTransaction() override
     {
-        if (use_fake_transaction)
-        {
-            return std::make_shared<FakeDiskTransaction>(*this);
-        }
-        else
-        {
-            return createEncryptedTransaction();
-        }
+        /// Need to overwrite explicetly because this disk change
+        /// a lot of "delegate" methods.
+        return std::make_shared<FakeDiskTransaction>(*this);
     }
 
     UInt64 getTotalSpace() const override
@@ -347,7 +291,10 @@ public:
 private:
     String wrappedPath(const String & path) const
     {
-        return DiskEncryptedTransaction::wrappedPath(disk_path, path);
+        // if path starts_with disk_path -> got already wrapped path
+        if (!disk_path.empty() && path.starts_with(disk_path))
+            return path;
+        return disk_path + path;
     }
 
     DiskPtr delegate;
@@ -355,7 +302,6 @@ private:
     const String disk_path;
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;
-    bool use_fake_transaction;
 };
 
 }

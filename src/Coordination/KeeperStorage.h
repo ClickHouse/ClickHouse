@@ -110,7 +110,7 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time{0};
+        int64_t time;
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
         std::optional<Digest> digest;
@@ -222,7 +222,6 @@ public:
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
-        void addDelta(Delta new_delta);
         void addDeltas(std::vector<Delta> new_deltas);
         void commit(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
@@ -310,10 +309,6 @@ public:
     };
 
     UncommittedState uncommitted_state{*this};
-
-    // Apply uncommitted state to another storage using only transactions
-    // with zxid > last_zxid
-    void applyUncommittedState(KeeperStorage & other, int64_t last_zxid);
 
     Coordination::Error commit(int64_t zxid);
 

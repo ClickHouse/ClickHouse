@@ -111,25 +111,6 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
-
-        Poco::Net::SocketAddress address = impl->getConnectedAddress();
-
-        connected_zk_host = address.host().toString();
-        connected_zk_port = address.port();
-
-        connected_zk_index = 0;
-
-        if (args.hosts.size() > 1)
-        {
-            for (size_t i = 0; i < args.hosts.size(); i++)
-            {
-                if (args.hosts[i] == address.toString())
-                {
-                    connected_zk_index = i;
-                    break;
-                }
-            }
-        }
     }
     else if (args.implementation == "testkeeper")
     {
@@ -179,7 +160,7 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
-    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
+    std::function<size_t(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {
@@ -358,31 +339,6 @@ void ZooKeeper::createAncestors(const std::string & path)
             break;
         createIfNotExists(path.substr(0, pos), "");
         ++pos;
-    }
-}
-
-void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
-{
-    std::vector<std::string> paths_to_check;
-    size_t pos = 1;
-    while (true)
-    {
-        pos = path.find('/', pos);
-        if (pos == std::string::npos)
-            break;
-        paths_to_check.emplace_back(path.substr(0, pos));
-        ++pos;
-    }
-
-    MultiExistsResponse response = exists(paths_to_check);
-
-    for (size_t i = 0; i < paths_to_check.size(); ++i)
-    {
-        if (response[i].error != Coordination::Error::ZOK)
-        {
-            /// Ephemeral nodes cannot have children
-            requests.emplace_back(makeCreateRequest(paths_to_check[i], "", CreateMode::Persistent));
-        }
     }
 }
 
@@ -865,7 +821,7 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion() const
+DB::KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return impl->getApiVersion();
 }
@@ -1325,6 +1281,7 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     request->path = path;
     return request;
 }
+
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {

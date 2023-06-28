@@ -13,6 +13,7 @@
 
 #include <cmath>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -337,7 +338,7 @@ void SettingFieldString::readBinary(ReadBuffer & in)
 /// that. The linker does not complain only because clickhouse-keeper does not call any of below
 /// functions. A cleaner alternative would be more modular libraries, e.g. one for data types, which
 /// could then be linked by the server and the linker.
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef KEEPER_STANDALONE_BUILD
 
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
@@ -450,17 +451,6 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
-void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(value, out);
-}
-
-void SettingFieldTimezone::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinary(str, in);
-    *this = std::move(str);
-}
 
 String SettingFieldCustom::toString() const
 {

@@ -433,8 +433,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                connected_zk_address = node.address;
-
                 break;
             }
             catch (...)
@@ -450,8 +448,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
-
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
@@ -1089,7 +1085,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-KeeperApiVersion ZooKeeper::getApiVersion() const
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return keeper_api_version;
 }
@@ -1107,19 +1103,16 @@ void ZooKeeper::initApiVersion()
     get(keeper_api_version_path, std::move(callback), {});
     if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
-        throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get API version: timeout");
+        LOG_TRACE(log, "Failed to get API version: timeout");
+        return;
     }
 
     auto response = future.get();
 
-    if (response.error == Coordination::Error::ZNONODE)
+    if (response.error != Coordination::Error::ZOK)
     {
-        LOG_TRACE(log, "API version not found, assuming {}", keeper_api_version);
+        LOG_TRACE(log, "Failed to get API version");
         return;
-    }
-    else if (response.error != Coordination::Error::ZOK)
-    {
-        throw Exception(response.error, "Failed to get API version");
     }
 
     uint8_t keeper_version{0};

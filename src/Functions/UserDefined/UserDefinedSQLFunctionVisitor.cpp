@@ -25,12 +25,6 @@ namespace ErrorCodes
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
-    if (!ast)
-    {
-        chassert(false);
-        return;
-    }
-
     const auto visit_child_with_shared_ptr = [&](ASTPtr & child)
     {
         if (!child)

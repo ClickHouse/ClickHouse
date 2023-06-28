@@ -541,9 +541,4 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
     }
 }
 
-QueryPlan::Nodes QueryPlan::detachNodes(QueryPlan && plan)
-{
-    return std::move(plan.nodes);
-}
-
 }

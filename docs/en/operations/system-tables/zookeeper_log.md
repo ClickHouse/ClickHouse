@@ -15,7 +15,7 @@ Columns with request parameters:
     - `Finalize` — The connection is lost, no response was received.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
 - `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the event happened.
-- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address of ZooKeeper server that was used to make the request.
+- `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address of ZooKeeper server that was used to make the request.
 - `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The port of ZooKeeper server that was used to make the request.
 - `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — The session ID that the ZooKeeper server sets for each connection.
 - `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired `response`/`finalize` row.
@@ -33,7 +33,7 @@ Columns with request response parameters:
 
 - `zxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — ZooKeeper transaction ID. The serial number issued by the ZooKeeper server in response to a successfully executed request (`0` if the request was not executed/returned an error/the client does not know whether the request was executed).
 - `error` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — Error code. Can have many values, here are just some of them:
-    - `ZOK` — The request was executed successfully.
+    - `ZOK` — The request was executed seccessfully.
     - `ZCONNECTIONLOSS` — The connection was lost.
     - `ZOPERATIONTIMEOUT` — The request execution timeout has expired.
 	- `ZSESSIONEXPIRED` — The session has expired.
@@ -43,7 +43,7 @@ Columns with request response parameters:
 - `path_created` ([String](../../sql-reference/data-types/string.md)) — The path to the created ZooKeeper node (for responses to the `CREATE` request), may differ from the `path` if the node is created as a `sequential`.
 - `stat_czxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — The `zxid` of the change that caused this ZooKeeper node to be created.
 - `stat_mzxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — The `zxid` of the change that last modified this ZooKeeper node.
-- `stat_pzxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — The transaction ID of the change that last modified children of this ZooKeeper node.
+- `stat_pzxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — The transaction ID of the change that last modified childern of this ZooKeeper node.
 - `stat_version` ([Int32](../../sql-reference/data-types/int-uint.md)) — The number of changes to the data of this ZooKeeper node.
 - `stat_cversion` ([Int32](../../sql-reference/data-types/int-uint.md)) — The number of changes to the children of this ZooKeeper node.
 - `stat_dataLength` ([Int32](../../sql-reference/data-types/int-uint.md)) — The length of the data field of this ZooKeeper node.

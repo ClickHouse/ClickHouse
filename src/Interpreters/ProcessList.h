@@ -164,7 +164,6 @@ public:
         QueryPriorities::Handle && priority_handle_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
-        const Settings & query_settings_,
         UInt64 watch_start_nanoseconds);
 
     ~QueryStatus();
