@@ -239,7 +239,6 @@ def test_attach_detach_partition(cluster):
         len(hdfs_objects)
         == FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
     )
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
