@@ -53,7 +53,7 @@ namespace
             if (!isString(arguments[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}",
+                    "Illegal type {} of second argument of function {}, String expected",
                     arguments[1]->getName(),
                     getName());
 
