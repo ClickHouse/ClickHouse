@@ -138,7 +138,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
-        out_hashing.next();
+        out_hashing.finalize();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
         out->preFinalize();
@@ -973,24 +973,9 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
     }
 }
 
-void IMergeTreeDataPart::writeDeleteOnDestroyMarker()
-{
-    static constexpr auto marker_path = "delete-on-destroy.txt";
-
-    try
-    {
-        getDataPartStorage().createFile(marker_path);
-    }
-    catch (Poco::Exception & e)
-    {
-        LOG_ERROR(storage.log, "{} (while creating DeleteOnDestroy marker: {})",
-            e.what(), (fs::path(getDataPartStorage().getFullPath()) / marker_path).string());
-    }
-}
-
 void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 {
-    getDataPartStorage().removeFileIfExists("delete-on-destroy.txt");
+    getDataPartStorage().removeFileIfExists(DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED);
 }
 
 void IMergeTreeDataPart::removeVersionMetadata()
@@ -1068,7 +1053,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
         partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
         minmax_idx = std::make_shared<MinMaxIndex>(min_date, max_date);
     }
