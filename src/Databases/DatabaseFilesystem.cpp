@@ -23,7 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
-    extern const int DATABASE_ACCESS_DENIED;
+    extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
@@ -76,7 +76,7 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_path);
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
         else
             return false;
     }
@@ -175,9 +175,7 @@ StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr conte
     {
         /// Ignore exceptions thrown by TableFunctionFile, which indicate that there is no table
         /// see tests/02722_database_filesystem.sh for more details.
-        if (e.code() == ErrorCodes::BAD_ARGUMENTS
-            || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED
-            || e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
         {
             return nullptr;
         }
