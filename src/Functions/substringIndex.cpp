@@ -57,7 +57,7 @@ namespace
                     arguments[1]->getName(),
                     getName());
 
-            if (!isNativeNumber(arguments[2]))
+            if (!isNativeInteger(arguments[2]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of third argument of function {}",
