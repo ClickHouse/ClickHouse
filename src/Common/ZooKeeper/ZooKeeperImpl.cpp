@@ -362,6 +362,8 @@ ZooKeeper::ZooKeeper(
     {
         tryLogCurrentException(log, "Failed to connect to ZooKeeper");
 
+        finalize(false, false, "Exception in constructor");
+
         send_thread.join();
         receive_thread.join();
 
