@@ -940,7 +940,7 @@ void StorageAzureBlobSource::GlobIterator::createFilterAST(const String & any_ke
 StorageAzureBlobSource::KeysIterator::KeysIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
-    Strings keys_,
+    const Strings & keys_,
     ASTPtr query_,
     const Block & virtual_header_,
     ContextPtr context_,
