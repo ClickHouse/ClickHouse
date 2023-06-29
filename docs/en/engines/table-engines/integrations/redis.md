@@ -117,7 +117,7 @@ Join:
 Join with other tables.
 
 ```
-SELECT * FROM redis_table JOIN merge_tree_table ON redis_table.key=merge_tree_table.key;
+SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
 ## Limitations {#limitations}
