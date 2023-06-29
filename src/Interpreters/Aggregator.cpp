@@ -1413,8 +1413,6 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
                 inst->batch_arguments,
                 data_variants.aggregates_pool);
     }
-
-    CurrentMemoryTracker::check();
 }
 
 void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
@@ -1428,8 +1426,6 @@ void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
     data_variants.init(AggregatedDataVariants::Type::without_key);
 
     mergeWithoutKeyStreamsImpl(data_variants, row_begin, row_end, aggregate_columns_data);
-
-    CurrentMemoryTracker::check();
 }
 
 
