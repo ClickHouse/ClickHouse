@@ -4488,6 +4488,7 @@ This setting allows to specify renaming pattern for files processed by `file` ta
 
 ### Placeholders
 
+- `%a` — Full original filename (e.g., "sample.csv").
 - `%f` — Original filename without extension (e.g., "sample").
 - `%e` — Original file extension with dot (e.g., ".csv").
 - `%t` — Timestamp (in microseconds).

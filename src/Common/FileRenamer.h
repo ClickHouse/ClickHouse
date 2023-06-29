@@ -9,6 +9,7 @@ namespace DB
 /**
   * The FileRenamer class provides functionality for renaming files based on given pattern with placeholders
   * The supported placeholders are:
+  *   %a - Full original file name ("sample.csv")
   *   %f - Original filename without extension ("sample")
   *   %e - Original file extension with dot (".csv")
   *   %t - Timestamp (in microseconds)
