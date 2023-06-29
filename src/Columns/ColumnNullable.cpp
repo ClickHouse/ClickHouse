@@ -35,7 +35,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
     nested_column = getNestedColumn().convertToFullColumnIfConst();
     is_string = isString(nested_column->getDataType());
-    is_number_or_fixed_string = isNumber(nested_column->getDataType()) || isFixedString(nested_column->getDataType());
+    is_fixed_size_column = nested_column->valuesHaveFixedSize();
 
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
@@ -156,7 +156,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
         }
         return StringRef(pos, memory_size);
     }
-    else if (is_number_or_fixed_string)
+    else if (is_fixed_size_column)
     {
         auto data = nested_column->getDataAt(n);
         auto size = data.size;

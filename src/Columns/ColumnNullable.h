@@ -214,7 +214,7 @@ private:
     WrappedPtr null_map;
     // optimize serializeValueIntoArena
     bool is_string;
-    bool is_number_or_fixed_string;
+    bool is_fixed_size_column;
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map);
