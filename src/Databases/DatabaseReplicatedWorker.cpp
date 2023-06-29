@@ -91,18 +91,21 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
-        LOG_TRACE(log, "Metadata digest in ZooKeeper: {}", digest);
         std::lock_guard lock{database->metadata_mutex};
         local_digest = database->tables_metadata_digest;
     }
     else
     {
+        LOG_WARNING(log, "Did not find digest in ZooKeeper, creating it");
         /// Database was created by old ClickHouse versions, let's create the node
         std::lock_guard lock{database->metadata_mutex};
         digest = local_digest = database->tables_metadata_digest;
         digest_str = toString(digest);
         zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
     }
+
+    LOG_TRACE(log, "Trying to initialize replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+              our_log_ptr, max_log_ptr, local_digest, digest);
 
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;

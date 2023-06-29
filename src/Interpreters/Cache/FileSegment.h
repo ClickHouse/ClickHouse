@@ -175,8 +175,6 @@ public:
 
     size_t getRefCount() const { return ref_count; }
 
-    void incrementHitsCount() { ++hits_count; }
-
     size_t getCurrentWriteOffset(bool sync) const;
 
     size_t getFirstNonDownloadedOffset(bool sync) const;
