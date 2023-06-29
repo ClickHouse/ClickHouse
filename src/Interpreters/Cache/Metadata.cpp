@@ -108,7 +108,7 @@ bool KeyMetadata::createBaseDirectory()
     return true;
 }
 
-std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
+std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
     return fs::path(key_path)
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
@@ -513,6 +513,55 @@ std::string LockedKey::toString() const
         result += std::to_string(it->first);
     }
     return result;
+}
+
+FileSegments LockedKey::sync()
+{
+    FileSegments broken;
+    for (auto it = key_metadata->begin(); it != key_metadata->end();)
+    {
+        auto file_segment = it->second->file_segment;
+        if (file_segment->state() != FileSegment::State::DOWNLOADED)
+            continue;
+
+        const auto & path = file_segment->getPathInLocalCache();
+        if (!fs::exists(path))
+        {
+            LOG_WARNING(
+                key_metadata->log,
+                "File segment has DOWNLOADED state, but file does not exist ({})",
+                file_segment->getInfoForLog());
+
+            broken.push_back(FileSegment::getSnapshot(file_segment));
+            removeFileSegment(file_segment->offset(), file_segment->lock());
+            continue;
+        }
+
+        const size_t actual_size = fs::file_size(path);
+        const size_t expected_size = file_segment->getDownloadedSize(false);
+
+        if (actual_size == expected_size)
+            continue;
+
+        LOG_WARNING(
+            key_metadata->log,
+            "File segment has unexpected size. Having {}, expected {} ({})",
+            actual_size, expected_size, file_segment->getInfoForLog());
+
+        broken.push_back(FileSegment::getSnapshot(file_segment));
+
+        auto file_segment_lock = file_segment->lock();
+        if (actual_size < expected_size)
+        {
+            file_segment->downloaded_size = actual_size;
+            file_segment->download_state = FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+        }
+        else
+        {
+            removeFileSegment(file_segment->offset(), file_segment_lock);
+        }
+    }
+    return broken;
 }
 
 void CleanupQueue::add(const FileCacheKey & key)

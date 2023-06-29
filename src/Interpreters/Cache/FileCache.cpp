@@ -41,6 +41,7 @@ size_t roundUpToMultiple(size_t num, size_t multiple)
 {
     return roundDownToMultiple(num + multiple - 1, multiple);
 }
+
 }
 
 namespace DB
@@ -1051,7 +1052,7 @@ void FileCache::cleanupThreadFunc()
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot()
+FileSegments FileCache::getSnapshot()
 {
     assertInitialized();
 #ifndef NDEBUG
@@ -1064,16 +1065,16 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
         for (const auto & [_, file_segment_metadata] : locked_key)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     });
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments), /* complete_on_dtor */false);
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
+FileSegments FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
     for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
 FileSegmentsHolderPtr FileCache::dumpQueue()
@@ -1160,6 +1161,17 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     auto lock = lockCache();
     auto context = query_limit->getOrSetQueryContext(query_id, settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
+}
+
+FileSegments FileCache::sync()
+{
+    FileSegments file_segments;
+    metadata.iterate([&](LockedKey & locked_key)
+    {
+        auto broken = locked_key.sync();
+        file_segments.insert(file_segments.end(), broken.begin(), broken.end());
+    });
+    return file_segments;
 }
 
 }

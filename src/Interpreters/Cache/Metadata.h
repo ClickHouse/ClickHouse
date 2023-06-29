@@ -64,7 +64,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 
     bool createBaseDirectory();
 
-    std::string getFileSegmentPath(const FileSegment & file_segment);
+    std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
 private:
     KeyState key_state = KeyState::ACTIVE;
@@ -81,7 +81,7 @@ struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, 
 {
 public:
     using Key = FileCacheKey;
-    using IterateCacheMetadataFunc = std::function<void(const LockedKey &)>;
+    using IterateCacheMetadataFunc = std::function<void(LockedKey &)>;
 
     explicit CacheMetadata(const std::string & path_);
 
@@ -169,6 +169,8 @@ struct LockedKey : private boost::noncopyable
     void removeFromCleanupQueue();
 
     void markAsRemoved();
+
+    FileSegments sync();
 
     std::string toString() const;
 
