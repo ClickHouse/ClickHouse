@@ -362,6 +362,16 @@ ZooKeeper::ZooKeeper(
     {
         tryLogCurrentException(log, "Failed to connect to ZooKeeper");
 
+        try
+        {
+            requests_queue.finish();
+            socket.shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
         send_thread.join();
         receive_thread.join();
 
