@@ -18,8 +18,8 @@ using FragmentToHosts = std::unordered_map<FragmentID , Hosts>;
 class Coordinator
 {
 public:
-    Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_, String query_, bool is_subquery_ = false)
-        : log(&Poco::Logger::get("Coordinator")), fragments(fragments_), context(context_), query(query_), is_subquery(is_subquery_)
+    Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_, String query_/*, bool is_subquery_ = false*/)
+        : log(&Poco::Logger::get("Coordinator")), fragments(fragments_), context(context_), query(query_)/*, is_subquery(is_subquery_)*/
     {
     }
 
@@ -51,11 +51,11 @@ private:
 
     String query;
 
-    bool is_subquery;
-
-    /// for query: select * from aaa where id in (select id from bbb),
-    /// two phases are scheduled separately, we need make them scheduled same hosts
-    std::vector<String> prepare_hosts;
+//    bool is_subquery;
+//
+//    /// for query: select * from aaa where id in (select id from bbb),
+//    /// two phases are scheduled separately, we need make them scheduled same hosts
+//    std::vector<String> prepare_hosts;
 };
 
 }

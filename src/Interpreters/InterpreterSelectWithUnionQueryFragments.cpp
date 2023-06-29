@@ -427,7 +427,7 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
     /// schedule fragments
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        Coordinator coord(fragments, context, formattedAST(query_ptr), options.is_subquery);
+        Coordinator coord(fragments, context, formattedAST(query_ptr)/*, options.is_subquery*/);
         coord.scheduleExecuteDistributedPlan();
     }
     else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
