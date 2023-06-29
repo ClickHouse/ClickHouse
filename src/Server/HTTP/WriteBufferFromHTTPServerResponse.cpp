@@ -3,7 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -35,10 +35,16 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
         return;
 
     WriteBufferFromOwnString progress_string_writer;
+
+    writeCString("{", progress_string_writer);
     accumulated_progress.writeJSON(progress_string_writer);
+    writeCString(",\"peak_memory_usage\":\"", progress_string_writer);
+    writeText(peak_memory_usage, progress_string_writer);
+    writeCString("\"}", progress_string_writer);
+    
 
     if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << " Mem " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\r\n" << std::flush;
+        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
