@@ -1017,7 +1017,8 @@ void FileCache::deactivateBackgroundOperations()
 
     metadata.cancelDownload();
     for (auto & thread : download_threads)
-        thread.join();
+        if (thread.joinable())
+            thread.join();
 }
 
 void FileCache::cleanup()
