@@ -338,7 +338,6 @@ def test_attach_detach_partition(cluster, node_name):
         len(list_objects(cluster, "data/"))
         == FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
