@@ -144,6 +144,7 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
 }
 
 inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
+{
     size_t size = 0;
     readVarUInt(size, buf);
 
