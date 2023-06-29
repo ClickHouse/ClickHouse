@@ -149,7 +149,7 @@ void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
     for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
     {
         if (!files_to_copy_instead_of_hardlinks.contains(it->name())
-            && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+            && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
             && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
         {
             hardlinked_files->hardlinks_from_source_part.insert(it->name());
@@ -183,7 +183,7 @@ void MergeTreeDataPartCloner::handleProjections() const
         {
             auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
             if (!files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
-                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                 && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
             {
                 hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
