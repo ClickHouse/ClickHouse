@@ -605,7 +605,7 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## substringIndexUTF8(s, delim, index)
+## substringIndexUTF8(s, delim, count)
 
 Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
