@@ -1894,8 +1894,8 @@ bool MutateTask::prepare()
     /// Disable all settings that can enable reading with several streams.
     /// NOTE: isStorageTouchedByMutations() above is done without this settings because it
     /// should be ok to calculate count() with multiple streams.
-    context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
-    context_for_reading->setSetting("max_threads", 1);
+    context_for_reading->setSetting("max_streams_to_max_threads_ratio", Field(1ULL));
+    context_for_reading->setSetting("max_threads", Field(1ULL));
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);

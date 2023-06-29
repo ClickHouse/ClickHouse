@@ -198,8 +198,8 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     /// When max_threads > 1, the order of returning blocks is uncertain,
     /// which will lead to inconsistency after updateBlockData.
     auto new_context = Context::createCopy(context);
-    new_context->setSetting("max_streams_to_max_threads_ratio", 1);
-    new_context->setSetting("max_threads", 1);
+    new_context->setSetting("max_streams_to_max_threads_ratio", Field(1ULL));
+    new_context->setSetting("max_threads", Field(1ULL));
 
     MutationsInterpreter::Settings settings(true);
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
