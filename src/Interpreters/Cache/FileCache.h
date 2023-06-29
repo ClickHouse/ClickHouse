@@ -134,7 +134,6 @@ private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     const size_t max_file_segment_size;
-    const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
     const size_t delayed_cleanup_interval_ms;
     const size_t boundary_alignment;

@@ -25,7 +25,6 @@ static Block getSampleBlock()
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_size"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_elements"},
         ColumnWithTypeAndName{std::make_shared<DataTypeString>(), "path"},
-        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "do_not_evict_index_and_mark_files"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "delayed_cleanup_interval_ms"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "background_download_threads"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "enable_bypass_cache_with_threshold"},
@@ -55,7 +54,6 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[i++]->insert(cache->getUsedCacheSize());
     res_columns[i++]->insert(cache->getFileSegmentsNum());
     res_columns[i++]->insert(cache->getBasePath());
-    res_columns[i++]->insert(settings.do_not_evict_index_and_mark_files);
     res_columns[i++]->insert(settings.delayed_cleanup_interval_ms);
     res_columns[i++]->insert(settings.background_download_threads);
     res_columns[i++]->insert(settings.enable_bypass_cache_with_threashold);
