@@ -624,10 +624,12 @@ class ClickHouseCluster:
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
-                .config(
-                    "spark.jars.packages",
-                    "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                )
+                # The jars are now linked to "$SPARK_HOME/jars" and we don't
+                # need packages to be downloaded once and once again
+                # .config(
+                #     "spark.jars.packages",
+                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+                # )
                 .master("local")
                 .getOrCreate()
                 .stop()
