@@ -1,3 +1,4 @@
+#include <mutex>
 #include <string>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -24,6 +25,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include "Core/Names.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -65,10 +67,22 @@ public:
         : database_catalog(database_catalog_)
     {
     }
-    Names getAllRegisteredNames() const override
+    // Names getAllRegisteredNames() const override
+    // {
+    //     Names result;
+    //     auto databases_list = database_catalog.getDatabases();
+    //     for (const auto & database_name : databases_list | boost::adaptors::map_keys)
+    //     {
+    //         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+    //             continue;
+    //         result.emplace_back(database_name);
+    //     }
+    //     return result;
+    // }
+    Names getAllRegisteredNamesUnlocked() const
     {
         Names result;
-        auto databases_list = database_catalog.getDatabases();
+        auto databases_list = database_catalog.getDatabasesUnlocked();
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -94,6 +108,20 @@ public:
     {
         Names result;
         DatabasePtr database = database_catalog.tryGetDatabase(database_name);
+        if (database)
+        {
+            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            {
+                const auto & storage_id = table_it->table()->getStorageID();
+                result.emplace_back(storage_id.getTableName());
+            }
+        }
+        return result;
+    }
+    Names getAllRegisteredNamesUnlocked() const
+    {
+        Names result;
+        DatabasePtr database = database_catalog.tryGetDatabaseUnlocked(database_name);
         if (database)
         {
             for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
@@ -382,7 +410,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                         /// I also leave possibility to print several suggestions
                         exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
                     }
-                    else 
+                    else
                         exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
                 }
             }
@@ -642,10 +670,17 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     return databases.find(database_name)->second;
 }
 
-DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
+DatabasePtr DatabaseCatalog::tryGetDatabase(const String& database_name) const
+{
+    std::lock_guard lock{databases_mutex};  // Acquire the lock
+
+    // Call tryGetDatabaseUnlocked
+    return tryGetDatabaseUnlocked(database_name);
+}
+
+DatabasePtr DatabaseCatalog::tryGetDatabaseUnlocked(const String& database_name) const
 {
     assert(!database_name.empty());
-    std::lock_guard lock{databases_mutex};
     auto it = databases.find(database_name);
     if (it == databases.end())
         return {};
@@ -676,9 +711,14 @@ bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
     return databases.end() != databases.find(database_name);
 }
 
-Databases DatabaseCatalog::getDatabases() const
+Databases DatabaseCatalog::getDatabases()
 {
     std::lock_guard lock{databases_mutex};
+    return getDatabasesUnlocked();
+}
+
+Databases DatabaseCatalog::getDatabasesUnlocked() const
+{
     return databases;
 }
 
