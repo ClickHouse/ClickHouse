@@ -37,12 +37,18 @@ public:
     /// getReplicatedPartNames().
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
     virtual void addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name,
-                                        const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
+                                        const String & data_path, const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
+
+    struct PartNameAndDataPath
+    {
+        String part_name;
+        String data_path;
+    };
 
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
     /// parts covered by another parts.
-    virtual Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const = 0;
+    virtual std::vector<PartNameAndDataPath> getReplicatedPartNamesWithDataPaths(const String & table_shared_id, const String & replica_name) const = 0;
 
     struct MutationInfo
     {

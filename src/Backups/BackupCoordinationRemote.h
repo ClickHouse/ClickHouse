@@ -42,9 +42,10 @@ public:
         const String & table_shared_id,
         const String & table_name_for_logs,
         const String & replica_name,
+        const String & data_path,
         const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
 
-    Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const override;
+    std::vector<PartNameAndDataPath> getReplicatedPartNamesWithDataPaths(const String & table_shared_id, const String & replica_name) const override;
 
     void addReplicatedMutations(
         const String & table_shared_id,

@@ -9537,7 +9537,7 @@ void StorageReplicatedMergeTree::backupData(
         part_names_with_hashes.emplace_back(PartNameAndChecksum{part_backup_entries.part_name, part_backup_entries.part_checksum});
 
     /// Send our list of part names to the coordination (to compare with other replicas).
-    coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
+    coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), data_path_in_backup, part_names_with_hashes);
 
     /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
     {
@@ -9571,17 +9571,17 @@ void StorageReplicatedMergeTree::backupData(
         for (const auto & data_path : data_paths)
             data_paths_fs.push_back(data_path);
 
-        Strings part_names = coordination->getReplicatedPartNames(shared_id, my_replica_name);
-        std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
-
+        std::unordered_map<std::string_view, const BackupEntries *> backup_entries_by_part_name;
         for (const auto & part_backup_entries : my_parts_backup_entries)
+            backup_entries_by_part_name.emplace(part_backup_entries.part_name, &part_backup_entries.backup_entries);
+
+        auto part_names_and_data_paths = coordination->getReplicatedPartNamesWithDataPaths(shared_id, my_replica_name);
+        for (const auto & [part_name, data_path] : part_names_and_data_paths)
         {
-            if (part_names_set.contains(part_backup_entries.part_name))
-            {
-                for (const auto & [relative_path, backup_entry] : part_backup_entries.backup_entries)
-                    for (const auto & data_path : data_paths_fs)
-                        backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
-            }
+            auto data_path_fs = fs::path{data_path};
+            const auto & backup_entries = *backup_entries_by_part_name.at(part_name);
+            for (const auto & [relative_path, backup_entry] : backup_entries)
+                backup_entries_collector.addBackupEntry(data_path_fs / relative_path, backup_entry);
         }
 
         auto mutation_infos = coordination->getReplicatedMutations(shared_id, my_replica_name);

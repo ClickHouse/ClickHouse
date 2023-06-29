@@ -34,8 +34,9 @@ namespace
     {
         std::vector<PartNameAndChecksum> part_names_and_checksums;
         String table_name_for_logs;
+        String data_path;
 
-        static String serialize(const std::vector<PartNameAndChecksum> & part_names_and_checksums_, const String & table_name_for_logs_)
+        static String serialize(const std::vector<PartNameAndChecksum> & part_names_and_checksums_, const String & table_name_for_logs_, const String & data_path_)
         {
             WriteBufferFromOwnString out;
             writeBinary(part_names_and_checksums_.size(), out);
@@ -45,6 +46,7 @@ namespace
                 writeBinary(part_name_and_checksum.checksum, out);
             }
             writeBinary(table_name_for_logs_, out);
+            writeBinary(data_path_, out);
             return out.str();
         }
 
@@ -61,6 +63,7 @@ namespace
                 readBinary(res.part_names_and_checksums[i].checksum, in);
             }
             readBinary(res.table_name_for_logs, in);
+            readBinary(res.data_path, in);
             return res;
         }
     };
@@ -353,6 +356,7 @@ void BackupCoordinationRemote::addReplicatedPartNames(
     const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
+    const String & data_path,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     {
@@ -369,15 +373,16 @@ void BackupCoordinationRemote::addReplicatedPartNames(
         String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_shared_id);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(replica_name);
-        zk->createIfNotExists(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs));
+        zk->createIfNotExists(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs, data_path));
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
+std::vector<IBackupCoordination::PartNameAndDataPath>
+BackupCoordinationRemote::getReplicatedPartNamesWithDataPaths(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
-    return replicated_tables->getPartNames(table_shared_id, replica_name);
+    return replicated_tables->getPartNamesWithDataPaths(table_shared_id, replica_name);
 }
 
 void BackupCoordinationRemote::addReplicatedMutations(
@@ -465,7 +470,7 @@ void BackupCoordinationRemote::prepareReplicatedTables() const
                     String replica_name = unescapeForFileName(escaped_replica_name);
                     auto part_names = ReplicatedPartNames::deserialize(zk->get(path2 + "/" + escaped_replica_name));
                     part_names_for_replicated_tables.push_back(
-                        {table_shared_id, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums});
+                        {table_shared_id, part_names.table_name_for_logs, replica_name, part_names.data_path, part_names.part_names_and_checksums});
                 }
             }
         });

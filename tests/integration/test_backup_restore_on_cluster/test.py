@@ -768,15 +768,15 @@ def test_file_deduplication():
     )
     bin_file_skip_log_line = f"Writing backup for file .*{column_name}.bin .* skipped"
 
-    num_bin_file_writings = int(node1.count_in_log(bin_file_writing_log_line)) + int(
-        node2.count_in_log(bin_file_writing_log_line)
-    )
-    num_bin_file_skips = int(node1.count_in_log(bin_file_skip_log_line)) + int(
-        node2.count_in_log(bin_file_skip_log_line)
-    )
+    num_bin_file_writings_node1 = int(node1.count_in_log(bin_file_writing_log_line))
+    num_bin_file_writings_node2 = int(node2.count_in_log(bin_file_writing_log_line))
+    num_bin_file_skips_node1 = int(node1.count_in_log(bin_file_skip_log_line))
+    num_bin_file_skips_node2 = int(node2.count_in_log(bin_file_skip_log_line))
 
-    assert num_bin_file_writings == 1
-    assert num_bin_file_skips == 3
+    assert num_bin_file_writings_node1 + num_bin_file_writings_node2 == 1
+    assert num_bin_file_skips_node1 + num_bin_file_skips_node2 == 3
+    assert num_bin_file_writings_node1 + num_bin_file_skips_node1 == 2
+    assert num_bin_file_writings_node2 + num_bin_file_skips_node2 == 2
 
 
 def test_replicated_table_with_not_synced_def():

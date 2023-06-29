@@ -43,6 +43,7 @@ public:
         String table_shared_id;
         String table_name_for_logs;
         String replica_name;
+        String data_path;
         std::vector<PartNameAndChecksum> part_names_and_checksums;
     };
 
@@ -52,10 +53,12 @@ public:
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
     void addPartNames(PartNamesForTableReplica && part_names);
 
+    using PartNameAndDataPath = IBackupCoordination::PartNameAndDataPath;
+
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addPartNames() but without duplications and without
     /// parts covered by another parts.
-    Strings getPartNames(const String & table_shared_id, const String & replica_name) const;
+    std::vector<PartNameAndDataPath> getPartNamesWithDataPaths(const String & table_shared_id, const String & replica_name) const;
 
     using MutationInfo = IBackupCoordination::MutationInfo;
 
@@ -90,24 +93,29 @@ public:
 private:
     void prepare() const;
 
-    class CoveredPartsFinder;
-
-    struct PartReplicas
+    struct PartInfo
     {
-        std::vector<std::shared_ptr<const String>> replica_names;
         UInt128 checksum;
+        std::vector<size_t> replicas_to_store_by_data_path_index; /// -1 == use `default_replica_to_store`
+        size_t default_replica_to_store = static_cast<size_t>(-1); /// -1 == not assigned
+    };
+
+    struct PartNameAndDataPathIndex
+    {
+        const String * part_name;
+        size_t data_path_index;
     };
 
     struct TableInfo
     {
         String table_name_for_logs;
-        std::map<String /* part_name */, PartReplicas> replicas_by_part_name; /// Should be ordered because we need this map to be in the same order on every replica.
-        mutable std::unordered_map<String /* replica_name> */, Strings> part_names_by_replica_name;
-        std::unique_ptr<CoveredPartsFinder> covered_parts_finder;
+        std::vector<String> data_paths;
+        std::vector<String> replica_names;
+        std::unordered_map<String /* part_name */, PartInfo> part_infos;
+        mutable std::unordered_map<String /* replica_name> */, std::vector<PartNameAndDataPathIndex>> part_names_and_data_paths;
         mutable std::unordered_map<String, Int64> min_data_versions_by_partition;
         mutable std::unordered_map<String, String> mutations;
         String replica_name_to_store_mutations;
-        std::unordered_set<String> data_paths;
     };
 
     std::map<String /* table_shared_id */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
