@@ -655,43 +655,32 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
-    /// Size of cache for uncompressed blocks. Zero means disabled.
-    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
-    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
+    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
-    /// Size of cache for marks (index of MergeTree family of tables).
-    String mark_cache_policy = config().getString("mark_cache_policy", "");
-    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
+    String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
+    size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
-    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
-    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices).
-    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
 
-    /// A cache for mmapped files.
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
+    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    /// 128 MB
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
-
-    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
-    size_t compiled_expression_cache_elements_size
-        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
-
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
+    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
+    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
     /// NOTE: it is important to apply any overrides before
