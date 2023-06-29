@@ -19,6 +19,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include "base/types.h"
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -32,6 +34,7 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"assignments.topic", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
         {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
+        {"assignments.offset_committed", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
         {"last_exception_time", std::make_shared<DataTypeDateTime>()},
         {"last_exception", std::make_shared<DataTypeString>()},
         {"last_poll_time", std::make_shared<DataTypeDateTime>()},
@@ -68,6 +71,9 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & assigments_current_offset = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_current_offset_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
+    auto & assigments_offset_committed = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & assigments_offset_committed_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
+
 
     auto & last_exception_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
     auto & last_exception = assert_cast<ColumnString &>(*res_columns[index++]);
@@ -88,78 +94,95 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
         {
+            LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "Not granted {}", it->name());
             return;
         }
+        LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "granted {}", it->name());
 
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
         std::lock_guard lock(storage_kafka_ptr->mutex);
 
-        for (auto consumer : storage_kafka_ptr->consumers)
+        LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "{} KafkaConsumers", storage_kafka_ptr->consumers.size());
+        for (auto weak_consumer : storage_kafka_ptr->all_consumers)
         {
-            auto & cpp_consumer = consumer->consumer;
-
-            database.insertData(database_str.data(), database_str.size());
-            table.insertData(table_str.data(), table_str.size());
-
-            std::string consumer_id_str = cpp_consumer->get_member_id();
-            consumer_id.insertData(consumer_id_str.data(), consumer_id_str.size());
-
-            if (consumer->assignment.has_value() && consumer->assignment.value().size() > 0)
+            if (auto consumer = weak_consumer.lock())
             {
-                for (const auto & assignment : consumer->assignment.value())
+                LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "consumer got");
+                auto & cpp_consumer = consumer->consumer;
+
+                database.insertData(database_str.data(), database_str.size());
+                table.insertData(table_str.data(), table_str.size());
+
+                std::string consumer_id_str = cpp_consumer->get_member_id();
+                consumer_id.insertData(consumer_id_str.data(), consumer_id_str.size());
+
+                bool assignment_has_value = consumer->assignment.has_value() && consumer->assignment.value().size() > 0;
+
+                auto cpp_assignments = cpp_consumer->get_assignment();
+                auto cpp_offsets = cpp_consumer->get_offsets_position(cpp_assignments);
+                auto cpp_offsets_committed = cpp_consumer->get_offsets_committed(cpp_assignments);
+
+                for (size_t num = 0; num < cpp_assignments.size(); ++num)
                 {
-                    const auto & topic_str = assignment.get_topic();
+                    const auto & topic_str = cpp_assignments[num].get_topic();
                     assigments_topics.insertData(topic_str.data(), topic_str.size());
 
-                    assigments_partition_id.insert(assignment.get_partition());
-                    assigments_current_offset.insert(assignment.get_offset());
+                    assigments_partition_id.insert(cpp_assignments[num].get_partition());
+                    assigments_current_offset.insert(cpp_offsets[num].get_offset());
+                    assigments_offset_committed.insert(cpp_offsets_committed[num].get_offset());
                 }
-                last_assignment_num += consumer->assignment.value().size();
-
-            }
-            else
-            {
-                std::string fake_assigments_topic = "no assigned topic";
-                assigments_topics.insertData(fake_assigments_topic.data(), fake_assigments_topic.size());
-
-                assigments_partition_id.insert(0);
-                assigments_current_offset.insert(0);
-
-                last_assignment_num += 1;
-            }
-            assigments_topics_offsets.push_back(last_assignment_num);
-            assigments_partition_id_offsets.push_back(last_assignment_num);
-            assigments_current_offset_offsets.push_back(last_assignment_num);
-
-            auto exception_info = consumer->getExceptionInfo();
 
 
-            last_exception.insertData(exception_info.first.data(), exception_info.first.size());
-            last_exception_time.insert(exception_info.second);
+                last_assignment_num += cpp_assignments.size();
 
-            last_poll_time.insert(consumer->last_poll_timestamp_usec.load());
-            num_messages_read.insert(consumer->num_messages_read.load());
-            last_commit_time.insert(consumer->last_commit_timestamp_usec.load());
-            num_commits.insert(consumer->num_commits.load());
-            last_rebalance_time.insert(consumer->last_rebalance_timestamp_usec.load());
+                // }
+                // else
+                // {
+                //     std::string fake_assigments_topic = "no assigned topic";
+                //     assigments_topics.insertData(fake_assigments_topic.data(), fake_assigments_topic.size());
 
-            num_rebalance_revocations.insert(consumer->num_rebalance_revocations.load());
-            num_rebalance_assigments.insert(consumer->num_rebalance_assignments.load());
+                //     assigments_partition_id.insert(0);
+                //     assigments_current_offset.insert(0);
 
-            is_currently_used.insert(consumer->stalled_status != KafkaConsumer::CONSUMER_STOPPED && consumer->assignment.has_value() && consumer->assignment.value().size() > 0);
+                //     last_assignment_num += 1;
+                // }
+                assigments_topics_offsets.push_back(last_assignment_num);
+                assigments_partition_id_offsets.push_back(last_assignment_num);
+                assigments_current_offset_offsets.push_back(last_assignment_num);
+                assigments_offset_committed_offsets.push_back(last_assignment_num);
 
-            auto stat_string_ptr = storage_kafka_ptr->getRdkafkaStat();
-            if (stat_string_ptr)
-            {
-                rdkafka_stat.insertData(stat_string_ptr->data(), stat_string_ptr->size());
-            }
-            else
-            {
-                rdkafka_stat.insertData(nullptr, 0);
+                auto exception_info = consumer->getExceptionInfo();
+
+
+                last_exception.insertData(exception_info.first.data(), exception_info.first.size());
+                last_exception_time.insert(exception_info.second);
+
+                last_poll_time.insert(consumer->last_poll_timestamp_usec.load());
+                num_messages_read.insert(consumer->num_messages_read.load());
+                last_commit_time.insert(consumer->last_commit_timestamp_usec.load());
+                num_commits.insert(consumer->num_commits.load());
+                last_rebalance_time.insert(consumer->last_rebalance_timestamp_usec.load());
+
+                num_rebalance_revocations.insert(consumer->num_rebalance_revocations.load());
+                num_rebalance_assigments.insert(consumer->num_rebalance_assignments.load());
+
+                is_currently_used.insert(consumer->stalled_status != KafkaConsumer::CONSUMER_STOPPED && assignment_has_value);
+
+                auto stat_string_ptr = storage_kafka_ptr->getRdkafkaStat();
+                if (stat_string_ptr)
+                {
+                    rdkafka_stat.insertData(stat_string_ptr->data(), stat_string_ptr->size());
+                }
+                else
+                {
+                    std::string no_rdkafka_stat = "librdkafka stat is not available";
+                    rdkafka_stat.insertData(no_rdkafka_stat.data(), no_rdkafka_stat.size());
+                }
             }
         }
+        LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "bottom of add_row");
 
     };
 

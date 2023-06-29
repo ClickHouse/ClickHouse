@@ -52,6 +52,8 @@ KafkaSource::KafkaSource(
 
 KafkaSource::~KafkaSource()
 {
+    LOG_TRACE(&Poco::Logger::get("KafkaSource"), "dtor, pushConsumer");
+
     if (!consumer)
         return;
 
@@ -78,6 +80,8 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
+        LOG_TRACE(&Poco::Logger::get("KafkaSource"), "calling popConsumer");
+
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
