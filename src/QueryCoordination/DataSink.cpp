@@ -25,7 +25,7 @@ void DataSink::onStart()
 {
     if (!was_begin_sent)
     {
-        LOG_DEBUG(&Poco::Logger::get("DataSink"), "DataSink start for request {}", request.toString());
+        LOG_DEBUG(log, "DataSink start for request {}", request.toString());
         for (auto & channel : channels)
             channel.prepareSendData(request);
 
@@ -113,7 +113,7 @@ void DataSink::consume(Chunk chunk)
 
 void DataSink::onFinish()
 {
-    LOG_DEBUG(&Poco::Logger::get("DataSink"), "DataSink finish for request {}", request.toString());
+    LOG_DEBUG(log, "DataSink finish for request {}", request.toString());
 
     for (auto & channel : channels)
     {

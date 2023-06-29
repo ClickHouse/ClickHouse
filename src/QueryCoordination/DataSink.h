@@ -34,6 +34,7 @@ public:
         Int32 fragment_id,
         Int32 exchange_id)
         : ISink(std::move(header))
+        , log(&Poco::Logger::get("DataSink"))
         , channels(channels_)
         , output_partition(partition)
         , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
@@ -56,6 +57,8 @@ protected:
     void calculateKeysPositions();
 
 private:
+    Poco::Logger * log;
+
     std::vector<Channel> channels;
     size_t num_rows = 0;
     DataPartition output_partition;

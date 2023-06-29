@@ -40,6 +40,7 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
@@ -991,6 +992,11 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(const Quer
 
 bool needPushDownChild(QueryPlanStepPtr step)
 {
+    if (dynamic_cast<FilterStep *>(step.get()))
+    {
+        return true;
+    }
+
     if (dynamic_cast<ExpressionStep *>(step.get()))
     {
         return step->getStepDescription() != "Before LIMIT BY";
@@ -1061,11 +1067,18 @@ UnionStep (DB)
 /// maybe need abstract createFragments. because InterpreterSelectWithUnionQueryFragments may need this process, and me need this process too.
 PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments)
 {
-    PlanFragmentPtrs childFragments;
+    PlanFragmentPtrs child_fragments;
     for (Node * child : root_node.children)
     {
-        childFragments.emplace_back(createPlanFragments(single_plan, *child, all_fragments));
+        child_fragments.emplace_back(createPlanFragments(single_plan, *child, all_fragments));
     }
+
+    if (child_fragments.size() != root_node.children.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Child fragments size {} not same as QueryPlan children node size {}",
+            child_fragments.size(),
+            root_node.children.size());
 
     PlanFragmentPtr result;
     /// ReadFromMergeTree
@@ -1077,38 +1090,48 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     else if (dynamic_cast<AggregatingStep *>(root_node.step.get()))
     {
         /// push down partial aggregating to lower level fragment
-        result = createAggregationFragment(childFragments[0]);
+        result = createAggregationFragment(child_fragments[0]);
         all_fragments.emplace_back(result);
     }
     else if (needPushDownChild(root_node.step))
     {
-        /// not Projection ExpressionStep push it to childFragments[0]
+        /// not Projection ExpressionStep push it to child_fragments[0]
 
-        childFragments[0]->addStep(root_node.step);
-        result = childFragments[0];
+        child_fragments[0]->addStep(root_node.step);
+        result = child_fragments[0];
     }
     else if (dynamic_cast<SortingStep *>(root_node.step.get()))
     {
-        result = createOrderByFragment(root_node.step, childFragments[0]);
+        result = createOrderByFragment(root_node.step, child_fragments[0]);
         if (result)
             all_fragments.emplace_back(result);
     }
     else if (isLimitRelated(root_node.step))
     {
-        processLimitRelated(root_node.step, childFragments[0]);
-        result = childFragments[0];
+        processLimitRelated(root_node.step, child_fragments[0]);
+        result = child_fragments[0];
     }
     else if (dynamic_cast<JoinStep *>(root_node.step.get()))
     {
-        if (childFragments.size() != 2)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step children fragment size {}", childFragments.size());
-        result = createJoinFragment(root_node.step, childFragments[0], childFragments[1]);
+        if (child_fragments.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step children fragment size {}", child_fragments.size());
+
+        result = createJoinFragment(root_node.step, child_fragments[0], child_fragments[1]);
         if (result)
             all_fragments.emplace_back(result);
     }
+    else if (dynamic_cast<UnionStep *>(root_node.step.get()))
+    {
+        DataPartition partition{.type = PartitionType::UNPARTITIONED};
+        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, partition);
+        parent_fragment->unitePlanFragments(root_node.step, child_fragments);
+
+        result = parent_fragment;
+        all_fragments.emplace_back(parent_fragment);
+    }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unprocessed step {}", root_node.step->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create plan fragment for this node type {}", root_node.step->getName());
     }
 
     if (single_plan.getRootNode() == &root_node) /// is root node
@@ -1117,7 +1140,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
         {
             DataPartition partition{.type = PartitionType::UNPARTITIONED};
 
-            result = createParentFragment(childFragments[0], partition);
+            result = createParentFragment(child_fragments[0], partition);
             all_fragments.emplace_back(result);
         }
     }
@@ -1282,8 +1305,6 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createParentFragment(PlanFragme
 {
     std::shared_ptr<ExchangeDataStep> exchange_step = std::make_shared<ExchangeDataStep>(child_fragment->getCurrentDataStream(), storage_limits);
 
-//    exchangeNode.setNumInstances(childFragment.getPlanRoot().getNumInstances());
-//    exchangeNode.init(ctx.getRootAnalyzer());
     PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, partition);
     parent_fragment->addStep(exchange_step);
     auto * exchange_node = parent_fragment->getRootNode(); /// exchange node
@@ -1349,91 +1370,6 @@ Block InterpreterSelectQueryFragments::getSampleBlockImpl()
 
     analysis_result = ExpressionAnalysisResult(
         *query_analyzer, metadata_snapshot, true, true, options.only_analyze, filter_info, additional_filter_info, source_header);
-
-//    if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
-//    {
-//        auto header = source_header;
-//
-//        if (analysis_result.prewhere_info)
-//        {
-//            header = analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
-//            if (analysis_result.prewhere_info->remove_prewhere_column)
-//                header.erase(analysis_result.prewhere_info->prewhere_column_name);
-//        }
-//        return header;
-//    }
-//
-//    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableState)
-//    {
-//        if (!analysis_result.need_aggregate)
-//        {
-//            // What's the difference with selected_columns?
-//            // Here we calculate the header we want from remote server after it
-//            // executes query up to WithMergeableState. When there is an ORDER BY,
-//            // it is executed on remote server firstly, then we execute merge
-//            // sort on initiator. To execute ORDER BY, we need to calculate the
-//            // ORDER BY keys. These keys might be not present among the final
-//            // SELECT columns given by the `selected_column`. This is why we have
-//            // to use proper keys given by the result columns of the
-//            // `before_order_by` expression actions.
-//            // Another complication is window functions -- if we have them, they
-//            // are calculated on initiator, before ORDER BY columns. In this case,
-//            // the shard has to return columns required for window function
-//            // calculation and further steps, given by the `before_window`
-//            // expression actions.
-//            // As of 21.6 this is broken: the actions in `before_window` might
-//            // not contain everything required for the ORDER BY step, but this
-//            // is a responsibility of ExpressionAnalyzer and is not a problem
-//            // with this code. See
-//            // https://github.com/ClickHouse/ClickHouse/issues/19857 for details.
-//            if (analysis_result.before_window)
-//                return analysis_result.before_window->getResultColumns();
-//
-//            return analysis_result.before_order_by->getResultColumns();
-//        }
-//
-//        Block header = analysis_result.before_aggregation->getResultColumns();
-//
-//        Block res;
-//
-//        if (analysis_result.use_grouping_set_key)
-//            res.insert({ nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set" });
-//
-//        if (context->getSettingsRef().group_by_use_nulls && analysis_result.use_grouping_set_key)
-//        {
-//            for (const auto & key : query_analyzer->aggregationKeys())
-//                res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
-//        }
-//        else
-//        {
-//            for (const auto & key : query_analyzer->aggregationKeys())
-//                res.insert({nullptr, header.getByName(key.name).type, key.name});
-//        }
-//
-//        for (const auto & aggregate : query_analyzer->aggregates())
-//        {
-//            size_t arguments_size = aggregate.argument_names.size();
-//            DataTypes argument_types(arguments_size);
-//            for (size_t j = 0; j < arguments_size; ++j)
-//                argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
-//
-//            DataTypePtr type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
-//
-//            res.insert({nullptr, type, aggregate.column_name});
-//        }
-//
-//        return res;
-//    }
-//
-//    if (options.to_stage >= QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
-//    {
-//        // It's different from selected_columns, see the comment above for
-//        // WithMergeableState stage.
-//        if (analysis_result.before_window)
-//            return analysis_result.before_window->getResultColumns();
-//
-//        return analysis_result.before_order_by->getResultColumns();
-//    }
 
     return analysis_result.final_projection->getResultColumns();
 }

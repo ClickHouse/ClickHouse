@@ -83,22 +83,22 @@ public:
 
     String toString() const
     {
-        String fragment = "Fragment id " + std::to_string(fragment_id) + ". ";
+        String fragment = "Fragment id " + std::to_string(fragment_id) + ".";
         String data_to_str = " Data to: ";
-        for (auto & to : data_to)
+        for (const auto & to : data_to)
         {
             data_to_str += (to + ", ");
         }
 
-        String data_from_str = " Data from: ";
+        String data_from_str = "Data from: ";
 
-        for (auto & [exchange_id, froms] : data_from)
+        for (const auto & [exchange_id, sources] : data_from)
         {
-            data_from_str += ("exchange_id " + std::to_string(exchange_id)) + ": froms ";
+            data_from_str += ("exchange_id " + std::to_string(exchange_id)) + " from: ";
 
-            for (auto & from : froms)
+            for (const auto & source : sources)
             {
-                data_from_str += (from + ", ");
+                data_from_str += (source + ", ");
             }
         }
 

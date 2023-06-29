@@ -17,7 +17,7 @@ void Coordinator::scheduleExecuteDistributedPlan()
     {
         for (auto & fragment : fragment_ids)
         {
-            LOG_INFO(&Poco::Logger::get("Coordinator"), "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentId());
+            LOG_INFO(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentId());
         }
     }
 
@@ -25,7 +25,7 @@ void Coordinator::scheduleExecuteDistributedPlan()
     {
         for (auto & host : hosts)
         {
-            LOG_INFO(&Poco::Logger::get("Coordinator"), "fragment_id_hosts: host {}, fragment {}", host, fragment_id);
+            LOG_INFO(log, "fragment_id_hosts: host {}, fragment {}", host, fragment_id);
         }
     }
 
@@ -67,7 +67,6 @@ String Coordinator::assignFragmentToHost()
                             need_get_connect = true;
                         }
                     }
-
 
                     PoolBase<DB::Connection>::Entry connection;
                     if (need_get_connect)
@@ -240,8 +239,16 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
 
     for (const auto & [f_id, request] : fragment_requests)
     {
-        LOG_INFO(&Poco::Logger::get("Coordinator"), "Fragment id {}, request {}", f_id, request.toString());
+        LOG_INFO(log, "Send fragment to distributed request {}", request.toString());
     }
+
+    auto current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
+                        current_settings).getSaturated(
+                            current_settings.max_execution_time);
+
+    ClientInfo modified_client_info = context->getClientInfo();
+    modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
     // send
     for (auto [host, fragments_for_send] : host_fragments)
@@ -263,14 +270,6 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
         }
         else
         {
-            auto current_settings = context->getSettingsRef();
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                                current_settings).getSaturated(
-                                    current_settings.max_execution_time);
-
-            ClientInfo modified_client_info = context->getClientInfo();
-            modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-
             host_connection[host]->sendFragments(
                 timeouts,
                 query,

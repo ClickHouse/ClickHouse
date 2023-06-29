@@ -427,19 +427,22 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
     /// schedule fragments
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        Coordinator coord(fragments, context, formattedAST(query_ptr));
+        Coordinator coord(fragments, context, formattedAST(query_ptr), options.is_subquery);
         coord.scheduleExecuteDistributedPlan();
-
-        res.pipeline = FragmentMgr::getInstance().findRootQueryPipeline(context->getCurrentQueryId());
-        setQuota(res.pipeline);
     }
     else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         for (const auto & fragment : fragments)
         {
+            /// add fragment wait for be scheduled
             FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
         }
     }
+
+    /// Root QueryPipeline is executed in tcphandler and ExpressionAnalyzer::tryMakeSetForIndexFromSubquery build_set
+    /// For subquery build_set, even if SECONDARY_QUERY, it's need executed
+    res.pipeline = FragmentMgr::getInstance().findRootQueryPipeline(context->getCurrentQueryId());
+    setQuota(res.pipeline);
 
     return res;
 }

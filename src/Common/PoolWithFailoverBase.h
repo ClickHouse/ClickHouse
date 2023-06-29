@@ -354,11 +354,20 @@ PoolWithFailoverBase<TNestedPool>::getOne(
 
     std::string fail_messages;
 
-    bool all_failed = true;
-    bool finished = false;
-    while (!finished)
+    std::vector<bool> is_failed(shuffled_pools.size(), false);
+    auto all_failed = [&]() -> bool
     {
-        std::vector<bool> is_failed(shuffled_pools.size(), false);
+        bool res = true;
+        for (bool failed : is_failed)
+        {
+            res &= failed;
+        }
+        return res;
+    };
+
+    bool found = false;
+    while (!all_failed() && !found)
+    {
         for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
             ShuffledPool & shuffled_pool = shuffled_pools[i];
@@ -379,7 +388,7 @@ PoolWithFailoverBase<TNestedPool>::getOne(
             {
                 if (try_result.entry->getDescription() == host_port)
                 {
-                    finished = true;
+                    found = true;
                     break;
                 }
                 else
@@ -400,19 +409,9 @@ PoolWithFailoverBase<TNestedPool>::getOne(
                 }
             }
         }
-
-        all_failed = true;
-        for (bool failed : is_failed)
-        {
-            all_failed &= failed;
-        }
-
-        if (all_failed)
-            break;
     }
 
-
-    if (all_failed)
+    if (all_failed() || !found)
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                                "All connection tries failed. Log: \n\n{}\n", fail_messages);
 

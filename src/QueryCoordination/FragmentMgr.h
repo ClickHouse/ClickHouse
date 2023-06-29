@@ -60,7 +60,7 @@ public:
     void onFinish(const String & query_id, FragmentID fragment_id);
 
 private:
-    FragmentMgr() = default;
+    FragmentMgr() : log(&Poco::Logger::get("FragmentMgr")) { }
 
     void fragmentsToQueryPipelines(const String & query_id);
 
@@ -77,6 +77,8 @@ private:
     std::shared_ptr<Data> find(const String & query_id) const;
 
     using QueryFragment = std::unordered_map<String, std::shared_ptr<Data>>;
+
+    Poco::Logger * log;
 
     std::unique_ptr<ThreadFromGlobalPool> cleaner;
 

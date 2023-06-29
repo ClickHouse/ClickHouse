@@ -50,7 +50,7 @@ void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vec
     std::unordered_map<FragmentID, FragmentRequest> need_execute_fragments;
     for (const auto & request : need_execute_plan_fragments)
     {
-        LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Need execute fragment {} request {}", request.fragment_id, request.toString());
+        LOG_DEBUG(log, "Receive fragment to distributed, need execute {}", request.toString());
         need_execute_fragments.emplace(request.fragment_id, request);
     }
 
@@ -87,12 +87,12 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
     {
         for (auto & to : fragments_distributed.data_to)
         {
-            LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "1Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), to);
+            LOG_DEBUG(log, "Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), to);
         }
 
         /// for data sink
         std::vector<DataSink::Channel> channels;
-        String local_host;
+        String local_host; /// for DataSink, we need tell peer who am i.
         for (const auto & shard_info : fragments_distributed.fragment->getCluster()->getShardsInfo())
         {
             if (shard_info.isLocal())
@@ -121,7 +121,7 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 
             auto connection = shard_info.pool->getOne(timeouts, &current_settings, target_host_port);
 
-            LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "2Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
+            LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
             channels.emplace_back(DataSink::Channel{.connection = connection, .is_local = (local_host == target_host_port)});
         }
 
@@ -136,12 +136,12 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
                     exchange_step->setSources(it->second);
                 }
                 else
-                    throw;
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Destination step {} is not ExchangeDataStep", node.plan_id);
             }
         }
 
         if (local_host.empty())
-            LOG_WARNING(&Poco::Logger::get("FragmentMgr"), "not found local_host from this fragment");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found my host and port in fragment clusters");
 
         QueryPipeline && pipeline = fragments_distributed.fragment->buildQueryPipeline(channels, local_host);
 
@@ -169,7 +169,7 @@ void FragmentMgr::executeQueryPipelines(const String & query_id)
     std::lock_guard lock(data->mutex);
     for (size_t i = 0; i < data->fragments_distributed.size(); ++i)
     {
-        /// root fragment has't DestFragment, it's execute from tcphandler
+        /// root fragment has't DestFragment, it's execute from tcphandler or ExpressionAnalyzer::tryMakeSetForIndexFromSubquery build_set
         auto & fragment = data->fragments_distributed[i].fragment;
         if (fragment->getDestFragment())
         {
@@ -178,7 +178,7 @@ void FragmentMgr::executeQueryPipelines(const String & query_id)
                 onFinish(query_id, fragment_id);
             };
 
-            LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Fragment {} begin execute", fragment->getFragmentId());
+            LOG_DEBUG(log, "Fragment {} begin execute", fragment->getFragmentId());
             executors.execute(data->query_pipelines[i], call_back);
         }
     }
@@ -197,27 +197,27 @@ QueryPipeline FragmentMgr::findRootQueryPipeline(const String & query_id)
         }
     }
 
-    throw;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found root query pipeline");
 }
 
 void FragmentMgr::rootQueryPipelineFinish(const String & query_id)
 {
     auto data = find(query_id);
 
-    FragmentID root_fragment_id = -1;
+    std::optional<FragmentID> root_fragment_id;
     {
         std::lock_guard lock(data->mutex);
         for (auto & fragment_distributed : data->fragments_distributed)
         {
             if (!fragment_distributed.fragment->getDestFragment())
             {
-                root_fragment_id = fragment_distributed.fragment->getFragmentId();
+                root_fragment_id.emplace(fragment_distributed.fragment->getFragmentId());
             }
         }
     }
 
-    if (root_fragment_id != -1)
-        onFinish(query_id, root_fragment_id);
+    if (root_fragment_id.has_value())
+        onFinish(query_id, root_fragment_id.value());
 }
 
 std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDataRequest & exchange_data_request) const
@@ -234,7 +234,7 @@ std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDa
                 const auto & receiver_key = FragmentDistributed::receiverKey(exchange_data_request.exchange_id, exchange_data_request.from_host);
                 auto receiver_it = fragment.receivers.find(receiver_key);
                 if (receiver_it == fragment.receivers.end())
-                    throw;
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found exchange data receiver {}", exchange_data_request.toString());
 
                 receiver = receiver_it->second;
                 break;
@@ -243,14 +243,14 @@ std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDa
     }
 
     if (!receiver)
-        throw ;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found exchange data receiver {}", exchange_data_request.toString());
 
     return receiver;
 }
 
 void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)
 {
-    LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Query {} fragment {} execute finished", query_id, fragment_id);
+    LOG_DEBUG(log, "Query {} fragment {} execute finished", query_id, fragment_id);
     auto data = find(query_id);
 
     bool all_finished = true;
@@ -275,7 +275,7 @@ void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)
 
     if (all_finished)
     {
-        LOG_DEBUG(&Poco::Logger::get("FragmentMgr"), "Query {} fragment all finished", query_id);
+        LOG_DEBUG(log, "Query {} fragment all finished", query_id);
         std::lock_guard lock(fragments_mutex);
         query_fragment.erase(query_id);
     }
