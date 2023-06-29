@@ -1383,6 +1383,9 @@ NO_INLINE IColumn::Filter joinRightColumns(
         {
             if (!right_row_found && null_element_found)
             {
+                if constexpr (join_features.is_anti_join && join_features.left)
+                    setUsed<need_filter>(filter, i);
+
                 addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
 
                 if constexpr (join_features.need_replication)
