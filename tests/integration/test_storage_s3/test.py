@@ -1361,16 +1361,16 @@ def test_select_columns(started_cluster):
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
-        f"SELECT read_bytes FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2 FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2 FROM {name}'"
     )
 
     instance.query(f"SELECT * FROM {name}")
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
-        f"SELECT read_bytes FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT * FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT * FROM {name}'"
     )
 
-    assert int(result1) * 3 <= int(result2)
+    assert round(int(result2) / int(result1)) == 3
 
 
 def test_insert_select_schema_inference(started_cluster):
