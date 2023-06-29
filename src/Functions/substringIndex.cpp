@@ -256,41 +256,19 @@ namespace
             if (index == 0)
                 return {str_ref.data, 0};
 
-            if (index > 0)
-            {
-                const auto * end = str_ref.data + str_ref.size;
-                const auto * pos = str_ref.data;
-                Int64 i = 0;
-                while (i < index)
-                {
-                    pos = std::find(pos, end, delim);
-                    if (pos != end)
-                    {
-                        ++pos;
-                        ++i;
-                    }
-                    else
-                        return str_ref;
-                }
-                return {str_ref.data, static_cast<size_t>(pos - str_ref.data - 1)};
-            }
-            else
-            {
-                const auto * begin = str_ref.data;
-                const auto * pos = str_ref.data + str_ref.size;
-                Int64 i = 0;
-                while (i + index < 0)
-                {
-                    --pos;
-                    while (pos >= begin && *pos != delim)
-                        --pos;
+            const auto pos = index > 0 ? str_ref.data : str_ref.data + str_ref.size - 1;
+            const auto end = index > 0 ? str_ref.data + str_ref.size : str_ref.data - 1;
+            int d = index > 0 ? 1 : -1;
 
-                    if (pos >= begin)
-                        ++i;
-                    else
-                        return str_ref;
-                }
-                return {pos + 1, static_cast<size_t>(str_ref.data + str_ref.size - pos - 1)};
+            for (; index; pos += d)
+            {
+                if (pos == end)
+                    return str_ref;
+                if (*pos == delim)
+                    index -= d;
+            }
+            pos -= d;
+            return {d > 0 ? str_ref.data : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data : str_ref.data + str_ref.size - pos - 1)} ;
             }
         }
     };
