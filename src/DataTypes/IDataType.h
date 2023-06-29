@@ -75,6 +75,8 @@ public:
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
+    /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
+    virtual String getSQLCompatibleName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;

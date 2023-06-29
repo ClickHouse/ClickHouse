@@ -11,6 +11,9 @@
 
 namespace DB
 {
+
+class IInputFormat;
+
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
@@ -161,9 +164,15 @@ private:
     ColumnsDescription columns_description;
 
     std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
+
+    UInt64 total_rows_approx_max = 0;
+    size_t total_rows_count_times = 0;
+    UInt64 total_rows_approx_accumulated = 0;
+    size_t total_files_size = 0;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();

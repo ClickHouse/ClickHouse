@@ -274,6 +274,7 @@ private:
     void sendProfileEvents();
     void sendSelectProfileEvents();
     void sendInsertProfileEvents();
+    void sendTimezone();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
