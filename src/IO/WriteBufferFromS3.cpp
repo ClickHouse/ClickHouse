@@ -223,8 +223,8 @@ String WriteBufferFromS3::getShortLogDetails() const
         multipart_upload_details = fmt::format(", upload id {}"
                                                , multipart_upload_id);
 
-    return fmt::format("Details: bucket {}, key {}, total size {}{}",
-                       bucket, key, total_size, multipart_upload_details);
+    return fmt::format("Details: bucket {}, key {}{}",
+                       bucket, key, multipart_upload_details);
 }
 
 void WriteBufferFromS3::tryToAbortMultipartUpload()
