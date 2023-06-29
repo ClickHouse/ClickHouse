@@ -161,6 +161,8 @@ public:
 
     String getPathInLocalCache() const;
 
+    int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
+
     /**
      * ========== Methods for _any_ file segment's owner ========================
      */

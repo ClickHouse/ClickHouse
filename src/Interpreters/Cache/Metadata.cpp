@@ -406,6 +406,11 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
     if (exists)
     {
         fs::remove(path);
+
+        int flags = file_segment->getFlagsForLocalRead();
+        OpenedFileCache::instance().remove(path, flags);
+        OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+
         LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
     }
     else if (file_segment->downloaded_size)
