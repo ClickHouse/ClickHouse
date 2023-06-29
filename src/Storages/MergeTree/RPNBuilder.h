@@ -109,13 +109,13 @@ public:
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
-    ConstSetPtr tryGetPreparedSet() const;
+    FutureSetPtr tryGetPreparedSet() const;
 
     /// Try get prepared set from node that match data types
-    ConstSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
+    FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
     /// Try get prepared set from node that match indexes mapping and data types
-    ConstSetPtr tryGetPreparedSet(
+    FutureSetPtr tryGetPreparedSet(
         const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
         const DataTypes & data_types) const;
 

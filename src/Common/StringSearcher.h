@@ -21,12 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-
 /** Variants for searching a substring in a string.
   * In most cases, performance is less than Volnitsky (see Volnitsky.h).
   */
@@ -811,15 +805,22 @@ class TokenSearcher : public StringSearcherBase
     size_t needle_size;
 
 public:
+
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    static bool isValidNeedle(const CharT * needle_, size_t needle_size_)
+    {
+        return std::none_of(needle_, needle_ + needle_size_, isTokenSeparator);
+    }
+
     template <typename CharT>
     requires (sizeof(CharT) == 1)
     TokenSearcher(const CharT * needle_, size_t needle_size_)
         : searcher(needle_, needle_size_)
         , needle_size(needle_size_)
     {
-        if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
-
+        /// The caller is responsible for calling isValidNeedle()
+        chassert(isValidNeedle(needle_, needle_size_));
     }
 
     template <typename CharT>
@@ -880,6 +881,7 @@ using ASCIICaseSensitiveStringSearcher =   impl::StringSearcher<true, true>;
 using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
 using UTF8CaseSensitiveStringSearcher =    impl::StringSearcher<true, false>;
 using UTF8CaseInsensitiveStringSearcher =  impl::StringSearcher<false, false>;
+
 using ASCIICaseSensitiveTokenSearcher =    impl::TokenSearcher<ASCIICaseSensitiveStringSearcher>;
 using ASCIICaseInsensitiveTokenSearcher =  impl::TokenSearcher<ASCIICaseInsensitiveStringSearcher>;
 
