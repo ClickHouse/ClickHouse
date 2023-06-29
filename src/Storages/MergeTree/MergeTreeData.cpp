@@ -179,8 +179,6 @@ namespace ErrorCodes
     extern const int ZERO_COPY_REPLICATION_ERROR;
     extern const int NOT_INITIALIZED;
     extern const int SERIALIZATION_ERROR;
-    extern const int NETWORK_ERROR;
-    extern const int SOCKET_TIMEOUT;
     extern const int TOO_MANY_MUTATIONS;
 }
 
@@ -1174,25 +1172,6 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     }
 }
 
-static bool isRetryableException(const Exception & e)
-{
-    if (isNotEnoughMemoryErrorCode(e.code()))
-        return true;
-
-    if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
-        return true;
-
-#if USE_AWS_S3
-    const auto * s3_exception = dynamic_cast<const S3Exception *>(&e);
-    if (s3_exception && s3_exception->isRetryableError())
-        return true;
-#endif
-
-    /// In fact, there can be other similar situations.
-    /// But it is OK, because there is a safety guard against deleting too many parts.
-    return false;
-}
-
 static constexpr size_t loading_parts_initial_backoff_ms = 100;
 static constexpr size_t loading_parts_max_backoff_ms = 5000;
 static constexpr size_t loading_parts_max_tries = 3;
@@ -1453,7 +1432,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 {
     const size_t num_parts = parts_to_load.size();
 
-    LOG_DEBUG(log, "Will load {} number of parts using {} threads", num_parts, getActivePartsLoadingThreadPool().get().getMaxThreads());
+    LOG_TRACE(log, "Will load {} parts using up to {} threads", num_parts, getActivePartsLoadingThreadPool().get().getMaxThreads());
 
     /// Shuffle all the parts randomly to possible speed up loading them from JBOD.
     std::shuffle(parts_to_load.begin(), parts_to_load.end(), thread_local_rng);

@@ -912,7 +912,7 @@ void FileSegment::use()
     if (it)
     {
         auto cache_lock = cache->lockCache();
-        it->use(cache_lock);
+        hits_count = it->use(cache_lock);
     }
 }
 
