@@ -673,7 +673,7 @@ void SharedContextHolder::reset() { shared.reset(); }
 
 ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 {
-    auto res = std::shared_ptr<Context>(new Context);
+    auto res = std::make_shared<Context>();
     res->shared = shared;
     return res;
 }
@@ -694,7 +694,7 @@ SharedContextHolder Context::createShared()
 ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     auto lock = other->getLock();
-    return std::shared_ptr<Context>(new Context(*other));
+    return std::make_shared<Context>(*other);
 }
 
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
