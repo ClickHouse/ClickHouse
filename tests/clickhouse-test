@@ -286,11 +286,11 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
+                    p.*,
                     arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
-                    )) AS stacktraces,
-                    p.*
+                    )) AS stacktraces
                 FROM system.processes p
                 JOIN system.stack_trace s USING (query_id)
                 WHERE query NOT LIKE '%system.processes%'
@@ -307,11 +307,11 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
+                p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces,
-                p.*
+                )) AS stacktraces
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
@@ -340,9 +340,28 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+def kill_gdb_if_any():
+    # Check if we have running gdb.
+    code = subprocess.call("pidof gdb", shell=True)
+    if code != 0:
+        return
+
+    for i in range(5):
+        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
+        if code != 0:
+            sleep(i)
+        else:
+            break
+
+
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
+        # We could attach gdb to clickhouse-server before running some tests
+        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
+        # We should kill existing gdb if any before starting new one.
+        kill_gdb_if_any()
+
         cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
@@ -530,6 +549,7 @@ class SettingsRandomizer:
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
+        "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
@@ -569,7 +589,7 @@ class SettingsRandomizer:
         "filesystem_prefetch_step_bytes": lambda: random.choice(
             [0, "100Mi"]
         ),  # 0 means 'auto'
-        "compile_expressions": lambda: random.randint(0, 1),
+        # "compile_expressions": lambda: random.randint(0, 1), - this setting has a bug: https://github.com/ClickHouse/ClickHouse/issues/51264
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
@@ -972,7 +992,10 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += trim_for_log(open(self.stdout_file).read())
+                    with open(self.stdout_file, "rb") as f:
+                        description += trim_for_log(
+                            f.read().decode("utf-8", errors="ignore")
+                        )
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"
@@ -1047,12 +1070,13 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
+                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "r")
+                file = open(self.stdout_file, "rb")
                 diff += str(file.read())
                 file.close()
                 diff += "==================="

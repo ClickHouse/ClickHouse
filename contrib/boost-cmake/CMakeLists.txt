@@ -103,11 +103,19 @@ set (SRCS_CONTEXT
 )
 
 if (ARCH_AARCH64)
-    set (SRCS_CONTEXT ${SRCS_CONTEXT}
-        "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S"
-    )
+    if (OS_DARWIN)
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_macho_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_macho_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_macho_gas.S"
+        )
+    else()
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S"
+        )
+    endif()
 elseif (ARCH_PPC64LE)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S"

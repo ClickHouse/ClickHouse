@@ -1589,6 +1589,24 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
 
+## format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
+
+Если установлено значение true, разрешить строки в двойных кавычках.
+
+Включено по умолчанию.
+
+## input_format_csv_empty_as_default {#input_format_csv_empty_as_default}
+
+Если включено, заменяет пустые поля ввода в CSV значениями по умолчанию. Для сложных выражений по умолчанию `input_format_defaults_for_omitted_fields` также должен быть включен.
+
+Включено по умолчанию.
+
+## input_format_csv_arrays_as_nested_csv {#input_format_csv_arrays_as_nested_csv}
+
+При чтении массива из CSV ожидайте, что его элементы были сериализованы во вложенный CSV, а затем помещены в строку. Пример: "[""Hello"", ""world"", ""42"""" TV""]". Скобки вокруг массива могут быть опущены.
+
+По умолчанию отключены.
+
 ## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
@@ -1664,6 +1682,50 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Использовать в качестве разделителя строк для CSV формата CRLF (DOS/Windows стиль) вместо LF (Unix стиль).
+
+## input_format_csv_detect_header {#input_format_csv_detect_header}
+
+Обнаружить заголовок с именами и типами в формате CSV.
+ 
+Значение по умолчанию - `true`.
+
+## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
+
+Количество строк, пропускаемых в начале данных в формате ввода CSV.
+
+Значение по умолчанию: `0`.
+
+## input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
+
+Удалить пробелы и символы табуляции из строк без кавычек.
+
+Значение по умолчанию: `true`.
+
+**Примеры**
+
+Запрос
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+```
+
+Результат
+
+```text
+"string"
+```
+
+Запрос
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
+```
+
+Результат
+
+```text
+"  string  "
+```
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -3185,16 +3247,6 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
-
-Возможные значения:
--   0 — использование типов данных для работы с географическими структурами не поддерживается.
--   1 — использование типов данных для работы с географическими структурами поддерживается.
-
-Значение по умолчанию: `0`.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.
@@ -3800,7 +3852,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Включает или отключает возвращение результатов типа:
--   `Date32` с расширенным диапазоном (по сравнению с типом `Date`) для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) и [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
+-   `Date32` с расширенным диапазоном (по сравнению с типом `Date`) для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) и [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
 -   `DateTime64` с расширенным диапазоном (по сравнению с типом `DateTime`) для функций [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) и [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
 
 Возможные значения:
@@ -4074,3 +4126,83 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 Возможные значения:: `true`, `false`
 
 Значение по умолчанию: `false`
+
+## session_timezone {#session_timezone}
+
+Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан часовой пояс, будут интерпретированы как относящиеся к указанной зоне.
+При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
+
+Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
+
+Примеры:
+```sql
+SELECT timeZone(), serverTimezone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
+```
+
+```sql
+SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+
+Asia/Novosibirsk	Europe/Berlin
+```
+
+```sql
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
+```
+
+Возможные значения:
+
+-    Любая зона из `system.time_zones`, например `Europe/Berlin`, `UTC` или `Zulu`
+
+Значение по умолчанию: `''`.
+
+:::warning
+Иногда при формировании значений типа `DateTime` и `DateTime64` параметр  `session_timezone` может быть проигнорирован.
+Это может привести к путанице. Пример и пояснение см. ниже.
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timezone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timezone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+Это происходит из-за различного происхождения значения, используемого для сравнения:
+- В первом запросе функция `toDateTime()`, создавая значение типа `DateTime`, принимает во внимание параметр `session_timezone` из контекста запроса;
+- Во втором запросе `DateTime` формируется из строки неявно, наследуя тип колонки `d` (в том числе и числовой пояс), и параметр `session_timezone` игнорируется.
+
+**Смотрите также**
+
+- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+
+## rename_files_after_processing
+
+- **Тип:** Строка
+
+- **Значение по умолчанию:** Пустая строка
+
+Этот параметр позволяет задать паттерн для переименования файлов, обрабатываемых табличной функцией `file`. Когда опция установлена, все файлы, прочитанные табличной функцией `file`, будут переименованы в соответствии с указанным шаблоном, если обработка и чтение файла завершились успешно.
+
+### Шаблон
+Шаблон поддерживает следующие виды плейсхолдеров:
+
+- `%f` — Исходное имя файла без расширения (например "sample").
+- `%e` — Оригинальное расширение файла с точкой (например ".csv").
+- `%t` — Текущее время (в микросекундах).
+- `%%` — Знак процента ("%").
+
+### Пример
+- Значение аргумента: `--rename_files_after_processing="processed_%f_%t%e"`
+
+- Запрос: `SELECT * FROM file('sample.csv')`
+
+Если чтение и обработка `sample.csv` прошли успешно, файл будет переименован в `processed_sample_1683473210851438.csv`.
