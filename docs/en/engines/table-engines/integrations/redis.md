@@ -49,7 +49,7 @@ CREATE TABLE redis_table
     `v2` String,
     `v3` Float32
 )
-ENGINE = Redis('redis1:6379') PRIMARY KEY(k);
+ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
 ```
 
 Insert:
