@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
