@@ -37,11 +37,10 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
     WriteBufferFromOwnString progress_string_writer;
 
     writeCString("{", progress_string_writer);
-    accumulated_progress.writeJSON(progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer, false);
     writeCString(",\"peak_memory_usage\":\"", progress_string_writer);
     writeText(peak_memory_usage, progress_string_writer);
     writeCString("\"}", progress_string_writer);
-    
 
     if (response_header_ostr)
         *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
