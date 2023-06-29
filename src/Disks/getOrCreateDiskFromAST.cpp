@@ -40,8 +40,8 @@ namespace
         {
             static constexpr std::string_view custom_disk_prefix = "disk_";
 
-            if (disk_name.size() <= custom_disk_prefix.size() || !disk_name.starts_with(custom_disk_prefix))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid disk name: {}", disk_name);
+            if (function.name.size() <= custom_disk_prefix.size() || !function.name.starts_with(custom_disk_prefix))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid disk name: {}", function.name);
 
             disk_name = function.name.substr(custom_disk_prefix.size());
         }
