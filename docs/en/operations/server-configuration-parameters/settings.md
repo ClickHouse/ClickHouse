@@ -7,6 +7,14 @@ description: This section contains descriptions of server settings that cannot b
 
 # Server Settings
 
+This section contains descriptions of server settings that cannot be changed at the session or query level.
+
+These settings are stored in the `config.xml` file on the ClickHouse server.
+
+Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
+
+Before studying the settings, read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
+
 ## allow_use_jemalloc_memory
 
 Allows to use jemalloc memory.
@@ -202,7 +210,7 @@ Default: 15
 
 ## dns_max_consecutive_failures
 
-Max connection failures before dropping host from ClickHouse DNS cache
+Max consecutive resolving failures before dropping a host from ClickHouse DNS cache
 
 Type: UInt32
 
@@ -275,9 +283,9 @@ Type: UInt64
 
 Default: 1000
 
-## max_concurrent_insert_queries
+## max_concurrent_queries
 
-Limit on total number of concurrent insert queries. Zero means Unlimited.
+Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -287,9 +295,9 @@ Type: UInt64
 
 Default: 0
 
-## max_concurrent_queries
+## max_concurrent_insert_queries
 
-Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
+Limit on total number of concurrent insert queries. Zero means Unlimited.
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -1277,49 +1285,6 @@ For more information, see the section [Creating replicated tables](../../engines
 <macros incl="macros" optional="true" />
 ```
 
-
-## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
-
-The maximum number of simultaneously processed queries related to MergeTree table per user.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
-```
-
-## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
-
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
-
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
-
-Modifying the setting for one query or user does not affect other queries.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
-```
-
-**See Also**
-
-- [max_concurrent_queries](#max-concurrent-queries)
-
 ## max_open_files {#max-open-files}
 
 The maximum number of open files.
@@ -1637,7 +1602,7 @@ Keys for server/client settings:
 - requireTLSv1_2 (default: false) – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips (default: false) – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler (default: `KeyConsoleHandler`)– Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
-- invalidCertificateHandler (default: `ConsoleCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+- invalidCertificateHandler (default: `RejectCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .
 - disableProtocols (default: "") – Protocols that are not allowed to use.
 - preferServerCiphers (default: false) – Preferred server ciphers on the client.
 
@@ -1924,6 +1889,32 @@ The default server configuration file `config.xml` contains the following settin
 </trace_log>
 ```
 
+## asynchronous_insert_log {#server_configuration_parameters-asynchronous_insert_log}
+
+Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `storage_policy` – Name of storage policy to use for the table (optional)
+
+**Example**
+```xml
+<clickhouse>
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </asynchronous_insert_log>
+</clickhouse>
+```
+
 ## query_masking_rules {#query-masking-rules}
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
@@ -1947,7 +1938,7 @@ Config fields:
 - `regexp` - RE2 compatible regular expression (mandatory)
 - `replace` - substitution string for sensitive data (optional, by default - six asterisks)
 
-The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parsable queries).
+The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parseable queries).
 
 `system.events` table have counter `QueryMaskingRulesMatch` which have an overall number of query masking rules matches.
 
@@ -1983,6 +1974,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 ``` xml
 <timezone>Asia/Istanbul</timezone>
 ```
+
+**See also**
+
+- [session_timezone](../settings/settings.md#session_timezone)
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
 

@@ -13,6 +13,10 @@ $CLICKHOUSE_LOCAL --multiquery "SELECT 200; S" 2>&1 | grep -o 'Syntax error'
 $CLICKHOUSE_LOCAL --multiquery "; SELECT 201;" 2>&1 | grep -o 'Empty query'
 $CLICKHOUSE_LOCAL --multiquery "; S; SELECT 202" 2>&1 | grep -o 'Empty query'
 
+# Simultaneously passing --queries-file + --query (multiquery) is prohibited.
+$CLICKHOUSE_LOCAL --queries-file "queries.csv" --multiquery "SELECT 250;" 2>&1 | grep -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT --queries-file "queries.csv" --multiquery "SELECT 251;" 2>&1 | grep -o 'BAD_ARGUMENTS'
+
 # Error expectation cases.
 # -n <SQL> is prohibited
 $CLICKHOUSE_LOCAL -n "SELECT 301" 2>&1 | grep -o 'BAD_ARGUMENTS'

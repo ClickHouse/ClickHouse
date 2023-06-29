@@ -491,7 +491,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (delayed_root)
         {
             // Process delayed joined blocks when all JoiningTransform are finished.
-            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(left_header, joined_header, max_block_size, join);
+            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(joined_header);
             if (delayed->getInputs().size() != 1 || delayed->getOutputs().size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
 
@@ -569,16 +569,22 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
-void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
+void QueryPipelineBuilder::addCreatingSetsTransform(
+    const Block & res_header,
+    SetAndKeyPtr set_and_key,
+    StoragePtr external_table,
+    const SizeLimits & limits,
+    PreparedSetsCachePtr prepared_sets_cache)
 {
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
             getHeader(),
             res_header,
-            std::move(subquery_for_set),
+            std::move(set_and_key),
+            std::move(external_table),
             limits,
-            context);
+            std::move(prepared_sets_cache));
 
     InputPort * totals_port = nullptr;
 

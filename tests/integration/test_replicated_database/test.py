@@ -34,6 +34,7 @@ competing_node = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
+    stay_alive=True,
     macros={"shard": 1, "replica": 3},
 )
 snapshotting_node = cluster.add_instance(
@@ -1272,3 +1273,61 @@ def test_recover_digest_mismatch(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
 
     print("Everything Okay")
+
+
+def test_replicated_table_structure_alter(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS table_structure")
+    dummy_node.query("DROP DATABASE IF EXISTS table_structure")
+
+    main_node.query(
+        "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica2');"
+    )
+    competing_node.query(
+        "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica3');"
+    )
+
+    competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
+    dummy_node.query("DETACH DATABASE table_structure")
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "CREATE TABLE table_structure.rmt (n int, v UInt64) ENGINE=ReplicatedReplacingMergeTree(v) ORDER BY n",
+        settings=settings,
+    )
+
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    competing_node.query("DETACH DATABASE table_structure")
+
+    main_node.query(
+        "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
+    )
+    main_node.query(
+        "ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings
+    )
+    main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
+
+    command = "rm -f /var/lib/clickhouse/metadata/table_structure/mem.sql"
+    competing_node.exec_in_container(["bash", "-c", command])
+    competing_node.restart_clickhouse(kill=True)
+
+    dummy_node.query("ATTACH DATABASE table_structure")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    assert "1\t2\t3\n" == dummy_node.query("SELECT * FROM table_structure.rmt")
+
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    competing_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    # time.sleep(600)
+    assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
+    assert "1\t2\t3\n" == competing_node.query("SELECT * FROM table_structure.rmt")
+
+    main_node.query("ALTER TABLE table_structure.rmt ADD COLUMN k int")
+    main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3, 4)")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query(
+        "SELECT * FROM table_structure.rmt ORDER BY k"
+    )
