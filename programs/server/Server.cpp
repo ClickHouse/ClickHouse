@@ -29,6 +29,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -658,7 +659,7 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
-    const auto memory_amount = getMemoryAmount();
+    const size_t memory_amount = getMemoryAmount();
 
     LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
         formatReadableSizeWithBinarySuffix(memory_amount),
@@ -1485,14 +1486,14 @@ try
 
     /// Set up caches.
 
-    size_t max_cache_size = static_cast<size_t>(memory_amount * server_settings.cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(memory_amount * server_settings.cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
     size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
@@ -1511,27 +1512,44 @@ try
             server_settings.async_insert_queue_flush_on_shutdown));
     }
 
-    size_t mark_cache_size = server_settings.mark_cache_size;
     String mark_cache_policy = server_settings.mark_cache_policy;
+    size_t mark_cache_size = server_settings.mark_cache_size;
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(mark_cache_size));
+        LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
-    if (server_settings.index_uncompressed_cache_size)
+    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
+    if (index_uncompressed_cache_size > max_cache_size)
+    {
+        index_uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);
 
-    if (server_settings.index_mark_cache_size)
+    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
+    if (index_mark_cache_size > max_cache_size)
+    {
+        index_mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    if (index_mark_cache_size)
         global_context->setIndexMarkCache(server_settings.index_mark_cache_size);
 
-    if (server_settings.mmap_cache_size)
+    size_t mmap_cache_size = server_settings.mmap_cache_size;
+    if (mmap_cache_size > max_cache_size)
+    {
+        mmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    if (mmap_cache_size)
         global_context->setMMappedFileCache(server_settings.mmap_cache_size);
 
-    /// A cache for query results.
     global_context->setQueryCache(config());
 
 #if USE_EMBEDDED_COMPILER
