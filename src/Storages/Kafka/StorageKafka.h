@@ -28,6 +28,7 @@ class StorageSystemKafkaConsumers;
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
+using KafkaConsumerWeakPtr = std::weak_ptr<KafkaConsumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -104,6 +105,7 @@ private:
     size_t num_created_consumers = 0; /// number of actually created consumers.
 
     std::vector<KafkaConsumerPtr> consumers; /// available consumers
+    std::vector<KafkaConsumerWeakPtr> all_consumers; /// busy (belong to a KafkaSource) and vacant consumers
 
     std::mutex mutex;
 
