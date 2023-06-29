@@ -2386,22 +2386,27 @@ void Context::clearMMappedFileCache() const
         shared->mmap_cache->reset();
 }
 
-void Context::setQueryCache(const Poco::Util::AbstractConfiguration & config)
+void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
     auto lock = getLock();
 
     if (shared->query_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    shared->query_cache = std::make_shared<QueryCache>();
-    shared->query_cache->updateConfiguration(config);
+    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
 }
 
 void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
     if (shared->query_cache)
-        shared->query_cache->updateConfiguration(config);
+    {
+        size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
+        size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
+        size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+        size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+        shared->query_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    }
 }
 
 QueryCachePtr Context::getQueryCache() const
