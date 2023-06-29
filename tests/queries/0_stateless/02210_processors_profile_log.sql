@@ -15,7 +15,7 @@ SELECT
     multiIf(
         -- ExpressionTransform executes sleep(),
         -- so IProcessor::work() will spend 1 sec.
-        name = 'ExpressionTransform', elapsed_us>1e6,
+        name = 'ExpressionTransform', elapsed_us>=1e6,
         -- SourceFromSingleChunk, that feed data to ExpressionTransform,
         -- will feed first block and then wait in PortFull.
         name = 'SourceFromSingleChunk', output_wait_elapsed_us>1e6,
