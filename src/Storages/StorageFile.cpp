@@ -739,8 +739,10 @@ public:
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                progress(num_rows, chunk_size);
+                size_t chunk_size = 0;
+                if (storage->format_name != "Distributed")
+                    chunk_size = input_format->getApproxBytesReadForChunk();
+                progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)
