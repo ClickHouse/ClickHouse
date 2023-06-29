@@ -1284,7 +1284,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
     for (size_t i = 0; i < rows; ++i)
     {
         bool right_row_found = false;
-        bool null_element_found = false;
 
         KnownRowsHolder<multiple_disjuncts> known_rows;
         for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
@@ -1293,10 +1292,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
             if constexpr (has_null_map)
             {
                 if (join_keys.null_map && (*join_keys.null_map)[i])
-                {
-                    null_element_found = true;
                     continue;
-                }
             }
 
             bool row_acceptable = !join_keys.isRowFiltered(i);
@@ -1376,23 +1372,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
                         break;
                     }
                 }
-            }
-        }
-
-        if constexpr (has_null_map)
-        {
-            if (!right_row_found && null_element_found)
-            {
-                if constexpr (join_features.is_anti_join && join_features.left)
-                    setUsed<need_filter>(filter, i);
-
-                addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
-
-                if constexpr (join_features.need_replication)
-                {
-                   (*added_columns.offsets_to_replicate)[i] = current_offset;
-                }
-                continue;
             }
         }
 
