@@ -28,6 +28,61 @@ public:
             asTwoLevel().insert(std::forward<Arg>(arg));
     }
 
+    /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
+    /// It's not in parallel and will cost extra large time if the thread_num is large.
+    /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
+    static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
+    {
+        bool is_convert_needed = false;
+        unsigned long single_level_set_num = 0;
+
+        for (auto ele : data_vec)
+        {
+            if (ele->isSingleLevel())
+                single_level_set_num ++;
+        }
+
+        if (single_level_set_num > 0 && single_level_set_num < data_vec.size())
+            is_convert_needed = true;
+
+        if (is_convert_needed)
+        {
+            try
+            {
+                auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
+                auto thread_func = [data_vec, data_vec_atomic_index, thread_group = CurrentThread::getGroup()]()
+                {
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    );
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+
+                    setThreadName("UniqExaConvert");
+
+                    while (true)
+                    {
+                        const auto i = data_vec_atomic_index->fetch_add(1);
+                        if (i >= data_vec.size())
+                            return;
+                        if (data_vec[i]->isSingleLevel())
+                            data_vec[i]->convertToTwoLevel();
+                    }
+                };
+                for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
+                    thread_pool.scheduleOrThrowOnError(thread_func);
+
+                thread_pool.wait();
+            }
+            catch (...)
+            {
+                thread_pool.wait();
+                throw;
+            }
+        }
+    }
+
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr)
     {
         if (isSingleLevel() && other.isTwoLevel())

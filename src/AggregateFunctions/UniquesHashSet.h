@@ -12,7 +12,7 @@
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/Hash.h>
-
+#include <Common/ThreadPool_fwd.h>
 
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
   * - some data structure is used to calculate the value of X;
@@ -365,6 +365,8 @@ public:
         size_t fixed_res = static_cast<size_t>(round(p32 * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
+
+    static void parallelizeMergePrepare(const std::vector<UniquesHashSet *> & /*places*/, ThreadPool & /*thread_pool*/) {}
 
     void merge(const UniquesHashSet & rhs)
     {

@@ -11,7 +11,7 @@
 #include <theta_union.hpp>
 #include <theta_intersection.hpp>
 #include <theta_a_not_b.hpp>
-
+#include <Common/ThreadPool_fwd.h>
 
 namespace DB
 {
@@ -65,6 +65,8 @@ public:
         else
             return 0;
     }
+
+    static void parallelizeMergePrepare(const std::vector<ThetaSketchData *> & /*places*/, ThreadPool & /*thread_pool*/) {}
 
     void merge(const ThetaSketchData & rhs)
     {

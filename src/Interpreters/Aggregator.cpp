@@ -2601,6 +2601,20 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
+        {
+            size_t size = non_empty_data.size();
+            std::vector<AggregateDataPtr> data_vec;
+
+            for (size_t result_num = 0; result_num < size; ++result_num)
+                data_vec.emplace_back(non_empty_data[result_num]->without_key + offsets_of_aggregate_states[i]);
+
+            aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool);
+        }
+    }
+
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
