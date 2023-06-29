@@ -46,7 +46,7 @@ namespace
             if (!isString(arguments[0]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}",
+                    "Illegal type {} of first argument of function {}, String expected",
                     arguments[0]->getName(),
                     getName());
 
