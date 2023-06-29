@@ -208,10 +208,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
       *  we allow exception about memory limit exceeded to be thrown only on next allocation.
       * So, we allow over-allocations.
       */
-    Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
+    Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
 
     auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
+    if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
