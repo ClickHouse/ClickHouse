@@ -5608,7 +5608,7 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// The date range is all month long.
-        const auto & lut = DateLUT::instance();
+        const auto & lut = DateLUT::serverTimezoneInstance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.partition_id + "01"));
         DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
         DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);

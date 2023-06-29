@@ -1,6 +1,7 @@
 ---
 slug: /en/sql-reference/table-functions/hudi
-sidebar_label: Hudi
+sidebar_position: 85
+sidebar_label: hudi
 ---
 
 # hudi Table Function
