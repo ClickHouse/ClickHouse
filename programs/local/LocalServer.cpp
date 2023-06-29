@@ -710,6 +710,8 @@ void LocalServer::processConfig()
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
+    /// not initializing the query cache in clickhouse-local
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
     size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
