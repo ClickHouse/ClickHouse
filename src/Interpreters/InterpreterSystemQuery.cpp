@@ -52,6 +52,7 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -372,6 +373,38 @@ BlockIO InterpreterSystemQuery::execute()
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
                 cache->removeAllReleasable();
             }
+            break;
+        }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
+
+            ColumnsDescription columns{StorageSystemFilesystemCache::getNamesAndTypes()};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            if (query.filesystem_cache_name.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [cache_name, cache_data] : caches)
+                {
+                    auto file_segments = cache_data->cache->sync();
+                    StorageSystemFilesystemCache::fillDataImpl(res_columns, cache_data->cache, cache_name, file_segments);
+                }
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto file_segments = cache->sync();
+                StorageSystemFilesystemCache::fillDataImpl(res_columns, cache, query.filesystem_cache_name, file_segments);
+            }
+
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -1008,6 +1041,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:

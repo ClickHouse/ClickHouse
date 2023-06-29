@@ -79,6 +79,7 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        SYNC_FILESYSTEM_CACHE,
         END
     };
 
