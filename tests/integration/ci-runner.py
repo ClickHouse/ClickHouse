@@ -412,7 +412,7 @@ class ClickhouseIntegrationTestsRunner:
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
             "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
                 repo_path=repo_path,
@@ -656,7 +656,7 @@ class ClickhouseIntegrationTestsRunner:
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
                 repo_path,
                 self._get_runner_opts(),
                 image_cmd,
