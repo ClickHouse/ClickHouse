@@ -2269,7 +2269,7 @@ UncompressedCachePtr Context::getUncompressedCache() const
 }
 
 
-void Context::dropUncompressedCache() const
+void Context::clearUncompressedCache() const
 {
     auto lock = getLock();
     if (shared->uncompressed_cache)
@@ -2293,7 +2293,7 @@ MarkCachePtr Context::getMarkCache() const
     return shared->mark_cache;
 }
 
-void Context::dropMarkCache() const
+void Context::clearMarkCache() const
 {
     auto lock = getLock();
     if (shared->mark_cache)
@@ -2332,7 +2332,7 @@ UncompressedCachePtr Context::getIndexUncompressedCache() const
 }
 
 
-void Context::dropIndexUncompressedCache() const
+void Context::clearIndexUncompressedCache() const
 {
     auto lock = getLock();
     if (shared->index_uncompressed_cache)
@@ -2356,7 +2356,7 @@ MarkCachePtr Context::getIndexMarkCache() const
     return shared->index_mark_cache;
 }
 
-void Context::dropIndexMarkCache() const
+void Context::clearIndexMarkCache() const
 {
     auto lock = getLock();
     if (shared->index_mark_cache)
@@ -2379,7 +2379,7 @@ MMappedFileCachePtr Context::getMMappedFileCache() const
     return shared->mmap_cache;
 }
 
-void Context::dropMMappedFileCache() const
+void Context::clearMMappedFileCache() const
 {
     auto lock = getLock();
     if (shared->mmap_cache)
@@ -2410,15 +2410,14 @@ QueryCachePtr Context::getQueryCache() const
     return shared->query_cache;
 }
 
-void Context::dropQueryCache() const
+void Context::clearQueryCache() const
 {
     auto lock = getLock();
     if (shared->query_cache)
         shared->query_cache->reset();
 }
 
-
-void Context::dropCaches() const
+void Context::clearCaches() const
 {
     auto lock = getLock();
 
