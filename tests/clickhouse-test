@@ -1070,7 +1070,7 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
-                encoding="latin-1",
+                encoding="utf-8",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
