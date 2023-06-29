@@ -2,6 +2,8 @@
 
 #include <sys/resource.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
+#include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
@@ -655,25 +657,54 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
+    const size_t memory_amount = getMemoryAmount();
+    const double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
+    const size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
+
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    if (uncompressed_cache_size > max_cache_size)
+    {
+        uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
     size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    if (mark_cache_size > max_cache_size)
+    {
+        mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
+    }
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    if (index_uncompressed_cache_size > max_cache_size)
+    {
+        index_uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    if (index_mark_cache_size > max_cache_size)
+    {
+        index_mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
 
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    if (mmap_cache_size > max_cache_size)
+    {
+        mmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
