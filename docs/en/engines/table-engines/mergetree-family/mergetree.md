@@ -758,12 +758,14 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 ## Disk types
 
-In addition to local block devices, ClickHouse supports other device types through table engines. These are the types:
-- [S3](#table_engine-mergetree-s3)
-- GCS (also supported using the [S3 table engine](#table_engine-mergetree-s3))
-- [Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
-- [HDFS](#hdfs-storage)
-- [Web (read-only)](#web-storage)
+In addition to local block devices, ClickHouse supports these storage types:
+- [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
+- [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
+- [`hdfs` for HDFS](#hdfs-storage)
+- [`web` for read-only from web](#web-storage)
+- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
+- [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
