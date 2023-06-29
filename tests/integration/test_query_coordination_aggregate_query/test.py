@@ -159,11 +159,11 @@ def test_aggregate_query(started_cluster):
 
 
     print("local table select:")
-    r = node1.query("SELECT * FROM local_table a join local_table1 b on a.id=b.id order by a.id,a.val,a.name,b.val,b.str limit 30 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("SELECT * FROM local_table a join local_table1 b on a.name=b.str order by a.id,a.val,a.name,b.id,b.val,b.str limit 30 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("SELECT * FROM distributed_table a GLOBAL join distributed_table1 b on a.id=b.id order by a.id,a.val,a.name,b.val,b.str limit 30")
+    rr = node1.query("SELECT * FROM distributed_table a GLOBAL join distributed_table1 b on a.name=b.str order by a.id,a.val,a.name,b.id,b.val,b.str limit 30")
     print(rr)
 
     assert r == rr
