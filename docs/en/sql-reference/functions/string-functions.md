@@ -581,7 +581,7 @@ Returns the substring of `s` before `count` occurrences of the delimiter `delim`
 **Syntax**
 
 ```sql
-substringIndex(s, delim, index)
+substringIndex(s, delim, count)
 ```
 Alias: `SUBSTRING_INDEX`
 
