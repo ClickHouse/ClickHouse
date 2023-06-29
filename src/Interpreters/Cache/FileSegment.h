@@ -37,11 +37,6 @@ enum class FileSegmentKind
      */
     Regular,
 
-    /* `Persistent` file segment can't be evicted from cache,
-     * it should be removed manually.
-     */
-    Persistent,
-
     /* `Temporary` file segment is removed right after releasing.
      * Also corresponding files are removed during cache loading (if any).
      */
@@ -85,7 +80,7 @@ public:
         EMPTY,
         /**
          * A newly created file segment never has DOWNLOADING state until call to getOrSetDownloader
-         * because each cache user might acquire multiple file segments and reads them one by one,
+         * because each cache user might acquire multiple file segments and read them one by one,
          * so only user which actually needs to read this segment earlier than others - becomes a downloader.
          */
         DOWNLOADING,
@@ -130,9 +125,11 @@ public:
         size_t left;
         size_t right;
 
-        Range(size_t left_, size_t right_) : left(left_), right(right_) {}
+        Range(size_t left_, size_t right_);
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
+
+        bool operator<(const Range & other) const { return right < other.left; }
 
         size_t size() const { return right - left + 1; }
 
@@ -154,8 +151,6 @@ public:
     size_t offset() const { return range().left; }
 
     FileSegmentKind getKind() const { return segment_kind; }
-
-    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
 
     bool isUnbound() const { return is_unbound; }
 
@@ -179,8 +174,6 @@ public:
     size_t getHitsCount() const { return hits_count; }
 
     size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
 
     size_t getCurrentWriteOffset(bool sync) const;
 
@@ -293,6 +286,7 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
+    FileSegmentGuard::Lock lockFileSegment() const;
 
     Key file_key;
     Range segment_range;
@@ -359,12 +353,6 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
-
-    void moveTo(FileSegmentsHolder & holder)
-    {
-        holder.file_segments.insert(holder.file_segments.end(), file_segments.begin(), file_segments.end());
-        file_segments.clear();
-    }
 
 private:
     FileSegments file_segments{};

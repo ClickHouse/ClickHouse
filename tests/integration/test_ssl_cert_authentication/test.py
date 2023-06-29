@@ -2,10 +2,10 @@ import pytest
 from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.ssl_context import WrapSSLContextWithSNI
-import urllib.request, urllib.parse
 import ssl
 import os.path
 from os import remove
+import urllib3
 
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
@@ -164,24 +164,17 @@ def get_ssl_context(cert_name):
 def execute_query_https(
     query, user, enable_ssl_auth=True, cert_name=None, password=None
 ):
-    retries = 10
-    while True:
-        try:
-            url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
-            request = urllib.request.Request(url)
-            request.add_header("X-ClickHouse-User", user)
-            if enable_ssl_auth:
-                request.add_header("X-ClickHouse-SSL-Certificate-Auth", "on")
-            if password:
-                request.add_header("X-ClickHouse-Key", password)
-            response = urllib.request.urlopen(
-                request, context=get_ssl_context(cert_name)
-            ).read()
-            return response.decode("utf-8")
-        except BrokenPipeError:
-            retries -= 1
-            if retries == 0:
-                raise
+    url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={query}"
+    headers = {"X-ClickHouse-User": user}
+    if enable_ssl_auth:
+        headers["X-ClickHouse-SSL-Certificate-Auth"] = "on"
+    if password:
+        headers["X-ClickHouse-Key"] = password
+    http_client = urllib3.PoolManager(ssl_context=get_ssl_context(cert_name))
+    response = http_client.request("GET", url, headers=headers)
+    if response.status != 200:
+        raise Exception(response.status)
+    return response.data.decode("utf-8")
 
 
 def test_https():
@@ -203,7 +196,7 @@ def test_https_wrong_cert():
     # Wrong certificate: different user's certificate
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
-    assert "HTTP Error 403" in str(err.value)
+    assert "403" in str(err.value)
 
     # Wrong certificate: self-signed certificate.
     with pytest.raises(Exception) as err:
@@ -213,7 +206,7 @@ def test_https_wrong_cert():
     # No certificate.
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john")
-    assert "HTTP Error 403" in str(err.value)
+    assert "403" in str(err.value)
 
     # No header enabling SSL authentication.
     with pytest.raises(Exception) as err:
@@ -341,7 +334,7 @@ def test_create_user():
 
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
-    assert "HTTP Error 403" in str(err.value)
+    assert "403" in str(err.value)
 
     assert (
         instance.query("SHOW CREATE USER lucy")

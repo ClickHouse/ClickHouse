@@ -72,6 +72,9 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
+  Codebrowser:
+    needs: [DockerHubPush]
+    uses: ./.github/workflows/woboq.yml
   BuilderCoverity:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -125,8 +128,8 @@ jobs:
       SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
-      CC: clang-15
-      CXX: clang++-15
+      CC: clang-16
+      CXX: clang++-16
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
