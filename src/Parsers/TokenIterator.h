@@ -3,7 +3,6 @@
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
 
-#include <cassert>
 #include <vector>
 
 
@@ -21,19 +20,34 @@ class Tokens
 {
 private:
     std::vector<Token> data;
-    std::size_t last_accessed_index = 0;
+    Lexer lexer;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant = true);
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0) : lexer(begin, end, max_query_size) {}
 
-    ALWAYS_INLINE inline const Token & operator[](size_t index)
+    const Token & operator[] (size_t index)
     {
-        assert(index < data.size());
-        last_accessed_index = std::max(last_accessed_index, index);
-        return data[index];
+        while (true)
+        {
+            if (index < data.size())
+                return data[index];
+
+            if (!data.empty() && data.back().isEnd())
+                return data.back();
+
+            Token token = lexer.nextToken();
+
+            if (token.isSignificant())
+                data.emplace_back(token);
+        }
     }
 
-    ALWAYS_INLINE inline const Token & max() { return data[last_accessed_index]; }
+    const Token & max()
+    {
+        if (data.empty())
+            return (*this)[0];
+        return data.back();
+    }
 };
 
 

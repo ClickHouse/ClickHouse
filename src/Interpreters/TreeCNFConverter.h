@@ -133,7 +133,7 @@ public:
     /// Converts != -> NOT =; <,>= -> (NOT) <; >,<= -> (NOT) <= for simpler matching
     CNFQuery & pullNotOutFunctions();
     /// Revert pullNotOutFunctions actions
-    CNFQuery & pushNotInFunctions();
+    CNFQuery & pushNotInFuntions();
 
     /// (a OR b OR ...) AND (NOT a OR b OR ...) -> (b OR ...)
     CNFQuery & reduce();
@@ -163,73 +163,5 @@ public:
 };
 
 void pushNotIn(CNFQuery::AtomicFormula & atom);
-
-template <typename TAndGroup>
-TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
-{
-    TAndGroup result;
-    for (const auto & group : groups)
-    {
-        using GroupType = std::decay_t<decltype(group)>;
-        GroupType copy(group);
-        bool inserted = false;
-        for (const auto & atom : group)
-        {
-            copy.erase(atom);
-            using AtomType = std::decay_t<decltype(atom)>;
-            AtomType negative_atom(atom);
-            negative_atom.negative = !atom.negative;
-            copy.insert(negative_atom);
-
-            if (groups.contains(copy))
-            {
-                copy.erase(negative_atom);
-                result.insert(copy);
-                inserted = true;
-                break;
-            }
-
-            copy.erase(negative_atom);
-            copy.insert(atom);
-        }
-        if (!inserted)
-            result.insert(group);
-    }
-    return result;
-}
-
-template <typename TOrGroup>
-bool isCNFGroupSubset(const TOrGroup & left, const TOrGroup & right)
-{
-    if (left.size() > right.size())
-        return false;
-    for (const auto & elem : left)
-        if (!right.contains(elem))
-            return false;
-    return true;
-}
-
-template <typename TAndGroup>
-TAndGroup filterCNFSubsets(const TAndGroup & groups)
-{
-    TAndGroup result;
-    for (const auto & group : groups)
-    {
-        bool insert = true;
-
-        for (const auto & other_group : groups)
-        {
-            if (isCNFGroupSubset(other_group, group) && group != other_group)
-            {
-                insert = false;
-                break;
-            }
-        }
-
-        if (insert)
-            result.insert(group);
-    }
-    return result;
-}
 
 }

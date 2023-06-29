@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -14,14 +13,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
 
 template <typename Impl, typename Name>
 class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringReplace>(); }
 
     String getName() const override { return name; }
@@ -31,89 +32,63 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"},
-            {"pattern", &isString<IDataType>, nullptr, "String"},
-            {"replacement", &isString<IDataType>, nullptr, "String"}
-        };
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        if (!isStringOrFixedString(arguments[1]))
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!isStringOrFixedString(arguments[2]))
+            throw Exception(
+                "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        ColumnPtr column_haystack = arguments[0].column;
-        column_haystack = column_haystack->convertToFullColumnIfConst();
-
+        const ColumnPtr column_src = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
         const ColumnPtr column_replacement = arguments[2].column;
 
-        const ColumnString * col_haystack = checkAndGetColumn<ColumnString>(column_haystack.get());
-        const ColumnFixedString * col_haystack_fixed = checkAndGetColumn<ColumnFixedString>(column_haystack.get());
+        if (!isColumnConst(*column_needle) || !isColumnConst(*column_replacement))
+            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.", ErrorCodes::ILLEGAL_COLUMN);
 
-        const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(column_needle.get());
-        const ColumnConst * col_needle_const = checkAndGetColumn<ColumnConst>(column_needle.get());
+        const IColumn * c1 = arguments[1].column.get();
+        const IColumn * c2 = arguments[2].column.get();
+        const ColumnConst * c1_const = typeid_cast<const ColumnConst *>(c1);
+        const ColumnConst * c2_const = typeid_cast<const ColumnConst *>(c2);
+        String needle = c1_const->getValue<String>();
+        String replacement = c2_const->getValue<String>();
 
-        const ColumnString * col_replacement_vector = checkAndGetColumn<ColumnString>(column_replacement.get());
-        const ColumnConst * col_replacement_const = checkAndGetColumn<ColumnConst>(column_replacement.get());
+        if (needle.empty())
+            throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        auto col_res = ColumnString::create();
-
-        if (col_haystack && col_needle_const && col_replacement_const)
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
-            Impl::vectorConstantConstant(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_const->getValue<String>(),
-                col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets());
+            auto col_res = ColumnString::create();
+            Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             return col_res;
         }
-        else if (col_haystack && col_needle_vector && col_replacement_const)
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
-            Impl::vectorVectorConstant(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_vector->getChars(), col_needle_vector->getOffsets(),
-                col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets());
-            return col_res;
-        }
-        else if (col_haystack && col_needle_const && col_replacement_vector)
-        {
-            Impl::vectorConstantVector(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_const->getValue<String>(),
-                col_replacement_vector->getChars(), col_replacement_vector->getOffsets(),
-                col_res->getChars(), col_res->getOffsets());
-            return col_res;
-        }
-        else if (col_haystack && col_needle_vector && col_replacement_vector)
-        {
-            Impl::vectorVectorVector(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_vector->getChars(), col_needle_vector->getOffsets(),
-                col_replacement_vector->getChars(), col_replacement_vector->getOffsets(),
-                col_res->getChars(), col_res->getOffsets());
-            return col_res;
-        }
-        else if (col_haystack_fixed && col_needle_const && col_replacement_const)
-        {
-            Impl::vectorFixedConstantConstant(
-                col_haystack_fixed->getChars(), col_haystack_fixed->getN(),
-                col_needle_const->getValue<String>(),
-                col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets());
+            auto col_res = ColumnString::create();
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             return col_res;
         }
         else
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

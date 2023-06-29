@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 #include <string>
 #include <vector>
@@ -37,7 +36,7 @@ class LogicalExpressionsOptimizer final
 
 public:
     /// Constructor. Accepts the root of the query DAG.
-    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const TablesWithColumns & tables_with_columns_, UInt64 optimize_min_equality_disjunction_chain_length);
+    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, UInt64 optimize_min_equality_disjunction_chain_length);
 
     /** Replace all rather long homogeneous OR-chains expr = x1 OR ... OR expr = xN
       * on the expressions `expr` IN (x1, ..., xN).
@@ -80,9 +79,6 @@ private:
       */
     bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
-    /// Check if is LowCardinality OR chain
-    bool isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const;
-
     /// Insert the IN expression into the OR chain.
     static void addInExpression(const DisjunctiveEqualityChain & chain);
 
@@ -100,7 +96,6 @@ private:
     using ColumnToPosition = std::unordered_map<const IAST *, size_t>;
 
     ASTSelectQuery * select_query;
-    const TablesWithColumns & tables_with_columns;
     const ExtractedSettings settings;
     /// Information about the OR-chains inside the query.
     DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;

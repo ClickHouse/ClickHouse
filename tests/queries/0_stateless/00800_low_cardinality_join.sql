@@ -1,4 +1,3 @@
-set allow_experimental_analyzer = 1;
 set joined_subquery_requires_alias = 0;
 
 select * from (select dummy as val from system.one) any left join (select dummy as val from system.one) using val;
@@ -11,7 +10,7 @@ select * from (select toLowCardinality(toNullable(dummy)) as val from system.one
 select * from (select toLowCardinality(dummy) as val from system.one) any left join (select toLowCardinality(toNullable(dummy)) as val from system.one) using val;
 select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) any left join (select toLowCardinality(toNullable(dummy)) as val from system.one) using val;
 select '-';
-select * from (select dummy as val from system.one) any left join (select dummy as val from system.one) on val + 0 = val * 1; -- { serverError 403 }
+select * from (select dummy as val from system.one) any left join (select dummy as val from system.one) on val + 0 = val * 1; -- { serverError 352 }
 select * from (select dummy as val from system.one) any left join (select dummy as rval from system.one) on val + 0 = rval * 1;
 select * from (select toLowCardinality(dummy) as val from system.one) any left join (select dummy as rval from system.one) on val + 0 = rval * 1;
 select * from (select dummy as val from system.one) any left join (select toLowCardinality(dummy) as rval from system.one) on val + 0 = rval * 1;

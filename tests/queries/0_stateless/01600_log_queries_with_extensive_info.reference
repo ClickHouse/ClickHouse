@@ -16,7 +16,7 @@ alter table test_log_queries.logtable rename column j to x, rename column k to y
 alter table test_log_queries.logtable2 add column x int, add column y int	1199561338572582360	Alter	['test_log_queries']	['test_log_queries.logtable2']	['test_log_queries.logtable2.x','test_log_queries.logtable2.y']
 alter table test_log_queries.logtable3 drop column i, drop column k	340702370038862784	Alter	['test_log_queries']	['test_log_queries.logtable3']	['test_log_queries.logtable3.i','test_log_queries.logtable3.k']
 rename table test_log_queries.logtable2 to test_log_queries.logtable4, test_log_queries.logtable3 to test_log_queries.logtable5	17256232154191063008	Rename	['test_log_queries']	['test_log_queries.logtable2','test_log_queries.logtable3','test_log_queries.logtable4','test_log_queries.logtable5']	[]
-optimize table test_log_queries.logtable	12932884188099170316	Optimize	['test_log_queries']	['test_log_queries.logtable']	[]
+optimize table test_log_queries.logtable	12932884188099170316		['test_log_queries']	['test_log_queries.logtable']	[]
 drop table if exists test_log_queries.logtable	9614905142075064664	Drop	['test_log_queries']	['test_log_queries.logtable']	[]
 drop table if exists test_log_queries.logtable2	5276868561533661466	Drop	['test_log_queries']	['test_log_queries.logtable2']	[]
 drop table if exists test_log_queries.logtable3	4776768361842582387	Drop	['test_log_queries']	['test_log_queries.logtable3']	[]

@@ -4,7 +4,6 @@
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -35,8 +34,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!enable_optimize_predicate_expression)
         return false;
 
-    const bool has_incompatible_constructs = select_query.group_by_with_cube || select_query.group_by_with_rollup || select_query.group_by_with_totals || select_query.group_by_with_grouping_sets;
-    if (select_query.having() && !has_incompatible_constructs)
+    if (select_query.having() && (!select_query.group_by_with_cube && !select_query.group_by_with_rollup && !select_query.group_by_with_totals))
         tryMovePredicatesFromHavingToWhere(select_query);
 
     if (!select_query.tables() || select_query.tables()->children.empty())
@@ -53,14 +51,42 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     return false;
 }
 
+static ASTs splitConjunctionPredicate(const std::initializer_list<const ASTPtr> & predicates)
+{
+    std::vector<ASTPtr> res;
+
+    for (const auto & predicate : predicates)
+    {
+        if (!predicate)
+            continue;
+
+        res.emplace_back(predicate);
+
+        for (size_t idx = 0; idx < res.size();)
+        {
+            ASTPtr expression = res.at(idx);
+
+            if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
+            {
+                res.erase(res.begin() + idx);
+
+                for (auto & child : function->arguments->children)
+                    res.emplace_back(child);
+
+                continue;
+            }
+            ++idx;
+        }
+    }
+
+    return res;
+}
+
 std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere)
 {
     std::vector<ASTs> tables_predicates(tables_with_columns.size());
 
-    ASTs predicate_expressions;
-    splitConjunctionsAst(where, predicate_expressions);
-    splitConjunctionsAst(prewhere, predicate_expressions);
-    for (const auto & predicate_expression : predicate_expressions)
+    for (const auto & predicate_expression : splitConjunctionPredicate({where, prewhere}))
     {
         ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
@@ -92,9 +118,8 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     bool is_rewrite_tables = false;
 
     if (tables_element.size() != tables_predicates.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected elements count in predicate push down: "
-                        "`set enable_optimize_predicate_expression = 0` to disable");
+        throw Exception("Unexpected elements count in predicate push down: `set enable_optimize_predicate_expression = 0` to disable",
+                        ErrorCodes::LOGICAL_ERROR);
 
     for (size_t index = tables_element.size(); index > 0; --index)
     {
@@ -161,7 +186,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
         return res;
     };
 
-    for (const auto & moving_predicate : splitConjunctionsAst(select_query.having()))
+    for (const auto & moving_predicate: splitConjunctionPredicate({select_query.having()}))
     {
         TablesWithColumns tables;
         ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};

@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/zookeeper_log
----
 # system.zookeeper_log {#system-zookeeper_log}
 
 Эта таблица содержит информацию о параметрах запроса к серверу ZooKeeper и ответа от него.
@@ -15,7 +12,7 @@ slug: /ru/operations/system-tables/zookeeper_log
     -   `Finalize` — соединение разорвано, ответ не получен.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата, когда произошло событие.
 -   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — дата и время, когда произошло событие.
--   `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP адрес сервера ZooKeeper, с которого был сделан запрос.
+-   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес сервера ZooKeeper, с которого был сделан запрос.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт сервера ZooKeeper, с которого был сделан запрос.
 -   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор сессии, который сервер ZooKeeper создает для каждого соединения.
 -   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — идентификатор запроса внутри сессии. Обычно это последовательный номер запроса, одинаковый у строки запроса и у парной строки `response`/`finalize`.
@@ -128,5 +125,5 @@ children:         ['query-0000000006','query-0000000005','query-0000000004','que
 
 **См. также**
 
--   [ZooKeeper](../../operations/tips.mdx#zookeeper)
+-   [ZooKeeper](../../operations/tips.md#zookeeper)
 -   [Руководство по ZooKeeper](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

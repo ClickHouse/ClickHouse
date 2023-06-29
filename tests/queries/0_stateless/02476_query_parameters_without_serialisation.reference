@@ -1,9 +1,0 @@
-42	hello	2022-08-04 18:30:53	{'2b95a497-3a5d-49af-bf85-15763318cde7':[1.2,3.4]}
-UInt64	String	DateTime	Map(UUID, Array(Float32))
-42	[1,2,3]	{'abc':22,'def':33}	[[4,5,6],[7],[8,9]]	{10:[11,12],13:[14,15]}	{'ghj':{'klm':[16,17]},'nop':{'rst':[18]}}
-Int64	Array(UInt8)	Map(String, UInt8)	Array(Array(UInt8))	Map(UInt8, Array(UInt8))	Map(String, Map(String, Array(UInt8)))
-5
-[[['a','b','c'],['d','e','f']],[['g','h','i'],['j','k','l']]]	Array(Array(Array(String)))
-(((1,'a','2b95a497-3a5d-49af-bf85-15763318cde7',3.14)))	Tuple(Tuple(Tuple(Int32, String, UUID, Float32)))
-[{1:(2,'2022-08-04 18:30:53','s'),3:(4,'2020-08-04 18:30:53','t')}]	Array(Map(UInt64, Tuple(Int16, DateTime, String)))
-{'a':[(1,{10:1,20:2}),(2,{30:3,40:4})],'b':[(3,{50:5,60:6}),(4,{70:7,80:8})]}	Map(String, Array(Tuple(UInt8, Map(UInt32, Int64))))

@@ -33,8 +33,7 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (!ParserTableExpression().parse(pos, table_expression, expected))
         return false;
 
-    query->children.push_back(std::move(table_expression));
-    query->table_expression = query->children.back();
+    query->table_expression = table_expression;
 
     node = query;
 

@@ -1,1 +1,0 @@
-SELECT TIMESTAMP_SUB (SELECT ILIKE INTO OUTFILE , accurateCast ) FROM TIMESTAMP_SUB ( MINUTE , ) GROUP BY accurateCast; -- { clientError 62 }

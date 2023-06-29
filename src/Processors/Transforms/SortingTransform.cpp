@@ -359,8 +359,8 @@ void SortingTransform::removeConstColumns(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
 
     if (num_columns != const_columns_to_remove.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block has different number of columns with header: {} vs {}",
-                        num_columns, const_columns_to_remove.size());
+        throw Exception("Block has different number of columns with header: " + toString(num_columns)
+                        + " vs " + toString(const_columns_to_remove.size()), ErrorCodes::LOGICAL_ERROR);
 
     auto columns = chunk.detachColumns();
     Columns column_without_constants;
@@ -394,7 +394,8 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
         else
         {
             if (next_non_const_column >= columns.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't enrich chunk with constants because run out of non-constant columns.");
+                throw Exception("Can't enrich chunk with constants because run out of non-constant columns.",
+                        ErrorCodes::LOGICAL_ERROR);
 
             column_with_constants.emplace_back(std::move(columns[next_non_const_column]));
             ++next_non_const_column;
@@ -406,7 +407,7 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
 
 void SortingTransform::serialize()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'serialize' is not implemented for {} processor", getName());
+    throw Exception("Method 'serialize' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

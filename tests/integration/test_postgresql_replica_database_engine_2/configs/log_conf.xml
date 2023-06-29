@@ -15,6 +15,7 @@
             <host>postgres1</host>
             <port>5432</port>
             <database>postgres_database</database>
+            <table>test_table</table>
         </postgres1>
         <postgres2>
             <user>postgres</user>
@@ -22,6 +23,7 @@
             <host>postgres1</host>
             <port>1111</port>
             <database>postgres_database</database>
+            <table>test_table</table>
         </postgres2>
     </named_collections>
 </clickhouse>

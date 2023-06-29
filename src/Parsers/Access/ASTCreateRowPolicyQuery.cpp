@@ -124,25 +124,7 @@ String ASTCreateRowPolicyQuery::getID(char) const
 
 ASTPtr ASTCreateRowPolicyQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateRowPolicyQuery>(*this);
-
-    if (names)
-        res->names = std::static_pointer_cast<ASTRowPolicyNames>(names->clone());
-
-    if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
-
-    /// `res->filters` is already initialized by the copy constructor of ASTCreateRowPolicyQuery (see the first line of this function).
-    /// But the copy constructor just copied the pointers inside `filters` instead of cloning.
-    /// We need to make a deep copy and not a shallow copy, so we have to manually clone each pointer in `res->filters`.
-    chassert(res->filters.size() == filters.size());
-    for (auto & [_, res_filter] : res->filters)
-    {
-        if (res_filter)
-            res_filter = res_filter->clone();
-    }
-
-    return res;
+    return std::make_shared<ASTCreateRowPolicyQuery>(*this);
 }
 
 

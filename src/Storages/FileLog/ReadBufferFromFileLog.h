@@ -7,6 +7,11 @@
 #include <fstream>
 #include <mutex>
 
+namespace Poco
+{
+    class Logger;
+}
+
 namespace DB
 {
 class ReadBufferFromFileLog : public ReadBuffer

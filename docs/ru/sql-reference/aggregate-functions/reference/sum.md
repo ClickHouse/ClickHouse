@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/sum
 sidebar_position: 4
 ---
 
@@ -7,3 +6,4 @@ sidebar_position: 4
 
 Вычисляет сумму.
 Работает только для чисел.
+

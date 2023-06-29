@@ -14,7 +14,7 @@ import boto3  # type: ignore
 class Keys(set):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.updated_at = 0.0
+        self.updated_at = 0
 
     def update_now(self):
         self.updated_at = datetime.now().timestamp()
@@ -81,8 +81,6 @@ def get_cached_members_keys(members: set) -> Keys:
 
 
 def get_token_from_aws() -> str:
-    # We need a separate token, since the clickhouse-ci app does not have
-    # access to the organization members' endpoint
     secret_name = "clickhouse_robot_token"
     session = boto3.session.Session()
     client = session.client(
@@ -90,7 +88,7 @@ def get_token_from_aws() -> str:
     )
     get_secret_value_response = client.get_secret_value(SecretId=secret_name)
     data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse_robot_token"]  # type: ignore
+    return data["clickhouse_robot_token"]
 
 
 def main(token: str, org: str, team_slug: str) -> str:
@@ -132,4 +130,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     output = main(args.token, args.organization, args.team)
 
-    print(f"# Just showing off the keys:\n{output}")
+    print(f"# Just shoing off the keys:\n{output}")

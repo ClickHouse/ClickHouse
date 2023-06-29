@@ -100,7 +100,7 @@ void insertPostgreSQLValue(
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+            assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }
         case ExternalResultDescription::ValueType::vtDateTime64:
@@ -132,7 +132,7 @@ void insertPostgreSQLValue(
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
                 if ((parsed.first == pqxx::array_parser::juncture::row_start) && (++dimension > expected_dimensions))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
+                    throw Exception("Got more dimensions than expected", ErrorCodes::BAD_ARGUMENTS);
 
                 else if (parsed.first == pqxx::array_parser::juncture::string_value)
                     dimensions[dimension].emplace_back(parse_value(parsed.second));
@@ -202,8 +202,6 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<double>(field); };
-    else if (which.isUUID())
-        parser = [](std::string & field) -> Field { return parse<UUID>(field); };
     else if (which.isString() || which.isFixedString())
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())

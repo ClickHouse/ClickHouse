@@ -398,30 +398,15 @@
             fill: var(--logo-color);
         }
 
-        #cloud-logo
-        {
-            color: var(--background-color);
-            text-shadow: 0rem 0rem 2rem var(--logo-color);
-            font-size: 10vw;
-            display: block;
-        }
-
         #logo:hover
         {
             fill: var(--logo-color-active);
-            color: var(--logo-color-active);
-        }
-
-        #cloud-logo:hover
-        {
-            filter: brightness(150%);
         }
 
         #logo-container
         {
             text-align: center;
             margin-top: 5em;
-            line-height: 0.75;
         }
 
         #chart
@@ -502,7 +487,6 @@
             </g>
         </svg>
         </a>
-        <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
     </p>
 </body>
 
@@ -517,12 +501,11 @@
     let previous_query = '';
 
     const current_url = new URL(window.location);
-    const opened_locally = location.protocol == 'file:';
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
         document.getElementById('url').value = server_address;
-    } else if (!opened_locally) {
+    } else if (location.protocol != 'file:') {
         /// Substitute the address of the server where the page is served.
         document.getElementById('url').value = location.origin;
     }
@@ -531,19 +514,6 @@
     const user_from_url = current_url.searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
-    }
-
-    const pass_from_url = current_url.searchParams.get('password');
-    if (pass_from_url) {
-        document.getElementById('password').value = pass_from_url;
-	/// Browsers don't allow manipulating history for the 'file:' protocol.
-        if (!opened_locally) {
-            let replaced_pass = current_url.searchParams;
-            replaced_pass.delete('password');
-            window.history.replaceState(null, '',
-                window.location.origin + window.location.pathname + '?'
-                + replaced_pass.toString() + window.location.hash);
-        }
     }
 
     function postImpl(posted_request_num, query)
@@ -562,7 +532,7 @@
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
         // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
-        if (opened_locally) {
+        if (document.location.href.startsWith("file://")) {
             url += '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password)
         }
@@ -571,7 +541,7 @@
 
         xhr.open('POST', url, true);
         // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
-        if (!opened_locally) {
+        if (!document.location.href.startsWith("file://")) {
             xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
         }
         xhr.onreadystatechange = function()
@@ -698,33 +668,6 @@
             elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
             elem.selectionStart = selection_start + 4;
             elem.selectionEnd = selection_start + 4;
-
-            e.preventDefault();
-            return false;
-        } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
-            // If the user presses Enter, and the previous line starts with spaces,
-            // then we will insert the same number of spaces.
-            const elem = e.target;
-            if (elem.selectionStart !== elem.selectionEnd) {
-                // If there is a selection, then we will not insert spaces.
-                return;
-            }
-            const cursor_pos = elem.selectionStart;
-
-            const elem_value = elem.value;
-            const text_before_cursor = elem_value.substring(0, cursor_pos);
-            const text_after_cursor = elem_value.substring(cursor_pos);
-            const prev_lines = text_before_cursor.split('\n');
-            const prev_line = prev_lines.pop();
-            const lead_spaces = prev_line.match(/^\s*/)[0];
-            if (!lead_spaces) {
-                return;
-            }
-
-            // Add leading spaces to the current line.
-            elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
-            elem.selectionStart = cursor_pos + lead_spaces.length + 1;
-            elem.selectionEnd = elem.selectionStart;
 
             e.preventDefault();
             return false;

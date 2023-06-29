@@ -19,7 +19,7 @@ CREATE DICTIONARY dict_nested_map_dictionary
 )
 PRIMARY KEY test_id
 SOURCE(CLICKHOUSE(TABLE 'dict_nested_map_test_table'))
-LAYOUT(HASHED())
+LAYOUT(HASHED(PREALLOCATE 1))
 LIFETIME(MIN 1 MAX 1000000);
 
 SELECT dictGet('dict_nested_map_dictionary', 'test_config', toUInt64(3));

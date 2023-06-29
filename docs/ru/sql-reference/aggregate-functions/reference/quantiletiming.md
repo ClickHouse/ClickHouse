@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/quantiletiming
 sidebar_position: 204
 ---
 
@@ -85,3 +84,4 @@ SELECT quantileTiming(response_time) FROM t
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+
