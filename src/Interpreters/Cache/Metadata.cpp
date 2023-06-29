@@ -407,7 +407,10 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
     {
         fs::remove(path);
 
+        /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
         int flags = file_segment->getFlagsForLocalRead();
+        /// Files are created with flags from file_segment->getFlagsForLocalRead()
+        /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
         OpenedFileCache::instance().remove(path, flags);
         OpenedFileCache::instance().remove(path, flags | O_DIRECT);
 
