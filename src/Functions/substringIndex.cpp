@@ -60,7 +60,7 @@ namespace
             if (!isNativeInteger(arguments[2]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}",
+                    "Illegal type {} of third argument of function {}, Integer expected",
                     arguments[2]->getName(),
                     getName());
 
