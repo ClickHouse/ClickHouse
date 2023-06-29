@@ -131,7 +131,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-enum class ServerType;
+class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 
@@ -1022,12 +1022,12 @@ public:
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
 
-    using StartStopServersCallback = std::function<void(ServerType, const std::string &)>;
+    using StartStopServersCallback = std::function<void(const ServerType &)>;
     void setStartServersCallback(StartStopServersCallback && callback);
     void setStopServersCallback(StartStopServersCallback && callback);
 
-    void startServers(ServerType server_type, const std::string & custom_protocol_name) const;
-    void stopServers(ServerType server_type, const std::string & custom_protocol_name) const;
+    void startServers(const ServerType & server_type) const;
+    void stopServers(const ServerType & server_type) const;
 
     void shutdown();
 

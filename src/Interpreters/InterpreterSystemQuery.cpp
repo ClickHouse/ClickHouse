@@ -567,11 +567,11 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::STOP_LISTEN:
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
-            getContext()->stopServers(query.server_type, query.custom_server_type);
+            getContext()->stopServers(query.server_type);
             break;
         case Type::START_LISTEN:
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
-            getContext()->startServers(query.server_type, query.custom_server_type);
+            getContext()->startServers(query.server_type);
             break;
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);

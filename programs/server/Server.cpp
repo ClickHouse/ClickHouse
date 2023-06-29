@@ -1413,12 +1413,12 @@ try
         access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
-    global_context->setStopServersCallback([&](ServerType server_type, const std::string & custom_protocol_name)
+    global_context->setStopServersCallback([&](const ServerType & server_type)
     {
-        stopServers(servers, server_type, custom_protocol_name);
+        stopServers(servers, server_type);
     });
 
-    global_context->setStartServersCallback([&](ServerType server_type, const std::string & custom_protocol_name)
+    global_context->setStartServersCallback([&](const ServerType & server_type)
     {
         createServers(
             config(),
@@ -1429,8 +1429,7 @@ try
             async_metrics,
             servers,
             /* start_servers= */ true,
-            server_type,
-            custom_protocol_name);
+            server_type);
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -1981,8 +1980,7 @@ void Server::createServers(
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
-    ServerType server_type,
-    const std::string & custom_protocol_name)
+    const ServerType & server_type)
 {
     const Settings & settings = global_context->getSettingsRef();
 
@@ -1992,18 +1990,13 @@ void Server::createServers(
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
-
-    if (server_type == ServerType::CUSTOM)
-    {
-        protocols.push_back(custom_protocol_name);
-    }
-    else if (server_type == ServerType::QUERIES)
-    {
-        config.keys("protocols", protocols);
-    }
+    config.keys("protocols", protocols);
 
     for (const auto & protocol : protocols)
     {
+        if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
+            continue;
+
         std::vector<std::string> hosts;
         if (config.has("protocols." + protocol + ".host"))
             hosts.push_back(config.getString("protocols." + protocol + ".host"));
@@ -2052,7 +2045,7 @@ void Server::createServers(
     {
         const char * port_name;
 
-        if (server_type == ServerType::HTTP || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::HTTP))
         {
             /// HTTP
             port_name = "http_port";
@@ -2072,7 +2065,7 @@ void Server::createServers(
             });
         }
 
-        if (server_type == ServerType::HTTPS || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::HTTPS))
         {
             /// HTTPS
             port_name = "https_port";
@@ -2096,7 +2089,7 @@ void Server::createServers(
             });
         }
 
-        if (server_type == ServerType::TCP || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::TCP))
         {
             /// TCP
             port_name = "tcp_port";
@@ -2118,7 +2111,7 @@ void Server::createServers(
             });
         }
 
-        if (server_type == ServerType::TCP_WITH_PROXY || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::TCP_WITH_PROXY))
         {
             /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
             port_name = "tcp_with_proxy_port";
@@ -2140,7 +2133,7 @@ void Server::createServers(
             });
         }
 
-        if (server_type == ServerType::TCP_SECURE || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::TCP_SECURE))
         {
             /// TCP with SSL
             port_name = "tcp_port_secure";
@@ -2167,7 +2160,7 @@ void Server::createServers(
             });
         }
 
-        if (server_type == ServerType::MYSQL || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
@@ -2184,7 +2177,7 @@ void Server::createServers(
             });
         }
 
-        if (server_type == ServerType::POSTGRESQL || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::POSTGRESQL))
         {
             port_name = "postgresql_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
@@ -2202,7 +2195,7 @@ void Server::createServers(
         }
 
 #if USE_GRPC
-        if (server_type == ServerType::GRPC || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::GRPC))
         {
             port_name = "grpc_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
@@ -2216,7 +2209,7 @@ void Server::createServers(
             });
         }
 #endif
-        if (server_type == ServerType::PROMETHEUS || server_type == ServerType::QUERIES)
+        if (server_type.shouldStart(ServerType::Type::PROMETHEUS))
         {
             /// Prometheus (if defined and not setup yet with http_port)
             port_name = "prometheus.port";
@@ -2239,57 +2232,64 @@ void Server::createServers(
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
     {
-        /// Interserver IO HTTP
-        const char * port_name = "interserver_http_port";
-        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
-        {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(config, socket, interserver_listen_host, port);
-            socket.setReceiveTimeout(settings.http_receive_timeout);
-            socket.setSendTimeout(settings.http_send_timeout);
-            return ProtocolServerAdapter(
-                interserver_listen_host,
-                port_name,
-                "replica communication (interserver): http://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    httpContext(),
-                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
-        });
+        const char * port_name;
 
-        port_name = "interserver_https_port";
-        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTP))
         {
+            /// Interserver IO HTTP
+            port_name = "interserver_http_port";
+            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, interserver_listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                return ProtocolServerAdapter(
+                    interserver_listen_host,
+                    port_name,
+                    "replica communication (interserver): http://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        httpContext(),
+                        createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTPS))
+        {
+            port_name = "interserver_https_port";
+            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
 #if USE_SSL
-            Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(config, socket, interserver_listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings.http_receive_timeout);
-            socket.setSendTimeout(settings.http_send_timeout);
-            return ProtocolServerAdapter(
-                interserver_listen_host,
-                port_name,
-                "secure replica communication (interserver): https://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    httpContext(),
-                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                Poco::Net::SecureServerSocket socket;
+                auto address = socketBindListen(config, socket, interserver_listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                return ProtocolServerAdapter(
+                    interserver_listen_host,
+                    port_name,
+                    "secure replica communication (interserver): https://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        httpContext(),
+                        createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
 #else
-            UNUSED(port);
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
-        });
+            });
+        }
     }
 
 }
 
 void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
-    ServerType server_type,
-    const std::string & custom_protocol_name
+    const ServerType & server_type
 )
 {
     Poco::Logger * log = &logger();
@@ -2310,49 +2310,13 @@ void Server::stopServers(
 
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
 
-    std::string port_name;
-
-    if (server_type == ServerType::HTTP)
-        port_name = "http_port";
-
-    else if (server_type == ServerType::HTTPS)
-        port_name = "https_port";
-
-    else if (server_type == ServerType::TCP)
-        port_name = "tcp_port";
-
-    else if (server_type == ServerType::TCP_WITH_PROXY)
-        port_name = "tcp_with_proxy_port";
-
-    else if (server_type == ServerType::TCP_SECURE)
-        port_name = "tcp_port_secure";
-
-    else if (server_type == ServerType::MYSQL)
-        port_name = "mysql_port";
-
-    else if (server_type == ServerType::POSTGRESQL)
-        port_name = "postgresql_port";
-
-    else if (server_type == ServerType::GRPC)
-        port_name = "grpc_port";
-
-    else if (server_type == ServerType::PROMETHEUS)
-        port_name = "prometheus.port";
-
-    else if (server_type == ServerType::CUSTOM)
-        port_name = "protocols." + custom_protocol_name + ".port";
-
-
     for (auto & server : servers)
     {
         if (!server.isStopping())
         {
-            std::string server_port_name = server.getPortName();
+            const std::string server_port_name = server.getPortName();
 
-            if (server_port_name.starts_with("interserver"))
-                continue;
- 
-            if (server_port_name.starts_with(port_name))
+            if (server_type.shouldStop(server_port_name))
                 server.stop();
         }
     }

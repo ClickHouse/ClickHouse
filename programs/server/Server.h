@@ -109,8 +109,7 @@ private:
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
         bool start_servers = false,
-        ServerType server_type = ServerType::QUERIES,
-        const std::string & custom_protocol_name = "");
+        const ServerType & server_type = ServerType(ServerType::Type::QUERIES_ALL));
 
     void updateServers(
         Poco::Util::AbstractConfiguration & config,
@@ -120,8 +119,7 @@ private:
 
     void stopServers(
         std::vector<ProtocolServerAdapter> & servers,
-        ServerType server_type,
-        const std::string & custom_protocol_name
+        const ServerType & server_type
     );
 };
 

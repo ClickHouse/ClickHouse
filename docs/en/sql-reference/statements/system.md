@@ -423,12 +423,13 @@ Closes the socket and gracefully terminates the existing connections to the serv
 However, if the corresponding protocol settings were not specified in the clickhouse-server configuration, this command will have no effect.
 
 ```sql
-SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
 
-- If `QUERIES` modifier is specified, all protocols are stopped.
 - If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
-
+- If `QUERIES ALL` modifier is specified, all protocols are stopped.
+- If `QUERIES DEFAULT` modifier is specified, all default protocols are stopped.
+- If `QUERIES CUSTOM` modifier is specified, all custom protocols are stopped.
 
 ### SYSTEM START LISTEN
 
@@ -437,5 +438,5 @@ Allows new connections to be established on the specified protocols.
 However, if the server on the specified port and protocol was not stopped using the SYSTEM STOP LISTEN command, this command will have no effect.
 
 ```sql
-SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```

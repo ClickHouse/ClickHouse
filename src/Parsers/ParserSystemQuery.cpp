@@ -448,31 +448,32 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
 
-            bool listen_found = false;
+            ServerType::Type current_type = ServerType::Type::END;
+            std::string current_custom_name;
 
-            for (const auto & type : magic_enum::enum_values<ServerType>())
+            for (const auto & type : magic_enum::enum_values<ServerType::Type>())
             {
-
-                if (ParserKeyword{serverTypeToString(type)}.ignore(pos, expected))
+                if (ParserKeyword{ServerType::serverTypeToString(type)}.ignore(pos, expected))
                 {
-                    res->server_type = type;
-                    listen_found = true;
+                    current_type = type;
                     break;
                 }
             }
 
-            if (!listen_found)
+            if (current_type == ServerType::Type::END)
                 return false;
 
-            if (res->server_type == ServerType::CUSTOM)
+            if (current_type == ServerType::CUSTOM)
             {
                 ASTPtr ast;
 
                 if (!ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
 
-                res->custom_server_type = ast->as<ASTLiteral &>().value.get<const String &>();
+                current_custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
             }
+
+            res->server_type = ServerType(current_type, current_custom_name);
 
             break;
         }

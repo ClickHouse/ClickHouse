@@ -117,8 +117,7 @@ public:
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
-    ServerType server_type = ServerType::UNKNOWN;
-    std::string custom_server_type;
+    ServerType server_type;
 
     String getID(char) const override { return "SYSTEM query"; }
 

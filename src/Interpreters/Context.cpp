@@ -3609,22 +3609,22 @@ void Context::setStopServersCallback(StartStopServersCallback && callback)
     shared->stop_servers_callback = std::move(callback);
 }
 
-void Context::startServers(ServerType server_type, const std::string & custom_protocol_name) const
+void Context::startServers(const ServerType & server_type) const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->start_servers_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't start servers because start_servers_callback is not set.");
 
-    shared->start_servers_callback(server_type, custom_protocol_name);
+    shared->start_servers_callback(server_type);
 }
 
-void Context::stopServers(ServerType server_type, const std::string & custom_protocol_name) const
+void Context::stopServers(const ServerType & server_type) const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->stop_servers_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stop servers because stop_servers_callback is not set.");
 
-    shared->stop_servers_callback(server_type, custom_protocol_name);
+    shared->stop_servers_callback(server_type);
 }
 
 

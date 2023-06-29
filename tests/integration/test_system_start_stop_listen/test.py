@@ -31,10 +31,10 @@ def started_cluster():
 
 
 def test_system_start_stop_listen_queries(started_cluster):
-    node1.query("SYSTEM STOP LISTEN QUERIES")
+    node1.query("SYSTEM STOP LISTEN QUERIES ALL")
 
-    assert "Connection refused" in node1.query_and_get_error("SELECT 1", timeout=5)
+    assert "Connection refused" in node1.query_and_get_error("SELECT 1", timeout=3)
 
-    node2.query("SYSTEM START LISTEN ON CLUSTER default QUERIES")
+    node2.query("SYSTEM START LISTEN ON CLUSTER default QUERIES ALL")
 
     node1.query("SELECT 1")
