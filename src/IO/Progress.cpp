@@ -69,7 +69,7 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     }
 }
 
-void ProgressValues::writeJSON(WriteBuffer & out,  bool add_braces) const
+void ProgressValues::writeJSON(WriteBuffer & out, bool add_braces) const
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
