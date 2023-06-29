@@ -136,8 +136,13 @@ namespace
             {
                 StringRef str_ref = str_column->getDataAt(i);
                 Int64 index = index_column->getInt(i);
-                StringRef res_ref
-                    = !is_utf8 ? substringIndex(str_ref, delim[0], index) : substringIndexUTF8(searcher.get(), str_ref, delim, index);
+
+                StringRef res_ref;
+                if constexpr (!is_utf8)
+                    res_ref = substringIndex(str_ref, delim[0], index);
+                else
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, index);
+
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
@@ -159,8 +164,13 @@ namespace
             for (size_t i = 0; i < rows; ++i)
             {
                 StringRef str_ref = str_column->getDataAt(i);
-                StringRef res_ref
-                    = !is_utf8 ? substringIndex(str_ref, delim[0], index) : substringIndexUTF8(searcher.get(), str_ref, delim, index);
+
+                StringRef res_ref;
+                if constexpr (!is_utf8)
+                    res_ref = substringIndex(str_ref, delim[0], index);
+                else
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, index);
+
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
@@ -183,8 +193,13 @@ namespace
             for (size_t i = 0; i < rows; ++i)
             {
                 Int64 index = index_column->getInt(i);
-                StringRef res_ref
-                    = !is_utf8 ? substringIndex(str_ref, delim[0], index) : substringIndexUTF8(searcher.get(), str_ref, delim, index);
+
+                StringRef res_ref;
+                if constexpr (!is_utf8)
+                    res_ref = substringIndex(str_ref, delim[0], index);
+                else
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, index);
+
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
