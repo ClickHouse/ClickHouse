@@ -105,7 +105,7 @@ EOT
 fi
 
 # checking $DATA_DIR for initialization
-if [ -d "${DATA_DIR}data" ]; then
+if [ -d "${DATA_DIR%/}/data" ]; then
     DATABASE_ALREADY_EXISTS='true'
 fi
 
