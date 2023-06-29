@@ -590,7 +590,7 @@ Alias: `SUBSTRING_INDEX`
 
 - s: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
 - delim: The character to split. [String](../../sql-reference/data-types/string.md).
-- index: The number of occurrences of the delimiter to count before extracting the substring. If index is positive, everything to the left of the final delimiter (counting from the left) is returned. If index is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+- count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Example**
 
