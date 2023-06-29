@@ -816,7 +816,7 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output](const Progress & progress) 
+    append_callback([&used_output](const Progress & progress)
     {
         used_output.out->onProgress(progress);
         auto thread_group = CurrentThread::getGroup();
