@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 # set -x
