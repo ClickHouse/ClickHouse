@@ -49,7 +49,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    Int64 priority = 0;
+    Priority priority;
     UInt64 random = 0;
 
     void randomize()
@@ -523,6 +523,11 @@ public:
 
     void setServerCompletelyStarted();
 
+    String getConnectedZooKeeperHost() const { return connected_zk_host; }
+    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
+    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
+    UInt64 getConnectedTime() const { return connected_time; }
+
 private:
     void init(ZooKeeperArgs args_);
 
@@ -585,6 +590,11 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
+
+    String connected_zk_host;
+    UInt16 connected_zk_port;
+    size_t connected_zk_index;
+    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 

@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -18,11 +19,6 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-}
-
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
@@ -51,6 +47,12 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         for (size_t i = 0; i < columns_to_read.size(); ++i)
             addStreams(columns_to_read[i], serializations[i], profile_callback_, clock_type_);
     }
+    catch (const Exception & e)
+    {
+        if (!isRetryableException(e))
+            data_part_info_for_read->reportBroken();
+        throw;
+    }
     catch (...)
     {
         data_part_info_for_read->reportBroken();
@@ -58,7 +60,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
+void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
@@ -76,9 +78,9 @@ void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
         /// of range only once so there is no such problem.
         /// 4. continue_reading == false, as we haven't read anything yet.
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        if (!isRetryableException(e))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -90,7 +92,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
 }
 
 void MergeTreeReaderWide::prefetchForAllColumns(
-    int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
+    Priority priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
         ? settings.read_settings.remote_fs_prefetch
@@ -137,7 +139,7 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        prefetchForAllColumns(/* priority */0, num_columns, from_mark, current_task_last_mark, continue_reading);
+        prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -184,21 +186,16 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (Exception & e)
     {
-        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        if (!isRetryableException(e))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        e.addMessage(
-            fmt::format(
-                "(while reading from part {} from mark {} with max_rows_to_read = {})",
-                data_part_info_for_read->getDataPartStorage()->getFullPath(),
-                toString(from_mark), toString(max_rows_to_read)));
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
         throw;
     }
     catch (...)
     {
         data_part_info_for_read->reportBroken();
-
         throw;
     }
 
@@ -305,7 +302,7 @@ void MergeTreeReaderWide::deserializePrefix(
 }
 
 void MergeTreeReaderWide::prefetchForColumn(
-    int64_t priority,
+    Priority priority,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     size_t from_mark,
