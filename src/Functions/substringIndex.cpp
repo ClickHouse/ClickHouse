@@ -71,7 +71,7 @@ namespace
         {
             ColumnPtr column_string = arguments[0].column;
             ColumnPtr column_delim = arguments[1].column;
-            ColumnPtr column_index = arguments[2].column;
+            ColumnPtr column_count = arguments[2].column;
 
             const ColumnConst * column_delim_const = checkAndGetColumnConst<ColumnString>(column_delim.get());
             if (!column_delim_const)
@@ -97,7 +97,7 @@ namespace
             if (column_string_const)
             {
                 String str = column_string_const->getValue<String>();
-                constantVector(str, delim, column_index.get(), vec_res, offsets_res);
+                constantVector(str, delim, column_count.get(), vec_res, offsets_res);
             }
             else
             {
@@ -105,14 +105,14 @@ namespace
                 if (!col_str)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument to {} must be a String", getName());
 
-                bool is_index_const = isColumnConst(*column_index);
-                if (is_index_const)
+                bool is_count_const = isColumnConst(*column_count);
+                if (is_count_const)
                 {
-                    Int64 index = column_index->getInt(0);
-                    vectorConstant(col_str, delim, index, vec_res, offsets_res);
+                    Int64 count = column_count->getInt(0);
+                    vectorConstant(col_str, delim, count, vec_res, offsets_res);
                 }
                 else
-                    vectorVector(col_str, delim, column_index.get(), vec_res, offsets_res);
+                    vectorVector(col_str, delim, column_count.get(), vec_res, offsets_res);
             }
             return column_res;
         }
@@ -121,7 +121,7 @@ namespace
         static void vectorVector(
             const ColumnString * str_column,
             const String & delim,
-            const IColumn * index_column,
+            const IColumn * count_column,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
@@ -135,13 +135,13 @@ namespace
             for (size_t i = 0; i < rows; ++i)
             {
                 StringRef str_ref = str_column->getDataAt(i);
-                Int64 index = index_column->getInt(i);
+                Int64 count = count_column->getInt(i);
 
                 StringRef res_ref;
                 if constexpr (!is_utf8)
-                    res_ref = substringIndex(str_ref, delim[0], index);
+                    res_ref = substringIndex(str_ref, delim[0], count);
                 else
-                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, index);
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
@@ -150,7 +150,7 @@ namespace
         static void vectorConstant(
             const ColumnString * str_column,
             const String & delim,
-            Int64 index,
+            Int64 count,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
@@ -167,9 +167,9 @@ namespace
 
                 StringRef res_ref;
                 if constexpr (!is_utf8)
-                    res_ref = substringIndex(str_ref, delim[0], index);
+                    res_ref = substringIndex(str_ref, delim[0], count);
                 else
-                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, index);
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
@@ -178,11 +178,11 @@ namespace
         static void constantVector(
             const String & str,
             const String & delim,
-            const IColumn * index_column,
+            const IColumn * count_column,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
-            size_t rows = index_column->size();
+            size_t rows = count_column->size();
             res_data.reserve(str.size() * rows / 2);
             res_offsets.reserve(rows);
 
@@ -192,13 +192,13 @@ namespace
             StringRef str_ref{str.data(), str.size()};
             for (size_t i = 0; i < rows; ++i)
             {
-                Int64 index = index_column->getInt(i);
+                Int64 count = count_column->getInt(i);
 
                 StringRef res_ref;
                 if constexpr (!is_utf8)
-                    res_ref = substringIndex(str_ref, delim[0], index);
+                    res_ref = substringIndex(str_ref, delim[0], count);
                 else
-                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, index);
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
                 appendToResultColumn(res_ref, res_data, res_offsets);
             }
@@ -217,18 +217,18 @@ namespace
         }
 
         static StringRef substringIndexUTF8(
-            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const StringRef & str_ref, const String & delim, Int64 index)
+            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const StringRef & str_ref, const String & delim, Int64 count)
         {
-            if (index == 0)
+            if (count == 0)
                 return {str_ref.data, 0};
 
             const auto * begin = reinterpret_cast<const UInt8 *>(str_ref.data);
             const auto * end = reinterpret_cast<const UInt8 *>(str_ref.data + str_ref.size);
             const auto * pos = begin;
-            if (index > 0)
+            if (count > 0)
             {
                 Int64 i = 0;
-                while (i < index)
+                while (i < count)
                 {
                     pos = searcher->search(pos, end - pos);
 
@@ -251,13 +251,13 @@ namespace
                     ++total;
                 }
 
-                if (total + index < 0)
+                if (total + count < 0)
                     return str_ref;
 
                 pos = begin;
                 Int64 i = 0;
-                Int64 index_from_left = total + 1 + index;
-                while (i < index_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
+                Int64 count_from_left = total + 1 + count;
+                while (i < count_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
                 {
                     pos += delim.size();
                     ++i;
@@ -266,25 +266,25 @@ namespace
             }
         }
 
-        static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 index)
+        static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 count)
         {
-            if (index == 0)
+            if (count == 0)
                 return {str_ref.data, 0};
 
-            const auto pos = index > 0 ? str_ref.data : str_ref.data + str_ref.size - 1;
-            const auto end = index > 0 ? str_ref.data + str_ref.size : str_ref.data - 1;
-            int d = index > 0 ? 1 : -1;
+            const auto * pos = count > 0 ? str_ref.data : str_ref.data + str_ref.size - 1;
+            const auto * end = count > 0 ? str_ref.data + str_ref.size : str_ref.data - 1;
+            int d = count > 0 ? 1 : -1;
 
-            for (; index; pos += d)
+            for (; count; pos += d)
             {
                 if (pos == end)
                     return str_ref;
                 if (*pos == delim)
-                    index -= d;
+                    count -= d;
             }
             pos -= d;
-            return {d > 0 ? str_ref.data : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data : str_ref.data + str_ref.size - pos - 1)} ;
-            }
+            return {
+                d > 0 ? str_ref.data : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data : str_ref.data + str_ref.size - pos - 1)};
         }
     };
 }
