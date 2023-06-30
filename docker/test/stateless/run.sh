@@ -90,6 +90,30 @@ sleep 5
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
+function run_with_retry()
+{
+    set +e
+
+    local total_retries="$1"
+    shift
+
+    local retry=0
+
+    until [ "$retry" -ge "$total_retries" ]
+    do
+        if "$@"; then
+            set -e
+            return
+        else
+            retry=$((retry + 1))
+            sleep 3
+        fi
+    done
+
+    echo "Command '$*' failed after $total_retries retries, exiting"
+    exit 1
+}
+
 function run_tests()
 {
     set -x
@@ -138,7 +162,8 @@ function run_tests()
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     clickhouse-test "00001_select_1" > /dev/null ||:
-    clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')" ||:
+
+    run_with_retry 5 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
