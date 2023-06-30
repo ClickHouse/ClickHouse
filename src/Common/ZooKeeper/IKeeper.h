@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <vector>
@@ -530,7 +530,9 @@ public:
         const Requests & requests,
         MultiCallback callback) = 0;
 
-    virtual DB::KeeperApiVersion getApiVersion() const = 0;
+    virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
+
+    virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
