@@ -902,10 +902,9 @@ try
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
         {
-            if (used_output.out_maybe_delayed_and_compressed)
-            {
-                used_output.out_maybe_delayed_and_compressed->finalize();
-            }
+            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
+            /// exception is written into used_output.out_maybe_compressed later
+            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
             used_output.out_maybe_delayed_and_compressed.reset();
         }
 
