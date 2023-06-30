@@ -185,7 +185,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size - child_system_paths_with_data.size(), out);
+    writeBinary(snapshot.snapshot_container_size - keeper_context->system_nodes_with_data.size(), out);
     size_t counter = 0;
     for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
     {
