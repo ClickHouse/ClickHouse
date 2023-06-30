@@ -380,7 +380,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     /// There is two options: first is to print just the name of the table
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0];)));
+                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
                     }
                     else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
                 }
@@ -562,16 +562,28 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     DatabasePtr db;
     {
-        DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
         std::lock_guard lock{databases_mutex};
-        assertDatabaseExistsUnlocked(database_name, names);
         db = databases.find(database_name)->second;
-        UUID db_uuid = db->getUUID();
-        if (db_uuid != UUIDHelpers::Nil)
-            removeUUIDMapping(db_uuid);
-        databases.erase(database_name);
     }
+    if (!db)
+    {
+        DatabaseNameHints hints(*this);
+        std::vector<String> names = hints.getHints(database_name);
+        if (names.empty())
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
+    }
+        
+    UUID db_uuid = db->getUUID();
+    if (db_uuid != UUIDHelpers::Nil)
+        removeUUIDMapping(db_uuid);
+    std::lock_guard lock{databases_mutex};
+    databases.erase(database_name);  
 
     if (check_empty)
     {
@@ -593,8 +605,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
-        UUID db_uuid = db->getUUID();
-
         /// Delete the database.
         db->drop(local_context);
 
@@ -634,11 +644,25 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
-    DatabaseNameHints hints(*this);
-    std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
-    std::lock_guard lock{databases_mutex};
-    assertDatabaseExistsUnlocked(database_name, names);
-    return databases.find(database_name)->second;
+    DatabasePtr db;
+    {
+        std::lock_guard lock{databases_mutex};
+        db = databases.find(database_name)->second;
+    }
+    
+    if(!db){
+        DatabaseNameHints hints(*this);
+        std::vector<String> names = hints.getHints(database_name);
+        if (names.empty())
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
+    }
+    return db;
 }
 
 DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
