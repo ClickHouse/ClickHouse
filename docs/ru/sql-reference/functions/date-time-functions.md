@@ -26,7 +26,8 @@ SELECT
 
 ## timeZone {#timezone}
 
-Возвращает часовой пояс сервера.
+Возвращает часовой пояс сервера, считающийся умолчанием для текущей сессии: значение параметра [session_timezone](../../operations/settings/settings.md#session_timezone), если установлено.
+
 Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
@@ -42,6 +43,33 @@ timeZone()
 -   Часовой пояс.
 
 Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [serverTimeZone](#servertimezone)
+
+## serverTimeZone {#servertimezone}
+
+Возвращает часовой пояс сервера по умолчанию, в т.ч. установленный [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
+
+**Синтаксис**
+
+``` sql
+serverTimeZone()
+```
+
+Синонимы: `serverTimezone`.
+
+**Возвращаемое значение**
+
+-   Часовой пояс.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [timeZone](#timezone)
 
 ## toTimeZone {#totimezone}
 
@@ -282,13 +310,15 @@ from_date32:     1509840000
 ```
 
 :::note
-Тип возвращаемого значения описанными далее функциями `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` определяется конфигурационным параметром [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) имеющим по умолчанию значение `0`.
+Тип возвращаемого значения описанными далее функциями `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` определяется конфигурационным параметром [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) имеющим по умолчанию значение `0`.
 
 Поведение для
-* `enable_extended_results_for_datetime_functions = 0`: Функции `toStartOf*`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime`. Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`. Хотя эти функции могут принимать значения типа `Date32` или `DateTime64` в качестве аргумента, при обработке аргумента вне нормального диапазона значений (`1970` - `2148` для `Date` и `1970-01-01 00:00:00`-`2106-02-07 08:28:15` для `DateTime`) будет получен некорректный результат.
+* `enable_extended_results_for_datetime_functions = 0`:
+  * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime`.
+  * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`. Хотя эти функции могут принимать значения расширенных типов `Date32` и `DateTime64` в качестве аргумента, при обработке аргумента вне нормального диапазона значений (`1970` - `2148` для `Date` и `1970-01-01 00:00:00`-`2106-02-07 08:28:15` для `DateTime`) будет получен некорректный результат.
 * `enable_extended_results_for_datetime_functions = 1`:
-    * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `Date32` или `DateTime64` если их аргумент `Date32` или `DateTime64`.
-    * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `DateTime64` если их аргумент `Date32` или `DateTime64`.
+  * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `Date32` или `DateTime64` если их аргумент `Date32` или `DateTime64`.
+  * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`, если их аргумент имеет тип `Date` или `DateTime`, и `DateTime64` если их аргумент имеет тип `Date32` или `DateTime64`.
 :::
 
 ## toStartOfYear {#tostartofyear}
@@ -338,9 +368,15 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 Округляет дату или дату-с-временем вниз до ближайшего понедельника.
 Возвращается дата.
 
-## toStartOfWeek(t[,mode]) {#tostartofweek}
+## toStartOfWeek(t[, mode[, timezone]])
 
-Округляет дату или дату со временем до ближайшего воскресенья или понедельника в соответствии с mode.
+Округляет дату или дату-с-временем назад, до ближайшего воскресенья или понедельника, в соответствии с mode.
+Возвращается дата.
+Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если аргумент mode опущен, то используется режим 0.
+
+## toLastDayOfWeek(t[, mode[, timezone]])
+
+Округляет дату или дату-с-временем вперёд, до ближайшей субботы или воскресенья, в соответствии с mode.
 Возвращается дата.
 Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если аргумент mode опущен, то используется режим 0.
 

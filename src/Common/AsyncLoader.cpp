@@ -200,9 +200,11 @@ void AsyncLoader::start()
 
 void AsyncLoader::wait()
 {
-    // Because job can create new jobs in other pools we have to recheck in cycle
+    // Because job can create new jobs in other pools we have to recheck in cycle.
+    // Also wait for all workers to finish to avoid races on `pool.workers`,
+    // which can decrease even after all jobs are already finished.
     std::unique_lock lock{mutex};
-    while (!scheduled_jobs.empty())
+    while (!scheduled_jobs.empty() || hasWorker(lock))
     {
         lock.unlock();
         for (auto & p : pools)
@@ -433,7 +435,7 @@ const String & AsyncLoader::getPoolName(size_t pool) const
     return pools[pool].name; // NOTE: lock is not needed because `name` is const and `pools` are immutable
 }
 
-ssize_t AsyncLoader::getPoolPriority(size_t pool) const
+Priority AsyncLoader::getPoolPriority(size_t pool) const
 {
     return pools[pool].priority; // NOTE: lock is not needed because `priority` is const and `pools` are immutable
 }
@@ -576,7 +578,7 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
     {
         Pool & old_pool = pools[job->pool_id];
         Pool & new_pool = pools[new_pool_id];
-        if (old_pool.priority >= new_pool.priority)
+        if (old_pool.priority <= new_pool.priority)
             return; // Never lower priority or change pool leaving the same priority
 
         // Update priority and push job forward through ready queue if needed
@@ -590,7 +592,7 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
                 spawn(new_pool, lock);
         }
 
-        // Set user-facing pool and priority (may affect executing jobs)
+        // Set user-facing pool (may affect executing jobs)
         job->pool_id.store(new_pool_id);
 
         // Recurse into dependencies
@@ -621,7 +623,7 @@ bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
     return is_running
         && !pool.ready_queue.empty()
         && pool.workers < pool.max_threads
-        && (!current_priority || *current_priority <= pool.priority);
+        && (!current_priority || *current_priority >= pool.priority);
 }
 
 bool AsyncLoader::canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &)
@@ -629,17 +631,17 @@ bool AsyncLoader::canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &)
     return is_running
         && !pool.ready_queue.empty()
         && pool.workers <= pool.max_threads
-        && (!current_priority || *current_priority <= pool.priority);
+        && (!current_priority || *current_priority >= pool.priority);
 }
 
 void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & lock)
 {
     // Find current priority.
     // NOTE: We assume low number of pools, so O(N) scans are fine.
-    std::optional<ssize_t> priority;
+    std::optional<Priority> priority;
     for (Pool & pool : pools)
     {
-        if (pool.isActive() && (!priority || *priority < pool.priority))
+        if (pool.isActive() && (!priority || *priority > pool.priority))
             priority = pool.priority;
     }
     current_priority = priority;
@@ -717,6 +719,16 @@ void AsyncLoader::worker(Pool & pool)
             });
         }
     }
+}
+
+bool AsyncLoader::hasWorker(std::unique_lock<std::mutex> &) const
+{
+    for (const Pool & pool : pools)
+    {
+        if (pool.workers > 0)
+            return true;
+    }
+    return false;
 }
 
 }

@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -71,6 +73,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
 struct MergeTreePrefetchedReadPool::PartInfo
 {
     MergeTreeData::DataPartPtr data_part;
+    AlterConversionsPtr alter_conversions;
     size_t part_index_in_query;
     size_t sum_marks = 0;
     MarkRanges ranges;
@@ -89,12 +92,13 @@ struct MergeTreePrefetchedReadPool::PartInfo
 std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedReader(
     const IMergeTreeDataPart & data_part,
     const NamesAndTypesList & columns,
+    const AlterConversionsPtr & alter_conversions,
     const MarkRanges & required_ranges,
     Priority priority) const
 {
     auto reader = data_part.getReader(
         columns, storage_snapshot->metadata, required_ranges,
-        uncompressed_cache, mark_cache, reader_settings,
+        uncompressed_cache, mark_cache, alter_conversions, reader_settings,
         IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
     /// In order to make a prefetch we need to wait for marks to be loaded. But we just created
@@ -120,21 +124,18 @@ void MergeTreePrefetchedReadPool::createPrefetchedReaderForTask(MergeTreeReadTas
     if (task.reader.valid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
 
-    task.reader = createPrefetchedReader(*task.data_part, task.task_columns.columns, task.mark_ranges, task.priority);
+    task.reader = createPrefetchedReader(*task.data_part, task.task_columns.columns, task.alter_conversions, task.mark_ranges, task.priority);
 
     if (reader_settings.apply_deleted_mask && task.data_part->hasLightweightDelete())
     {
-        auto pre_reader = createPrefetchedReader(*task.data_part, {LightweightDeleteDescription::FILTER_COLUMN}, task.mark_ranges, task.priority);
+        auto pre_reader = createPrefetchedReader(*task.data_part, {LightweightDeleteDescription::FILTER_COLUMN}, task.alter_conversions, task.mark_ranges, task.priority);
         task.pre_reader_for_step.push_back(std::move(pre_reader));
     }
 
-    if (prewhere_info)
+    for (const auto & pre_columns_per_step : task.task_columns.pre_columns)
     {
-        for (const auto & pre_columns_per_step : task.task_columns.pre_columns)
-        {
-            auto pre_reader = createPrefetchedReader(*task.data_part, pre_columns_per_step, task.mark_ranges, task.priority);
-            task.pre_reader_for_step.push_back(std::move(pre_reader));
-        }
+        auto pre_reader = createPrefetchedReader(*task.data_part, pre_columns_per_step, task.alter_conversions, task.mark_ranges, task.priority);
+        task.pre_reader_for_step.push_back(std::move(pre_reader));
     }
 }
 
@@ -335,27 +336,28 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         auto part_info = std::make_unique<PartInfo>();
 
         part_info->data_part = part.data_part;
+        part_info->alter_conversions = part.alter_conversions;
         part_info->part_index_in_query = part.part_index_in_query;
         part_info->ranges = part.ranges;
         std::sort(part_info->ranges.begin(), part_info->ranges.end());
 
+        LoadedMergeTreeDataPartInfoForReader part_reader_info(part.data_part, part_info->alter_conversions);
+
         /// Sum up total size of all mark ranges in a data part.
         for (const auto & range : part.ranges)
-        {
             part_info->sum_marks += range.end - range.begin;
-        }
 
         part_info->approx_size_of_mark = getApproxSizeOfGranule(*part_info->data_part);
 
         const auto task_columns = getReadTaskColumns(
-            LoadedMergeTreeDataPartInfoForReader(part.data_part),
+            part_reader_info,
             storage_snapshot,
             column_names,
             virtual_column_names,
             prewhere_info,
             actions_settings,
             reader_settings,
-            /* with_subcolumns */true);
+            /*with_subcolumns=*/ true);
 
         part_info->size_predictor = !predict_block_size_bytes
             ? nullptr
@@ -492,7 +494,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
     ThreadsTasks result_threads_tasks;
     for (size_t i = 0, part_idx = 0; i < threads && part_idx < parts_infos.size(); ++i)
     {
-        auto need_marks = min_marks_per_thread;
+        int64_t need_marks = min_marks_per_thread;
 
         /// Priority is given according to the prefetch number for each thread,
         /// e.g. the first task of each thread has the same priority and is greater
@@ -513,7 +515,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             }
 
             MarkRanges ranges_to_get_from_part;
-            size_t marks_to_get_from_part = std::min(need_marks, marks_in_part);
+            size_t marks_to_get_from_part = std::min<size_t>(need_marks, marks_in_part);
 
             /// Split by prefetch step even if !allow_prefetch below. Because it will allow
             /// to make a better distribution of tasks which did not fill into memory limit
@@ -571,8 +573,12 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
                 : std::make_unique<MergeTreeBlockSizePredictor>(*part.size_predictor); /// make a copy
 
             auto read_task = std::make_unique<MergeTreeReadTask>(
-                part.data_part, ranges_to_get_from_part, part.part_index_in_query,
-                part.column_name_set, part.task_columns,
+                part.data_part,
+                part.alter_conversions,
+                ranges_to_get_from_part,
+                part.part_index_in_query,
+                part.column_name_set,
+                part.task_columns,
                 std::move(curr_task_size_predictor));
 
             read_task->priority = priority;

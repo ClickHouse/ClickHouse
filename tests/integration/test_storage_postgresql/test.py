@@ -123,7 +123,9 @@ def test_postgres_conversions(started_cluster):
                 g Text[][][][][] NOT NULL,                  -- String
                 h Integer[][][],                            -- Nullable(Int32)
                 i Char(2)[][][][],                          -- Nullable(String)
-                k Char(2)[]                                 -- Nullable(String)
+                j Char(2)[],                                -- Nullable(String)
+                k UUID[],                                   -- Nullable(UUID)
+                l UUID[][]                                  -- Nullable(UUID)
            )"""
     )
 
@@ -133,15 +135,18 @@ def test_postgres_conversions(started_cluster):
     )
     expected = (
         "a\tArray(Date)\t\t\t\t\t\n"
-        + "b\tArray(DateTime64(6))\t\t\t\t\t\n"
-        + "c\tArray(Array(Float32))\t\t\t\t\t\n"
-        + "d\tArray(Array(Float64))\t\t\t\t\t\n"
-        + "e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n"
-        + "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
-        + "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
-        + "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
-        + "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
-        + "k\tArray(Nullable(String))"
+        "b\tArray(DateTime64(6))\t\t\t\t\t\n"
+        "c\tArray(Array(Float32))\t\t\t\t\t\n"
+        "d\tArray(Array(Float64))\t\t\t\t\t\n"
+        "e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n"
+        "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
+        "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
+        "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
+        "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
+        "j\tArray(Nullable(String))\t\t\t\t\t\n"
+        "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
+        "l\tArray(Array(Nullable(UUID)))"
+        ""
     )
     assert result.rstrip() == expected
 
@@ -157,7 +162,9 @@ def test_postgres_conversions(started_cluster):
         "[[[[['winx', 'winx', 'winx']]]]], "
         "[[[1, NULL], [NULL, 1]], [[NULL, NULL], [NULL, NULL]], [[4, 4], [5, 5]]], "
         "[[[[NULL]]]], "
-        "[]"
+        "[], "
+        "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
+        "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]]"
         ")"
     )
 
@@ -167,15 +174,17 @@ def test_postgres_conversions(started_cluster):
     )
     expected = (
         "['2000-05-12','2000-05-12']\t"
-        + "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t"
-        + "[[1.12345],[1.12345],[1.12345]]\t"
-        + "[[1.1234567891],[1.1234567891],[1.1234567891]]\t"
-        + "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
+        "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t"
+        "[[1.12345],[1.12345],[1.12345]]\t"
+        "[[1.1234567891],[1.1234567891],[1.1234567891]]\t"
+        "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
         "[[[1,1],[1,1]],[[3,3],[3,3]],[[4,4],[5,5]]]\t"
         "[[[[['winx','winx','winx']]]]]\t"
         "[[[1,NULL],[NULL,1]],[[NULL,NULL],[NULL,NULL]],[[4,4],[5,5]]]\t"
         "[[[[NULL]]]]\t"
-        "[]\n"
+        "[]\t"
+        "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
+        "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\n"
     )
     assert result == expected
 
@@ -183,7 +192,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(f"DROP TABLE test_array_dimensions")
 
 
-def test_non_default_scema(started_cluster):
+def test_non_default_schema(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema")
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema_with_dots")
 
@@ -314,7 +323,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 18
+    assert count <= 18  # 16 for test.test_table + 1 for conn + 1 for test.stat
 
     busy_pool = Pool(30)
     p = busy_pool.map_async(node_insert, range(30))
@@ -326,7 +335,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 18
+    assert count <= 19  # 16 for test.test_table + 1 for conn + at most 2 for test.stat
 
     busy_pool = Pool(30)
     p = busy_pool.map_async(node_insert_select, range(30))
@@ -338,7 +347,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 18
+    assert count <= 20  # 16 for test.test_table + 1 for conn + at most 3 for test.stat
 
     node1.query("DROP TABLE test.test_table;")
     node1.query("DROP TABLE test.stat;")

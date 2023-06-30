@@ -347,6 +347,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
+            boost::context
             ch_contrib::cityhash
             ch_contrib::re2
             ch_contrib::re2_st
@@ -413,6 +414,7 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
         Poco::MongoDB
+        Poco::Redis
 )
 
 if (TARGET ch::mysqlxx)
