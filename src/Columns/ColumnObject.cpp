@@ -626,9 +626,6 @@ ColumnObject::ColumnObject(Subcolumns && subcolumns_, bool is_nullable_)
 
 void ColumnObject::checkConsistency() const
 {
-    if (num_rows && subcolumns.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnObject is inconsistent: it has no subcolumns, but has {} rows", num_rows);
-
     if (subcolumns.empty())
         return;
 
@@ -645,9 +642,9 @@ void ColumnObject::checkConsistency() const
 
 size_t ColumnObject::size() const
 {
-// #ifndef NDEBUG
+#ifndef NDEBUG
     checkConsistency();
-// #endif
+#endif
     return num_rows;
 }
 
@@ -714,8 +711,6 @@ void ColumnObject::insert(const Field & field)
     }
 
     ++num_rows;
-
-    checkConsistency();
 }
 
 void ColumnObject::insertDefault()
@@ -724,8 +719,6 @@ void ColumnObject::insertDefault()
         entry->data.insertDefault();
 
     ++num_rows;
-
-    checkConsistency();
 }
 
 Field ColumnObject::operator[](size_t n) const
@@ -783,8 +776,6 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
     num_rows += length;
     finalize();
-
-    checkConsistency();
 }
 
 void ColumnObject::popBack(size_t length)
@@ -793,7 +784,6 @@ void ColumnObject::popBack(size_t length)
         entry->data.popBack(length);
 
     num_rows -= length;
-    checkConsistency();
 }
 
 template <typename Func>
