@@ -7,8 +7,8 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
-#include "Storages/MergeTree/MergeAlgorithm.h"
-#include "Storages/MergeTree/MergeTreeDataWriter.h"
+#include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
@@ -451,8 +451,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if constexpr (async_insert)
         {
+            /// we copy everything but offsets which we move because they are only used by async insert
             if (storage.writer.getMergingMode() != MergeTreeData::MergingParams::Mode::Ordinary)
-                unmerged_block.emplace(current_block);
+                unmerged_block.emplace(Block(current_block.block), Row(current_block.partition), std::move(current_block.offsets));
         }
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
