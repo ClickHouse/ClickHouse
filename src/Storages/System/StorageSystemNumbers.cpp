@@ -116,9 +116,9 @@ protected:
             UInt128 need = block_size - provided;
             auto& range = ranges[cursor.offset_in_ranges];
 
-            UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges ?
-                    end.offset_in_range - cursor.offset_in_range : 
-                    static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
+            UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
+                ? end.offset_in_range - cursor.offset_in_range
+                : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
 
             uint64_t start_value = first_value(range) + cursor.offset_in_range;
             if (can_provide > need)

@@ -165,8 +165,8 @@ struct PlainRanges
 
     explicit PlainRanges(const Range & range);
 
-    explicit PlainRanges(Ranges & ranges_, bool may_has_intersection = false, bool ordered = true);
-    explicit PlainRanges(Ranges && ranges_, bool may_has_intersection = false, bool ordered = true);
+    explicit PlainRanges(Ranges & ranges_, bool may_have_intersection = false, bool ordered = true);
+    explicit PlainRanges(Ranges && ranges_, bool may_have_intersection = false, bool ordered = true);
 
     PlainRanges unionWith(const PlainRanges & other);
     PlainRanges intersectWith(const PlainRanges & other);
