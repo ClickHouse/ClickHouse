@@ -28,5 +28,9 @@
                 <port>9234</port>
             </server>
         </raft_configuration>
+
+        <feature_flags>
+            <check_not_exists>1</check_not_exists>
+        </feature_flags>
     </keeper_server>
 </clickhouse>
