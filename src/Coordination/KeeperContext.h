@@ -2,8 +2,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Coordination/KeeperFeatureFlags.h>
 #include <IO/WriteBufferFromString.h>
-
 #include <Disks/DiskSelector.h>
 
 #include <cstdint>
@@ -47,10 +47,16 @@ public:
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
 
+    const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
+    const KeeperFeatureFlags & getFeatureFlags() const;
+
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
+
+    void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
+    void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -75,6 +81,10 @@ private:
     std::vector<std::string> old_snapshot_disk_names;
 
     bool standalone_keeper;
+
+    std::unordered_map<std::string, std::string> system_nodes_with_data;
+
+    KeeperFeatureFlags feature_flags;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

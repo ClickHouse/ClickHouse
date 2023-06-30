@@ -12,7 +12,7 @@ function has_used_parallel_replicas () {
             sumIf(read_rows, is_initial_query) as read_rows,
             sumIf(read_bytes, is_initial_query) as read_bytes
         FROM system.query_log
-    WHERE event_date >= yesterday() and initial_query_id LIKE '$1%'
+    WHERE event_date >= yesterday() and initial_query_id LIKE '$1%' AND current_database = '$CLICKHOUSE_DATABASE'
     GROUP BY initial_query_id
     ORDER BY min(event_time_microseconds) ASC
     FORMAT TSV"
