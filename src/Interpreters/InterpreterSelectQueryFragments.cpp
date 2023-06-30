@@ -1129,6 +1129,16 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
         result = parent_fragment;
         all_fragments.emplace_back(parent_fragment);
     }
+    else if (dynamic_cast<CreatingSetStep *>(root_node.step.get()))
+    {
+        /// Do noting, add to brother fragment
+        result = child_fragments[0];
+    }
+    else if (dynamic_cast<CreatingSetsStep *>(root_node.step.get()))
+    {
+        /// push to child_fragments[0], connect child_fragments[0] to child_fragments[1-N]
+        result = createCreatingSetsFragment(root_node, child_fragments);
+    }
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create plan fragment for this node type {}", root_node.step->getName());
@@ -1148,6 +1158,30 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     return result;
 }
 
+PlanFragmentPtr InterpreterSelectQueryFragments::createCreatingSetsFragment(Node & root_node, PlanFragmentPtrs child_fragments)
+{
+    std::vector<QueryPlanStepPtr> child_steps;
+    for (size_t i = 1; i < root_node.children.size(); ++i)
+    {
+        if (dynamic_cast<CreatingSetStep *>(root_node.children[i]->step.get()))
+        {
+            child_steps.emplace_back(root_node.children[i]->step);
+        }
+        else
+            throw;
+    }
+
+    PlanFragmentPtrs to_child_fragments;
+    to_child_fragments.insert(to_child_fragments.end(), child_fragments.begin() + 1, child_fragments.end());
+    child_fragments[0]->unitePlanFragments(root_node.step, child_steps, to_child_fragments, storage_limits);
+
+    for (auto & fragment : to_child_fragments)
+    {
+        fragment->setOutputPartition(DataPartition{.type = PartitionType::UNPARTITIONED});
+    }
+
+    return child_fragments[0];
+}
 
 PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment)
 {

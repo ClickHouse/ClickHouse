@@ -177,6 +177,7 @@ private:
     PlanFragmentPtr createAggregationFragment(PlanFragmentPtr childFragment);
     PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition);
     PlanFragmentPtr createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment);
+    PlanFragmentPtr createCreatingSetsFragment(Node & root_node, PlanFragmentPtrs child_fragments);
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryPlan & query_plan);

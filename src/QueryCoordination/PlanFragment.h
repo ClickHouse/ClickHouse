@@ -440,6 +440,11 @@ public:
     QueryPipeline buildQueryPipeline(std::vector<DataSink::Channel> & channels, const String & local_host);
 
     void unitePlanFragments(QueryPlanStepPtr step, std::vector<std::shared_ptr<PlanFragment>> fragments, StorageLimitsList storage_limits_ = {});
+    void unitePlanFragments(
+        QueryPlanStepPtr root_step,
+        std::vector<QueryPlanStepPtr> child_steps,
+        std::vector<std::shared_ptr<PlanFragment>> child_fragments,
+        StorageLimitsList storage_limits_ = {});
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
