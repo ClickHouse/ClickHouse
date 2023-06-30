@@ -1,10 +1,11 @@
 ---
-slug: /en/sql-reference/table-functions/azure_blob_storage
-sidebar_label: azure_blob_storage
+slug: /en/sql-reference/table-functions/azureBlobStorage
+sidebar_position: 10
+sidebar_label: azureBlobStorage
 keywords: [azure blob storage]
 ---
 
-# azure\_blob\_storage Table Function
+# azureBlobStorage Table Function
 
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](../../sql-reference/table-functions/s3.md).
 
@@ -34,16 +35,16 @@ A table with the specified structure for reading or writing data in the specifie
 Write data into azure blob storage using the following :
 
 ```sql
-INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 
+INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1',
     'test_container', 'test_{_partition_id}.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
     'CSV', 'auto', 'column1 UInt32, column2 UInt32, column3 UInt32') PARTITION BY column3 VALUES (1, 2, 3), (3, 2, 1), (78, 43, 3);
 ```
 
-And then it can be read using 
+And then it can be read using
 
 ```sql
-SELECT * FROM azureBlobStorage('http://azurite1:10000/devstoreaccount1', 
-    'test_container', 'test_1.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 
+SELECT * FROM azureBlobStorage('http://azurite1:10000/devstoreaccount1',
+    'test_container', 'test_1.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
     'CSV', 'auto', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
