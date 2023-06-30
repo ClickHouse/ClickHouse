@@ -385,11 +385,23 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
 
 void GraceHashJoin::addBucket(Buckets & destination)
 {
-    auto & left_file = tmp_data->createStream(left_sample_block);
-    auto & right_file = tmp_data->createStream(prepareRightBlock(right_sample_block));
+    // There could be exceptions from createStream, In ci tests
+    // there is a certain probability of failure in allocating memory, see memory_tracker_fault_probability.
+    // It may terminate this thread and leave a broken hash_join, and another thread cores when it tries to
+    // use the broken hash_join. So we print an exception message here to help debug.
+    try
+    {
+        auto & left_file = tmp_data->createStream(left_sample_block);
+        auto & right_file = tmp_data->createStream(prepareRightBlock(right_sample_block));
 
-    BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), left_file, right_file, log);
-    destination.emplace_back(std::move(new_bucket));
+        BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), left_file, right_file, log);
+        destination.emplace_back(std::move(new_bucket));
+    }
+    catch (...)
+    {
+        LOG_ERROR(&Poco::Logger::get("GraceHashJoin"), "Can't create bucket. current buckets size: {}", destination.size());
+        throw;
+    }
 }
 
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
@@ -626,7 +638,11 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     if (current_block.rows() > 0)
     {
         std::lock_guard lock(hash_join_mutex);
-
+        auto current_buckets = getCurrentBuckets();
+        if (!isPowerOf2(current_buckets.size())) [[unlikely]]
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken buckets. its size({}) is not power of 2", current_buckets.size());
+        }
         if (!hash_join)
             hash_join = makeInMemoryJoin();
 
@@ -637,10 +653,10 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
 
         current_block = {};
 
+        // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
+        buckets_snapshot = rehashBuckets(current_buckets.size() * 2);
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
-
-        buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
         {
             Blocks current_blocks;
