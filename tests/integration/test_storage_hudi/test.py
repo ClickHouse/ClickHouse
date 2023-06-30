@@ -79,7 +79,7 @@ def run_query(instance, query, stdin=None, settings=None):
 
 
 def write_hudi_from_df(spark, table_name, df, result_path, mode="overwrite"):
-    if mode is "overwrite":
+    if mode == "overwrite":
         hudi_write_mode = "insert_overwrite"
     else:
         hudi_write_mode = "upsert"
