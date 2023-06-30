@@ -12,7 +12,7 @@ ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should be allowed since destination partition expr is monotonically increasing and compatible. Note that even though
 -- the destination partition expression is more granular, the data would still fall in the same partition. Thus, it is valid
@@ -28,7 +28,7 @@ ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should be allowed since destination partition expr is monotonically increasing and compatible for those specific values
 DROP TABLE IF EXISTS source;
@@ -44,7 +44,7 @@ ALTER TABLE destination ATTACH PARTITION ID '0' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should be allowed because dst partition exp is monot inc and data is not split
 DROP TABLE IF EXISTS source;
@@ -60,7 +60,7 @@ ALTER TABLE destination ATTACH PARTITION ID '17908065610379824077' from source;
 
 SELECT * FROM source ORDER BY productName;
 SELECT * FROM destination ORDER BY productName;
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;

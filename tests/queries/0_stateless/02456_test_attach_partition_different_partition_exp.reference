@@ -12,7 +12,7 @@ SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 2010-03-02 02:01:01
 2010-03-02 02:01:03
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 201003
 -- Should be allowed since destination partition expr is monotonically increasing and compatible. Note that even though
 -- the destination partition expression is more granular, the data would still fall in the same partition. Thus, it is valid
@@ -28,7 +28,7 @@ SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 2010-03-02 02:01:01
 2010-03-02 02:01:03
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 20100302
 -- Should be allowed since destination partition expr is monotonically increasing and compatible for those specific values
 DROP TABLE IF EXISTS source;
@@ -43,7 +43,7 @@ SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 2010-03-02 02:01:01	1
 2010-03-02 02:01:03	1
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 1
 -- Should be allowed because dst partition exp is monot inc and data is not split
 DROP TABLE IF EXISTS source;
@@ -60,7 +60,7 @@ spaghetti	food
 SELECT * FROM destination ORDER BY productName;
 rice	food
 spaghetti	food
-SELECT partition_id FROM system.parts where table='destination';
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 59532f3c39a412a413f0f014c7750a9d
 59532f3c39a412a413f0f014c7750a9d
 -- Should not be allowed because data would be split into two different partitions
