@@ -45,6 +45,8 @@ def cluster():
                 f"CREATE TABLE data{i} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;"
             )
 
+            node.query("SYSTEM STOP MERGES")
+
             for _ in range(10):
                 node.query(
                     f"INSERT INTO data{i} SELECT number FROM numbers(500000 * {i+1})"
