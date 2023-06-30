@@ -78,6 +78,8 @@ void StorageSystemFilesystemCache::fillDataImpl(MutableColumns & res_columns, Fi
         {
             if (fs::exists(path))
                 res_columns[i++]->insert(fs::file_size(path));
+            else
+                res_columns[i++]->insertDefault();
         }
         catch (...)
         {
