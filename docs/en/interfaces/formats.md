@@ -76,6 +76,7 @@ The supported formats are:
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔      |
 | [Native](#native)                                                                         | ✔    | ✔      |
 | [Null](#null)                                                                             | ✗    | ✔      |
 | [XML](#xml)                                                                               | ✗    | ✔      |
@@ -1513,6 +1514,23 @@ Otherwise, the first row will be skipped.
 If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
+
+## RowBinaryWithDefaults {#rowbinarywithdefaults}
+
+Similar to [RowBinary](#rowbinary), but with an extra byte before each column that indicates if default value should be used.
+
+Examples:
+
+```sql
+:) select * from format('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+For column `x` there is only one byte `01` that indicates that default value should be used and no other data after this byte is provided.
+For column `y` data starts with byte `00` that indicates that column has actual value that should be read from the subsequent data `01000000`.
 
 ## RowBinary format settings {#row-binary-format-settings}
 
