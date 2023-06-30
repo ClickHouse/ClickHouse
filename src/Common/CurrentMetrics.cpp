@@ -203,9 +203,9 @@
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
-  #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
+    #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
 #else
-  #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
+    #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
 #endif
 
 namespace CurrentMetrics
