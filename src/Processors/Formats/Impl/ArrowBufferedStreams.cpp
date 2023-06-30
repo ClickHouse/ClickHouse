@@ -42,9 +42,18 @@ arrow::Result<int64_t> ArrowBufferedOutputStream::Tell() const
 
 arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length)
 {
-    out.write(reinterpret_cast<const char *>(data), length);
-    total_length += length;
-    return arrow::Status::OK();
+    try
+    {
+        out.write(reinterpret_cast<const char *>(data), length);
+        total_length += length;
+        return arrow::Status::OK();
+    }
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(false);
+        LOG_DEBUG(&Poco::Logger::get("ArrowBufferedOutputStream"), "Exception {}", message);
+        return arrow::Status::IOError(message);
+    }
 }
 
 RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_)
