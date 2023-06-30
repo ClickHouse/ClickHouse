@@ -578,12 +578,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
         }
     }
-        
+
     UUID db_uuid = db->getUUID();
     if (db_uuid != UUIDHelpers::Nil)
         removeUUIDMapping(db_uuid);
     std::lock_guard lock{databases_mutex};
-    databases.erase(database_name);  
+    databases.erase(database_name);
 
     if (check_empty)
     {
@@ -649,7 +649,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
         std::lock_guard lock{databases_mutex};
         db = databases.find(database_name)->second;
     }
-    
+
     if(!db){
         DatabaseNameHints hints(*this);
         std::vector<String> names = hints.getHints(database_name);
