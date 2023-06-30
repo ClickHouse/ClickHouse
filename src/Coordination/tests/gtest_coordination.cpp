@@ -2,7 +2,9 @@
 #include <gtest/gtest.h>
 #include "Common/ZooKeeper/IKeeper.h"
 
+#include "Coordination/KeeperConstants.h"
 #include "Coordination/KeeperContext.h"
+#include "Coordination/KeeperFeatureFlags.h"
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
 #include "IO/WriteHelpers.h"
@@ -1191,7 +1193,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.snapshot_container_size, 5);
+    EXPECT_EQ(snapshot.snapshot_container_size, 6);
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -1203,7 +1205,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage->container.size(), 5);
+    EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
     EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
     EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
@@ -1235,14 +1237,14 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 
     DB::KeeperStorageSnapshot snapshot(&storage, 50);
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.snapshot_container_size, 53);
+    EXPECT_EQ(snapshot.snapshot_container_size, 54);
 
     for (size_t i = 50; i < 100; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    EXPECT_EQ(storage.container.size(), 103);
+    EXPECT_EQ(storage.container.size(), 104);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -1252,7 +1254,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
     auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage->container.size(), 53);
+    EXPECT_EQ(restored_storage->container.size(), 54);
     for (size_t i = 0; i < 50; ++i)
     {
         EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
@@ -1291,7 +1293,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 
     auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
-    EXPECT_EQ(restored_storage->container.size(), 253);
+    EXPECT_EQ(restored_storage->container.size(), 254);
 
     for (size_t i = 0; i < 250; ++i)
     {
@@ -1325,16 +1327,16 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
             if (i % 2 == 0)
                 storage.container.erase("/hello_" + std::to_string(i));
         }
-        EXPECT_EQ(storage.container.size(), 28);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 104);
+        EXPECT_EQ(storage.container.size(), 29);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 105);
         EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
-    EXPECT_EQ(storage.container.size(), 28);
+    EXPECT_EQ(storage.container.size(), 29);
     storage.clearGarbageAfterSnapshot();
-    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 28);
+    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 29);
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)
@@ -1863,7 +1865,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage->container.size(), 5);
+    EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
     EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
     EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
@@ -2346,18 +2348,19 @@ TEST_P(CoordinationTest, TestDurableState)
     }
 }
 
-TEST_P(CoordinationTest, TestCurrentApiVersion)
+TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
     KeeperStorage storage{500, "", keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();
-    request->path = DB::keeper_api_version_path;
+    request->path = DB::keeper_api_feature_flags_path;
     auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
     const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
-    uint8_t keeper_version{0};
-    DB::ReadBufferFromOwnString buf(get_response.data);
-    DB::readIntText(keeper_version, buf);
-    EXPECT_EQ(keeper_version, static_cast<uint8_t>(current_keeper_api_version));
+    DB::KeeperFeatureFlags feature_flags;
+    feature_flags.setFeatureFlags(get_response.data);
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ));
+    ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
 }
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
@@ -2451,6 +2454,155 @@ TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
 
 }
 
+TEST_P(CoordinationTest, TestCheckNotExistsRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    KeeperStorage storage{500, "", keeper_context};
+
+    int32_t zxid = 0;
+
+    const auto create_path = [&](const auto & path)
+    {
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        int new_zxid = ++zxid;
+        create_request->path = path;
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto check_request = std::make_shared<ZooKeeperCheckRequest>();
+    check_request->path = "/test_node";
+    check_request->not_exists = true;
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZOK");
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    create_path("/test_node");
+    auto node_it = storage.container.find("/test_node");
+    ASSERT_NE(node_it, storage.container.end());
+    auto node_version = node_it->value.stat.version;
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
+        int new_zxid = ++zxid;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS for same version");
+        int new_zxid = ++zxid;
+        check_request->version = node_version;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+
+    {
+        SCOPED_TRACE("CheckNotExists returns ZOK for different version");
+        int new_zxid = ++zxid;
+        check_request->version = node_version + 1;
+        storage.preprocessRequest(check_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(check_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        auto error = responses[0].response->error;
+        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
+    }
+}
+
+TEST_P(CoordinationTest, TestReapplyingDeltas)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    static constexpr int64_t initial_zxid = 100;
+
+    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/test/data";
+    create_request->is_sequential = true;
+
+    const auto process_create = [](KeeperStorage & storage, const auto & request, int64_t zxid)
+    {
+        storage.preprocessRequest(request, 1, 0, zxid);
+        auto responses = storage.processRequest(request, 1, zxid);
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Error::ZOK);
+    };
+
+    const auto commit_initial_data = [&](auto & storage)
+    {
+        int64_t zxid = 1;
+
+        const auto root_create = std::make_shared<ZooKeeperCreateRequest>();
+        root_create->path = "/test";
+        process_create(storage, root_create, zxid);
+        ++zxid;
+
+        for (; zxid <= initial_zxid; ++zxid)
+            process_create(storage, create_request, zxid);
+    };
+
+    KeeperStorage storage1{500, "", keeper_context};
+    commit_initial_data(storage1);
+
+    for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        storage1.preprocessRequest(create_request, 1, 0, zxid);
+
+    /// create identical new storage
+    KeeperStorage storage2{500, "", keeper_context};
+    commit_initial_data(storage2);
+
+    storage1.applyUncommittedState(storage2, initial_zxid);
+
+    const auto commit_unprocessed = [&](KeeperStorage & storage)
+    {
+        for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        {
+            auto responses = storage.processRequest(create_request, 1, zxid);
+            EXPECT_GE(responses.size(), 1);
+            EXPECT_EQ(responses[0].response->error, Error::ZOK);
+        }
+    };
+
+    commit_unprocessed(storage1);
+    commit_unprocessed(storage2);
+
+    const auto get_children = [&](KeeperStorage & storage)
+    {
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
+        list_request->path = "/test";
+        auto responses = storage.processRequest(list_request, 1, std::nullopt, /*check_acl=*/true, /*is_local=*/true);
+        EXPECT_EQ(responses.size(), 1);
+        const auto * list_response = dynamic_cast<const ListResponse *>(responses[0].response.get());
+        EXPECT_TRUE(list_response);
+        return list_response->names;
+    };
+
+    auto children1 = get_children(storage1);
+    std::unordered_set<std::string> children1_set(children1.begin(), children1.end());
+
+    auto children2 = get_children(storage2);
+    std::unordered_set<std::string> children2_set(children2.begin(), children2.end());
+
+    ASSERT_TRUE(children1_set == children2_set);
+}
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,

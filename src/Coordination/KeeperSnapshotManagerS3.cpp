@@ -102,6 +102,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
+            auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
             {
@@ -148,6 +149,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
+                DBMS_DEFAULT_BUFFER_SIZE,
                 request_settings_1
             };
         };

@@ -140,7 +140,7 @@ range([start, ] end [, step])
 
 **Implementation details**
 
-- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments's.
+- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
 - An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
 
 **Examples**
@@ -230,12 +230,14 @@ hasAll(set, subset)
 **Arguments**
 
 - `set` – Array of any type with a set of elements.
-- `subset` – Array of any type with elements that should be tested to be a subset of `set`.
+- `subset` – Array of any type that shares a common supertype with `set` containing elements that should be tested to be a subset of `set`.
 
 **Return values**
 
 - `1`, if `set` contains all of the elements from `subset`.
 - `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share a common supertype.
 
 **Peculiar properties**
 
@@ -253,7 +255,7 @@ hasAll(set, subset)
 
 `SELECT hasAll(['a', 'b'], ['a'])` returns 1.
 
-`SELECT hasAll([1], ['a'])` returns 0.
+`SELECT hasAll([1], ['a'])` raises a `NO_COMMON_TYPE` exception.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
@@ -268,12 +270,14 @@ hasAny(array1, array2)
 **Arguments**
 
 - `array1` – Array of any type with a set of elements.
-- `array2` – Array of any type with a set of elements.
+- `array2` – Array of any type that shares a common supertype with `array1`.
 
 **Return values**
 
 - `1`, if `array1` and `array2` have one similar element at least.
 - `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
 
 **Peculiar properties**
 
@@ -288,7 +292,7 @@ hasAny(array1, array2)
 
 `SELECT hasAny([-128, 1., 512], [1])` returns `1`.
 
-`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` raises a `NO_COMMON_TYPE` exception.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
 
@@ -318,6 +322,8 @@ For Example:
 - `1`, if `array1` contains `array2`.
 - `0`, otherwise.
 
+Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
+
 **Peculiar properties**
 
 - The function will return `1` if `array2` is empty.
@@ -339,6 +345,9 @@ For Example:
 `SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
 
 `SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
+i
+`SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])` raises a `NO_COMMON_TYPE` exception.
+
 
 ## indexOf(arr, x)
 
@@ -646,7 +655,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …)
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -747,7 +756,11 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 :::
 
-## arrayReverseSort(\[func,\] arr, …)
+## arrayPartialSort(\[func,\] limit, arr, …)
+
+Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
+
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -847,6 +860,10 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 │ [4,3,5] │
 └─────────┘
 ```
+
+## arrayPartialReverseSort(\[func,\] limit, arr, …)
+
+Same as `arrayReverseSort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in descending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
 ## arrayUniq(arr, …)
 
@@ -1228,7 +1245,7 @@ arrayAUC(arr_scores, arr_labels)
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
-- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
 
 **Returned value**
 

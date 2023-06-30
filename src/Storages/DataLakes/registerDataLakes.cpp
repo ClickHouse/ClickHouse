@@ -31,10 +31,14 @@ void registerStorageDeltaLake(StorageFactory & factory)
 }
 #endif
 
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+
 void registerStorageIceberg(StorageFactory & factory)
 {
     REGISTER_DATA_LAKE_STORAGE(StorageIcebergS3, StorageIcebergName::name)
 }
+
+#endif
 
 void registerStorageHudi(StorageFactory & factory)
 {

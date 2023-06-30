@@ -130,14 +130,18 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-        auto cluster = std::make_shared<Cluster>(
-            getContext()->getSettings(),
-            host_names,
+        ClusterConnectionParameters params{
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),
             treat_local_as_remote,
-            treat_local_port_as_remote);
+            treat_local_port_as_remote,
+            /* secure= */ false,
+            /* priority= */ Priority{1},
+            /* cluster_name= */ "",
+            /* password= */ ""
+        };
+        auto cluster = std::make_shared<Cluster>(getContext()->getSettings(), host_names, params);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required

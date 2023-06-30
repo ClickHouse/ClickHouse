@@ -81,6 +81,9 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    Strings getBlobPath(const String & path) const override;
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
@@ -99,6 +102,7 @@ public:
     void truncateFile(const String & path, size_t size) override;
 
     DataSourceDescription getDataSourceDescription() const override;
+    static DataSourceDescription getLocalDataSourceDescription(const String & path);
 
     bool isRemote() const override { return false; }
 
@@ -119,17 +123,13 @@ public:
     /// rudimentary. The more advanced choice would be using
     /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
     bool canRead() const noexcept;
-    bool canWrite() const noexcept;
-
-    DiskObjectStoragePtr createDiskObjectStorage() override;
+    bool canWrite() noexcept;
 
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
-
-    MetadataStoragePtr getMetadataStorage() override;
 
 protected:
     void checkAccessImpl(const String & path) override;

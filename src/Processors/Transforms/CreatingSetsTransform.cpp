@@ -25,13 +25,15 @@ CreatingSetsTransform::~CreatingSetsTransform() = default;
 CreatingSetsTransform::CreatingSetsTransform(
     Block in_header_,
     Block out_header_,
-    SubqueryForSet subquery_for_set_,
+    SetAndKeyPtr set_and_key_,
+    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
-    ContextPtr context_)
+    PreparedSetsCachePtr prepared_sets_cache_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
-    , WithContext(context_)
-    , subquery(std::move(subquery_for_set_))
+    , set_and_key(std::move(set_and_key_))
+    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
+    , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
 }
 
@@ -52,31 +54,30 @@ void CreatingSetsTransform::work()
 void CreatingSetsTransform::startSubquery()
 {
     /// Lookup the set in the cache if we don't need to build table.
-    auto ctx = context.lock();
-    if (ctx && ctx->getPreparedSetsCache() && !subquery.table)
+    if (prepared_sets_cache && !external_table)
     {
         /// Try to find the set in the cache and wait for it to be built.
         /// Retry if the set from cache fails to be built.
         while (true)
         {
-            auto from_cache = ctx->getPreparedSetsCache()->findOrPromiseToBuild(subquery.key);
+            auto from_cache = prepared_sets_cache->findOrPromiseToBuild(set_and_key->key);
             if (from_cache.index() == 0)
             {
+                LOG_TRACE(log, "Building set, key: {}", set_and_key->key);
                 promise_to_build = std::move(std::get<0>(from_cache));
             }
             else
             {
-                LOG_TRACE(log, "Waiting for set to be build by another thread, key: {}", subquery.key);
+                LOG_TRACE(log, "Waiting for set to be build by another thread, key: {}", set_and_key->key);
                 SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
                 const SetPtr & ready_set = set_built_by_another_thread.get();
                 if (!ready_set)
                 {
-                    LOG_TRACE(log, "Failed to use set from cache, key: {}", subquery.key);
+                    LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
                     continue;
                 }
 
-                subquery.promise_to_fill_set.set_value(ready_set);
-                subquery.set_in_progress.reset();
+                set_and_key->set = ready_set;
                 done_with_set = true;
                 set_from_cache = true;
             }
@@ -84,19 +85,19 @@ void CreatingSetsTransform::startSubquery()
         }
     }
 
-    if (subquery.set_in_progress)
-        LOG_TRACE(log, "Creating set, key: {}", subquery.key);
-    if (subquery.table)
+    if (set_and_key->set && !set_from_cache)
+        LOG_TRACE(log, "Creating set, key: {}", set_and_key->key);
+    if (external_table)
         LOG_TRACE(log, "Filling temporary table.");
 
-    if (subquery.table)
+    if (external_table)
         /// TODO: make via port
-        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
+        table_out = QueryPipeline(external_table->write({}, external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
 
-    done_with_set = !subquery.set_in_progress;
-    done_with_table = !subquery.table;
+    done_with_set = !set_and_key->set || set_from_cache;
+    done_with_table = !external_table;
 
-    if ((done_with_set && !set_from_cache) /*&& done_with_join*/ && done_with_table)
+    if ((done_with_set && !set_from_cache) && done_with_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: nothing to do with subquery");
 
     if (table_out.initialized())
@@ -116,9 +117,9 @@ void CreatingSetsTransform::finishSubquery()
     }
     else if (read_rows != 0)
     {
-        if (subquery.set_in_progress)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set_in_progress->getTotalRowCount(), read_rows, seconds);
-        if (subquery.table)
+        if (set_and_key->set)
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
+        if (external_table)
             LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
     }
     else
@@ -131,11 +132,6 @@ void CreatingSetsTransform::init()
 {
     is_initialized = true;
 
-    if (subquery.set_in_progress)
-    {
-        subquery.set_in_progress->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
-    }
-
     watch.restart();
     startSubquery();
 }
@@ -147,7 +143,7 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
     if (!done_with_set)
     {
-        if (!subquery.set_in_progress->insertFromBlock(block.getColumnsWithTypeAndName()))
+        if (!set_and_key->set->insertFromBlock(block.getColumnsWithTypeAndName()))
             done_with_set = true;
     }
 
@@ -170,12 +166,11 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
 Chunk CreatingSetsTransform::generate()
 {
-    if (subquery.set_in_progress)
+    if (set_and_key->set && !set_from_cache)
     {
-        subquery.set_in_progress->finishInsert();
-        subquery.promise_to_fill_set.set_value(subquery.set_in_progress);
+        set_and_key->set->finishInsert();
         if (promise_to_build)
-            promise_to_build->set_value(subquery.set_in_progress);
+            promise_to_build->set_value(set_and_key->set);
     }
 
     if (table_out.initialized())

@@ -386,8 +386,6 @@ protected:
     FallbackSearcher fallback_searcher;
 
 public:
-    using Searcher = FallbackSearcher;
-
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
@@ -408,8 +406,7 @@ public:
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
-                needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
+            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
 
             /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
               * are represented by different number of bytes or code points.
@@ -729,7 +726,7 @@ public:
 
 
 using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using VolnitskyUTF8 = VolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>; /// exactly same as Volnitsky
+using VolnitskyUTF8 = VolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 
@@ -737,7 +734,7 @@ using VolnitskyCaseSensitiveToken = VolnitskyBase<true, true, ASCIICaseSensitive
 using VolnitskyCaseInsensitiveToken = VolnitskyBase<false, true, ASCIICaseInsensitiveTokenSearcher>;
 
 using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>;
+using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitive = MultiVolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitiveUTF8 = MultiVolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 

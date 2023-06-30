@@ -26,7 +26,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 The maximum amount of RAM to use for running a query on a single server.
 
-In the default configuration file, the maximum is 10 GB.
+The default setting is unlimited (set to `0`).
 
 The setting does not consider the volume of available memory or the total volume of memory on the machine.
 The restriction applies to a single query within a single server.

@@ -6,7 +6,6 @@
 
 #include <Columns/ColumnsNumber.h>
 
-#include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
 #include <base/sort.h>

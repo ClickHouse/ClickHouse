@@ -57,7 +57,8 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context) override;
+        ContextPtr context,
+        bool async_insert) override;
 
     /// We want to control the number of rows in a chunk inserted into RabbitMQ
     bool prefersLargeBlocks() const override { return false; }
@@ -72,9 +73,7 @@ public:
     String getExchange() const { return exchange_name; }
     void unbindExchange();
 
-    bool updateChannel(ChannelPtr & channel);
-    void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
-    void prepareChannelForConsumer(RabbitMQConsumerPtr consumer);
+    RabbitMQConnection & getConnection() { return *connection; }
 
     void incrementReader();
     void decrementReader();
@@ -129,7 +128,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePool::TaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
 
@@ -142,9 +141,6 @@ private:
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
-    /// Has connection background task completed successfully?
-    /// It is started only once -- in constructor.
-    std::atomic<bool> rabbit_is_ready = false;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
@@ -165,7 +161,6 @@ private:
     bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    void initializeBuffers();
     bool initialized = false;
 
     /// Functions working in the background

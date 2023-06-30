@@ -29,6 +29,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
+#include <Interpreters/Context.h>
 #include <base/unaligned.h>
 
 #include <Functions/FunctionFactory.h>
@@ -60,7 +61,7 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
         /// The loop can be further optimized.
         UInt64 number = rng();
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLE<UInt64>(data, number);
+        unalignedStoreLittleEndian<UInt64>(data, number);
 #else
         unalignedStore<UInt64>(data, number);
 #endif
@@ -78,6 +79,66 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
         }
     }
 #endif
+}
+
+
+size_t estimateValueSize(
+    const DataTypePtr type,
+    UInt64 max_array_length,
+    UInt64 max_string_length)
+{
+    if (type->haveMaximumSizeOfValue())
+        return type->getMaximumSizeOfValueInMemory();
+
+    TypeIndex idx = type->getTypeId();
+
+    switch (idx)
+    {
+        case TypeIndex::String:
+        {
+            return max_string_length + sizeof(size_t) + 1;
+        }
+
+        /// The logic in this function should reflect the logic of fillColumnWithRandomData.
+        case TypeIndex::Array:
+        {
+            auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+        }
+
+        case TypeIndex::Map:
+        {
+            const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+        }
+
+        case TypeIndex::Tuple:
+        {
+            auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
+            const size_t tuple_size = elements.size();
+            size_t res = 0;
+
+            for (size_t i = 0; i < tuple_size; ++i)
+                res += estimateValueSize(elements[i], max_array_length, max_string_length);
+
+            return res;
+        }
+
+        case TypeIndex::Nullable:
+        {
+            auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
+            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length);
+        }
+
+        case TypeIndex::LowCardinality:
+        {
+            auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length);
+        }
+
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
+    }
 }
 
 
@@ -192,7 +253,8 @@ ColumnPtr fillColumnWithRandomData(
                 offsets[i] = offset;
             }
 
-            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length, max_string_length, rng, context);
+            /// This division by two makes the size growth subexponential on depth.
+            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, rng, context);
 
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
@@ -200,7 +262,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, rng, context);
             return ColumnMap::create(nested_column);
         }
 
@@ -470,7 +532,7 @@ class GenerateSource : public ISource
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : ISource(Nested::flatten(prepareBlockToFill(block_header_)))
+        : ISource(Nested::flattenArrayOfTuples(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
@@ -485,7 +547,7 @@ protected:
         for (const auto & elem : block_to_fill)
             columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
-        columns = Nested::flatten(block_to_fill.cloneWithColumns(columns)).getColumns();
+        columns = Nested::flattenArrayOfTuples(block_to_fill.cloneWithColumns(columns)).getColumns();
         return {std::move(columns), block_size};
     }
 
@@ -595,6 +657,25 @@ Pipe StorageGenerateRandom::read(
         const auto & name_type = our_columns.get(name);
         MutableColumnPtr column = name_type.type->createColumn();
         block_header.insert({std::move(column), name_type.type, name_type.name});
+    }
+
+    /// Correction of block size for wide tables.
+    size_t preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes;
+    if (preferred_block_size_bytes)
+    {
+        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
+
+        size_t estimated_block_size_bytes = 0;
+        if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large estimated block size in GenerateRandom table: its estimation leads to 64bit overflow");
+        chassert(estimated_block_size_bytes != 0);
+
+        if (estimated_block_size_bytes > preferred_block_size_bytes)
+        {
+            max_block_size = static_cast<size_t>(max_block_size * (static_cast<double>(preferred_block_size_bytes) / estimated_block_size_bytes));
+            if (max_block_size == 0)
+                max_block_size = 1;
+        }
     }
 
     /// Will create more seed values for each source from initial seed.

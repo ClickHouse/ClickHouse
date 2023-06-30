@@ -22,7 +22,7 @@ String RowPolicyName::toString() const
         name += backQuoteIfNeed(database);
         name += '.';
     }
-    name += backQuoteIfNeed(table_name);
+    name += (table_name == RowPolicyName::ANY_TABLE_MARK ? "*" : backQuoteIfNeed(table_name));
     return name;
 }
 

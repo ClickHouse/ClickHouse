@@ -44,7 +44,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        node1.query("DROP TABLE IF EXISTS encrypted_test ON CLUSTER 'cluster' NO DELAY")
+        node1.query("DROP TABLE IF EXISTS encrypted_test ON CLUSTER 'cluster' SYNC")
 
 
 def create_table(
@@ -52,9 +52,7 @@ def create_table(
 ):
     engine = "ReplicatedMergeTree('/clickhouse/tables/encrypted_test/', '{replica}')"
 
-    settings = f"storage_policy='{storage_policy}'"
-    if zero_copy_replication:
-        settings += ", allow_remote_fs_zero_copy_replication=true"
+    settings = f"storage_policy='{storage_policy}', allow_remote_fs_zero_copy_replication={int(zero_copy_replication)}"
 
     node1.query(
         f"""
