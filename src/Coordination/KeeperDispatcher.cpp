@@ -336,28 +336,39 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3, [this](const KeeperStorage::RequestForSession & request_for_session)
-    {
-        /// check if we have queue of read requests depending on this request to be committed
-        std::lock_guard lock(read_request_queue_mutex);
-        if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
+    keeper_context = std::make_shared<KeeperContext>();
+    keeper_context->initialize(config);
+
+    server = std::make_unique<KeeperServer>(
+        configuration_and_settings,
+        config,
+        responses_queue,
+        snapshots_queue,
+        keeper_context,
+        snapshot_s3,
+        [this](const KeeperStorage::RequestForSession & request_for_session)
         {
-            auto & xid_to_request_queue = it->second;
-
-            if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid); request_queue_it != xid_to_request_queue.end())
+            /// check if we have queue of read requests depending on this request to be committed
+            std::lock_guard lock(read_request_queue_mutex);
+            if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
             {
-                for (const auto & read_request : request_queue_it->second)
-                {
-                    if (server->isLeaderAlive())
-                        server->putLocalReadRequest(read_request);
-                    else
-                        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                }
+                auto & xid_to_request_queue = it->second;
 
-                xid_to_request_queue.erase(request_queue_it);
+                if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
+                    request_queue_it != xid_to_request_queue.end())
+                {
+                    for (const auto & read_request : request_queue_it->second)
+                    {
+                        if (server->isLeaderAlive())
+                            server->putLocalReadRequest(read_request);
+                        else
+                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                    }
+
+                    xid_to_request_queue.erase(request_queue_it);
+                }
             }
-        }
-    });
+        });
 
     try
     {
