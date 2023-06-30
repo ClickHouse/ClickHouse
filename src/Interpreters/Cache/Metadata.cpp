@@ -381,19 +381,34 @@ void LockedKey::removeAllReleasable()
     }
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool allow_throw)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock(), allow_throw);
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock, bool allow_throw)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
+
+    return removeFileSegmentImpl(it, segment_lock, allow_throw);
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock, bool allow_throw)
+{
+    auto file_segment = it->second->file_segment;
 
     LOG_DEBUG(
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), offset, file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size);
 
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+    chassert(!allow_throw || file_segment->assertCorrectnessUnlocked(segment_lock));
 
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->invalidate();
@@ -405,7 +420,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
         fs::remove(path);
         LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
     }
-    else if (file_segment->downloaded_size)
+    else if (file_segment->downloaded_size && allow_throw)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 
     file_segment->detach(segment_lock, *this);
@@ -522,7 +537,10 @@ FileSegments LockedKey::sync()
     {
         auto file_segment = it->second->file_segment;
         if (file_segment->state() != FileSegment::State::DOWNLOADED)
+        {
+            ++it;
             continue;
+        }
 
         const auto & path = file_segment->getPathInLocalCache();
         if (!fs::exists(path))
@@ -533,7 +551,7 @@ FileSegments LockedKey::sync()
                 file_segment->getInfoForLog());
 
             broken.push_back(FileSegment::getSnapshot(file_segment));
-            removeFileSegment(file_segment->offset(), file_segment->lock());
+            it = removeFileSegment(file_segment->offset(), file_segment->lock(), false);
             continue;
         }
 
@@ -541,7 +559,10 @@ FileSegments LockedKey::sync()
         const size_t expected_size = file_segment->getDownloadedSize(false);
 
         if (actual_size == expected_size)
+        {
+            ++it;
             continue;
+        }
 
         LOG_WARNING(
             key_metadata->log,
@@ -555,10 +576,12 @@ FileSegments LockedKey::sync()
         {
             file_segment->downloaded_size = actual_size;
             file_segment->download_state = FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+            ++it;
         }
         else
         {
-            removeFileSegment(file_segment->offset(), file_segment_lock);
+            it = removeFileSegment(file_segment->offset(), file_segment_lock, false);
+            fs::remove(path);
         }
     }
     return broken;
