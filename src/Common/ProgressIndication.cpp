@@ -166,8 +166,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
         if (memory_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
-        //    profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << ", "
-        //                                    << formatReadableSizeWithDecimalSuffix(peak_usage) << " Peak RAM";
         if (max_host_usage < memory_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
 
