@@ -69,6 +69,7 @@ The supported formats are:
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
+| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗      |
 | [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
@@ -192,6 +193,7 @@ SELECT * FROM nestedt FORMAT TSV
 - [output_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#output_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`. Default value - `false`.
 - [input_format_tsv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
 - [input_format_tsv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_detect_header) - automatically detect header with names and types in TSV format. Default value - `true`.
+- [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
@@ -466,6 +468,9 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [output_format_csv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#output_format_csv_crlf_end_of_line) - if it is set to true, end of line in CSV output format will be `\r\n` instead of `\n`. Default value - `false`.
 - [input_format_csv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_first_lines) - skip the specified number of lines at the beginning of data. Default value - `0`.
 - [input_format_csv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_csv_detect_header) - automatically detect header with names and types in CSV format. Default value - `true`.
+- [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
+- [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
+- [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -493,7 +498,9 @@ the types from input data will be compared with the types of the corresponding c
 
 Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from [format_custom_field_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_field_delimiter), [format_custom_row_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_before_delimiter), [format_custom_row_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_after_delimiter), [format_custom_row_between_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_between_delimiter), [format_custom_result_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_before_delimiter) and [format_custom_result_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) settings, not from format strings.
 
-If setting [input_format_custom_detect_header](/docs/en/operations/settings/settings.md/#input_format_custom_detect_header) is enabled, ClickHouse will automatically detect header with names and types if any.
+If setting [input_format_custom_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) is enabled, ClickHouse will automatically detect header with names and types if any.
+
+If setting [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) is enabled, trailing empty lines at the end of file will be skipped.
 
 There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
 
@@ -1291,8 +1298,8 @@ For output it uses the following correspondence between ClickHouse types and BSO
 | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                   | `\x04` array                                                                                                  |
 | [Named Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                             | `\x03` document                                                                                               |
 | [Map](/docs/en/sql-reference/data-types/map.md)                                                                       | `\x03` document                                                                                               |
-| [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                             | `\x10` int32                                                                                                  |
-| [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                             | `\x05` binary, `\x00` binary subtype                                                                          |
+| [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                     | `\x10` int32                                                                                                  |
+| [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
 
 For input it uses the following correspondence between BSON types and ClickHouse types:
 
@@ -1302,7 +1309,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x02` string                            | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
 | `\x03` document                          | [Map](/docs/en/sql-reference/data-types/map.md)/[Named Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                                   |
 | `\x04` array                             | [Array](/docs/en/sql-reference/data-types/array.md)/[Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                                     |
-| `\x05` binary, `\x00` binary subtype     | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)/[IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                             |
+| `\x05` binary, `\x00` binary subtype     | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)/[IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                             |
 | `\x05` binary, `\x02` old binary subtype | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
 | `\x05` binary, `\x03` old uuid subtype   | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
 | `\x05` binary, `\x04` uuid subtype       | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
@@ -1312,7 +1319,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x0A` null value                        | [NULL](/docs/en/sql-reference/data-types/nullable.md)                                                                                                                                                                                       |
 | `\x0D` JavaScript code                   | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
 | `\x0E` symbol                            | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)/[IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)/[Enum8/Enum16](/docs/en/sql-reference/data-types/enum.md) |
+| `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)/[IPv4](/docs/en/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/docs/en/sql-reference/data-types/enum.md) |
 | `\x12` int64                             | [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal64](/docs/en/sql-reference/data-types/decimal.md)/[DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                       |
 
 Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8).
@@ -1662,8 +1669,8 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `ENUM`                                               | [Enum(8/16)](/docs/en/sql-reference/data-types/enum.md)                                                                                                                        | `ENUM`                                               |
 | `LIST`                                               | [Array](/docs/en/sql-reference/data-types/array.md)                                                                                                                            | `LIST`                                               |
 | `STRUCT`                                             | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                            | `STRUCT`                                             |
-| `UINT32`                                             | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                                                                                      | `UINT32`                                             |
-| `DATA`                                               | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                                                                                      | `DATA`                                               |
+| `UINT32`                                             | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                                                                              | `UINT32`                                             |
+| `DATA`                                               | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                                                                              | `DATA`                                               |
 | `DATA`                                               | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                                                                                 | `DATA`                                               |
 | `DATA`                                               | [Decimal128/Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                                                                                          | `DATA`                                               |
 | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/docs/en/sql-reference/data-types/map.md)                                                                                                                                | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
@@ -1865,18 +1872,18 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `long (timestamp-millis)` \**               | [DateTime64(3)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \** |
 | `long (timestamp-micros)` \**               | [DateTime64(6)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \** |
 | `bytes (decimal)`  \**                      | [DateTime64(N)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**        |
-| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                                     | `int`                         |
-| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                                     | `fixed(16)`                   |
+| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                             | `int`                         |
+| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                   |
 | `bytes (decimal)` \**                       | [Decimal(P, S)](/docs/en/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**         |
 | `string (uuid)` \**                         | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**           |
 | `fixed(16)`                                 | [Int128/UInt128](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                   |
 | `fixed(32)`                                 | [Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                   |
+| `record`                                    | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                           | `record`                      |
+
 
 
 \* `bytes` is default, controlled by [output_format_avro_string_column_pattern](/docs/en/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
 \** [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
-
-Unsupported Avro data types: `record` (non-root), `map`
 
 Unsupported Avro logical data types: `time-millis`, `time-micros`, `duration`
 
@@ -1916,7 +1923,26 @@ Output Avro file compression and sync interval can be configured with [output_fo
 
 Using the ClickHouse [DESCRIBE](/docs/en/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
 
-``` DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro','Avro');
+```
+DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro','Avro);
+```
+```
+┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ WatchID                    │ Int64           │              │                    │         │                  │                │
+│ JavaEnable                 │ Int32           │              │                    │         │                  │                │
+│ Title                      │ String          │              │                    │         │                  │                │
+│ GoodEvent                  │ Int32           │              │                    │         │                  │                │
+│ EventTime                  │ Int32           │              │                    │         │                  │                │
+│ EventDate                  │ Date32          │              │                    │         │                  │                │
+│ CounterID                  │ Int32           │              │                    │         │                  │                │
+│ ClientIP                   │ Int32           │              │                    │         │                  │                │
+│ ClientIP6                  │ FixedString(16) │              │                    │         │                  │                │
+│ RegionID                   │ Int32           │              │                    │         │                  │                │
+...
+│ IslandID                   │ FixedString(16) │              │                    │         │                  │                │
+│ RequestNum                 │ Int32           │              │                    │         │                  │                │
+│ RequestTry                 │ Int32           │              │                    │         │                  │                │
+└────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 ## AvroConfluent {#data-format-avro-confluent}
@@ -2000,9 +2026,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `LIST`                                        | [Array](/docs/en/sql-reference/data-types/array.md)                                                        | `LIST`                        |
 | `STRUCT`                                      | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                        | `STRUCT`                      |
 | `MAP`                                         | [Map](/docs/en/sql-reference/data-types/map.md)                                                            | `MAP`                         |
-| `UINT32`                                      | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                  | `UINT32`                      |
-| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                  | `FIXED_LENGTH_BYTE_ARRAY`     |
-| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                     | `FIXED_LENGTH_BYTE_ARRAY`     |
+| `UINT32`                                      | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                      |
+| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                          | `FIXED_LENGTH_BYTE_ARRAY`     |
+| `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                             | `FIXED_LENGTH_BYTE_ARRAY`     |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
@@ -2038,6 +2064,138 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [output_format_parquet_version](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_version) - The version of Parquet format used in output format. Default value - `2.latest`.
 - [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `snappy`.
 
+## ParquetMetadata {data-format-parquet-metadata}
+
+Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
+- num_columns - the number of columns
+- num_rows - the total number of rows
+- num_row_groups - the total number of row groups
+- format_version - parquet format version, always 1.0 or 2.6
+- total_uncompressed_size - total uncompressed bytes size of the data, calculated as the sum of total_byte_size from all row groups
+- total_compressed_size - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
+- columns - the list of columns metadata with the next structure:
+  - name - column name
+  - path - column path (differs from name for nested column)
+  - max_definition_level - maximum definition level
+  - max_repetition_level - maximum repetition level
+  - physical_type - column physical type
+  - logical_type - column logical type
+  - compression - compression used for this column
+  - total_uncompressed_size - total uncompressed bytes size of the column, calculated as the sum of total_uncompressed_size of the column from all row groups
+  - total_compressed_size - total compressed bytes size of the column,  calculated as the sum of total_compressed_size of the column from all row groups
+  - space_saved - percent of space saved by compression, calculated as (1 - total_compressed_size/total_uncompressed_size).
+  - encodings - the list of encodings used for this column
+- row_groups - the list of row groups metadata with the next structure:
+  - num_columns - the number of columns in the row group
+  - num_rows - the number of rows in the row group
+  - total_uncompressed_size - total uncompressed bytes size of the row group
+  - total_compressed_size - total compressed bytes size of the row group
+  - columns - the list of column chunks metadata with the next structure:
+     - name - column name
+     - path - column path
+     - total_compressed_size - total compressed bytes size of the column
+     - total_uncompressed_size - total uncompressed bytes size of the row group
+     - have_statistics - boolean flag that indicates if column chunk metadata contains column statistics
+     - statistics - column chunk statistics (all fields are NULL if have_statistics = false) with the next structure:
+        - num_values - the number of non-null values in the column chunk
+        - null_count - the number of NULL values in the column chunk
+        - distinct_count - the number of distinct values in the column chunk
+        - min - the minimum value of the column chunk
+        - max - the maximum column of the column chunk
+
+Example:
+
+```sql
+SELECT * FROM file(data.parquet, ParquetMetadata) format PrettyJSONEachRow
+```
+
+```json
+{
+    "num_columns": "2",
+    "num_rows": "100000",
+    "num_row_groups": "2",
+    "format_version": "2.6",
+    "metadata_size": "577",
+    "total_uncompressed_size": "282436",
+    "total_compressed_size": "26633",
+    "columns": [
+        {
+            "name": "number",
+            "path": "number",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=16, isSigned=false)",
+            "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        },
+        {
+            "name": "concat('Hello', toString(modulo(number, 1000)))",
+            "path": "concat('Hello', toString(modulo(number, 1000)))",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "BYTE_ARRAY",
+            "logical_type": "None",
+            "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        }
+    ],
+    "row_groups": [
+        {
+            "num_columns": "2",
+            "num_rows": "65409",
+            "total_uncompressed_size": "179809",
+            "total_compressed_size": "14163",
+            "columns": [
+                {
+                    "name": "number",
+                    "path": "number",
+                    "total_compressed_size": "7070",
+                    "total_uncompressed_size": "85956",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "0",
+                        "max": "999"
+                    }
+                },
+                {
+                    "name": "concat('Hello', toString(modulo(number, 1000)))",
+                    "path": "concat('Hello', toString(modulo(number, 1000)))",
+                    "total_compressed_size": "7093",
+                    "total_uncompressed_size": "93853",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "Hello0",
+                        "max": "Hello999"
+                    }
+                }
+            ]
+        },
+        ...
+    ]
+}
+```
+
 ## Arrow {#data-format-arrow}
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
@@ -2071,9 +2229,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `LIST`                                  | [Array](/docs/en/sql-reference/data-types/array.md)                                                        | `LIST`                     |
 | `STRUCT`                                | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                        | `STRUCT`                   |
 | `MAP`                                   | [Map](/docs/en/sql-reference/data-types/map.md)                                                            | `MAP`                      |
-| `UINT32`                                | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                  | `UINT32`                   |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                  | `FIXED_SIZE_BINARY`        |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                     | `FIXED_SIZE_BINARY`        |
+| `UINT32`                                | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                          | `FIXED_SIZE_BINARY`        |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                             | `FIXED_SIZE_BINARY`        |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
@@ -2108,7 +2266,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
 - [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
 - [output_format_arrow_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_fixed_string_as_fixed_byte_array) - use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString columns. Default value - `true`.
-- [output_format_arrow_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_compression_method) - compression method used in output Arrow format. Default value - `none`.
+- [output_format_arrow_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_compression_method) - compression method used in output Arrow format. Default value - `lz4_frame`.
 
 ## ArrowStream {#data-format-arrow-stream}
 
@@ -2139,7 +2297,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `Struct`                              | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
 | `Map`                                 | [Map](/docs/en/sql-reference/data-types/map.md)                                                                   | `Map`                    |
 | `Int`                                 | [IPv4](/docs/en/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                         | `Binary`                 |
+| `Binary`                              | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
 | `Binary`                              | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
 | `Binary`                              | [Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
 
@@ -2296,18 +2454,22 @@ In this format, all input data is read to a single value. It is possible to pars
 The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
 Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparatedraw).
+
 `RawBLOB`:
 - data is output in binary format, no escaping;
 - there are no delimiters between values;
 - no newline at the end of each value.
-[TabSeparatedRaw] (#tabseparatedraw):
+
+`TabSeparatedRaw`:
 - data is output without escaping;
 - the rows contain values separated by tabs;
 - there is a line feed after the last value in every row.
 
 The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
+
 `RawBLOB`:
 - String fields are output without being prefixed by length.
+
 `RowBinary`:
 - String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
@@ -2352,7 +2514,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 | `uint 64`                                                          | [DateTime64](/docs/en/sql-reference/data-types/datetime.md)                                             | `uint 64`                        |
 | `fixarray`, `array 16`, `array 32`                                 | [Array](/docs/en/sql-reference/data-types/array.md)/[Tuple](/docs/en/sql-reference/data-types/tuple.md) | `fixarray`, `array 16`, `array 32` |
 | `fixmap`, `map 16`, `map 32`                                       | [Map](/docs/en/sql-reference/data-types/map.md)                                                         | `fixmap`, `map 16`, `map 32`     |
-| `uint 32`                                                          | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                               | `uint 32`                        |
+| `uint 32`                                                          | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                       | `uint 32`                        |
 | `bin 8`                                                            | [String](/docs/en/sql-reference/data-types/string.md)                                                   | `bin 8`                          |
 | `int 8`                                                            | [Enum8](/docs/en/sql-reference/data-types/enum.md)                                                      | `int 8`                          |
 | `bin 8`                                                            | [(U)Int128/(U)Int256](/docs/en/sql-reference/data-types/int-uint.md)                                    | `bin 8`                          |

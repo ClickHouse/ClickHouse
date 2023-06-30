@@ -62,6 +62,9 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+int mainEntryClickHouseKeeperClient(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
@@ -79,42 +82,16 @@ int mainEntryClickHouseRestart(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 #endif
 
-bool hasHelpArg (char* arg)
+int mainEntryClickHouseHashBinary(int, char **)
 {
-    return (strcmp(arg, "--help") == 0 || (strcmp(arg, "-h") == 0) || (strcmp(arg, "help") == 0));
-}
-
-int mainEntryClickHouseHashBinary(int argc_, char ** argv_)
-{
-    std::vector<char *> argv(argv_, argv_ + argc_);
-    auto it = std::find_if(argv.begin(), argv.end(), hasHelpArg);
-    if (it != argv.end())
-    {
-        std::cout << "Usage: clickhouse hash\nPrints hash of clickhouse binary.\n";
-        std::cout << " -h, --help   Prints this message\n";
-        std::cout << "Result is intentionally without newline. So you can run:\n";
-        std::cout << "objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse.\n\n";
-        std::cout << "Current binary hash: ";
-    }
+    /// Intentionally without newline. So you can run:
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
+
 namespace
 {
-
-void printHelp();
-
-int mainEntryHelp(int, char **)
-{
-    printHelp();
-    return 0;
-}
-
-int printHelpOnError(int, char **)
-{
-    printHelp();
-    return -1;
-}
 
 using MainFunc = int (*)(int, char**);
 
@@ -159,6 +136,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"keeper-client", mainEntryClickHouseKeeperClient},
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
@@ -176,14 +156,14 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_DISKS
     {"disks", mainEntryClickHouseDisks},
 #endif
-    {"help", mainEntryHelp},
 };
 
-void printHelp()
+int printHelp(int, char **)
 {
-    std::cout << "Use one of the following commands:" << std::endl;
+    std::cerr << "Use one of the following commands:" << std::endl;
     for (auto & application : clickhouse_applications)
-        std::cout << "clickhouse " << application.first << " [args] " << std::endl;
+        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
+    return -1;
 }
 
 bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
@@ -493,7 +473,7 @@ int main(int argc_, char ** argv_)
     std::vector<char *> argv(argv_, argv_ + argc_);
 
     /// Print a basic help if nothing was matched
-    MainFunc main_func = printHelpOnError;
+    MainFunc main_func = printHelp;
 
     for (auto & application : clickhouse_applications)
     {

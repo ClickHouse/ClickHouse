@@ -1,14 +1,14 @@
 ---
 slug: /en/sql-reference/functions/splitting-merging-functions
 sidebar_position: 165
-sidebar_label: Splitting and Merging Strings and Arrays
+sidebar_label: Splitting Strings
 ---
 
-# Functions for Splitting and Merging Strings and Arrays
+# Functions for Splitting Strings
 
-## splitByChar(separator, s[, max_substrings])
+## splitByChar
 
-Splits a string into substrings separated by a specified character. It uses a constant string `separator` which consists of exactly one character.
+Splits a string into substrings separated by a specified character. Uses a constant string `separator` which consists of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 **Syntax**
@@ -39,13 +39,15 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
+Result:
+
 ``` text
 ┌─splitByChar(',', '1,2,3,abcde')─┐
 │ ['1','2','3','abcde']           │
 └─────────────────────────────────┘
 ```
 
-## splitByString(separator, s[, max_substrings])
+## splitByString
 
 Splits a string into substrings separated by a string. It uses a constant string `separator` of multiple characters as the separator. If the string `separator` is empty, it will split the string `s` into an array of single characters.
 
@@ -78,6 +80,8 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
+Result:
+
 ``` text
 ┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
 │ ['1','2 3','4,5','abcde']                 │
@@ -88,13 +92,15 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 SELECT splitByString('', 'abcde');
 ```
 
+Result:
+
 ``` text
 ┌─splitByString('', 'abcde')─┐
 │ ['a','b','c','d','e']      │
 └────────────────────────────┘
 ```
 
-## splitByRegexp(regexp, s[, max_substrings])
+## splitByRegexp
 
 Splits a string into substrings separated by a regular expression. It uses a regular expression string `regexp` as the separator. If the `regexp` is empty, it will split the string `s` into an array of single characters. If no match is found for this regular expression, the string `s` won't be split.
 
@@ -123,8 +129,6 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 **Example**
 
-Query:
-
 ``` sql
 SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
@@ -136,8 +140,6 @@ Result:
 │ ['a','bc','de','f']                    │
 └────────────────────────────────────────┘
 ```
-
-Query:
 
 ``` sql
 SELECT splitByRegexp('', 'abcde');
@@ -151,7 +153,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## splitByWhitespace(s[, max_substrings])
+## splitByWhitespace
 
 Splits a string into substrings separated by whitespace characters. 
 Returns an array of selected substrings.
@@ -180,13 +182,15 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 SELECT splitByWhitespace('  1!  a,  b.  ');
 ```
 
+Result:
+
 ``` text
 ┌─splitByWhitespace('  1!  a,  b.  ')─┐
 │ ['1!','a,','b.']                    │
 └─────────────────────────────────────┘
 ```
 
-## splitByNonAlpha(s[, max_substrings])
+## splitByNonAlpha
 
 Splits a string into substrings separated by whitespace and punctuation characters. 
 Returns an array of selected substrings.
@@ -221,23 +225,32 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 └───────────────────────────────────┘
 ```
 
-## arrayStringConcat(arr\[, separator\])
+## arrayStringConcat
 
 Concatenates string representations of values listed in the array with the separator. `separator` is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
+
+**Syntax**
+
+```sql
+arrayStringConcat(arr\[, separator\])
+```
 
 **Example**
 
 ``` sql
 SELECT arrayStringConcat(['12/05/2021', '12:50:00'], ' ') AS DateString;
 ```
+
+Result:
+
 ```text
 ┌─DateString──────────┐
 │ 12/05/2021 12:50:00 │
 └─────────────────────┘
 ```
 
-## alphaTokens(s[, max_substrings]), splitByAlpha(s[, max_substrings])
+## alphaTokens
 
 Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an array of substrings.
 
@@ -245,8 +258,9 @@ Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an a
 
 ``` sql
 alphaTokens(s[, max_substrings]))
-splitByAlpha(s[, max_substrings])
 ```
+
+Alias: `splitByAlpha`
 
 **Arguments**
 
@@ -271,7 +285,7 @@ SELECT alphaTokens('abca1abc');
 └─────────────────────────┘
 ```
 
-## extractAllGroups(text, regexp)
+## extractAllGroups
 
 Extracts all groups from non-overlapping substrings matched by a regular expression.
 
@@ -296,8 +310,6 @@ Type: [Array](../data-types/array.md).
 
 **Example**
 
-Query:
-
 ``` sql
 SELECT extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
@@ -312,7 +324,7 @@ Result:
 
 ## ngrams
 
-Splits the UTF-8 string into n-grams of `ngramsize` symbols.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 
 **Syntax** 
 
@@ -332,8 +344,6 @@ ngrams(string, ngramsize)
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT ngrams('ClickHouse', 3);
@@ -362,8 +372,6 @@ Splits a string into tokens using non-alphanumeric ASCII characters as separator
 Type: [Array](../data-types/array.md).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;

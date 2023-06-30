@@ -1,14 +1,14 @@
 ---
 slug: /en/sql-reference/table-functions/file
-sidebar_position: 37
+sidebar_position: 60
 sidebar_label: file
 ---
 
 # file
 
-Creates a table from a file. This table function is similar to [url](/docs/en/sql-reference/table-functions/url.md) and [hdfs](/docs/en/sql-reference/table-functions/hdfs.md) ones.
+Provides a table-like interface to SELECT from and INSERT to files. This table function is similar to the [s3](/docs/en/sql-reference/table-functions/url.md) table function.  Use file() when working with local files, and s3() when working with buckets in S3, GCS, or MinIO.
 
-`file` function can be used in `SELECT` and `INSERT` queries on data in [File](/docs/en/engines/table-engines/special/file.md) tables.
+The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.
 
 **Syntax**
 
@@ -27,7 +27,52 @@ file(path [,format] [,structure] [,compression])
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**Examples**
+## File Write Examples
+
+### Write to a TSV file
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+As a result, the data is written into the file `test.tsv`:
+
+```bash
+# cat /var/lib/clickhouse/user_files/test.tsv
+1	2	3
+3	2	1
+1	3	2
+```
+
+### Partitioned Write to multiple TSV files
+
+If you specify `PARTITION BY` expression when inserting data into a file() function, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test_{_partition_id}.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+PARTITION BY column3
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, and `test_3.tsv`.
+
+```bash
+# cat /var/lib/clickhouse/user_files/test_1.tsv
+3	2	1
+
+# cat /var/lib/clickhouse/user_files/test_2.tsv
+1	3	2
+
+# cat /var/lib/clickhouse/user_files/test_3.tsv
+1	2	3
+```
+
+## File Read Examples
+
+### SELECT from a CSV file
 
 Setting `user_files_path` and the contents of the file `test.csv`:
 
@@ -44,7 +89,9 @@ $ cat /var/lib/clickhouse/user_files/test.csv
 Getting data from a table in `test.csv` and selecting the first two rows from it:
 
 ``` sql
-SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 2;
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2;
 ```
 
 ``` text
@@ -57,14 +104,21 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 Getting the first 10 lines of a table that contains 3 columns of [UInt32](/docs/en/sql-reference/data-types/int-uint.md) type from a CSV file:
 
 ``` sql
-SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10;
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 10;
 ```
 
-Inserting data from a file into a table:
+### Inserting data from a file into a table:
 
 ``` sql
-INSERT INTO FUNCTION file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') VALUES (1, 2, 3), (3, 2, 1);
-SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+INSERT INTO FUNCTION
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1);
+```
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ``` text
@@ -109,7 +163,7 @@ Query the number of rows in all files of these two directories:
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
 ```
 
-:::note    
+:::note
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
@@ -142,6 +196,17 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 - `_path` — Path to the file.
 - `_file` — Name of the file.
 
+## Settings
+
+- [engine_file_empty_if_not_exists](/docs/en/operations/settings/settings.md#engine-file-emptyif-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+- [engine_file_truncate_on_insert](/docs/en/operations/settings/settings.md#engine-file-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
+- [engine_file_allow_create_multiple_files](/docs/en/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_skip_empty_files](/docs/en/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [storage_file_read_method](/docs/en/operations/settings/settings.md#engine-file-emptyif-not-exists) - method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+
+
+
 **See Also**
 
 - [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Rename files after processing](/docs/en/operations/settings/settings.md#rename_files_after_processing)

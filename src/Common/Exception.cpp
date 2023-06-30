@@ -15,6 +15,7 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
@@ -96,7 +97,10 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+    auto * stack_trace_frames = exc.get_stack_trace_frames();
+    auto stack_trace_size = exc.get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    set_stack_trace(stack_trace_frames, stack_trace_size);
 #endif
 }
 
@@ -104,7 +108,10 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+    auto * stack_trace_frames = exc.get_stack_trace_frames();
+    auto stack_trace_size = exc.get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    set_stack_trace(stack_trace_frames, stack_trace_size);
 #endif
 }
 
@@ -112,7 +119,10 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 std::string getExceptionStackTraceString(const std::exception & e)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    return StackTrace::toString(e.get_stack_trace_frames(), 0, e.get_stack_trace_size());
+    auto * stack_trace_frames = e.get_stack_trace_frames();
+    auto stack_trace_size = e.get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
 #else
     if (const auto * db_exception = dynamic_cast<const Exception *>(&e))
         return db_exception->getStackTraceString();
@@ -140,7 +150,10 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 std::string Exception::getStackTraceString() const
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    return StackTrace::toString(get_stack_trace_frames(), 0, get_stack_trace_size());
+    auto * stack_trace_frames = get_stack_trace_frames();
+    auto stack_trace_size = get_stack_trace_size();
+    __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+    return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
 #else
     return trace.toString();
 #endif
@@ -156,6 +169,7 @@ Exception::FramePointers Exception::getStackFramePointers() const
         {
             frame_pointers[i] = get_stack_trace_frames()[i];
         }
+        __msan_unpoison(frame_pointers.data(), frame_pointers.size() * sizeof(frame_pointers[0]));
     }
 #else
     {

@@ -10,9 +10,11 @@
 
 #include <pcg-random/pcg_random.hpp>
 
+#include "Common/formatIPv6.h"
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
+#include <Common/TransformEndianness.hpp>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
@@ -102,6 +104,13 @@ inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
 {
     writeVarUInt(s.size(), buf);
     buf.write(s.data(), s.size());
+}
+
+/// For historical reasons we store IPv6 as a String
+inline void writeIPv6Binary(const IPv6 & ip, WriteBuffer & buf)
+{
+    writeVarUInt(IPV6_BINARY_LENGTH, buf);
+    buf.write(reinterpret_cast<const char *>(&ip.toUnderType()), IPV6_BINARY_LENGTH);
 }
 
 inline void writeStringBinary(StringRef s, WriteBuffer & buf)
@@ -316,6 +325,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
             pos = next_pos;
             switch (*pos)
             {
+                case quote_character:
+                {
+                    if constexpr (escape_quote_with_quote)
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
+                    break;
+                }
                 case '\b':
                     writeChar('\\', buf);
                     writeChar('b', buf);
@@ -344,15 +362,6 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
-                case quote_character:
-                {
-                    if constexpr (escape_quote_with_quote)
-                        writeChar(quote_character, buf);
-                    else
-                        writeChar('\\', buf);
-                    writeChar(quote_character, buf);
-                    break;
-                }
                 default:
                     writeChar(*pos, buf);
             }
@@ -625,13 +634,15 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
+/// @brief Serialize `uuid` into an array of characters in big-endian byte order.
+/// @param uuid UUID to serialize.
+/// @return Array of characters in big-endian byte order.
+std::array<char, 36> formatUUID(const UUID & uuid);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
-    char s[36];
-    formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
-    buf.write(s, sizeof(s));
+    const auto serialized_uuid = formatUUID(uuid);
+    buf.write(serialized_uuid.data(), serialized_uuid.size());
 }
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);
@@ -694,15 +705,15 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(DayNum date, WriteBuffer & buf)
+inline void writeDateText(DayNum date, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    writeDateText<delimiter>(LocalDate(date), buf);
+    writeDateText<delimiter>(LocalDate(date, time_zone), buf);
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf)
+inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    writeDateText<delimiter>(LocalDate(date), buf);
+    writeDateText<delimiter>(LocalDate(date, time_zone), buf);
 }
 
 /// In the format YYYY-MM-DD HH:MM:SS
@@ -883,7 +894,7 @@ inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum:
 
 inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
 
-inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
+inline void writeText(const DayNum & x, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { writeDateText(LocalDate(x, time_zone), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
@@ -1172,32 +1183,25 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-template <typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+template <std::endian endian, typename T>
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        if constexpr (sizeof(x) == 2)
-            x = __builtin_bswap16(x);
-        else if constexpr (sizeof(x) == 4)
-            x = __builtin_bswap32(x);
-        else if constexpr (sizeof(x) == 8)
-            x = __builtin_bswap64(x);
-    }
+    transformEndianness<endian>(x);
     writePODBinary(x, buf);
 }
 
 template <typename T>
-requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
 {
-    for (size_t i = 0; i != std::size(x.items); ++i)
-    {
-        const auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
-        writeBinaryBigEndian(item, buf);
-    }
+    writeBinaryEndian<std::endian::little>(x, buf);
 }
+
+template <typename T>
+inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::big>(x, buf);
+}
+
 
 struct PcgSerializer
 {

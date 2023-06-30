@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 
-#include <Common/Arena.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -88,6 +87,7 @@ public:
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.

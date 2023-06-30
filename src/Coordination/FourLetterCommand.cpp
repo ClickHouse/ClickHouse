@@ -9,11 +9,15 @@
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include <unistd.h>
+#include <bit>
+
 
 namespace DB
 {
@@ -34,7 +38,7 @@ int32_t IFourLetterCommand::code()
 
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = __builtin_bswap32(code);
+    int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
@@ -42,7 +46,7 @@ int32_t IFourLetterCommand::toCode(const String & name)
 {
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return __builtin_bswap32(res);
+    return std::byteswap(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -150,6 +154,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
         factory.registerCommand(clean_resources_command);
+
+        FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
+        factory.registerCommand(feature_flags_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -484,7 +491,7 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+    return toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
 String CreateSnapshotCommand::run()
@@ -531,6 +538,31 @@ String CleanResourcesCommand::run()
 {
     keeper_dispatcher.cleanResources();
     return "ok";
+}
+
+String FeatureFlagsCommand::run()
+{
+    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->feature_flags;
+
+    StringBuffer ret;
+
+    auto append = [&ret] (const String & key, uint8_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+
+    for (const auto & [feature_flag, name] : magic_enum::enum_entries<KeeperFeatureFlag>())
+    {
+        std::string feature_flag_string(name);
+        boost::to_lower(feature_flag_string);
+        append(feature_flag_string, feature_flags.isEnabled(feature_flag));
+    }
+
+    return ret.str();
+
 }
 
 }

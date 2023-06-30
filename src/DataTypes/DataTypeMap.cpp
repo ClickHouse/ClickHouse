@@ -69,7 +69,7 @@ void DataTypeMap::assertKeyType() const
     if (!checkKeyType(key_type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Type of Map key must be a type, that can be represented by integer "
-                        "or String or FixedString (possibly LowCardinality) or UUID,"
+                        "or String or FixedString (possibly LowCardinality) or UUID or IPv6,"
                         " but {} given", key_type->getName());
 }
 
@@ -120,12 +120,20 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
     else if (!key_type->isValueRepresentedByInteger()
              && !isStringOrFixedString(*key_type)
              && !WhichDataType(key_type).isNothing()
+             && !WhichDataType(key_type).isIPv6()
              && !WhichDataType(key_type).isUUID())
     {
         return false;
     }
 
     return true;
+}
+
+DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
+{
+    const auto & from_array = assert_cast<const DataTypeArray &>(*nested);
+    const auto & from_tuple = assert_cast<const DataTypeTuple &>(*from_array.getNestedType());
+    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

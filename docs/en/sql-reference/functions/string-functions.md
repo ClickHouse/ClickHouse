@@ -6,9 +6,7 @@ sidebar_label: Strings
 
 # Functions for Working with Strings
 
-:::note
-Functions for [searching](../../sql-reference/functions/string-search-functions.md) in strings and for [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
-:::
+Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
 
 ## empty
 
@@ -312,7 +310,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 
 ## repeat
 
-Conatenates a string as many times with itself as specified.
+Concatenates a string as many times with itself as specified.
 
 **Syntax**
 
@@ -325,11 +323,11 @@ Alias: `REPEAT`
 **Arguments**
 
 - `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
-- `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
+- `n` — The number of times to repeat the string. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-The single string containing string `s` repeated `n` times. If `n` \< 1, the function returns empty string.
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.
 
 Type: `String`.
 
@@ -347,6 +345,44 @@ Result:
 └────────────────────────────────┘
 ```
 
+## space
+
+Concatenates a space (` `) as many times with itself as specified.
+
+**Syntax**
+
+``` sql
+space(n)
+```
+
+Alias: `SPACE`.
+
+**Arguments**
+
+- `n` — The number of times to repeat the space. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT space(3);
+```
+
+Result:
+
+``` text
+┌─space(3) ────┐
+│              │
+└──────────────┘
+```
+
 ## reverse
 
 Reverses the sequence of bytes in a string.
@@ -357,7 +393,7 @@ Reverses a sequence of Unicode code points in a string. Assumes that the string 
 
 ## format
 
-Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitely given monotonically increasing numbers).
+Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
 
 **Syntax**
 

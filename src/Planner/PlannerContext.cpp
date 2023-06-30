@@ -19,17 +19,9 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & /*column_source_node*/)
 {
     std::string column_identifier;
-
-    if (column_source_node->hasAlias())
-        column_identifier += column_source_node->getAlias();
-    else if (const auto * table_source_node = column_source_node->as<TableNode>())
-        column_identifier += table_source_node->getStorageID().getFullNameNotQuoted();
-
-    if (!column_identifier.empty())
-        column_identifier += '.';
 
     column_identifier += column.name;
     column_identifier += '_' + std::to_string(column_identifiers.size());
@@ -124,51 +116,6 @@ PlannerContext::SetKey PlannerContext::createSetKey(const QueryTreeNodePtr & set
 {
     auto set_source_hash = set_source_node->getTreeHash();
     return "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
-}
-
-void PlannerContext::registerSet(const SetKey & key, PlannerSet planner_set)
-{
-    if (!planner_set.getSet().isValid())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Set must be initialized");
-
-    const auto & subquery_node = planner_set.getSubqueryNode();
-    if (subquery_node)
-    {
-        auto node_type = subquery_node->getNodeType();
-
-        if (node_type != QueryTreeNodeType::QUERY &&
-            node_type != QueryTreeNodeType::UNION)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Invalid node for set table expression. Expected query or union. Actual {}",
-                subquery_node->formatASTForErrorMessage());
-    }
-
-    set_key_to_set.emplace(key, std::move(planner_set));
-}
-
-bool PlannerContext::hasSet(const SetKey & key) const
-{
-    return set_key_to_set.contains(key);
-}
-
-const PlannerSet & PlannerContext::getSetOrThrow(const SetKey & key) const
-{
-    auto it = set_key_to_set.find(key);
-    if (it == set_key_to_set.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "No set is registered for key {}",
-            key);
-
-    return it->second;
-}
-
-PlannerSet * PlannerContext::getSetOrNull(const SetKey & key)
-{
-    auto it = set_key_to_set.find(key);
-    if (it == set_key_to_set.end())
-        return nullptr;
-
-    return &it->second;
 }
 
 }

@@ -17,8 +17,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool _> using FuncQuantileApprox = AggregateFunctionQuantile<Value, QuantileApprox<Value>, NameQuantileApprox, false, void, false>;
-template <typename Value, bool _> using FuncQuantilesApprox = AggregateFunctionQuantile<Value, QuantileApprox<Value>, NameQuantilesApprox, false, void, true>;
+template <typename Value, bool _> using FuncQuantileGK = AggregateFunctionQuantile<Value, QuantileGK<Value>, NameQuantileGK, false, void, false>;
+template <typename Value, bool _> using FuncQuantilesGK = AggregateFunctionQuantile<Value, QuantileGK<Value>, NameQuantilesGK, false, void, true>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -61,11 +61,11 @@ void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileApprox::name, createAggregateFunctionQuantile<FuncQuantileApprox>);
-    factory.registerFunction(NameQuantilesApprox::name, {createAggregateFunctionQuantile<FuncQuantilesApprox>, properties});
+    factory.registerFunction(NameQuantileGK::name, createAggregateFunctionQuantile<FuncQuantileGK>);
+    factory.registerFunction(NameQuantilesGK::name, {createAggregateFunctionQuantile<FuncQuantilesGK>, properties});
 
     /// 'median' is an alias for 'quantile'
-    factory.registerAlias("medianApprox", NameQuantileApprox::name);
+    factory.registerAlias("medianGK", NameQuantileGK::name);
 }
 
 }
