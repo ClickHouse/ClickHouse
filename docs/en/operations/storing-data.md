@@ -188,9 +188,9 @@ These settings should be defined in the disk configuration section.
 
 - `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `false`. This setting was added in version 22.8. If you used filesystem cache before this version, then it will not work on versions starting from 22.8 if this setting is set to `true`. If you want to use this setting, clear old cache created before version 22.8 before upgrading.
 
-- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `104857600` (`100Mi`).
+- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `8388608` (`8Mi`).
 
-- `max_elements` - a limit for a number of cache files. Default: `1048576`.
+- `max_elements` - a limit for a number of cache files. Default: `10000000`.
 
 File Cache **query/profile settings**:
 
