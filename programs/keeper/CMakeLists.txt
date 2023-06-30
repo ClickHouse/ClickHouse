@@ -43,6 +43,8 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperDispatcher.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperLogStore.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperServer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperContext.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperFeatureFlags.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperSnapshotManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperSnapshotManagerS3.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateMachine.cpp
@@ -167,11 +169,27 @@ if (BUILD_STANDALONE_KEEPER)
         clickhouse-keeper.cpp
     )
 
+    # List of resources for clickhouse-keeper client
+    if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+        list(APPEND CLICKHOUSE_KEEPER_STANDALONE_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../programs/keeper-client/KeeperClient.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../programs/keeper-client/Commands.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../programs/keeper-client/Parser.cpp
+
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Client/LineReader.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Client/ReplxxLineReader.cpp
+        )
+    endif()
+
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
     target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_PROGRAM_STANDALONE_BUILD)
     target_compile_definitions (clickhouse-keeper PUBLIC -DWITHOUT_TEXT_LOG)
+
+    if (ENABLE_CLICKHOUSE_KEEPER_CLIENT AND TARGET ch_rust::skim)
+        target_link_libraries(clickhouse-keeper PRIVATE ch_rust::skim)
+    endif()
 
     target_link_libraries(clickhouse-keeper
         PRIVATE
