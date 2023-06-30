@@ -106,9 +106,9 @@ std::optional<Range> Range::unionWith(const Range & r) const
                  right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
 }
 
-std::vector<Range> Range::invertRange() const
+Ranges Range::invertRange() const
 {
-    std::vector<Range> ranges;
+    Ranges ranges;
     /// For full bounded range will generate two ranges.
     if (fullBounded()) /// case: [1, 3] -> (-inf, 1), (3, +inf)
     {
@@ -282,64 +282,49 @@ PlainRanges::PlainRanges(const Range & range)
 }
 
 
-PlainRanges::PlainRanges(const Ranges & ranges_, bool may_has_intersection, bool ordered)
+PlainRanges::PlainRanges(Ranges & ranges_, bool may_have_intersection, bool ordered)
 {
-    if (may_has_intersection)
-    {
-        ranges = makePlain(ranges_, ordered);
-    }
+    if (may_have_intersection)
+        ranges = ordered ? makePlainFromOrdered(ranges_) : makePlainFromUnordered(ranges_);
     else
-    {
-        ranges = ranges_;
-        if (!ordered)
-            std::sort(ranges.begin(), ranges.end(), compareByLeftBound);
-    }
+        ranges = std::move(ranges_);
 }
 
-Ranges PlainRanges::makePlain(const Ranges & ranges_, bool ordered)
+PlainRanges::PlainRanges(Ranges && ranges_, bool may_have_intersection, bool ordered)
+{
+    if (may_have_intersection)
+        ranges = ordered ? makePlainFromOrdered(ranges_) : makePlainFromUnordered(ranges_);
+    else
+        ranges = std::move(ranges_);
+}
+
+Ranges PlainRanges::makePlainFromOrdered(const Ranges & ranges_)
 {
     if (ranges_.size() <= 1)
         return ranges_;
 
-    auto to_be_union = ranges_;
+    Ranges ret{ranges_.front()};
 
-    if (!ordered)
-        std::sort(to_be_union.begin(), to_be_union.end(), compareByLeftBound);
-
-    Ranges ret;
-
-    for (size_t i = 0; i < to_be_union.size();)
+    for (size_t i = 1; i < ranges_.size(); ++i)
     {
-        size_t first_disjunct_range = to_be_union.size();
-        auto & cur = to_be_union[i];
-
-        /// find the first disjunct range
-        for (size_t j=i+1; j<to_be_union.size(); j++)
-        {
-            if (to_be_union[j-1].leftThan(to_be_union[j]))
-            {
-                first_disjunct_range = j;
-                break;
-            }
-        }
-
-        /// union range from cur to first_disjunct_range
-        Range combined_range = cur;
-        for (size_t j=i+1; j <first_disjunct_range; j++)
-        {
-            combined_range = *(combined_range.unionWith(to_be_union[j]));
-        }
-
-        if (!ret.empty() && ret.back().intersectsRange(combined_range))
-            ret.back() = *ret.back().unionWith(combined_range);
+        const auto & cur = ranges_[i];
+        if (!ret.empty() && ret.back().intersectsRange(cur))
+            ret.back() = *ret.back().unionWith(cur);
         else
-            ret.push_back(combined_range);
-
-        i = first_disjunct_range;
+            ret.push_back(cur);
     }
 
     return ret;
-};
+}
+
+Ranges PlainRanges::makePlainFromUnordered(Ranges & ranges_)
+{
+    if (ranges_.size() <= 1)
+        return ranges_;
+
+    std::sort(ranges_.begin(), ranges_.end(), compareByLeftBound);
+    return makePlainFromOrdered(ranges_);
+}
 
 PlainRanges PlainRanges::unionWith(const PlainRanges & other)
 {
@@ -384,7 +369,7 @@ PlainRanges PlainRanges::unionWith(const PlainRanges & other)
     /// After union two PlainRanges, new ranges may like: [1, 4], [2, 5]
     /// We must make them plain.
 
-    return PlainRanges(makePlain(new_range, true));
+    return PlainRanges(makePlainFromOrdered(new_range));
 }
 
 PlainRanges PlainRanges::intersectWith(const PlainRanges & other)
@@ -436,7 +421,7 @@ bool PlainRanges::compareByRightBound(const Range & lhs, const Range & rhs)
 };
 
 
-std::vector<Ranges> PlainRanges::inverse(const Ranges & to_invert_ranges)
+std::vector<Ranges> PlainRanges::invert(const Ranges & to_invert_ranges)
 {
     /// invert a blank ranges
     if (to_invert_ranges.empty())
@@ -2712,7 +2697,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             auto to_invert_ranges = rpn_stack.top();
             rpn_stack.pop();
 
-            std::vector<Ranges> reverted_ranges = PlainRanges::inverse(to_invert_ranges.ranges);
+            std::vector<Ranges> reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
 
             if (reverted_ranges.size() == 1)
                 rpn_stack.emplace(std::move(reverted_ranges[0]));

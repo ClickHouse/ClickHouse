@@ -51,6 +51,9 @@ struct FieldRef : public Field
     size_t column_idx = 0;
 };
 
+struct Range;
+using Ranges = std::vector<Range>;
+
 /** Range with open or closed ends; possibly unbounded.
   */
 struct Range
@@ -131,7 +134,7 @@ public:
     /// Invert the range.
     /// Example:
     ///     [1, 3] -> (-inf, 1), (3, +inf)
-    std::vector<Range> invertRange() const;
+    Ranges invertRange() const;
 
     std::optional<Range> intersectWith(const Range & r) const;
     std::optional<Range> unionWith(const Range & r) const;
@@ -143,8 +146,6 @@ public:
     String toString() const;
 };
 
-
-using Ranges = std::vector<Range>;
 
 /** A plain ranges is a series of ranges who
  *      1. have no intersection in any two of the ranges
@@ -163,7 +164,9 @@ struct PlainRanges
     Ranges ranges;
 
     explicit PlainRanges(const Range & range);
-    explicit PlainRanges(const Ranges & ranges_, bool may_has_intersection = false, bool ordered = true);
+
+    explicit PlainRanges(Ranges & ranges_, bool may_has_intersection = false, bool ordered = true);
+    explicit PlainRanges(Ranges && ranges_, bool may_has_intersection = false, bool ordered = true);
 
     PlainRanges unionWith(const PlainRanges & other);
     PlainRanges intersectWith(const PlainRanges & other);
@@ -172,12 +175,13 @@ struct PlainRanges
     /// Example:
     ///         [1, 3], [2, 4], [6, 8] -> [1, 4], [6, 8]
     ///         [1, 3], [2, 4], (4, 5] -> [1, 4], [5, 5]
-    static Ranges makePlain(const Ranges & ranges_, bool ordered);
+    static Ranges makePlainFromUnordered(Ranges & ranges_);
+    static Ranges makePlainFromOrdered(const Ranges & ranges_);
 
     static bool compareByLeftBound(const Range & lhs, const Range & rhs);
     static bool compareByRightBound(const Range & lhs, const Range & rhs);
 
-    static std::vector<Ranges> inverse(const Ranges & to_invert_ranges);
+    static std::vector<Ranges> invert(const Ranges & to_invert_ranges);
 
     static PlainRanges makeBlank() { return PlainRanges({}); }
     static PlainRanges makeUniverse() { return PlainRanges({Range::createWholeUniverseWithoutNull()}); }

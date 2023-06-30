@@ -59,17 +59,15 @@ private:
 
 /// Generate numbers according to ranges.
 /// Numbers generated is ordered in one stream.
-/// And we will not generate additional numbers out of ranges.
+/// Notice that we will not generate additional numbers out of ranges.
 class NumbersRangedSource : public ISource
 {
 public:
-    /// Represent a position in Ranges
+    /// Represent a position in Ranges list.
     struct RangesPos
     {
-        /// offset in Ranges
-        size_t x;
-        /// offset in Range
-        UInt128 y;
+        size_t offset_in_ranges;
+        UInt128 offset_in_range;
     };
 
     NumbersRangedSource(const Ranges & ranges_, UInt64 base_block_size_, RangesPos start_, RangesPos end_, UInt128 size_)
@@ -116,38 +114,40 @@ protected:
         while (size != 0 && block_size - provided != 0)
         {
             UInt128 need = block_size - provided;
-            auto& range = ranges[cursor.x];
+            auto& range = ranges[cursor.offset_in_ranges];
 
-            UInt128 can_provide = cursor.x == end.x ? end.y - cursor.y : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.y;
+            UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges ?
+                    end.offset_in_range - cursor.offset_in_range : 
+                    static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
 
-            uint64_t start_value = first_value(range) + cursor.y;
+            uint64_t start_value = first_value(range) + cursor.offset_in_range;
             if (can_provide > need)
             {
-                for (size_t i=0; i < need; i++)
-                    *(pos++) = start_value + i;
+                for (size_t i=0; i < need; ++i, ++start_value)
+                    *(pos++) = start_value;
 
                 provided += need;
-                cursor.y += need;
+                cursor.offset_in_range += need;
                 size -= need;
             }
             else if (can_provide == need)
             {
-                for (size_t i=0; i < need; i++)
-                    *(pos++) = start_value + i;
+                for (size_t i=0; i < need; ++i, ++start_value)
+                    *(pos++) = start_value;
 
                 provided += need;
-                cursor.x++;
-                cursor.y = 0;
+                cursor.offset_in_ranges++;
+                cursor.offset_in_range = 0;
                 size -= need;
             }
             else
             {
-                for (size_t i=0; i < can_provide; i++)
-                    *(pos++) = start_value + i;
+                for (size_t i=0; i < can_provide; ++i, ++start_value)
+                    *(pos++) = start_value;
 
                 provided += can_provide;
-                cursor.x++;
-                cursor.y = 0;
+                cursor.offset_in_ranges++;
+                cursor.offset_in_range = 0;
                 size -= can_provide;
             }
         }
@@ -168,6 +168,23 @@ private:
     /// how many numbers left
     UInt128 size;
 };
+
+}
+
+namespace
+{
+/// Whether we should push limit down to scan.
+bool shouldPushdownLimit(const ASTSelectQuery & query, UInt64 limit_length)
+{
+    /// Just ignore some minor cases, such as:
+    ///     select * from system.numbers order by number asc limit 10
+    return !query.distinct
+        && !query.window()
+        && !query.orderBy()
+        && !query.groupBy()
+        && !query.limitBy()
+        && (limit_length > 0 && !query.limit_with_ties);
+}
 
 }
 
@@ -230,21 +247,10 @@ Pipe StorageSystemNumbers::read(
         auto & query = query_info.query->as<ASTSelectQuery &>();
         auto [limit_length, limit_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query, context);
 
-        auto limit_length_copy = limit_length;
-        auto should_pushdown_limit = [limit_length_copy, &query]()
-        {
-            /// Just ignore some minor cases, such as:
-            ///     select * from system.numbers order by number asc limit 10
-            return !query.distinct
-                && !query.window()
-                && !query.orderBy()
-                && !query.groupBy()
-                && !query.limitBy()
-                && (limit_length_copy > 0 && !query.limit_with_ties);
-        };
+        bool should_pushdown_limit = shouldPushdownLimit(query, limit_length);
 
         /// If intersected ranges is limited or we can pushdown limit.
-        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit())
+        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit)
         {
             auto size_of_range = [] (const Range & r) -> UInt128
             {
@@ -279,7 +285,7 @@ Pipe StorageSystemNumbers::read(
             UInt128 query_limit = limit_length + limit_offset;
 
             /// limit total_size by query_limit
-            if (should_pushdown_limit() && query_limit < total_size)
+            if (should_pushdown_limit && query_limit < total_size)
                 total_size = query_limit;
 
             if (total_size / max_block_size < num_streams)
@@ -299,22 +305,22 @@ Pipe StorageSystemNumbers::read(
                 NumbersRangedSource::RangesPos end(start);
                 while (need != 0)
                 {
-                    UInt128 can_provide = size_of_range(intersected_ranges[end.x]) - end.y;
+                    UInt128 can_provide = size_of_range(intersected_ranges[end.offset_in_ranges]) - end.offset_in_range;
                     if (can_provide > need)
                     {
-                        end.y += need;
+                        end.offset_in_range += need;
                         need = 0;
                     }
                     else if (can_provide == need)
                     {
-                        end.x++;
-                        end.y = 0;
+                        end.offset_in_ranges++;
+                        end.offset_in_range = 0;
                         need = 0;
                     }
                     else
                     {
-                        end.x++;
-                        end.y = 0;
+                        end.offset_in_ranges++;
+                        end.offset_in_range = 0;
                         need -= can_provide;
                     }
                 }
