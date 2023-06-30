@@ -6,7 +6,6 @@
 #include <base/find_symbols.h>
 
 #include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -26,9 +25,8 @@ static inline bool checkRegexExpression(std::string_view match_str, const Compil
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-    re2::StringPiece matches[num_captures];
-    re2::StringPiece match_input(match_str.data(), match_str.size());
-    return compiled_regex->Match(match_input, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
+    std::string_view matches[num_captures];
+    return compiled_regex->Match({match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
 }
 
 static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
