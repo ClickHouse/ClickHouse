@@ -113,7 +113,7 @@ void CSVRowInputFormat::resetParser()
     buf->reset();
 }
 
-static void skipEndOfLine(ReadBuffer & in)
+static void skipEndOfLine(ReadBuffer & in, const bool & ignore_input_fields)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
 
@@ -133,6 +133,8 @@ static void skipEndOfLine(ReadBuffer & in)
                 "Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
                 " Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.");
     }
+    else if (!in.eof() && ignore_input_fields)
+        skipToNextLineOrEOF(in);
     else if (!in.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected end of line");
 }
@@ -194,7 +196,7 @@ void CSVFormatReader::skipRowEndDelimiter()
     if (buf->eof())
         return;
 
-    skipEndOfLine(*buf);
+    skipEndOfLine(*buf, format_settings.csv.ignore_while_input_row_too_many_fields);
 }
 
 void CSVFormatReader::skipHeaderRow()
@@ -279,7 +281,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
         return false;
     }
 
-    skipEndOfLine(*buf);
+    skipEndOfLine(*buf, format_settings.csv.ignore_while_input_row_too_many_fields);
     return true;
 }
 

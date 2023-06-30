@@ -72,6 +72,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.skip_trailing_empty_lines = settings.input_format_csv_skip_trailing_empty_lines;
     format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
     format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
+    format_settings.csv.ignore_while_input_row_too_many_fields = settings.input_format_csv_ignore_while_input_row_too_many_fields;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
