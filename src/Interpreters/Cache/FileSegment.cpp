@@ -648,8 +648,6 @@ void FileSegment::complete()
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        detach(segment_lock, *locked_key);
-        setDownloadState(State::DETACHED, segment_lock);
         locked_key->removeFileSegment(offset(), segment_lock);
         return;
     }
@@ -798,7 +796,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         }
 
         chassert(reserved_size >= downloaded_size);
-        chassert((reserved_size == 0) || queue_iterator);
         check_iterator(queue_iterator);
     }
 
