@@ -5,17 +5,14 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Throttler.h>
-#include <Common/filesystemHelpers.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -40,14 +37,14 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size, Priority priority)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size, int64_t priority)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = Priority{base_priority.value + priority.value};
+    request.priority = base_priority + priority;
     request.ignore = bytes_to_ignore;
     bytes_to_ignore = 0;
 
@@ -61,7 +58,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 }
 
 
-void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
+void AsynchronousReadBufferFromFileDescriptor::prefetch(int64_t priority)
 {
     if (prefetch_future.valid())
         return;
@@ -95,8 +92,6 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 
         assert(offset <= size);
         size_t bytes_read = size - offset;
-        if (throttler)
-            throttler->add(bytes_read, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
         if (bytes_read)
         {
@@ -122,8 +117,6 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 
         assert(offset <= size);
         size_t bytes_read = size - offset;
-        if (throttler)
-            throttler->add(bytes_read, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
         if (bytes_read)
         {
@@ -151,19 +144,17 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
 
 AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
     IAsynchronousReader & reader_,
-    Priority priority_,
+    Int32 priority_,
     int fd_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_,
-    ThrottlerPtr throttler_)
+    std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
     , reader(reader_)
     , base_priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)
-    , throttler(throttler_)
 {
     if (required_alignment > buf_size)
         throw Exception(

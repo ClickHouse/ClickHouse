@@ -11,7 +11,6 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/KeeperFeatureFlags.h>
 
 
 namespace Coordination
@@ -40,7 +39,6 @@ public:
 
     bool isExpired() const override { return expired; }
     int64_t getSessionID() const override { return 0; }
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
 
     void create(
@@ -93,9 +91,9 @@ public:
 
     void finalize(const String & reason) override;
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
+    DB::KeeperApiVersion getApiVersion() override
     {
-        return false;
+        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
     }
 
     struct Node
@@ -128,8 +126,6 @@ private:
 
     zkutil::ZooKeeperArgs args;
 
-    Poco::Net::SocketAddress connected_zk_address;
-
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};
 
@@ -150,3 +146,4 @@ private:
 };
 
 }
+

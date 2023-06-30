@@ -8,9 +8,24 @@ ORDER BY (SiteId, DateVisit)
 SETTINGS index_granularity = {{ index_granularity }}, min_bytes_for_wide_part = 0;
 
 -- Insert some data to have 110K rows in the range 2022-08-10 .. 2022-08-20 and some more rows before and after that range
-insert into url_na_log select 209, ('2022-08-09'::Date + INTERVAL intDiv(number,10000) DAY) from numbers(130000) SETTINGS max_insert_block_size=200000;
+insert into url_na_log select 209, '2022-08-09' from numbers(10000);
+insert into url_na_log select 209, '2022-08-10' from numbers(10000);
+insert into url_na_log select 209, '2022-08-11' from numbers(10000);
+insert into url_na_log select 209, '2022-08-12' from numbers(10000);
+insert into url_na_log select 209, '2022-08-13' from numbers(10000);
+insert into url_na_log select 209, '2022-08-14' from numbers(10000);
+insert into url_na_log select 209, '2022-08-15' from numbers(10000);
+insert into url_na_log select 209, '2022-08-16' from numbers(10000);
+insert into url_na_log select 209, '2022-08-17' from numbers(10000);
+insert into url_na_log select 209, '2022-08-18' from numbers(10000);
+insert into url_na_log select 209, '2022-08-19' from numbers(10000);
+insert into url_na_log select 209, '2022-08-20' from numbers(10000);
+insert into url_na_log select 209, '2022-08-21' from numbers(10000);
+
 
 SET mutations_sync=2;
+
+OPTIMIZE TABLE url_na_log FINAL;
 
 -- { echoOn }
 

@@ -79,8 +79,7 @@ public:
             {
                 length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
                 if (length_to_resize > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                    "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
             }
         }
 
@@ -168,8 +167,7 @@ public:
         readVarUInt(size, buf);
 
         if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         Array & arr = data(place).value;
 

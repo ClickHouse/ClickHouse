@@ -33,24 +33,8 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
     UNREACHABLE();
 }
 
-inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
-{
-    cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
-
-    /// Ambiguity is possible if time was changed backwards at the midnight
-    /// or after midnight time has been changed back to midnight, for example one hour backwards at 01:00
-    /// or after midnight time has been changed to the previous day, for example two hours backwards at 01:00
-    /// Then midnight appears twice. Usually time change happens exactly at 00:00 or 01:00.
-
-    /// If transition did not involve previous day, we should use the first midnight as the start of the day,
-    /// otherwise it's better to use the second midnight.
-
-    return lookup.trans < lookup.post
-        ? lookup.post /* Second midnight appears after transition, so there was a piece of previous day after transition */
-        : lookup.pre;
 }
 
-}
 
 __attribute__((__weak__)) extern bool inside_main;
 
@@ -79,52 +63,27 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     offset_is_whole_number_of_minutes_during_epoch = true;
 
     cctz::civil_day date = lut_start;
-    cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(cctz_time_zone, date);
 
-    auto next_transition_date = date;
-
-    /// Fill the lookup table:
-    /// Adjustments only occur at the dates of transitions. We save next_transition_date and add 24h to the
-    /// previous value until we reach the it. Then we do the adjustment and get the new next_transition_date.
     UInt32 i = 0;
     do
     {
+        cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
+
+        /// Ambiguity is possible if time was changed backwards at the midnight
+        /// or after midnight time has been changed back to midnight, for example one hour backwards at 01:00
+        /// or after midnight time has been changed to the previous day, for example two hours backwards at 01:00
+        /// Then midnight appears twice. Usually time change happens exactly at 00:00 or 01:00.
+
+        /// If transition did not involve previous day, we should use the first midnight as the start of the day,
+        /// otherwise it's better to use the second midnight.
+
+        std::chrono::time_point start_of_day_time_point = lookup.trans < lookup.post
+            ? lookup.post /* Second midnight appears after transition, so there was a piece of previous day after transition */
+            : lookup.pre;
+
+        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
+
         Values & values = lut[i];
-
-        values.time_at_offset_change_value = 0;
-        values.amount_of_offset_change_value = 0;
-
-        if (date >= next_transition_date)
-        {
-            start_of_day_time_point_if_no_transitions = lookupTz(cctz_time_zone, date);
-
-            /// If UTC offset was changed this day.
-            /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
-            cctz::time_zone::civil_transition transition{};
-            if (cctz_time_zone.next_transition(start_of_day_time_point_if_no_transitions - std::chrono::seconds(1), &transition)
-                && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
-                && transition.from != transition.to)
-            {
-                values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
-                values.amount_of_offset_change_value = (transition.to - transition.from) / Values::OffsetChangeFactor;
-
-                /// We don't support too large changes.
-                if (values.amount_of_offset_change_value > 24 * 4)
-                    values.amount_of_offset_change_value = 24 * 4;
-                else if (values.amount_of_offset_change_value < -24 * 4)
-                    values.amount_of_offset_change_value = -24 * 4;
-
-                /// We don't support cases when time change results in switching to previous day.
-                /// Shift the point of time change later.
-                if (values.time_at_offset_change_value + values.amount_of_offset_change_value < 0)
-                    values.time_at_offset_change_value = -values.amount_of_offset_change_value;
-            }
-
-            next_transition_date = std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from));
-        }
-
-        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point_if_no_transitions);
-
         values.year = date.year();
         values.month = date.month();
         values.day_of_month = date.day();
@@ -144,14 +103,38 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         else
             values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
 
+        values.time_at_offset_change_value = 0;
+        values.amount_of_offset_change_value = 0;
+
         if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
             offset_is_whole_number_of_hours_during_epoch = false;
 
         if (offset_is_whole_number_of_minutes_during_epoch && start_of_day > 0 && start_of_day % 60)
             offset_is_whole_number_of_minutes_during_epoch = false;
 
+        /// If UTC offset was changed this day.
+        /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
+        cctz::time_zone::civil_transition transition{};
+        if (cctz_time_zone.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition)
+            && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
+            && transition.from != transition.to)
+        {
+            values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
+            values.amount_of_offset_change_value = (transition.to - transition.from) / Values::OffsetChangeFactor;
+
+            /// We don't support too large changes.
+            if (values.amount_of_offset_change_value > 24 * 4)
+                values.amount_of_offset_change_value = 24 * 4;
+            else if (values.amount_of_offset_change_value < -24 * 4)
+                values.amount_of_offset_change_value = -24 * 4;
+
+            /// We don't support cases when time change results in switching to previous day.
+            /// Shift the point of time change later.
+            if (values.time_at_offset_change_value + values.amount_of_offset_change_value < 0)
+                values.time_at_offset_change_value = -values.amount_of_offset_change_value;
+        }
+
         /// Going to next day.
-        start_of_day_time_point_if_no_transitions += std::chrono::hours(24);
         ++date;
         ++i;
     }

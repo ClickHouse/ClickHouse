@@ -160,14 +160,16 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 
     if (col->lowCardinality())
     {
-        const ColumnLowCardinality & col_lc = assert_cast<const ColumnLowCardinality &>(*col);
-        if (col_lc.nestedIsNullable())
+        auto mut_col = IColumn::mutate(std::move(col));
+        ColumnLowCardinality * col_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+        if (col_lc->nestedIsNullable())
         {
-            return col;
+            return mut_col;
         }
-        else if (col_lc.nestedCanBeInsideNullable())
+        else if (col_lc->nestedCanBeInsideNullable())
         {
-            return col_lc.cloneNullable();
+            col_lc->nestedToNullable();
+            return mut_col;
         }
     }
     else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
@@ -230,7 +232,11 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->lowCardinality())
         {
-            column.column = assert_cast<const ColumnLowCardinality *>(column.column.get())->cloneWithDefaultOnNull();
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
+            if (col_as_lc && col_as_lc->nestedIsNullable())
+                col_as_lc->nestedRemoveNullable();
+            column.column = std::move(mut_col);
         }
     }
     else

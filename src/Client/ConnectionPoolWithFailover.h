@@ -48,14 +48,13 @@ public:
               const Settings * settings,
               bool force_connected) override; /// From IConnectionPool
 
-    Priority getPriority() const override; /// From IConnectionPool
+    Int64 getPriority() const override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
     std::vector<Entry> getMany(const ConnectionTimeouts & timeouts,
-                               const Settings * settings, PoolMode pool_mode,
-                               AsyncCallback async_callback = {});
+                               const Settings * settings, PoolMode pool_mode);
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
@@ -70,8 +69,7 @@ public:
             const ConnectionTimeouts & timeouts,
             const Settings * settings,
             PoolMode pool_mode,
-            const QualifiedTableName & table_to_check,
-            AsyncCallback async_callback = {});
+            const QualifiedTableName & table_to_check);
 
     struct NestedPoolStatus
     {
@@ -108,8 +106,7 @@ private:
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings * settings,
-            const QualifiedTableName * table_to_check = nullptr,
-            AsyncCallback async_callback = {});
+            const QualifiedTableName * table_to_check = nullptr);
 
     GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
