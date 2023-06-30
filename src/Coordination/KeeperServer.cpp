@@ -108,20 +108,18 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
+    KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
     KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
-    , keeper_context{std::make_shared<KeeperContext>()}
+    , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
-
-    keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
-    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
@@ -674,7 +672,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
 
-                WriteBuffer write_buf(buffer_start, write_buffer_header_size);
+                WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
                 if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
@@ -683,6 +681,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 writeIntBinary(request_for_session->digest->version, write_buf);
                 if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
+
+                write_buf.finalize();
 
                 return nuraft::cb_func::ReturnCode::Ok;
             }
