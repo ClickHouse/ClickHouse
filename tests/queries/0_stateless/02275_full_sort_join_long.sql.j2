@@ -30,7 +30,7 @@ SELECT 'skipped';
 
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}1M{% else %}0{% endif %}';
+SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}16M{% else %}0{% endif %}';
 
 SELECT '-- {{ join_algorithm }} --';
 SET join_algorithm = '{{ join_algorithm }}';
