@@ -5,6 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 function has_used_parallel_replicas () {
+    # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
@@ -12,7 +13,7 @@ function has_used_parallel_replicas () {
             sumIf(read_rows, is_initial_query) as read_rows,
             sumIf(read_bytes, is_initial_query) as read_bytes
         FROM system.query_log
-    WHERE event_date >= yesterday() and initial_query_id LIKE '$1%' AND current_database = '$CLICKHOUSE_DATABASE'
+    WHERE event_date >= yesterday() and initial_query_id LIKE '$1%'
     GROUP BY initial_query_id
     ORDER BY min(event_time_microseconds) ASC
     FORMAT TSV"
@@ -34,7 +35,6 @@ function run_query_with_pure_parallel_replicas () {
         --allow_experimental_parallel_reading_from_replicas 1 \
         --allow_experimental_analyzer 0
 
-    # Not implemented yet
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_pure_analyzer" \
