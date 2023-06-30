@@ -98,7 +98,7 @@ Let's verify it worked by seeing how many rows were inserted:
 
 ```sql
 SELECT count()
-FROM uk_price_paid
+FROM uk_price_paid;
 ```
 
 At the time this query was run, the dataset had 27,450,499 rows. Let's see what the storage size is of the table in ClickHouse:
@@ -106,7 +106,7 @@ At the time this query was run, the dataset had 27,450,499 rows. Let's see what 
 ```sql
 SELECT formatReadableSize(total_bytes)
 FROM system.tables
-WHERE name = 'uk_price_paid'
+WHERE name = 'uk_price_paid';
 ```
 
 Notice the size of the table is just 221.43 MiB!
@@ -125,7 +125,7 @@ SELECT
 )
 FROM uk_price_paid
 GROUP BY year
-ORDER BY year
+ORDER BY year;
 ```
 
 The result looks like:
@@ -174,7 +174,7 @@ SELECT
 FROM uk_price_paid
 WHERE town = 'LONDON'
 GROUP BY year
-ORDER BY year
+ORDER BY year;
 ```
 
 The result looks like:
@@ -230,7 +230,7 @@ GROUP BY
     district
 HAVING c >= 100
 ORDER BY price DESC
-LIMIT 100
+LIMIT 100;
 ```
 
 The result looks like:
@@ -363,7 +363,7 @@ ALTER TABLE uk_price_paid
             toYear(date),
             district,
             town
-    )
+    );
 ```
 
 Populate the projection for existing data. (Without materializing it, the projection will be created for only newly inserted data):
@@ -371,7 +371,7 @@ Populate the projection for existing data. (Without materializing it, the projec
 ```sql
 ALTER TABLE uk_price_paid
     MATERIALIZE PROJECTION projection_by_year_district_town
-SETTINGS mutations_sync = 1
+SETTINGS mutations_sync = 1;
 ```
 
 ## Test Performance {#test-performance}
@@ -387,7 +387,7 @@ SELECT
     bar(price, 0, 1000000, 80)
 FROM uk_price_paid
 GROUP BY year
-ORDER BY year ASC
+ORDER BY year ASC;
 ```
 
 The result is the same, but the performance is better!
@@ -407,7 +407,7 @@ SELECT
 FROM uk_price_paid
 WHERE town = 'LONDON'
 GROUP BY year
-ORDER BY year ASC
+ORDER BY year ASC;
 ```
 
 Same result, but notice the improvement in query performance:
@@ -435,7 +435,7 @@ GROUP BY
     district
 HAVING c >= 100
 ORDER BY price DESC
-LIMIT 100
+LIMIT 100;
 ```
 
 Again, the result is the same but notice the improvement in query performance:
