@@ -30,6 +30,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -354,7 +355,6 @@ bool HDFSSource::initialize()
         uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
     read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
-
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
     QueryPipelineBuilder builder;
