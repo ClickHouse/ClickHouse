@@ -141,6 +141,15 @@ void increasePriority(const HolderPtr & holder)
 class FileCacheTest : public ::testing::Test
 {
 public:
+    FileCacheTest() {
+        /// Context has to be created before calling cache.initialize();
+        /// Otherwise the tests which run before FileCacheTest.get are failed
+        /// It is logical to call destroyContext() at destructor.
+        /// But that wouldn't work because for proper initialization and destruction global/static objects
+        /// testing::Environment has to be used.
+        getContext();
+    }
+
     static void setupLogs(const std::string & level)
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
@@ -686,6 +695,7 @@ TEST_F(FileCacheTest, writeBuffer)
         }
         for (auto & t : threads)
             t.join();
+        out.finalize();
         return holder;
     };
 

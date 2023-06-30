@@ -5,6 +5,4 @@
         <max_cleanup_delay_period>60</max_cleanup_delay_period>
         <cleanup_thread_preferred_points_per_iteration>10</cleanup_thread_preferred_points_per_iteration>
     </merge_tree>
-
-    <replicated_merge_tree_paranoid_check_on_drop_range>1</replicated_merge_tree_paranoid_check_on_drop_range>
 </clickhouse>
