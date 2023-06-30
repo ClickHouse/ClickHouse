@@ -119,6 +119,13 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
+
+# Just in case previous version left some garbage in zk
+sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
+  | sed "s|>1<|>0<|g" \
+  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
