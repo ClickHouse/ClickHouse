@@ -477,7 +477,7 @@ TEST_F(FileCacheTest, get)
                 }
                 cv.notify_one();
 
-                file_segment2.wait(file_segment2.range().left);
+                file_segment2.wait(file_segment2.range().right);
                 file_segment2.complete();
                 ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
             });
