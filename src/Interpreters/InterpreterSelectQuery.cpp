@@ -833,17 +833,77 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         need_analyze_again = true;
     }
 
-    if (can_analyze_again
-        && settings.max_parallel_replicas > 1
-        && settings.allow_experimental_parallel_reading_from_replicas > 0
-        && settings.parallel_replicas_custom_key.value.empty()
-        && getTrivialCount(0).has_value())
+    if (storage
+        /// While only analyzing we don't know anything about parts, so any decision about parallel would be wrong
+        && !options.only_analyze && can_analyze_again && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_parallel_reading_from_replicas > 0 && settings.parallel_replicas_custom_key.value.empty())
     {
-        /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
-        need_analyze_again = true;
-        LOG_TRACE(log, "Disabling parallel replicas to be able to use a trivial count optimization");
+        if (getTrivialCount(0).has_value())
+        {
+            /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("max_parallel_replicas", UInt64{0});
+            need_analyze_again = true;
+            LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
+        }
+        else if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
+        {
+            std::optional<UInt64> rows_to_read{};
+
+            auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+            if (storage_merge_tree)
+            {
+                /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
+                addPrewhereAliasActions();
+                auto & prewhere_info = analysis_result.prewhere_info;
+                if (prewhere_info)
+                {
+                    query_info.prewhere_info = prewhere_info;
+                    if (query.prewhere() && !query.where())
+                        query_info.prewhere_info->need_filter = true;
+                }
+
+                ActionDAGNodes added_filter_nodes;
+                if (additional_filter_info)
+                    added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+
+                if (analysis_result.before_where)
+                    added_filter_nodes.nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
+                /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+                rows_to_read.emplace(
+                    storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info, added_filter_nodes));
+            }
+
+            if (!rows_to_read.has_value())
+                rows_to_read = storage->totalRows(settings);
+
+            /// Open question: How should we treat 0 estimated rows to read?
+            /// It is a real estimation of 0 rows?
+            size_t number_of_replicas_to_use = rows_to_read.has_value()
+                ? *rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica
+                : settings.allow_experimental_parallel_reading_from_replicas;
+
+            LOG_TRACE(
+                log,
+                "Estimated {} rows to read, which is work enough for {} parallel replicas",
+                rows_to_read.has_value() ? *rows_to_read : 0,
+                number_of_replicas_to_use);
+
+            if (number_of_replicas_to_use <= 1)
+            {
+                context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                context->setSetting("max_parallel_replicas", UInt64{0});
+                need_analyze_again = true;
+                LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
+            }
+            else if (number_of_replicas_to_use < settings.max_parallel_replicas)
+            {
+                /// TODO: Confirm that reducing the number of parallel replicas doesn't require a re-analysis
+                context->setSetting("max_parallel_replicas", number_of_replicas_to_use);
+                LOG_DEBUG(log, "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
+            }
+        }
     }
 
     if (need_analyze_again)
@@ -2264,7 +2324,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     }
 }
 
-/// Based on the query analysis, check if optimizing the count trivial count to use totalRows is possible
+/// Based on the query analysis, check if using a trivial count (storage or partition metadata) is possible
 std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_parallel_replicas)
 {
     const Settings & settings = context->getSettingsRef();

@@ -7188,9 +7188,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// Parallel replicas
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
-        if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
-            return QueryProcessingStage::Enum::FetchColumns;
-
         /// ReplicatedMergeTree
         if (supportsReplication())
             return QueryProcessingStage::Enum::WithMergeableState;
@@ -7216,10 +7213,11 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 }
 
 
-bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
+UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info) const
+    const SelectQueryInfo & query_info,
+    const ActionDAGNodes & added_filter_nodes) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -7232,23 +7230,14 @@ bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
         storage_snapshot->metadata,
         storage_snapshot->metadata,
         query_info,
-        /*added_filter_nodes*/ActionDAGNodes{},
+        added_filter_nodes,
         query_context,
         query_context->getSettingsRef().max_threads);
 
-    if (result_ptr->error())
-        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
-
-    LOG_TRACE(log, "Estimated number of granules to read is {}", result_ptr->marks());
-
-    bool decision = result_ptr->marks() >= query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable;
-
-    if (!decision)
-        LOG_DEBUG(log, "Parallel replicas will be disabled, because the estimated number of granules to read {} is less than the threshold which is {}",
-            result_ptr->marks(),
-            query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable);
-
-    return decision;
+    UInt64 total_rows = result_ptr->rows();
+    if (query_info.limit > 0 && query_info.limit < total_rows)
+        total_rows = query_info.limit;
+    return total_rows;
 }
 
 
