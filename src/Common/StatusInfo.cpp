@@ -2,14 +2,9 @@
 #include <Common/ExternalLoaderStatus.h>
 
 /// Available status. Add something here as you wish.
-#define APPLY_FOR_BUILTIN_STATUS(M) \
+#define APPLY_FOR_STATUS(M) \
     M(DictionaryStatus, "Dictionary Status.", DB::getStatusEnumAllPossibleValues()) \
 
-#ifdef APPLY_FOR_EXTERNAL_STATUS
-  #define APPLY_FOR_STATUS(M) APPLY_FOR_BUILTIN_STATUS(M) APPLY_FOR_EXTERNAL_STATUS(M)
-#else
-  #define APPLY_FOR_STATUS(M) APPLY_FOR_BUILTIN_STATUS(M)
-#endif
 
 namespace CurrentStatusInfo
 {
