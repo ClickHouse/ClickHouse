@@ -1253,3 +1253,7 @@ Result:
 │ A240             │
 └──────────────────┘
 ```
+
+## initcap
+
+Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
