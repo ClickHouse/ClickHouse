@@ -650,7 +650,8 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
         db = databases.find(database_name)->second;
     }
 
-    if(!db){
+    if(!db)
+    {
         DatabaseNameHints hints(*this);
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
