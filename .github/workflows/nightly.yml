@@ -121,8 +121,6 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   SonarCloud:
-    # TODO: Remove if: whenever SonarCloud supports c++23
-    # if: ${{ false }}
     runs-on: [self-hosted, builder]
     env:
       SONAR_SCANNER_VERSION: 4.8.0.2856
