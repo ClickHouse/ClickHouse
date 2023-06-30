@@ -686,7 +686,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezone
 timezoneOf
 timezoneOffset
 toBool
@@ -784,6 +783,7 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
+toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay

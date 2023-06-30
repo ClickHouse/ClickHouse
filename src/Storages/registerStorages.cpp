@@ -61,6 +61,7 @@ void registerStorageMySQL(StorageFactory & factory);
 #endif
 
 void registerStorageMongoDB(StorageFactory & factory);
+void registerStorageRedis(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -97,6 +98,10 @@ void registerStorageSQLite(StorageFactory & factory);
 #endif
 
 void registerStorageKeeperMap(StorageFactory & factory);
+
+#if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureBlob(StorageFactory & factory);
+#endif
 
 void registerStorages()
 {
@@ -159,6 +164,7 @@ void registerStorages()
     #endif
 
     registerStorageMongoDB(factory);
+    registerStorageRedis(factory);
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);
@@ -194,6 +200,10 @@ void registerStorages()
     #endif
 
     registerStorageKeeperMap(factory);
+
+    #if USE_AZURE_BLOB_STORAGE
+    registerStorageAzureBlob(factory);
+    #endif
 }
 
 }

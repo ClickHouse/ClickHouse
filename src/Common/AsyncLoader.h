@@ -11,6 +11,7 @@
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Priority.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 
@@ -268,10 +269,10 @@ inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & 
 
 // `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks job dependencies and priorities.
 // Basic usage example:
-//     // Start async_loader with two thread pools (0=bg, 1=fg):
+//     // Start async_loader with two thread pools (0=fg, 1=bg):
 //     AsyncLoader async_loader({
-//         {"BgPool", CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, .max_threads = 1, .priority = 0}
-//         {"FgPool", CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, .max_threads = 2, .priority = 1}
+//         {"FgPool", CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, .max_threads = 2, .priority{0}}
+//         {"BgPool", CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, .max_threads = 1, .priority{1}}
 //     });
 //
 //     // Create and schedule a task consisting of three jobs. Job1 has no dependencies and is run first.
@@ -279,19 +280,19 @@ inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & 
 //     auto job_func = [&] (const LoadJobPtr & self) {
 //         LOG_TRACE(log, "Executing load job '{}' in pool '{}'", self->name, async_loader->getPoolName(self->pool()));
 //     };
-//     auto job1 = makeLoadJob({}, "job1", /* pool_id = */ 0, job_func);
-//     auto job2 = makeLoadJob({ job1 }, "job2", /* pool_id = */ 0, job_func);
-//     auto job3 = makeLoadJob({ job1 }, "job3", /* pool_id = */ 0, job_func);
+//     auto job1 = makeLoadJob({}, "job1", /* pool_id = */ 1, job_func);
+//     auto job2 = makeLoadJob({ job1 }, "job2", /* pool_id = */ 1, job_func);
+//     auto job3 = makeLoadJob({ job1 }, "job3", /* pool_id = */ 1, job_func);
 //     auto task = makeLoadTask(async_loader, { job1, job2, job3 });
 //     task.schedule();
 //
 //     // Another thread may prioritize a job by changing its pool and wait for it:
-//     async_loader->prioritize(job3, /* pool_id = */ 1); // higher priority jobs are run first, default priority is zero.
-//     job3->wait(); // blocks until job completion or cancellation and rethrow an exception (if any)
+//     async_loader->prioritize(job3, /* pool_id = */ 0); // Increase priority: 1 -> 0 (lower is better)
+//     job3->wait(); // Blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // Every job has a pool associated with it. AsyncLoader starts every job in its thread pool.
 // Each pool has a constant priority and a mutable maximum number of threads.
-// Higher priority (greater `pool.priority` value) jobs are run first.
+// Higher priority (lower `pool.priority` value) jobs are run first.
 // No job with lower priority is started while there is at least one higher priority job ready or running.
 //
 // Job priority can be elevated (but cannot be lowered)
@@ -301,7 +302,8 @@ inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & 
 //     this also leads to a priority inheritance for all the dependencies.
 // Value stored in load job `pool_id` field is atomic and can be changed even during job execution.
 // Job is, of course, not moved from its initial thread pool, but it should use `self->pool()` for
-// all new jobs it create to avoid priority inversion.
+// all new jobs it create to avoid priority inversion. To obtain pool in which job is being executed
+// call `self->execution_pool()` instead.
 //
 // === IMPLEMENTATION DETAILS ===
 // All possible states and statuses of a job:
@@ -335,7 +337,7 @@ private:
     struct Pool
     {
         const String name;
-        const ssize_t priority;
+        const Priority priority;
         std::unique_ptr<ThreadPool> thread_pool; // NOTE: we avoid using a `ThreadPool` queue to be able to move jobs between pools.
         std::map<UInt64, LoadJobPtr> ready_queue; // FIFO queue of jobs to be executed in this pool. Map is used for faster erasing. Key is `ready_seqno`
         size_t max_threads; // Max number of workers to be spawn
@@ -367,7 +369,7 @@ public:
         Metric metric_threads;
         Metric metric_active_threads;
         size_t max_threads;
-        ssize_t priority;
+        Priority priority;
     };
 
     AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_);
@@ -412,7 +414,7 @@ public:
 
     size_t getMaxThreads(size_t pool) const;
     const String & getPoolName(size_t pool) const;
-    ssize_t getPoolPriority(size_t pool) const;
+    Priority getPoolPriority(size_t pool) const;
 
     size_t getScheduledJobCount() const;
 
@@ -443,6 +445,7 @@ private:
     void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> &);
     void spawn(Pool & pool, std::unique_lock<std::mutex> &);
     void worker(Pool & pool);
+    bool hasWorker(std::unique_lock<std::mutex> &) const;
 
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
@@ -451,7 +454,7 @@ private:
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;
-    std::optional<ssize_t> current_priority; // highest priority among active pools
+    std::optional<Priority> current_priority; // highest priority among active pools
     UInt64 last_ready_seqno = 0; // Increasing counter for ready queue keys.
     std::unordered_map<LoadJobPtr, Info> scheduled_jobs; // Full set of scheduled pending jobs along with scheduling info.
     std::vector<Pool> pools; // Thread pools for job execution and ready queues

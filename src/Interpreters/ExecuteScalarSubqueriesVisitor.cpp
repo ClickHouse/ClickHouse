@@ -19,6 +19,8 @@
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FieldVisitorToString.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace ProfileEvents
 {
@@ -66,17 +68,6 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
         visit(*t, ast, data);
     if (const auto * t = ast->as<ASTFunction>())
         visit(*t, ast, data);
-}
-
-/// Converting to literal values might take a fair amount of overhead when the value is large, (e.g.
-///  Array, BitMap, etc.), This conversion is required for constant folding, index lookup, branch
-///  elimination. However, these optimizations should never be related to large values, thus we
-///  blacklist them here.
-static bool worthConvertingToLiteral(const Block & scalar)
-{
-    const auto * scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
-    static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
-    return !useless_literal_types.contains(scalar_type_name);
 }
 
 static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
@@ -255,7 +246,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     const Settings & settings = data.getContext()->getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar)
+    if (data.only_analyze
+        || !settings.enable_scalar_subquery_optimization
+        || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
         || !data.getContext()->hasQueryContext())
     {
         /// subquery and ast can be the same object and ast will be moved.
@@ -278,7 +271,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             ast = std::move(func);
         }
     }
-    else
+    else if (!data.replace_only_to_literals)
     {
         auto func = makeASTFunction("__getScalar", std::make_shared<ASTLiteral>(scalar_query_hash_str));
         func->alias = subquery.alias;
@@ -316,6 +309,33 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
 
     for (ASTPtr * add_node : out)
         Visitor(data).visit(*add_node);
+}
+
+static size_t getSizeOfSerializedLiteral(const Field & field)
+{
+    auto field_str = applyVisitor(FieldVisitorToString(), field);
+    return field_str.size();
+}
+
+bool worthConvertingScalarToLiteral(const Block & scalar, std::optional<size_t> max_literal_size)
+{
+    /// Converting to literal values might take a fair amount of overhead when the value is large, (e.g.
+    /// Array, BitMap, etc.), This conversion is required for constant folding, index lookup, branch
+    /// elimination. However, these optimizations should never be related to large values, thus we blacklist them here.
+    const auto * scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
+    static const std::set<std::string_view> maybe_large_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
+
+    if (!maybe_large_literal_types.contains(scalar_type_name))
+        return true;
+
+    if (!max_literal_size)
+        return false;
+
+    /// Size of serialized literal cannot be less than size in bytes.
+    if (scalar.bytes() > *max_literal_size)
+        return false;
+
+    return getSizeOfSerializedLiteral((*scalar.safeGetByPosition(0).column)[0]) <= *max_literal_size;
 }
 
 }

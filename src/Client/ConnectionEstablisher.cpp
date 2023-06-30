@@ -121,7 +121,7 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     epoll.add(timeout_descriptor.getDescriptor());
 }
 
-void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, ResumeCallback)
+void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, SuspendCallback)
 {
     connection_establisher_async.reset();
     connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);

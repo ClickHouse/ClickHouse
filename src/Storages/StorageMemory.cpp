@@ -16,6 +16,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Common/FileChecker.h>
@@ -142,7 +143,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
         metadata_snapshot->getColumns(),
         [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
 }
 
 void StorageMemory::read(
@@ -155,11 +156,11 @@ void StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, shared_from_this(), storage_snapshot, num_streams, delay_read_for_global_subqueries));
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
@@ -200,7 +201,8 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);
     new_context->setSetting("max_threads", 1);
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
+    MutationsInterpreter::Settings settings(true);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 

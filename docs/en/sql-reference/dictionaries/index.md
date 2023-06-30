@@ -247,7 +247,7 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 ### hashed
 
-The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
 The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 
@@ -984,7 +984,7 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronous updates are supported.
+For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronous and asynchronous updates are supported.
 
 It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
@@ -1243,8 +1243,8 @@ Setting fields:
 - `password` – Password required for the authentication.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
 - `header` – Single HTTP header entry.
-- `name` – Identifiant name used for the header send on the request.
-- `value` – Value set for a specific identifiant name.
+- `name` – Identifier name used for the header send on the request.
+- `value` – Value set for a specific identifier name.
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
@@ -2234,7 +2234,7 @@ Result:
 
 ## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
-Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of (user agent)[https://en.wikipedia.org/wiki/User_agent] strings, which can be expressed elegantly with regexp tree dictionaries.
+Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of [user agent](https://en.wikipedia.org/wiki/User_agent) strings, which can be expressed elegantly with regexp tree dictionaries.
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Open-Source
 
@@ -2280,7 +2280,7 @@ This config consists of a list of regular expression tree nodes. Each node has t
   - The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
 - **child nodes**: a list of children of a regexp tree node, each of which has its own attributes and (potentially) children nodes. String matching proceeds in a depth-first fashion. If a string matches a regexp node, the dictionary checks if it also matches the nodes' child nodes. If that is the case, the attributes of the deepest matching node are assigned. Attributes of a child node overwrite equally named attributes of parent nodes. The name of child nodes in YAML files can be arbitrary, e.g. `versions` in above example.
 
-Regexp tree dictionaries only allow access using functions `dictGet`, `dictGetOrDefault` and `dictGetOrNull`.
+Regexp tree dictionaries only allow access using the functions `dictGet`, `dictGetOrDefault`, and `dictGetAll`.
 
 Example:
 
@@ -2299,6 +2299,67 @@ Result:
 In this case, we first match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node. The dictionary then continues to look into the child nodes and finds that the string also matches `3[12]/tclwebkit`. As a result, the value of attribute `name` is `Android` (defined in the first layer) and the value of attribute `version` is `12` (defined the child node).
 
 With a powerful YAML configure file, we can use a regexp tree dictionaries as a user agent string parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
+
+#### Collecting Attribute Values
+
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictgetall) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+
+By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
+
+Example:
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    tag String,
+    topological_index Int64,
+    captured Nullable(String),
+    parent String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0)
+```
+
+```yaml
+# /var/lib/clickhouse/user_files/regexp_tree.yaml
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  topological_index: 1
+  paths:
+    - regexp: 'clickhouse\.com/docs(.*)'
+      tag: 'ClickHouse Documentation'
+      topological_index: 0
+      captured: '\1'
+      parent: 'ClickHouse'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+  topological_index: 2
+
+- regexp: 'github.com'
+  tag: 'GitHub'
+  topological_index: 3
+  captured: 'NULL'
+```
+
+```sql
+CREATE TABLE urls (url String) ENGINE=MergeTree ORDER BY url;
+INSERT INTO urls VALUES ('clickhouse.com'), ('clickhouse.com/docs/en'), ('github.com/clickhouse/tree/master/docs');
+SELECT url, dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2) FROM urls;
+```
+
+Result:
+
+```text
+┌─url────────────────────────────────────┬─dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2)─┐
+│ clickhouse.com                         │ (['ClickHouse'],[1],[],[])                                                            │
+│ clickhouse.com/docs/en                 │ (['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])              │
+│ github.com/clickhouse/tree/master/docs │ (['Documentation','GitHub'],[2,3],[NULL],[])                                          │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 

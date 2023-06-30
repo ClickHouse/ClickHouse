@@ -50,8 +50,8 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
-    /// If part metadata is not equal to storage metadata, than
-    /// try to perform conversions of columns.
+    /// If part metadata is not equal to storage metadata,
+    /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
     const NamesAndTypesList & getColumns() const { return requested_columns; }
@@ -73,6 +73,8 @@ protected:
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -104,7 +106,7 @@ protected:
 
 private:
     /// Alter conversions, which must be applied on fly if required
-    AlterConversions alter_conversions;
+    AlterConversionsPtr alter_conversions;
 
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
