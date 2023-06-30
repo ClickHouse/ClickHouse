@@ -418,6 +418,14 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
     if (exists)
     {
         fs::remove(path);
+
+        /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
+        int flags = file_segment->getFlagsForLocalRead();
+        /// Files are created with flags from file_segment->getFlagsForLocalRead()
+        /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
+        OpenedFileCache::instance().remove(path, flags);
+        OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+
         LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
     }
     else if (file_segment->downloaded_size)
