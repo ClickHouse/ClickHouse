@@ -50,9 +50,7 @@ arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_DEBUG(&Poco::Logger::get("ArrowBufferedOutputStream"), "Exception {}", message);
-        return arrow::Status::IOError(message);
+        return arrow::Status::IOError(getCurrentExceptionMessage(false));
     }
 }
 
