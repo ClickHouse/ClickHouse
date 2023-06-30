@@ -205,7 +205,7 @@ struct ConvertImpl
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType,DataTypeUInt128>)
                 {
-                    static_assert(std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>, "Can be used only to serialize to ColumnString or ColumnFixedString");
+                    static_assert(std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>, "UInt128 and UUID types must be same");
                     if constexpr (std::endian::native == std::endian::little)
                     {
                         vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
