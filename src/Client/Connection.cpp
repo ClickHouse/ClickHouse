@@ -1175,16 +1175,12 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    ParallelReadRequest request;
-    request.deserialize(*in);
-    return request;
+    return ParallelReadRequest::deserialize(*in);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
+    return InitialAllRangesAnnouncement::deserialize(*in);
 }
 
 
