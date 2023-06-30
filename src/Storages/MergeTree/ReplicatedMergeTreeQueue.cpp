@@ -1448,6 +1448,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.alter_version, head_alter);
             return false;
         }
+
+        auto database_name = storage.getStorageID().database_name;
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        if (!database->canExecuteReplicatedMetadataAlter())
+        {
+            LOG_TRACE(LogToStr(out_postpone_reason, log), "Cannot execute alter metadata {} with version {} "
+                      "because database {} cannot process metadata alters now", entry.znode_name, entry.alter_version, database_name);
+            return false;
+        }
     }
 
     /// If this MUTATE_PART is part of alter modify/drop query, than we have to execute them one by one
