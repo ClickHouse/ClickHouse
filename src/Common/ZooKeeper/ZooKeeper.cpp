@@ -865,9 +865,9 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion() const
+bool ZooKeeper::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
 {
-    return impl->getApiVersion();
+    return impl->isFeatureEnabled(feature_flag);
 }
 
 Int64 ZooKeeper::getClientID()
