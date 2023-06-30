@@ -18,6 +18,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include "Common/Exception.h"
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
 #include <base/TypeLists.h>
@@ -564,29 +565,97 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             null_map.push_back(1);
         }
 
-        for (const auto & pair : map)
-        {
-            if (pair.getMapped() == args)
-            {
-                ++result_offset;
-                if constexpr (is_numeric_column)
-                    result_data.insertValue(pair.getKey());
-                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                    result_data.insertData(pair.getKey().data, pair.getKey().size);
-                else
-                    result_data.deserializeAndInsertFromArena(pair.getKey().data);
+        // for (const auto & pair : map)
+        // {
+        //     if (pair.getMapped() == args)
+        //     {
+        //         ++result_offset;
+        //         if constexpr (is_numeric_column)
+        //             result_data.insertValue(pair.getKey());
+        //         else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+        //             result_data.insertData(pair.getKey().data, pair.getKey().size);
+        //         else
+        //             result_data.deserializeAndInsertFromArena(pair.getKey().data);
 
-                if (all_nullable)
-                    null_map.push_back(0);
-            }
-        }
+        //         if (all_nullable)
+        //             null_map.push_back(0);
+        //     }
+        // }
         result_offsets.getElement(row) = result_offset;
     }
 
+    for (size_t row = 0; row < rows; ++row)
+    {
+        for (size_t arg_num = 0; arg_num < 1; ++arg_num)
+        {
+            const auto & arg = arrays.args[arg_num];
+            size_t off;
+            // const array has only one row
+            if (arg.is_const)
+                off = (*arg.offsets)[0];
+            else
+                off = (*arg.offsets)[row];
+
+            prev_off[arg_num] = off;
+            if (arg.is_const)
+                prev_off[arg_num] = 0;
+            for (size_t res_num = 0; res_num < result_offset; ++res_num)
+            {
+                typename Map::LookupResult pair;
+
+                if constexpr (is_numeric_column)
+                {
+                    pair = map.find(columns[arg_num]->getElement(res_num));
+                }
+                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                    pair = map.find(columns[arg_num]->getDataAt(res_num));
+                else
+                {
+                    const char * data = nullptr;
+                    pair = map.find(columns[arg_num]->serializeValueIntoArena(res_num, arena, data));
+                }
+
+                if (pair->getMapped() == args)//for (const auto & pair : map)
+                {
+                    if constexpr (is_numeric_column)
+                    {
+                        if (pair->getKey() == columns[arg_num]->getElement(res_num))
+                        {
+                            ++result_offset;
+                            result_data.insertValue(pair->getKey());
+                        } 
+                    }
+                    else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                    {
+                        if (pair->getKey() == columns[arg_num]->getDataAt(res_num))
+                        {
+                            ++result_offset;
+                            result_data.insertData(pair->getKey().data, pair->getKey().size);
+                        } 
+                    }
+                    else
+                    {
+                        const char * data = nullptr;
+                        if (pair->getKey() == columns[arg_num]->serializeValueIntoArena(res_num, arena, data))
+                        {
+                            ++result_offset;
+                            result_data.deserializeAndInsertFromArena(pair->getKey().data);
+                        } 
+                    }
+                    if (all_nullable)
+                        null_map.push_back(0);
+                }
+        }
+
+
+    }
+    }
     ColumnPtr result_column = std::move(result_data_ptr);
     if (all_nullable)
         result_column = ColumnNullable::create(result_column, std::move(null_map_column));
     return ColumnArray::create(result_column, std::move(result_offsets_ptr));
+
+
 }
 
 
