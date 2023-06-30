@@ -176,7 +176,7 @@ namespace impl
     };
 
     /// Helper template class to convert a value of any supported type to hexadecimal representation and back.
-    template <typename T, typename = void>
+    template <typename T, typename SFINAE = void>
     struct HexConversion;
 
     template <typename TUInt>
@@ -185,7 +185,7 @@ namespace impl
     template <size_t Bits, typename Signed>
     struct HexConversion<wide::integer<Bits, Signed>> : public HexConversionUInt<wide::integer<Bits, Signed>> {};
 
-    template <typename CityHashUInt128>
+    template <typename CityHashUInt128> /// Partial specialization here allows not to include <city.h> in this header.
     struct HexConversion<CityHashUInt128, std::enable_if_t<std::is_same_v<CityHashUInt128, typename CityHash_v1_0_2::uint128>>>
     {
         static const constexpr size_t num_hex_digits = 32;
@@ -208,6 +208,8 @@ namespace impl
 
 /// Produces a hexadecimal representation of an integer value with leading zeros (for checksums).
 /// The function supports native integer types, wide::integer, CityHash_v1_0_2::uint128.
+/// It can be used with signed types as well, however they are written as corresponding unsigned numbers
+/// using two's complement (i.e. for example "-1" is written as "0xFF", not as "-0x01").
 template <typename T>
 void writeHexUIntUppercase(const T & value, char * out)
 {
