@@ -143,9 +143,6 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Persistent:
-            file_suffix = "_persistent";
-            break;
         case FileSegmentKind::Temporary:
             file_suffix = "_temporary";
             break;
@@ -457,6 +454,29 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
         metadata->getQueueIterator()->updateSize(-diff);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+}
+
+std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
+{
+    if (key_metadata->empty())
+        return {};
+
+    auto it = key_metadata->lower_bound(range.left);
+    if (it != key_metadata->end()) /// has next range
+    {
+        auto next_range = it->second->file_segment->range();
+        if (!(range < next_range))
+            return next_range;
+
+        if (it == key_metadata->begin())
+            return {};
+    }
+
+    auto prev_range = std::prev(it)->second->file_segment->range();
+    if (!(prev_range < range))
+        return prev_range;
+
+    return {};
 }
 
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
