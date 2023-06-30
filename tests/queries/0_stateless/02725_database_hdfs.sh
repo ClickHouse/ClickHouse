@@ -43,12 +43,12 @@ DROP DATABASE IF EXISTS test4;
 CREATE DATABASE test4 ENGINE = HDFS;
 USE test4;
 SELECT * FROM \"abacaba/file.tsv\"
-""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK1"
+""" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK1"
 
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK2"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK3"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1| grep -F "CANNOT_EXTRACT_TABLE_STRUCTURE" > /dev/null && echo "OK4"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK5"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK2"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK3"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK4"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK5"
 
 
 # Cleanup

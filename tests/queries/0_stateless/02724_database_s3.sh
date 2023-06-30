@@ -46,12 +46,12 @@ DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = S3;
 USE test3;
 SELECT * FROM \"http://localhost:11111/test/a.myext\"
-""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK"
+""" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 USE test3;
 SELECT * FROM \"abacaba\"
-""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK"
+""" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK"
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
