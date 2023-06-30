@@ -221,7 +221,7 @@ private:
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
-    mutable bool user_was_dropped = false;
+    mutable std::atomic<bool> user_was_dropped = false;
     mutable scope_guard subscription_for_user_change;
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
     mutable scope_guard subscription_for_roles_changes;
