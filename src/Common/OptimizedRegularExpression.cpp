@@ -669,15 +669,15 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
             matches.resize(limit);
             for (size_t i = 0; i < limit; ++i)
             {
-                if (pieces[i] != nullptr)
-                {
-                    matches[i].offset = pieces[i].data() - subject;
-                    matches[i].length = pieces[i].length();
-                }
-                else
+                if (pieces[i].empty())
                 {
                     matches[i].offset = std::string::npos;
                     matches[i].length = 0;
+                }
+                else
+                {
+                    matches[i].offset = pieces[i].data() - subject;
+                    matches[i].length = pieces[i].length();
                 }
             }
             return limit;
