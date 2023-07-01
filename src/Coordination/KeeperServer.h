@@ -72,6 +72,7 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
+        KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
         KeeperStateMachine::CommitCallback commit_callback);
 
