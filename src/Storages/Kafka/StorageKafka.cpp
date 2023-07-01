@@ -458,6 +458,7 @@ void StorageKafka::shutdown()
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
 {
     std::lock_guard lock(mutex);
+    consumer->notInUse();
     consumers.push_back(consumer);
     semaphore.set();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
@@ -486,6 +487,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     auto consumer = consumers.back();
     consumers.pop_back();
     CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
+    consumer->inUse();
     return consumer;
 }
 
@@ -644,13 +646,18 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
-    kafka_config.set("statistics.interval.ms","10" /*"1000000"*/); // 10 times per a second
-    kafka_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json_string)
+    if (!kafka_config.has_property("statistics.interval.ms"))
     {
-        // LOG_DEBUG(log, "kafka statistics {}", stat_json_string);
-        rdkafka_stat = std::make_shared<const String>(stat_json_string);
-    });
-
+        kafka_config.set("statistics.interval.ms", "10"); // every 10 milliseconds
+    }
+    if (kafka_config.get("statistics.interval.ms") != "0")
+    {
+        kafka_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json_string)
+        {
+            // LOG_DEBUG(log, "kafka statistics {}", stat_json_string);
+            rdkafka_stat = std::make_shared<const String>(stat_json_string);
+        });
+    }
 
     // Configure interceptor to change thread name
     //
