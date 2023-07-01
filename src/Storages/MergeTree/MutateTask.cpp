@@ -236,7 +236,8 @@ getColumnsForNewDataPart(
     NamesAndTypesList storage_columns,
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
-    const MutationCommands & commands_for_removes)
+    const MutationCommands & commands_for_removes,
+    const ContextPtr & context)
 {
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
@@ -249,7 +250,8 @@ getColumnsForNewDataPart(
     NamesAndTypesList system_columns;
     if (source_part->supportLightweightDeleteMutate())
         system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
-    system_columns.push_back(BlockNumberColumn);
+    if (context->getSettingsRef().allow_experimental_block_number_column)
+        system_columns.push_back(BlockNumberColumn);
 
     /// Preserve system columns that have persisted values in the source_part
     for (const auto & column : system_columns)
@@ -1872,7 +1874,7 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, ctx->context);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
