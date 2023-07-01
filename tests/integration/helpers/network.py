@@ -271,10 +271,6 @@ class _NetworkManager:
                 image_name,
                 auto_remove=True,
                 command=("sleep %s" % self.container_exit_timeout),
-                # /run/xtables.lock passed inside for correct iptables --wait
-                volumes={
-                    "/run/xtables.lock": {"bind": "/run/xtables.lock", "mode": "ro"}
-                },
                 detach=True,
                 network_mode="host",
             )
