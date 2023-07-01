@@ -1057,33 +1057,54 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_)
+void Context::setUser(const UUID & user_id_, bool set_current_profiles_, bool set_current_roles_, bool set_current_database_)
 {
+    /// Prepare lists of user's profiles, constraints, settings, roles.
+
+    std::shared_ptr<const User> user;
+    std::shared_ptr<const ContextAccess> temp_access;
+    if (set_current_profiles_ || set_current_roles_ || set_current_database_)
+    {
+        std::optional<ContextAccessParams> params;
+        {
+            auto lock = getLock();
+            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info});
+        }
+        /// `temp_access` is used here only to extract information about the user, not to actually check access.
+        /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
+        temp_access = getAccessControl().getContextAccess(*params);
+        user = temp_access->getUser();
+    }
+
+    std::shared_ptr<const SettingsProfilesInfo> profiles;
+    if (set_current_profiles_)
+        profiles = temp_access->getDefaultProfileInfo();
+
+    std::optional<std::vector<UUID>> roles;
+    if (set_current_roles_)
+        roles = user->granted_roles.findGranted(user->default_roles);
+
+    String database;
+    if (set_current_database_)
+        database = user->default_database;
+
+    /// Apply user's profiles, constraints, settings, roles.
     auto lock = getLock();
 
-    user_id = user_id_;
+    setUserID(user_id_);
 
-    ContextAccessParams params{
-        user_id,
-        /* full_access= */ false,
-        /* use_default_roles = */ true,
-        /* current_roles = */ nullptr,
-        settings,
-        current_database,
-        client_info};
+    if (profiles)
+    {
+        /// A profile can specify a value and a readonly constraint for same setting at the same time,
+        /// so we shouldn't check constraints here.
+        setCurrentProfiles(*profiles, /* check_constraints= */ false);
+    }
 
-    access = getAccessControl().getContextAccess(params);
+    if (roles)
+        setCurrentRoles(*roles);
 
-    auto user = access->getUser();
-
-    current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
-
-    auto default_profile_info = access->getDefaultProfileInfo();
-    settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
-    applySettingsChanges(default_profile_info->settings);
-
-    if (!user->default_database.empty())
-        setCurrentDatabase(user->default_database);
+    if (!database.empty())
+        setCurrentDatabase(database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -1094,6 +1115,13 @@ std::shared_ptr<const User> Context::getUser() const
 String Context::getUserName() const
 {
     return getAccess()->getUserName();
+}
+
+void Context::setUserID(const UUID & user_id_)
+{
+    auto lock = getLock();
+    user_id = user_id_;
+    need_recalculate_access = true;
 }
 
 std::optional<UUID> Context::getUserID() const
@@ -1113,9 +1141,10 @@ void Context::setQuotaKey(String quota_key_)
 void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 {
     auto lock = getLock();
-    if (current_roles ? (*current_roles == current_roles_) : current_roles_.empty())
-       return;
-    current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
+    if (current_roles_.empty())
+        current_roles = nullptr;
+    else
+        current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
     need_recalculate_access = true;
 }
 
@@ -1208,23 +1237,7 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
 
 RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
-    auto lock = getLock();
-    RowPolicyFilterPtr row_filter_of_initial_user;
-    if (row_policies_of_initial_user)
-        row_filter_of_initial_user = row_policies_of_initial_user->getFilter(database, table_name, filter_type);
-    return getAccess()->getRowPolicyFilter(database, table_name, filter_type, row_filter_of_initial_user);
-}
-
-void Context::enableRowPoliciesOfInitialUser()
-{
-    auto lock = getLock();
-    row_policies_of_initial_user = nullptr;
-    if (client_info.initial_user == client_info.current_user)
-        return;
-    auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
-    if (!initial_user_id)
-        return;
-    row_policies_of_initial_user = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
+    return getAccess()->getRowPolicyFilter(database, table_name, filter_type);
 }
 
 
@@ -1240,13 +1253,12 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 }
 
 
-void Context::setCurrentProfile(const String & profile_name)
+void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
 {
-    auto lock = getLock();
     try
     {
         UUID profile_id = getAccessControl().getID<SettingsProfile>(profile_name);
-        setCurrentProfile(profile_id);
+        setCurrentProfile(profile_id, check_constraints);
     }
     catch (Exception & e)
     {
@@ -1255,15 +1267,20 @@ void Context::setCurrentProfile(const String & profile_name)
     }
 }
 
-void Context::setCurrentProfile(const UUID & profile_id)
+void Context::setCurrentProfile(const UUID & profile_id, bool check_constraints)
 {
-    auto lock = getLock();
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
-    checkSettingsConstraints(profile_info->settings);
-    applySettingsChanges(profile_info->settings);
-    settings_constraints_and_current_profiles = profile_info->getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+    setCurrentProfiles(*profile_info, check_constraints);
 }
 
+void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints)
+{
+    auto lock = getLock();
+    if (check_constraints)
+        checkSettingsConstraints(profiles_info.settings);
+    applySettingsChanges(profiles_info.settings);
+    settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+}
 
 std::vector<UUID> Context::getCurrentProfiles() const
 {

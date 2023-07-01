@@ -240,6 +240,7 @@ ContextAccess::~ContextAccess()
     enabled_settings.reset();
     enabled_quota.reset();
     enabled_row_policies.reset();
+    row_policies_of_initial_user.reset();
     access_with_implicit.reset();
     access.reset();
     roles_info.reset();
@@ -263,6 +264,12 @@ void ContextAccess::initialize()
 
     if (!params.user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in current context, it's a bug");
+
+    if (!params.initial_user.empty())
+    {
+        if (auto initial_user_id = access_control->find<User>(params.initial_user))
+            row_policies_of_initial_user = access_control->tryGetDefaultRowPolicies(*initial_user_id);
+    }
 
     subscription_for_user_change = access_control->subscribeForChanges(
         *params.user_id,
@@ -331,8 +338,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
     assert(roles_info_);
     roles_info = roles_info_;
 
-    enabled_row_policies = access_control->getEnabledRowPolicies(
-        *params.user_id, roles_info->enabled_roles);
+    enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
 
     enabled_quota = access_control->getEnabledQuota(
         *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
@@ -399,21 +405,24 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     return no_roles;
 }
 
-std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies() const
+RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     std::lock_guard lock{mutex};
-    if (enabled_row_policies)
-        return enabled_row_policies;
-    static const auto no_row_policies = std::make_shared<EnabledRowPolicies>();
-    return no_row_policies;
-}
 
-RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
-{
-    std::lock_guard lock{mutex};
+    RowPolicyFilterPtr filter;
     if (enabled_row_policies)
-        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_filter);
-    return combine_with_filter;
+        filter = enabled_row_policies->getFilter(database, table_name, filter_type);
+
+    if (row_policies_of_initial_user)
+    {
+        /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
+        /// TODO: we need a better solution here. It seems we should pass the initial row policy
+        /// because a shard is allowed to not have the initial user or it might be another user
+        /// with the same name.
+        filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+    }
+
+    return filter;
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const

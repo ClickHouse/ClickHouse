@@ -50,8 +50,8 @@ struct ContextSharedPart;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
+struct SettingsProfilesInfo;
 struct EnabledRolesInfo;
-class EnabledRowPolicies;
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 class EnabledQuota;
@@ -250,7 +250,6 @@ private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
-    std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -530,11 +529,13 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
-
+    void setUser(const UUID & user_id_, bool set_current_profiles_ = true, bool set_current_roles_ = true, bool set_current_database_ = true);
     UserPtr getUser() const;
-    String getUserName() const;
+
+    void setUserID(const UUID & user_id_);
     std::optional<UUID> getUserID() const;
+
+    String getUserName() const;
 
     void setQuotaKey(String quota_key_);
 
@@ -544,8 +545,9 @@ public:
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
-    void setCurrentProfile(const String & profile_name);
-    void setCurrentProfile(const UUID & profile_id);
+    void setCurrentProfile(const String & profile_name, bool check_constraints = true);
+    void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
+    void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
     std::vector<UUID> getCurrentProfiles() const;
     std::vector<UUID> getEnabledProfiles() const;
 
@@ -567,13 +569,6 @@ public:
     std::shared_ptr<const ContextAccess> getAccess() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
-
-    /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
-    /// if the initial user exists.
-    /// TODO: we need a better solution here. It seems we should pass the initial row policy
-    /// because a shard is allowed to not have the initial user or it might be another user
-    /// with the same name.
-    void enableRowPoliciesOfInitialUser();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;

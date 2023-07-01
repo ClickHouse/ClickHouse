@@ -48,6 +48,9 @@ public:
 
     const String quota_key;
 
+    /// Initial user is used to combine row policies with.
+    const String initial_user;
+
     /// Outputs `ContextAccessParams` to string for logging.
     String toString() const;
 
