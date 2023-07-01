@@ -1293,6 +1293,16 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     assert(checkDigestValid(query_context));
 }
 
+
+bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
+{
+    /// ReplicatedMergeTree may call commitAlterTable from its background threads when executing ALTER_METADATA entries.
+    /// It may update the metadata digest (both locally and in ZooKeeper)
+    /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
+    /// We should not update metadata until the database is initialized.
+    return ddl_worker && ddl_worker->isCurrentlyActive();
+}
+
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
