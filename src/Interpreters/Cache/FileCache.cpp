@@ -48,6 +48,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileCache::FileCache(const FileCacheSettings & settings)
@@ -811,9 +812,9 @@ void FileCache::removeKey(const Key & key)
 {
     assertInitialized();
 
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL);
     if (!locked_key)
-        return;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}`", key);
 
     locked_key->removeAllReleasable();
 }
@@ -839,7 +840,7 @@ void FileCache::removeFileSegment(const Key & key, size_t offset)
 
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL);
     if (!locked_key)
-        return;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}`", key);
 
     locked_key->removeFileSegment(offset);
 }

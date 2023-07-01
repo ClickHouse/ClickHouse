@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -385,7 +386,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
     return removeFileSegmentImpl(it, file_segment->lock());
