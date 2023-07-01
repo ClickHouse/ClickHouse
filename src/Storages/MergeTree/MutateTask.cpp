@@ -249,6 +249,7 @@ getColumnsForNewDataPart(
     NamesAndTypesList system_columns;
     if (source_part->supportLightweightDeleteMutate())
         system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+    system_columns.push_back(BlockNumberColumn);
 
     /// Preserve system columns that have persisted values in the source_part
     for (const auto & column : system_columns)
