@@ -202,6 +202,13 @@ bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
     return volume->getDisk()->isRemote();
 }
 
+std::optional<String> DataPartStorageOnDiskBase::getCacheName() const
+{
+    if (volume->getDisk()->supportsCache())
+        return volume->getDisk()->getCacheName();
+    return std::nullopt;
+}
+
 bool DataPartStorageOnDiskBase::supportZeroCopyReplication() const
 {
     return volume->getDisk()->supportZeroCopyReplication();
@@ -393,7 +400,7 @@ void DataPartStorageOnDiskBase::backup(
         if (it != checksums.files.end())
         {
             file_size = it->second.file_size;
-            file_hash = {it->second.file_hash.first, it->second.file_hash.second};
+            file_hash = it->second.file_hash;
         }
 
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);

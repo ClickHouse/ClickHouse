@@ -2332,47 +2332,47 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
     {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
     {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
-    {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
-    {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
-    {"==",            Operator("equals",          8,  2, OperatorType::Comparison)},
-    {"!=",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
-    {"<>",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
-    {"<=",            Operator("lessOrEquals",    8,  2, OperatorType::Comparison)},
-    {">=",            Operator("greaterOrEquals", 8,  2, OperatorType::Comparison)},
-    {"<",             Operator("less",            8,  2, OperatorType::Comparison)},
-    {">",             Operator("greater",         8,  2, OperatorType::Comparison)},
-    {"=",             Operator("equals",          8,  2, OperatorType::Comparison)},
-    {"LIKE",          Operator("like",            8,  2)},
-    {"ILIKE",         Operator("ilike",           8,  2)},
-    {"NOT LIKE",      Operator("notLike",         8,  2)},
-    {"NOT ILIKE",     Operator("notILike",        8,  2)},
-    {"REGEXP",        Operator("match",           8,  2)},
-    {"IN",            Operator("in",              8,  2)},
-    {"NOT IN",        Operator("notIn",           8,  2)},
-    {"GLOBAL IN",     Operator("globalIn",        8,  2)},
-    {"GLOBAL NOT IN", Operator("globalNotIn",     8,  2)},
-    {"||",            Operator("concat",          9,  2, OperatorType::Mergeable)},
-    {"+",             Operator("plus",            10, 2)},
-    {"-",             Operator("minus",           10, 2)},
-    {"*",             Operator("multiply",        11, 2)},
-    {"/",             Operator("divide",          11, 2)},
-    {"%",             Operator("modulo",          11, 2)},
-    {"MOD",           Operator("modulo",          11, 2)},
-    {"DIV",           Operator("intDiv",          11, 2)},
-    {".",             Operator("tupleElement",    13, 2, OperatorType::TupleElement)},
-    {"[",             Operator("arrayElement",    13, 2, OperatorType::ArrayElement)},
-    {"::",            Operator("CAST",            13, 2, OperatorType::Cast)},
-    {"IS NULL",       Operator("isNull",          13, 1, OperatorType::IsNull)},
-    {"IS NOT NULL",   Operator("isNotNull",       13, 1, OperatorType::IsNull)},
+    {"IS NULL",       Operator("isNull",          6,  1, OperatorType::IsNull)},
+    {"IS NOT NULL",   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
+    {"BETWEEN",       Operator("",                7,  0, OperatorType::StartBetween)},
+    {"NOT BETWEEN",   Operator("",                7,  0, OperatorType::StartNotBetween)},
+    {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
+    {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+    {"<>",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+    {"<=",            Operator("lessOrEquals",    9,  2, OperatorType::Comparison)},
+    {">=",            Operator("greaterOrEquals", 9,  2, OperatorType::Comparison)},
+    {"<",             Operator("less",            9,  2, OperatorType::Comparison)},
+    {">",             Operator("greater",         9,  2, OperatorType::Comparison)},
+    {"=",             Operator("equals",          9,  2, OperatorType::Comparison)},
+    {"LIKE",          Operator("like",            9,  2)},
+    {"ILIKE",         Operator("ilike",           9,  2)},
+    {"NOT LIKE",      Operator("notLike",         9,  2)},
+    {"NOT ILIKE",     Operator("notILike",        9,  2)},
+    {"REGEXP",        Operator("match",           9,  2)},
+    {"IN",            Operator("in",              9,  2)},
+    {"NOT IN",        Operator("notIn",           9,  2)},
+    {"GLOBAL IN",     Operator("globalIn",        9,  2)},
+    {"GLOBAL NOT IN", Operator("globalNotIn",     9,  2)},
+    {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+    {"+",             Operator("plus",            11, 2)},
+    {"-",             Operator("minus",           11, 2)},
+    {"*",             Operator("multiply",        12, 2)},
+    {"/",             Operator("divide",          12, 2)},
+    {"%",             Operator("modulo",          12, 2)},
+    {"MOD",           Operator("modulo",          12, 2)},
+    {"DIV",           Operator("intDiv",          12, 2)},
+    {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
+    {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
+    {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
 };
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {"NOT",           Operator("not",             5,  1)},
-    {"-",             Operator("negate",          12, 1)}
+    {"-",             Operator("negate",          13, 1)}
 };
 
-const Operator ParserExpressionImpl::finish_between_operator("", 7, 0, OperatorType::FinishBetween);
+const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
 
 const std::array<std::string_view, 1> ParserExpressionImpl::overlapping_operators_to_skip
 {
@@ -2392,6 +2392,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
         {
             if (!layers.back()->parse(pos, expected, next))
                 break;
+
             if (layers.back()->isFinished())
             {
                 if (layers.size() == 1)
@@ -2735,11 +2736,19 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         }
     }
 
-    layers.back()->pushOperator(op);
-
     /// isNull & isNotNull are postfix unary operators
     if (op.type == OperatorType::IsNull)
+    {
+        ASTPtr function = makeASTFunction(op);
+
+        if (!layers.back()->popLastNOperands(function->children[0]->children, 1))
+            return Action::NONE;
+
+        layers.back()->pushOperand(std::move(function));
         return Action::OPERATOR;
+    }
+
+    layers.back()->pushOperator(op);
 
     if (op.type == OperatorType::Cast)
     {

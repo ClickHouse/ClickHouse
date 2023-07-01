@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -125,7 +126,7 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
-    String getConnectedAddress() const override { return connected_zk_address; }
+    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
@@ -181,7 +182,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() const override;
+    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -201,9 +202,11 @@ public:
 
     void setServerCompletelyStarted();
 
+    const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
+
 private:
     ACLs default_acls;
-    String connected_zk_address;
+    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
 
@@ -312,12 +315,12 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
-    void initApiVersion();
+    void initFeatureFlags();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
+    DB::KeeperFeatureFlags keeper_feature_flags;
 };
 
 }

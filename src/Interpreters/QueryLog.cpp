@@ -70,6 +70,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"databases", array_low_cardinality_string},
         {"tables", array_low_cardinality_string},
         {"columns", array_low_cardinality_string},
+        {"partitions", array_low_cardinality_string},
         {"projections", array_low_cardinality_string},
         {"views", array_low_cardinality_string},
         {"exception_code", std::make_shared<DataTypeInt32>()},
@@ -176,6 +177,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
 
@@ -194,6 +196,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_databases, column_databases);
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
+        fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);
     }

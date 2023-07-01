@@ -11,6 +11,9 @@
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrorHandlers.h>
+#include <Common/assertProcessUserMatchesDataOwner.h>
+#include <Common/makeSocketAddress.h>
+#include <Server/waitServersToFinish.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
@@ -31,6 +34,8 @@
 #include "Core/Defines.h"
 #include "config.h"
 #include "config_version.h"
+#include "config_tools.h"
+
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -75,90 +80,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NETWORK_ERROR;
-    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
-    extern const int FAILED_TO_GETPWUID;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
-{
-    const size_t sleep_max_ms = 1000 * seconds_to_wait;
-    const size_t sleep_one_ms = 100;
-    size_t sleep_current_ms = 0;
-    size_t current_connections = 0;
-    for (;;)
-    {
-        current_connections = 0;
-
-        for (auto & server : servers)
-        {
-            server.stop();
-            current_connections += server.currentConnections();
-        }
-
-        if (!current_connections)
-            break;
-
-        sleep_current_ms += sleep_one_ms;
-        if (sleep_current_ms < sleep_max_ms)
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
-        else
-            break;
-    }
-    return current_connections;
-}
-
-Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port, Poco::Logger * log)
-{
-    Poco::Net::SocketAddress socket_address;
-    try
-    {
-        socket_address = Poco::Net::SocketAddress(host, port);
-    }
-    catch (const Poco::Net::DNSException & e)
-    {
-        const auto code = e.code();
-        if (code == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-                    || code == EAI_ADDRFAMILY
-#endif
-           )
-        {
-            LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
-                "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                "specify IPv4 address to listen in <listen_host> element of configuration "
-                "file. Example: <listen_host>0.0.0.0</listen_host>",
-                host, e.code(), e.message());
-        }
-
-        throw;
-    }
-    return socket_address;
-}
-
-std::string getUserName(uid_t user_id)
-{
-    /// Try to convert user id into user name.
-    auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
-    if (buffer_size <= 0)
-        buffer_size = 1024;
-    std::string buffer;
-    buffer.reserve(buffer_size);
-
-    struct passwd passwd_entry;
-    struct passwd * result = nullptr;
-    const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
-
-    if (error)
-        throwFromErrno("Failed to find user name for " + toString(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
-    else if (result)
-        return result->pw_name;
-    return toString(user_id);
-}
-
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -211,7 +133,10 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
+        auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+                                      "{0} client [OPTION]\n"
+#endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
                                       commandName());
         help_formatter.setHeader(header_str);
@@ -299,12 +224,12 @@ struct Keeper::KeeperHTTPContext : public IHTTPContext
 
     uint64_t getMaxFieldNameSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 1048576);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
     }
 
     uint64_t getMaxFieldValueSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 1048576);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
     uint64_t getMaxChunkSize() const override
@@ -364,24 +289,7 @@ try
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
-    const auto effective_user_id = geteuid();
-    struct stat statbuf;
-    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
-    {
-        const auto effective_user = getUserName(effective_user_id);
-        const auto data_owner = getUserName(statbuf.st_uid);
-        std::string message = "Effective user of the process (" + effective_user +
-            ") does not match the owner of the data (" + data_owner + ").";
-        if (effective_user_id == 0)
-        {
-            message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
-        }
-        else
-        {
-            LOG_WARNING(log, fmt::runtime(message));
-        }
-    }
+    assertProcessUserMatchesDataOwner(path, [&](const std::string & message){ LOG_WARNING(log, fmt::runtime(message)); });
 
     DB::ServerUUID::load(path + "/uuid", log);
 
@@ -398,8 +306,8 @@ try
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
-    DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
+    DateLUT::serverTimezoneInstance();
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();

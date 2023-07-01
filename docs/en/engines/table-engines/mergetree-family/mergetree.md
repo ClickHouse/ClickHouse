@@ -491,7 +491,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -756,6 +756,17 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 - [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
 
 
+## Disk types
+
+In addition to local block devices, ClickHouse supports these storage types:
+- [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
+- [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
+- [`hdfs` for HDFS](#hdfs-storage)
+- [`web` for read-only from web](#web-storage)
+- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
+- [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
+
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
 ### Introduction {#introduction}
@@ -779,7 +790,7 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
-for adhoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
+for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
 See [dynamic storage](#dynamic-storage) for more details.
 :::
 
@@ -853,10 +864,10 @@ Tags:
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
 - `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
-- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
+- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 
-Cofiguration examples:
+Configuration examples:
 
 ``` xml
 <storage_configuration>
@@ -936,7 +947,16 @@ configuration files; all the settings are in the CREATE/ATTACH query.
 The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
 :::
 
+#### Example dynamic web storage
+
+:::tip
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
+:::
+
+In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
+
 ```sql
+# highlight-next-line
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
     price UInt32,
@@ -1138,7 +1158,7 @@ These parameters define the cache layer:
 
 Cache parameters:
 - `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of memory) that the cache can grow to.
+- `max_size` — The size (amount of disk space) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
@@ -1219,11 +1239,12 @@ Authentication parameters (the disk will try all available methods **and** Manag
 * `account_name` and `account_key` - For authentication using Shared Key.
 
 Limit parameters (mainly for internal usage):
-* `max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
+* `s3_max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
 * `min_bytes_for_seek` - Limits the size of a seekable region.
 * `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
 * `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
 * `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
+* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurrently for one object.
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
@@ -1236,6 +1257,93 @@ Examples of working configurations can be found in integration tests directory (
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
+
+## HDFS storage {#hdfs-storage}
+
+In this sample configuration:
+- the disk is of type `hdfs`
+- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+## Web storage (read-only) {#web-storage}
+
+Web storage can be used for read-only purposes. An example use is for hosting sample
+data, or for migrating data.
+
+:::tip
+Storage can also be configured temporarily within a query, if a web dataset is not expected
+to be used routinely, see [dynamic storage](#dynamic-storage) and skip editing the
+configuration file.
+:::
+
+In this sample configuration:
+- the disk is of type `web`
+- the data is hosted at `http://nginx:80/test1/`
+- a cache on local storage is used 
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
 
 ## Virtual Columns {#virtual-columns}
 
