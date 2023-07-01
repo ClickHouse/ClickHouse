@@ -73,6 +73,10 @@ public:
     String currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const String & text);
     std::pair<String, Int64> getExceptionInfo() const;
+    void inUse() { in_use = true; }
+    void notInUse() { in_use = false; }
+
+
 
 
 private:
@@ -121,6 +125,7 @@ private:
     std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
+    std::atomic<bool> in_use = 0;
 
     void drain();
     void cleanUnprocessed();

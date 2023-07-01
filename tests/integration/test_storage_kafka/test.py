@@ -4628,8 +4628,16 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
     topic = "system_kafka_cons2"
-    kafka_create_topic(admin_client, topic)
+    kafka_create_topic(admin_client, topic, num_partitions=2)
+
+
 
     instance.query(
         f"""
@@ -4651,8 +4659,38 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
                      kafka_commit_on_select = 1,
                      kafka_group_name = '{topic}',
                      kafka_format = 'JSONEachRow';
+        DROP TABLE IF EXISTS test.kafka_persistent;
         """
+        # CREATE TABLE test.kafka_persistent
+        # (
+        # `key` UInt64,
+        # `value` UInt64
+        # )
+        # ENGINE = MergeTree
+        # ORDER BY key;
+
+        # DROP VIEW IF EXISTS test.kafka_mv1;
+        # CREATE MATERIALIZED VIEW test.kafka_mv1 TO test.kafka_persistent AS
+        # SELECT *
+        # FROM test.kafka;
+        # DROP VIEW IF EXISTS test.kafka_mv2;
+        # CREATE MATERIALIZED VIEW test.kafka_mv2 TO test.kafka_persistent AS
+        # SELECT *
+        # FROM test.kafka2;
+        # """
     )
+
+    producer.send(
+        topic=topic,
+        value=json.dumps({"key": 1, "value": 1}),
+        partition=0
+    )
+    producer.send(
+        topic=topic,
+        value=json.dumps({"key": 11, "value": 11}),
+        partition=1
+    )
+    time.sleep(3)
 
     # first consumer subscribe the topic, try to poll some data, and go to rest
     instance.query("SELECT * FROM test.kafka")
@@ -4661,10 +4699,23 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
     # consumer, try to poll some data
     instance.query("SELECT * FROM test.kafka2")
 
+    producer.send(
+        topic=topic,
+        value=json.dumps({"key": 1, "value": 1}),
+        partition=0
+    )
+    producer.send(
+        topic=topic,
+        value=json.dumps({"key": 10, "value": 10}),
+        partition=1
+    )
+    time.sleep(3)
+
     instance.query("SELECT * FROM test.kafka")
     instance.query("SELECT * FROM test.kafka2")
     instance.query("SELECT * FROM test.kafka")
     instance.query("SELECT * FROM test.kafka2")
+
 
     result_system_kafka_consumers = instance.query(
         """
@@ -4689,32 +4740,32 @@ table:                      kafka
 length(consumer_id):        67
 assignments.topic:          ['system_kafka_cons2']
 assignments.partition_id:   [0]
-assignments.current_offset: [-1001]
+assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
-num_messages_read:          0
-last_commit_time_:          never
-num_commits:                0
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                2
 last_rebalance_time_:       now
 num_rebalance_revocations:  1
 num_rebalance_assignments:  2
-is_currently_used:          1
+is_currently_used:          0
 
 Row 2:
 ──────
 database:                   test
 table:                      kafka2
 length(consumer_id):        68
-assignments.topic:          ['no assigned topic']
-assignments.partition_id:   [0]
-assignments.current_offset: [0]
+assignments.topic:          ['system_kafka_cons2']
+assignments.partition_id:   [1]
+assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
-num_messages_read:          0
-last_commit_time_:          never
-num_commits:                0
+num_messages_read:          1
+last_commit_time_:          now
+num_commits:                1
 last_rebalance_time_:       never
 num_rebalance_revocations:  0
 num_rebalance_assignments:  1

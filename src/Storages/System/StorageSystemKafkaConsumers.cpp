@@ -118,7 +118,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 std::string consumer_id_str = cpp_consumer->get_member_id();
                 consumer_id.insertData(consumer_id_str.data(), consumer_id_str.size());
 
-                bool assignment_has_value = consumer->assignment.has_value() && consumer->assignment.value().size() > 0;
+                // bool assignment_has_value = consumer->assignment.has_value() && consumer->assignment.value().size() > 0;
 
                 auto cpp_assignments = cpp_consumer->get_assignment();
                 auto cpp_offsets = cpp_consumer->get_offsets_position(cpp_assignments);
@@ -137,17 +137,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
                 last_assignment_num += cpp_assignments.size();
 
-                // }
-                // else
-                // {
-                //     std::string fake_assigments_topic = "no assigned topic";
-                //     assigments_topics.insertData(fake_assigments_topic.data(), fake_assigments_topic.size());
-
-                //     assigments_partition_id.insert(0);
-                //     assigments_current_offset.insert(0);
-
-                //     last_assignment_num += 1;
-                // }
                 assigments_topics_offsets.push_back(last_assignment_num);
                 assigments_partition_id_offsets.push_back(last_assignment_num);
                 assigments_current_offset_offsets.push_back(last_assignment_num);
@@ -168,7 +157,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 num_rebalance_revocations.insert(consumer->num_rebalance_revocations.load());
                 num_rebalance_assigments.insert(consumer->num_rebalance_assignments.load());
 
-                is_currently_used.insert(consumer->stalled_status != KafkaConsumer::CONSUMER_STOPPED && assignment_has_value);
+                is_currently_used.insert(consumer->in_use.load());
 
                 auto stat_string_ptr = storage_kafka_ptr->getRdkafkaStat();
                 if (stat_string_ptr)
@@ -177,8 +166,8 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 }
                 else
                 {
-                    std::string no_rdkafka_stat = "librdkafka stat is not available";
-                    rdkafka_stat.insertData(no_rdkafka_stat.data(), no_rdkafka_stat.size());
+                    const std::string empty_stat = "{}";
+                    rdkafka_stat.insertData(empty_stat.data(), empty_stat.size());
                 }
             }
         }
