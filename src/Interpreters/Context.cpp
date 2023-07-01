@@ -1063,8 +1063,16 @@ void Context::setUser(const UUID & user_id_)
 
     user_id = user_id_;
 
-    access = getAccessControl().getContextAccess(
-        user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
+    ContextAccessParams params{
+        user_id,
+        /* full_access= */ false,
+        /* use_default_roles = */ true,
+        /* current_roles = */ nullptr,
+        settings,
+        current_database,
+        client_info};
+
+    access = getAccessControl().getContextAccess(params);
 
     auto user = access->getUser();
 
@@ -1108,7 +1116,7 @@ void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
     if (current_roles ? (*current_roles == current_roles_) : current_roles_.empty())
        return;
     current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
-    calculateAccessRights();
+    need_recalculate_access = true;
 }
 
 void Context::setCurrentRolesDefault()
@@ -1133,20 +1141,6 @@ std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 }
 
 
-void Context::calculateAccessRights()
-{
-    auto lock = getLock();
-    if (user_id)
-        access = getAccessControl().getContextAccess(
-            *user_id,
-            current_roles ? *current_roles : std::vector<UUID>{},
-            /* use_default_roles = */ false,
-            settings,
-            current_database,
-            client_info);
-}
-
-
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
 {
@@ -1166,11 +1160,50 @@ void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id,
 void Context::checkAccess(const AccessRightsElement & element) const { return checkAccessImpl(element); }
 void Context::checkAccess(const AccessRightsElements & elements) const { return checkAccessImpl(elements); }
 
-
 std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
-    auto lock = getLock();
-    return access ? access : ContextAccess::getFullAccess();
+    /// A helper function to collect parameters for calculating access rights, called with Context::getLock() acquired.
+    auto get_params = [this]()
+    {
+        /// If setUserID() was never called then this must be the global context with the full access.
+        bool full_access = !user_id;
+
+        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, settings, current_database, client_info};
+    };
+
+    /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
+    std::optional<ContextAccessParams> params;
+
+    {
+        auto lock = getLock();
+        if (access && !need_recalculate_access)
+            return access; /// No need to recalculate access rights.
+
+        params.emplace(get_params());
+
+        if (access && (access->getParams() == *params))
+        {
+            need_recalculate_access = false;
+            return access; /// No need to recalculate access rights.
+        }
+    }
+
+    /// Calculate new access rights according to the collected parameters.
+    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
+    auto res = getAccessControl().getContextAccess(*params);
+
+    {
+        /// If the parameters of access rights were not changed while we were calculated them
+        /// then we store the new access rights in the Context to allow reusing it later.
+        auto lock = getLock();
+        if (get_params() == *params)
+        {
+            access = res;
+            need_recalculate_access = false;
+        }
+    }
+
+    return res;
 }
 
 RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
@@ -1700,27 +1733,8 @@ Settings Context::getSettings() const
 void Context::setSettings(const Settings & settings_)
 {
     auto lock = getLock();
-    const auto old_readonly = settings.readonly;
-    const auto old_allow_ddl = settings.allow_ddl;
-    const auto old_allow_introspection_functions = settings.allow_introspection_functions;
-    const auto old_display_secrets = settings.format_display_secrets_in_show_and_select;
-
     settings = settings_;
-
-    if ((settings.readonly != old_readonly)
-        || (settings.allow_ddl != old_allow_ddl)
-        || (settings.allow_introspection_functions != old_allow_introspection_functions)
-        || (settings.format_display_secrets_in_show_and_select != old_display_secrets))
-        calculateAccessRights();
-}
-
-void Context::recalculateAccessRightsIfNeeded(std::string_view name)
-{
-    if (name == "readonly"
-        || name == "allow_ddl"
-        || name == "allow_introspection_functions"
-        || name == "format_display_secrets_in_show_and_select")
-        calculateAccessRights();
+    need_recalculate_access = true;
 }
 
 void Context::setSetting(std::string_view name, const String & value)
@@ -1732,7 +1746,8 @@ void Context::setSetting(std::string_view name, const String & value)
         return;
     }
     settings.set(name, value);
-    recalculateAccessRightsIfNeeded(name);
+    if (ContextAccessParams::dependsOnSettingName(name))
+        need_recalculate_access = true;
 }
 
 void Context::setSetting(std::string_view name, const Field & value)
@@ -1744,7 +1759,8 @@ void Context::setSetting(std::string_view name, const Field & value)
         return;
     }
     settings.set(name, value);
-    recalculateAccessRightsIfNeeded(name);
+    if (ContextAccessParams::dependsOnSettingName(name))
+        need_recalculate_access = true;
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -1853,7 +1869,7 @@ void Context::setCurrentDatabase(const String & name)
     DatabaseCatalog::instance().assertDatabaseExists(name);
     auto lock = getLock();
     current_database = name;
-    calculateAccessRights();
+    need_recalculate_access = true;
 }
 
 void Context::setCurrentQueryId(const String & query_id)

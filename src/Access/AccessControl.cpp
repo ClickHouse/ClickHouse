@@ -72,18 +72,26 @@ public:
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params)
     {
-        std::lock_guard lock{mutex};
-        auto x = cache.get(params);
-        if (x)
         {
-            if ((*x)->tryGetUser())
-                return *x;
-            /// No user, probably the user has been dropped while it was in the cache.
-            cache.remove(params);
+            std::lock_guard lock{mutex};
+            auto x = cache.get(params);
+            if (x)
+            {
+                if ((*x)->getUserID() && !(*x)->tryGetUser())
+                    cache.remove(params); /// The user has been dropped while it was in the cache.
+                else
+                    return *x;
+            }
         }
+
         auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
-        cache.add(params, res);
+
+        {
+            std::lock_guard lock{mutex};
+            cache.add(params, res);
+        }
+
         return res;
     }
 
@@ -710,35 +718,6 @@ void AccessControl::setBcryptWorkfactor(int workfactor_)
 int AccessControl::getBcryptWorkfactor() const
 {
     return bcrypt_workfactor;
-}
-
-
-std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
-    const UUID & user_id,
-    const std::vector<UUID> & current_roles,
-    bool use_default_roles,
-    const Settings & settings,
-    const String & current_database,
-    const ClientInfo & client_info) const
-{
-    ContextAccessParams params;
-    params.user_id = user_id;
-    params.current_roles.insert(current_roles.begin(), current_roles.end());
-    params.use_default_roles = use_default_roles;
-    params.current_database = current_database;
-    params.readonly = settings.readonly;
-    params.allow_ddl = settings.allow_ddl;
-    params.allow_introspection = settings.allow_introspection_functions;
-    params.interface = client_info.interface;
-    params.http_method = client_info.http_method;
-    params.address = client_info.current_address.host();
-    params.quota_key = client_info.quota_key;
-
-    /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
-    /// Only the last proxy can be trusted (if any).
-    params.forwarded_address = client_info.getLastForwardedFor();
-
-    return getContextAccess(params);
 }
 
 

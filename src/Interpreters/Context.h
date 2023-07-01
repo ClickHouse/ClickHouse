@@ -248,7 +248,8 @@ private:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
-    std::shared_ptr<const ContextAccess> access;
+    mutable std::shared_ptr<const ContextAccess> access;
+    mutable bool need_recalculate_access = true;
     std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
     Settings settings;  /// Setting for query execution.
@@ -1148,10 +1149,6 @@ private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     void initGlobal();
-
-    /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateAccessRights();
-    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
