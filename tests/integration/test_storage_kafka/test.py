@@ -4577,8 +4577,6 @@ def test_system_kafka_consumers(kafka_cluster):
         """
     )
 
-    # result_system_kafka_consumers = instance.query("SELECT * FROM system.kafka_consumers format Vertical")
-
     result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
 
     result_system_kafka_consumers = instance.query(
@@ -4605,7 +4603,7 @@ table:                      kafka
 length(consumer_id):        67
 assignments.topic:          ['system_kafka_cons']
 assignments.partition_id:   [0]
-assignments.current_offset: [-1001]
+assignments.current_offset: [4]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
@@ -4615,7 +4613,7 @@ num_commits:                1
 last_rebalance_time_:       never
 num_rebalance_revocations:  0
 num_rebalance_assignments:  1
-is_currently_used:          1
+is_currently_used:          0
 """
     )
 
@@ -4636,8 +4634,6 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
 
     topic = "system_kafka_cons2"
     kafka_create_topic(admin_client, topic, num_partitions=2)
-
-
 
     instance.query(
         f"""
@@ -4661,35 +4657,10 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
                      kafka_format = 'JSONEachRow';
         DROP TABLE IF EXISTS test.kafka_persistent;
         """
-        # CREATE TABLE test.kafka_persistent
-        # (
-        # `key` UInt64,
-        # `value` UInt64
-        # )
-        # ENGINE = MergeTree
-        # ORDER BY key;
-
-        # DROP VIEW IF EXISTS test.kafka_mv1;
-        # CREATE MATERIALIZED VIEW test.kafka_mv1 TO test.kafka_persistent AS
-        # SELECT *
-        # FROM test.kafka;
-        # DROP VIEW IF EXISTS test.kafka_mv2;
-        # CREATE MATERIALIZED VIEW test.kafka_mv2 TO test.kafka_persistent AS
-        # SELECT *
-        # FROM test.kafka2;
-        # """
     )
 
-    producer.send(
-        topic=topic,
-        value=json.dumps({"key": 1, "value": 1}),
-        partition=0
-    )
-    producer.send(
-        topic=topic,
-        value=json.dumps({"key": 11, "value": 11}),
-        partition=1
-    )
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
     time.sleep(3)
 
     # first consumer subscribe the topic, try to poll some data, and go to rest
@@ -4699,23 +4670,14 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
     # consumer, try to poll some data
     instance.query("SELECT * FROM test.kafka2")
 
-    producer.send(
-        topic=topic,
-        value=json.dumps({"key": 1, "value": 1}),
-        partition=0
-    )
-    producer.send(
-        topic=topic,
-        value=json.dumps({"key": 10, "value": 10}),
-        partition=1
-    )
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 10, "value": 10}), partition=1)
     time.sleep(3)
 
     instance.query("SELECT * FROM test.kafka")
     instance.query("SELECT * FROM test.kafka2")
     instance.query("SELECT * FROM test.kafka")
     instance.query("SELECT * FROM test.kafka2")
-
 
     result_system_kafka_consumers = instance.query(
         """
@@ -4775,11 +4737,23 @@ is_currently_used:          0
 
     result_rdkafka_stat = instance.query(
         """
-        SELECT table, rdkafka_stat
+        SELECT table, JSONExtractString(rdkafka_stat, 'type')
           FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
         """
     )
-    logging.debug(f"result_rdkafka_stat: {result_rdkafka_stat}")
+    assert (
+        result_rdkafka_stat
+        == """Row 1:
+──────
+table:                                   kafka
+JSONExtractString(rdkafka_stat, 'type'): consumer
+
+Row 2:
+──────
+table:                                   kafka2
+JSONExtractString(rdkafka_stat, 'type'): consumer
+"""
+    )
 
     instance.query("DROP TABLE test.kafka")
     instance.query("DROP TABLE test.kafka2")
