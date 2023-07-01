@@ -1067,7 +1067,7 @@ ClickHouse использует потоки из глобального пул�
 -   requireTLSv1_2 - Требование соединения TLSv1.2. Допустимые значения: `true`, `false`.
 -   fips - Активация режима OpenSSL FIPS. Поддерживается, если версия OpenSSL, с которой собрана библиотека поддерживает fips.
 -   privateKeyPassphraseHandler - Класс (подкласс PrivateKeyPassphraseHandler)запрашивающий кодовую фразу доступа к секретному ключу. Например, `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтверждения не валидных сертификатов. Например, `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`.
+-   invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтверждения не валидных сертификатов. Например, `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>`.
 -   disableProtocols - Запрещенные к использованию протоколы.
 -   preferServerCiphers - Предпочтение серверных шифров на клиенте.
 
