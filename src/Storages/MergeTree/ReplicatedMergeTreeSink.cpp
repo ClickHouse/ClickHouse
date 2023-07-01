@@ -452,7 +452,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         if constexpr (async_insert)
         {
             /// we copy everything but offsets which we move because they are only used by async insert
-            if (storage.writer.getMergingMode() != MergeTreeData::MergingParams::Mode::Ordinary)
+            if (settings.optimize_on_insert && storage.writer.getMergingMode() != MergeTreeData::MergingParams::Mode::Ordinary)
                 unmerged_block.emplace(Block(current_block.block), Row(current_block.partition), std::move(current_block.offsets));
         }
 
