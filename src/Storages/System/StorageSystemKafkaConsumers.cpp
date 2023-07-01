@@ -19,9 +19,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include "base/types.h"
 
-#include <Common/logger_useful.h>
-
-
 namespace DB
 {
 
@@ -73,7 +70,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & assigments_offset_committed = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_offset_committed_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
-
     auto & last_exception_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
     auto & last_exception = assert_cast<ColumnString &>(*res_columns[index++]);
     auto & last_poll_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
@@ -93,22 +89,18 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
         {
-            LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "Not granted {}", it->name());
             return;
         }
-        LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "granted {}", it->name());
 
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
         std::lock_guard lock(storage_kafka_ptr->mutex);
 
-        LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "{} KafkaConsumers", storage_kafka_ptr->consumers.size());
         for (auto weak_consumer : storage_kafka_ptr->all_consumers)
         {
             if (auto consumer = weak_consumer.lock())
             {
-                LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "consumer got");
                 auto & cpp_consumer = consumer->consumer;
 
                 database.insertData(database_str.data(), database_str.size());
@@ -116,8 +108,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
                 std::string consumer_id_str = cpp_consumer->get_member_id();
                 consumer_id.insertData(consumer_id_str.data(), consumer_id_str.size());
-
-                // bool assignment_has_value = consumer->assignment.has_value() && consumer->assignment.value().size() > 0;
 
                 auto cpp_assignments = cpp_consumer->get_assignment();
                 auto cpp_offsets = cpp_consumer->get_offsets_position(cpp_assignments);
@@ -170,8 +160,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 }
             }
         }
-        LOG_TRACE(&Poco::Logger::get("StorageSystemKafkaConsumers"), "bottom of add_row");
-
     };
 
     const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);

@@ -76,7 +76,6 @@ KafkaConsumer::KafkaConsumer(
         {
             LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
             CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-
         }
 
         assignment = topic_partitions;
@@ -389,7 +388,6 @@ ReadBufferPtr KafkaConsumer::consume()
 
     if (intermediate_commit)
         commit();
-
 
     while (true)
     {
