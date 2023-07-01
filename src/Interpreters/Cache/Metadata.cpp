@@ -148,7 +148,6 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
-            file_suffix = "";
             break;
     }
     return std::to_string(offset) + file_suffix;
@@ -414,6 +413,8 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->invalidate();
 
+    file_segment->detach(segment_lock, *this);
+
     const auto path = key_metadata->getFileSegmentPath(*file_segment);
     bool exists = fs::exists(path);
     if (exists)
@@ -432,7 +433,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
     else if (file_segment->downloaded_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 
-    file_segment->detach(segment_lock, *this);
     return key_metadata->erase(it);
 }
 
