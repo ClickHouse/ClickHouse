@@ -38,4 +38,9 @@ void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query,
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
 
+UUID DatabaseTablesSnapshotIteratorWithUUID::uuid() const
+{
+    return table()->getStorageID().uuid;
+}
+
 }

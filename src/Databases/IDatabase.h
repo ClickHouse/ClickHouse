@@ -105,6 +105,15 @@ public:
     const StoragePtr & table() const override { return it->second; }
 };
 
+class DatabaseTablesSnapshotIteratorWithUUID final : public DatabaseTablesSnapshotIterator
+{
+public:
+    explicit DatabaseTablesSnapshotIteratorWithUUID(DatabaseTablesSnapshotIterator && base)
+        : DatabaseTablesSnapshotIterator(std::move(base)) {}
+
+    UUID uuid() const override;
+};
+
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 
 

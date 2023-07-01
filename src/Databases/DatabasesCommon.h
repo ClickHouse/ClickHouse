@@ -52,6 +52,28 @@ protected:
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
+
+    template <class DatabaseClass>
+    void renameTableImpl(ContextPtr local_context, const String & table_name, IDatabase & to_database, const String & to_table_name, bool exchange, bool dictionary);
+};
+
+template <bool lazy>
+class TableDataMapping
+{
+public:
+    TableDataMapping(const String & current_path_, const String & path_to_table_symlinks_, const String & logger);
+
+    void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
+    void tryRemoveSymlink(const String & table_name);
+
+    String getTableDataPathUnlocked(const String & table_name, const String & database_name) const;
+
+    Poco::Logger * log_mapping;
+    String current_path;
+    String path_to_table_symlinks;
+
+    using NameToPathMap = std::unordered_map<String, String>;
+    NameToPathMap table_name_to_path;
 };
 
 }

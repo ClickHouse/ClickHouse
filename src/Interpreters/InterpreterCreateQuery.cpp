@@ -216,6 +216,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         else
             metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
     }
+    else if (create.storage->engine->name == "Memory")
+    {
+        if (create.uuid == UUIDHelpers::Nil)
+            create.uuid = UUIDHelpers::generateV4();
+    }
     else
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;

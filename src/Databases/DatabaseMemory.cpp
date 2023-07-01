@@ -9,6 +9,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -21,16 +22,42 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int INCORRECT_QUERY;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
+
+DatabaseMemory::DatabaseMemory(const String & name_, UUID uuid, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , TableDataMapping(getContext()->getPath(), "data/" + escapeForFileName(name_), "DatabaseMemory(" + name_ + ")")
+    , data_path("store/")
+    , db_uuid(uuid)
 {
+    assert(db_uuid != UUIDHelpers::Nil);
+
     /// Temporary database should not have any data on the moment of its creation
     /// In case of sudden server shutdown remove database folder of temporary database
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
-        removeDataPath(context_);
+        removeDataPath();
+}
+
+String DatabaseMemory::getTableDataPath(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    return getTableDataPathUnlocked(table_name, database_name);
+}
+
+String DatabaseMemory::getTableDataPath(const ASTCreateQuery & query) const
+{
+    auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
+    assert(tmp != data_path && !tmp.empty());
+    return tmp;
+}
+
+DatabaseTablesIteratorPtr
+DatabaseMemory::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
+{
+    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
+    return std::make_unique<DatabaseTablesSnapshotIteratorWithUUID>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
 void DatabaseMemory::createTable(
@@ -47,10 +74,19 @@ void DatabaseMemory::createTable(
     if (query)
     {
         query_to_store = query->clone();
-        auto * create = query_to_store->as<ASTCreateQuery>();
-        if (!create)
+        auto * create_to_store = query_to_store->as<ASTCreateQuery>();
+        if (!create_to_store)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
-        cleanupObjectDefinitionFromTemporaryFlags(*create);
+        cleanupObjectDefinitionFromTemporaryFlags(*create_to_store);
+
+        const auto & create = query->as<ASTCreateQuery &>();
+        assert(table_name == create.getTable());
+
+        auto table_data_path = getTableDataPath(create);
+        table_name_to_path.emplace(table_name, table_data_path);
+
+        if (table->storesDataOnDisk())
+            tryCreateSymlink(table_name, table_data_path);
     }
 
     create_queries.emplace(table_name, query_to_store);
@@ -76,9 +112,25 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
-            if (fs::exists(table_data_dir))
-                fs::remove_all(table_data_dir);
+            String table_data_path = "";
+            {
+                std::lock_guard lock{mutex};
+                auto mapping = table_name_to_path.find(table_name);
+                if (mapping != table_name_to_path.end())
+                {
+                    table_data_path = mapping->second;
+                    table_name_to_path.erase(table_name);
+                }
+            }
+
+            if (!table_data_path.empty())
+            {
+                fs::path table_data_dir{fs::path{getContext()->getPath()} / table_data_path};
+                if (fs::exists(table_data_dir))
+                    fs::remove_all(table_data_dir);
+            }
+
+            tryRemoveSymlink(table_name);
         }
     }
     catch (...)
@@ -94,6 +146,15 @@ void DatabaseMemory::dropTable(
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
+}
+
+void DatabaseMemory::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
+                                 const String & to_table_name, bool exchange, bool dictionary)
+{
+    if (typeid(*this) != typeid(to_database))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
+
+    renameTableImpl<DatabaseMemory>(local_context, table_name, to_database, to_table_name, exchange, dictionary);
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
@@ -132,15 +193,24 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::removeDataPath(ContextPtr local_context)
+void DatabaseMemory::removeDataPath()
 {
-    std::filesystem::remove_all(local_context->getPath() + data_path);
+    /// Remove database directory with symlinks to the tables' data
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    try
+    {
+        fs::remove_all(path_to_table_symlinks);
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+    }
 }
 
-void DatabaseMemory::drop(ContextPtr local_context)
+void DatabaseMemory::drop(ContextPtr /*local_context*/)
 {
     /// Remove data on explicit DROP DATABASE
-    removeDataPath(local_context);
+    removeDataPath();
 }
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

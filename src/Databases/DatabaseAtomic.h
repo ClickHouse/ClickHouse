@@ -16,7 +16,7 @@ namespace DB
 /// by moving metadata to /clickhouse_path/metadata_dropped/ and notifies DatabaseCatalog.
 /// Running queries still may use dropped table. Table will be actually removed when it's not in use.
 /// Allows to execute RENAME and DROP without IStorage-level RWLocks
-class DatabaseAtomic : public DatabaseOrdinary
+class DatabaseAtomic : public DatabaseOrdinary, public TableDataMapping<false>
 {
 public:
     DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_);
@@ -59,9 +59,6 @@ public:
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
-    void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
-    void tryRemoveSymlink(const String & table_name);
-
     void waitDetachedTableNotInUse(const UUID & uuid) override;
     void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid) override;
@@ -79,12 +76,7 @@ protected:
 
     virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
 
-    //TODO store path in DatabaseWithOwnTables::tables
-    using NameToPathMap = std::unordered_map<String, String>;
-    NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
-
     DetachedTables detached_tables TSA_GUARDED_BY(mutex);
-    String path_to_table_symlinks;
     String path_to_metadata_symlink;
     const UUID db_uuid;
 };
