@@ -4,6 +4,7 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <Disks/IDisk.h>
+#include <sys/types.h>
 
 namespace DB
 {

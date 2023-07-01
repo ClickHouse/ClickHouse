@@ -112,11 +112,10 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
 
-        String address = impl->getConnectedAddress();
+        Poco::Net::SocketAddress address = impl->getConnectedAddress();
 
-        size_t colon_pos = address.find(':');
-        connected_zk_host = address.substr(0, colon_pos);
-        connected_zk_port = address.substr(colon_pos + 1);
+        connected_zk_host = address.host().toString();
+        connected_zk_port = address.port();
 
         connected_zk_index = 0;
 
@@ -124,7 +123,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         {
             for (size_t i = 0; i < args.hosts.size(); i++)
             {
-                if (args.hosts[i] == address)
+                if (args.hosts[i] == address.toString())
                 {
                     connected_zk_index = i;
                     break;
@@ -180,7 +179,7 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
-    std::function<size_t(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
+    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {
@@ -866,9 +865,9 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion() const
+bool ZooKeeper::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
 {
-    return impl->getApiVersion();
+    return impl->isFeatureEnabled(feature_flag);
 }
 
 Int64 ZooKeeper::getClientID()

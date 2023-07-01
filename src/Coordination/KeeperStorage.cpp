@@ -283,9 +283,9 @@ void KeeperStorage::initializeSystemNodes()
     }
 
     // insert child system nodes
-    for (const auto & [path, data] : child_system_paths_with_data)
+    for (const auto & [path, data] : keeper_context->system_nodes_with_data)
     {
-        assert(keeper_api_version_path.starts_with(keeper_system_path));
+        assert(path.starts_with(keeper_system_path));
         Node child_system_node;
         child_system_node.setData(data);
         auto [map_key, _] = container.insert(std::string{path}, child_system_node);
@@ -375,23 +375,26 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
         delta.operation);
 }
 
+void KeeperStorage::UncommittedState::addDelta(Delta new_delta)
+{
+    const auto & added_delta = deltas.emplace_back(std::move(new_delta));
+
+    if (!added_delta.path.empty())
+    {
+        deltas_for_path[added_delta.path].push_back(&added_delta);
+        applyDelta(added_delta);
+    }
+    else if (const auto * auth_delta = std::get_if<AddAuthDelta>(&added_delta.operation))
+    {
+        auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
+        uncommitted_auth.emplace_back(&auth_delta->auth_id);
+    }
+}
+
 void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
 {
     for (auto & delta : new_deltas)
-    {
-        const auto & added_delta = deltas.emplace_back(std::move(delta));
-
-        if (!added_delta.path.empty())
-        {
-            deltas_for_path[added_delta.path].push_back(&added_delta);
-            applyDelta(added_delta);
-        }
-        else if (const auto * auth_delta = std::get_if<AddAuthDelta>(&added_delta.operation))
-        {
-            auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
-            uncommitted_auth.emplace_back(&auth_delta->auth_id);
-        }
-    }
+        addDelta(std::move(delta));
 }
 
 void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
@@ -600,6 +603,26 @@ namespace
     std::terminate();
 }
 
+}
+
+void KeeperStorage::applyUncommittedState(KeeperStorage & other, int64_t last_zxid)
+{
+    for (const auto & transaction : uncommitted_transactions)
+    {
+        if (transaction.zxid <= last_zxid)
+            continue;
+        other.uncommitted_transactions.push_back(transaction);
+    }
+
+    auto it = uncommitted_state.deltas.begin();
+
+    for (; it != uncommitted_state.deltas.end(); ++it)
+    {
+        if (it->zxid <= last_zxid)
+            continue;
+
+        other.uncommitted_state.addDelta(*it);
+    }
 }
 
 Coordination::Error KeeperStorage::commit(int64_t commit_zxid)
@@ -1037,7 +1060,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
-        if (request.path == Coordination::keeper_api_version_path)
+        if (request.path == Coordination::keeper_api_feature_flags_path)
             return {};
 
         if (!storage.uncommitted_state.getNode(request.path))
