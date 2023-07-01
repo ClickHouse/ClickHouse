@@ -782,7 +782,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
         return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == LightweightDeleteDescription::FILTER_COLUMN.name;
+            column_name == LightweightDeleteDescription::FILTER_COLUMN.name || column_name == BlockNumberColumn.name;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -1066,6 +1066,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(column_name));
 
+            if (column_name == BlockNumberColumn.name && std::dynamic_pointer_cast<MergeTreeData>(table))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
+                                                            "this column name is reserved for _block_number persisting feature", backQuote(column_name));
+
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
 
@@ -1270,6 +1274,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.rename_to == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(command.rename_to));
+
+            if (command.rename_to == BlockNumberColumn.name && std::dynamic_pointer_cast<MergeTreeData>(table))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
+                                                            "this column name is reserved for _block_number persisting feature", backQuote(command.rename_to));
 
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "

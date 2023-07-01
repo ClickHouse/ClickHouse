@@ -518,7 +518,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
-            if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name)
+            if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name
+                && name != BlockNumberColumn.name)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                     "Column {} is updated but not requested to read", name);
 
