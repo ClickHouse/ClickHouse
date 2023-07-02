@@ -76,9 +76,6 @@ public:
     void inUse() { in_use = true; }
     void notInUse() { in_use = false; }
 
-
-
-
 private:
     using Messages = std::vector<cppkafka::Message>;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
@@ -135,7 +132,6 @@ private:
     ReadBufferPtr getNextMessage();
 
     friend class DB::StorageSystemKafkaConsumers;
-
 };
 
 }
