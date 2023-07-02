@@ -471,6 +471,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
 - [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
+- [input_format_csv_ignore_while_input_row_too_many_fields](/docs/en/operations/settings/settings-formats.md/# input_format_csv_ignore_while_input_row_too_many_fields) - Ignore the input value while input row has too many fields than defined in CSV strings. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 

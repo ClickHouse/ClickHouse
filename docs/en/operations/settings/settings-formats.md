@@ -964,6 +964,30 @@ Result
 a  b
 ```
 
+### input_format_csv_ignore_while_input_row_too_many_fields {#input_format_csv_ignore_while_input_row_too_many_fields}
+
+Ignore the input value while input row has too many fields than defined in CSV strings.
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a,b' >> 1.txt && echo 'a,b,c' >> 1.txt
+./clickhouse local -q "create table test_tbl (x String, y String, z String) engine=MergeTree order by x"
+cat 1.txt | ./clickhouse local -q "INSERT INTO test_tbl SETTINGS input_format_csv_ignore_while_input_row_too_many_fields=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  b
+a  b
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
