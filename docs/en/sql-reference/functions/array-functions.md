@@ -996,6 +996,24 @@ SELECT
 └──────────────┴───────────┘
 ```
 
+## arrayJaccardIndex
+
+Returns the jaccard similarity between two arrays.
+
+**Example**
+
+Query:
+``` sql
+SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
+```
+
+Result:
+``` text
+┌─res────────────────┐
+│ 0.3333333333333333 │
+└────────────────────┘
+```
+
 ## arrayReduce
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
