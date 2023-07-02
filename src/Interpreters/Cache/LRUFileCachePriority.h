@@ -22,7 +22,7 @@ public:
 
     size_t getSize(const CacheGuard::Lock &) const override { return current_size; }
 
-    size_t getElementsCount(const CacheGuard::Lock &) const override { return queue.size(); }
+    size_t getElementsCount(const CacheGuard::Lock &) const override { return current_elements_num; }
 
     Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
 
@@ -33,10 +33,16 @@ public:
     void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
 
 private:
+    void updateElementsCount(int64_t num);
+    void updateSize(int64_t size);
+
     LRUQueue queue;
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
 
     std::atomic<size_t> current_size = 0;
+    /// current_elements_num is not always equal to queue.size()
+    /// because of invalidated entries.
+    std::atomic<size_t> current_elements_num = 0;
 
     LRUQueueIterator remove(LRUQueueIterator it);
 };
@@ -54,13 +60,15 @@ public:
 
     size_t use(const CacheGuard::Lock &) override;
 
-    Iterator remove(const CacheGuard::Lock &) override;
+    void remove(const CacheGuard::Lock &) override;
 
-    void annul() override;
+    void invalidate() override;
 
     void updateSize(int64_t size) override;
 
 private:
+    void checkUsable() const;
+
     LRUFileCachePriority * cache_priority;
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };
