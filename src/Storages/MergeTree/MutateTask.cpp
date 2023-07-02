@@ -1111,6 +1111,10 @@ void PartMergerWriter::prepare()
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
     Block cur_block;
+    if (ctx->context->getSettingsRef().allow_experimental_block_number_column)
+    {
+        ctx->storage_columns.emplace_back(BlockNumberColumn);
+    }
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
