@@ -34,85 +34,75 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        DataTypes types;
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be array, but it has type{}.", i + 1, getName(), arguments[i]->getName());
-        }
+        FunctionArgumentDescriptors args{
+            {"array_1", [](const IDataType & type) { return isArray(type.getPtr()); }, nullptr, "Array"},
+            {"array_2", [](const IDataType & type) { return isArray(type.getPtr()); }, nullptr, "Array"},
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
     template <bool is_const_left, bool is_const_right>
-    static void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    static inline void getArraySize(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t & left_size, size_t & right_size, const size_t & i)
+    {
+        if constexpr (is_const_left)
+            left_size = left_offsets[0];
+        else
+            left_size = left_offsets[i] - left_offsets[i - 1];
+        if constexpr (is_const_right)
+            right_size = right_offsets[0];
+        else
+            right_size = right_offsets[i] - right_offsets[i - 1];
+    }
+
+    template <bool is_const_left, bool is_const_right>
+    static inline void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
     {
         size_t left_size;
         size_t right_size;
         for (size_t i = 0; i < res.size(); ++i)
         {
-            if constexpr (is_const_left)
-                left_size = left_offsets[0];
-            else
-                left_size = left_offsets[i] - left_offsets[i - 1];
-            if constexpr (is_const_right)
-                right_size = right_offsets[0];
-            else
-                right_size = right_offsets[i] - right_offsets[i - 1];
-
+            getArraySize<is_const_left, is_const_right>(left_offsets, right_offsets, left_size, right_size, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
             res[i] = static_cast<ResultType>(intersect_size) / (left_size + right_size - intersect_size);
-            if (unlikely(isnan(res[i])))
-                res[i] = 1;
         }
     }
 
-    template <bool is_const_left, bool is_const_right = false>
-    static void vectorWithEmptyIntersect(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    template <bool is_const_left, bool is_const_right>
+    static inline void vectorWithEmptyIntersect(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
     {
         size_t left_size;
         size_t right_size;
         for (size_t i = 0; i < res.size(); ++i)
         {
-            if constexpr (is_const_left)
-                left_size = left_offsets[0];
-            else
-                left_size = left_offsets[i] - left_offsets[i - 1];
-            if constexpr (is_const_right)
-                right_size = right_offsets[0];
-            else
-                right_size = right_offsets[i] - right_offsets[i - 1];
-
-            res[i] = static_cast<ResultType>(left_size + right_size == 0);
+            getArraySize<is_const_left, is_const_right>(left_offsets, right_offsets, left_size, right_size, i);
+            if (unlikely(!left_size && !right_size))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregate functions cannot be performed on two empty arrays");
+            res[i] = 0;
         }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        bool is_const_left;
-        bool is_const_right;
-        const ColumnArray * left_array;
-        const ColumnArray * right_array;
-
-        auto cast_array = [&](const ColumnWithTypeAndName & col)
+        auto cast_array = [&](const ColumnWithTypeAndName & col) -> std::pair<const ColumnArray *, bool>
         {
             const ColumnArray * res;
             bool is_const = false;
-            if (typeid_cast<const ColumnConst *>(col.column.get()))
+            if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col.column.get()))
             {
-                res = checkAndGetColumn<ColumnArray>(checkAndGetColumnConst<ColumnArray>(col.column.get())->getDataColumnPtr().get());
+                res = checkAndGetColumn<ColumnArray>(col_const->getDataColumnPtr().get());
                 is_const = true;
             }
             else if (!(res = checkAndGetColumn<ColumnArray>(col.column.get())))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.",
                         col.column->getName(), getName());
-            return std::make_pair(res, is_const);
+            return {res, is_const};
         };
 
-        std::tie(left_array, is_const_left) = cast_array(arguments[0]);
-        std::tie(right_array, is_const_right) = cast_array(arguments[1]);
+        const auto & [left_array, is_const_left] = cast_array(arguments[0]);
+        const auto & [right_array, is_const_right] = cast_array(arguments[1]);
 
         auto intersect_array = FunctionFactory::instance().get("arrayIntersect", context)->build(arguments);
         ColumnWithTypeAndName intersect_column;
@@ -131,8 +121,8 @@ public:
         vectorWithEmptyIntersect<is_const_left, is_const_right>(left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     else \
     { \
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(intersect_column.column.get()); \
-        vector<is_const_left, is_const_right>(col_array->getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
+        const ColumnArray * intersect_column_array = checkAndGetColumn<ColumnArray>(intersect_column.column.get()); \
+        vector<is_const_left, is_const_right>(intersect_column_array->getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     }
 
         if (!is_const_left && !is_const_right)
