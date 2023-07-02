@@ -195,13 +195,14 @@ When writing docs, you can use prepared templates. Copy the code of a template a
 
 Templates:
 
-- [Function](_description_templates/template-function.md)
-- [Setting](_description_templates/template-setting.md)
-- [Server Setting](_description_templates/template-server-setting.md)
-- [Database or Table engine](_description_templates/template-engine.md)
-- [System table](_description_templates/template-system-table.md)
-- [Data type](_description_templates/data-type.md)
-- [Statement](_description_templates/statement.md)
+- [Function](docs/en/sql-reference/functions/index.md)
+- [Setting](docs/en/operations/settings/index.md)
+- [Server Setting](docs/en/operations/server-configuration-parameters/settings.md)
+- [Database engine](docs/en/engines/database-engines/index.md)
+- [Table engine](docs/en/engines/table-engines/index.md)
+- [System table](docs/en/operations/system-tables/index.md)
+- [Data type](docs/en/sql-reference/data-types/index.md)
+- [Statement](docs/en/sql-reference/statements/index.md)
 
 
 <a name="how-to-build-docs"/>
