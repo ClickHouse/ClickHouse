@@ -1034,6 +1034,7 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1607,6 +1608,7 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
+jaccard
 javaHash
 javaHashUTF
 jbod
