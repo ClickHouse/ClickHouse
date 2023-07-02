@@ -347,6 +347,14 @@ bool CSVFormatReader::checkForSuffix()
     return false;
 }
 
+bool CSVFormatReader::checkForEndOfLine()
+{
+    if (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r')
+        return true;
+    else
+        return false;
+}
+
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(
         buf,
@@ -375,7 +383,6 @@ DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
 {
     return std::move(readRowAndGetFieldsAndDataTypes().second);
 }
-
 
 void registerInputFormatCSV(FormatFactory & factory)
 {

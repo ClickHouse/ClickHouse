@@ -227,7 +227,23 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
             format_reader->skipField(file_column);
 
         if (!is_last_file_column)
-            format_reader->skipFieldDelimiter();
+        {
+            /// The line input is over, but the last input column not set value yet, so set the default value.
+            if (allowSetColumnDefaultValueIfNoInput() && format_reader->checkForEndOfLine())
+            {
+                size_t remaining_file_column = file_column + 1;
+                while (remaining_file_column < column_mapping->column_indexes_for_input_fields.size())
+                {
+                    const auto & remaining_column_index = column_mapping->column_indexes_for_input_fields[remaining_file_column];
+                    if (remaining_column_index)
+                        columns[*remaining_column_index]->insertDefault();
+                    remaining_file_column ++;
+                }
+                break;
+            }
+            else
+                format_reader->skipFieldDelimiter();
+        }
     }
 
     format_reader->skipRowEndDelimiter();

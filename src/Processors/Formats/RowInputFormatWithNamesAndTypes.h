@@ -48,6 +48,7 @@ protected:
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
+    virtual bool allowSetColumnDefaultValueIfNoInput() { return false; }
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -118,6 +119,7 @@ public:
 
     /// Check suffix.
     virtual bool checkForSuffix() { return in->eof(); }
+    virtual bool checkForEndOfLine() { return false; }
 
     const FormatSettings & getFormatSettings() const { return format_settings; }
 

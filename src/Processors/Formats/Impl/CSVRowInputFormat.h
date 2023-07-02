@@ -38,6 +38,7 @@ protected:
 
 private:
     bool allowSyncAfterError() const override { return true; }
+    bool allowSetColumnDefaultValueIfNoInput() override { return format_settings.csv.allow_set_column_default_value_if_no_input; }
     void syncAfterError() override;
 
 protected:
@@ -76,6 +77,7 @@ public:
     std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
     bool checkForSuffix() override;
+    bool checkForEndOfLine() override;
 
     template <bool is_header>
     std::vector<String> readRowImpl();
