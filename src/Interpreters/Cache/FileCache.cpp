@@ -52,7 +52,6 @@ namespace ErrorCodes
 
 FileCache::FileCache(const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
-    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , log(&Poco::Logger::get("FileCache"))
@@ -499,12 +498,14 @@ KeyMetadata::iterator FileCache::addFileSegment(
     chassert(size > 0); /// Empty file segments in cache are not allowed.
 
     const auto & key = locked_key.getKey();
-    if (locked_key.tryGetByOffset(offset))
+    const FileSegment::Range range(offset, offset + size - 1);
+
+    if (auto intersecting_range = locked_key.hasIntersectingRange(range))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cache entry already exists for key: `{}`, offset: {}, size: {}.",
-            key, offset, size);
+            "Attempt to add intersecting file segment in cache ({} intersects {})",
+            range.toString(), intersecting_range->toString());
     }
 
     FileSegment::State result_state;
@@ -642,10 +643,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
 
-        const bool is_persistent = allow_persistent_files && segment_metadata->file_segment->isPersistent();
-        const bool releasable = segment_metadata->releasable() && !is_persistent;
-
-        if (releasable)
+        if (segment_metadata->releasable())
         {
             auto segment = segment_metadata->file_segment;
             if (segment->state() == FileSegment::State::DOWNLOADED)
@@ -759,12 +757,14 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 chassert(candidate->releasable());
 
                 const auto * segment = candidate->file_segment.get();
+                auto queue_it = segment->getQueueIterator();
+                chassert(queue_it);
 
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
                 locked_key->removeFileSegment(segment->offset(), segment->lock());
-                segment->getQueueIterator()->remove(cache_lock);
+                queue_it->remove(cache_lock);
 
                 if (query_context)
                     query_context->remove(current_key, segment->offset(), cache_lock);
@@ -832,10 +832,6 @@ void FileCache::removePathIfExists(const String & path)
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
-
-    /// Only releasable file segments are evicted.
-    /// `remove_persistent_files` defines whether non-evictable by some criteria files
-    /// (they do not comply with the cache eviction policy) should also be removed.
 
     auto lock = lockCache();
 
@@ -939,7 +935,9 @@ void FileCache::loadMetadata()
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
                     if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                     {
-                        segment_kind = FileSegmentKind::Persistent;
+                        /// For compatibility. Persistent files are no longer supported.
+                        fs::remove(offset_it->path());
+                        continue;
                     }
                     if (offset_with_suffix.substr(delim_pos+1) == "temporary")
                     {
@@ -964,8 +962,20 @@ void FileCache::loadMetadata()
                 if ((main_priority->getSizeLimit() == 0 || main_priority->getSize(lock) + size <= main_priority->getSizeLimit())
                     && (main_priority->getElementsLimit() == 0 || main_priority->getElementsCount(lock) + 1 <= main_priority->getElementsLimit()))
                 {
-                    auto file_segment_metadata_it = addFileSegment(
-                        *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
+                    KeyMetadata::iterator file_segment_metadata_it;
+                    try
+                    {
+                        file_segment_metadata_it = addFileSegment(
+                            *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        chassert(false);
+
+                        fs::remove(offset_it->path());
+                        continue;
+                    }
 
                     const auto & file_segment_metadata = file_segment_metadata_it->second;
                     chassert(file_segment_metadata->file_segment->assertCorrectness());

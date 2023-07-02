@@ -369,8 +369,6 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
 
     if fail:
         description = "failed: " + ", ".join(fail)
-        if success:
-            description += "; succeeded: " + ", ".join(success)
         description = format_description(description)
         if mergeable_status is None or mergeable_status.description != description:
             set_mergeable_check(commit, description, "failure")

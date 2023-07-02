@@ -143,14 +143,10 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Persistent:
-            file_suffix = "_persistent";
-            break;
         case FileSegmentKind::Temporary:
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
-            file_suffix = "";
             break;
     }
     return std::to_string(offset) + file_suffix;
@@ -401,17 +397,26 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->invalidate();
 
+    file_segment->detach(segment_lock, *this);
+
     const auto path = key_metadata->getFileSegmentPath(*file_segment);
     bool exists = fs::exists(path);
     if (exists)
     {
         fs::remove(path);
+
+        /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
+        int flags = file_segment->getFlagsForLocalRead();
+        /// Files are created with flags from file_segment->getFlagsForLocalRead()
+        /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
+        OpenedFileCache::instance().remove(path, flags);
+        OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+
         LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
     }
     else if (file_segment->downloaded_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 
-    file_segment->detach(segment_lock, *this);
     return key_metadata->erase(it);
 }
 
@@ -449,6 +454,29 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
         metadata->getQueueIterator()->updateSize(-diff);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+}
+
+std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
+{
+    if (key_metadata->empty())
+        return {};
+
+    auto it = key_metadata->lower_bound(range.left);
+    if (it != key_metadata->end()) /// has next range
+    {
+        auto next_range = it->second->file_segment->range();
+        if (!(range < next_range))
+            return next_range;
+
+        if (it == key_metadata->begin())
+            return {};
+    }
+
+    auto prev_range = std::prev(it)->second->file_segment->range();
+    if (!(prev_range < range))
+        return prev_range;
+
+    return {};
 }
 
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
