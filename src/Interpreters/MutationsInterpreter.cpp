@@ -498,14 +498,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
         available_columns_set.insert(LightweightDeleteDescription::FILTER_COLUMN.name);
     }
-    if (context->getSettingsRef().allow_experimental_block_number_column
-        && projections_desc.empty()
-        && source.getMergeTreeData()
-        && !all_columns.contains(BlockNumberColumn.name))
-    {
-        all_columns.push_back({BlockNumberColumn});
-        available_columns_set.insert(BlockNumberColumn.name);
-    }
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
@@ -922,11 +914,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     /// Add _row_exists column if it is present in the part
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
-
-    if (context->getSettingsRef().allow_experimental_block_number_column
-        && metadata_snapshot->getProjections().empty()
-        && source.getMergeTreeData() && !all_columns.contains(BlockNumberColumn.name))
-        all_columns.push_back({BlockNumberColumn});
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
