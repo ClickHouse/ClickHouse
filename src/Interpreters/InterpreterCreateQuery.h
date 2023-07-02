@@ -91,7 +91,7 @@ private:
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     static String getTableEngineName(DefaultTableEngine default_table_engine);
-    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
+    static void setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
