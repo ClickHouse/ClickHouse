@@ -15,6 +15,12 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
+# shellcheck disable=SC1091
+source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
+
+# shellcheck disable=SC1091
+source /usr/share/clickhouse-test/ci/utils.lib
+
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
@@ -85,6 +91,8 @@ fi
 
 sleep 5
 
+attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+
 function run_tests()
 {
     set -x
@@ -132,8 +140,7 @@ function run_tests()
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    clickhouse-test "00001_select_1" > /dev/null ||:
-    clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')" ||:
+    run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
