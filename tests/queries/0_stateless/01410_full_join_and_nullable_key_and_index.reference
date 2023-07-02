@@ -1,0 +1,6 @@
+select 1
+\N		1232	Johny
+select 2
+\N		1232	Johny
+select 3
+\N		1232	Johny
