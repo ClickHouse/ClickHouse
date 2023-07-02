@@ -911,14 +911,13 @@ String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_tab
     }
 }
 
-void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context)
+void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine)
 {
-    if (local_context->getSettingsRef().default_table_engine.value == DefaultTableEngine::None)
+    if (engine == DefaultTableEngine::None)
         throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
 
     auto engine_ast = std::make_shared<ASTFunction>();
-    auto default_table_engine = local_context->getSettingsRef().default_table_engine.value;
-    engine_ast->name = getTableEngineName(default_table_engine);
+    engine_ast->name = getTableEngineName(engine);
     engine_ast->no_empty_args = true;
     storage.set(storage.engine, engine_ast);
 }
@@ -943,24 +942,20 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
-        if (create.storage)
+        if (create.storage && create.storage->engine)
         {
-            if (create.storage->engine)
-            {
-                if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
-            }
-            else
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table");
+            if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
+            return;
         }
         else
         {
-            auto engine_ast = std::make_shared<ASTFunction>();
-            engine_ast->name = "Memory";
-            engine_ast->no_empty_args = true;
-            auto storage_ast = std::make_shared<ASTStorage>();
-            storage_ast->set(storage_ast->engine, engine_ast);
-            create.set(create.storage, storage_ast);
+            if (!create.storage)
+            {
+                auto storage_ast = std::make_shared<ASTStorage>();
+                create.set(create.storage, storage_ast);
+            }
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
         }
         return;
     }
@@ -969,7 +964,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
         if (!create.storage->engine)
-            setDefaultTableEngine(*create.storage, getContext());
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
         return;
     }
 
@@ -1008,7 +1003,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     create.set(create.storage, std::make_shared<ASTStorage>());
-    setDefaultTableEngine(*create.storage, getContext());
+    setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
 }
 
 static void generateUUIDForTable(ASTCreateQuery & create)

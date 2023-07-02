@@ -128,3 +128,7 @@ SHOW CREATE TABLE kek;
 SHOW CREATE TABLE lol;
 DROP TABLE kek;
 DROP TABLE lol;
+
+SET default_temporary_table_engine = 'Log';
+CREATE TEMPORARY TABLE tmp_log (n int);
+SHOW CREATE TEMPORARY TABLE tmp_log;
