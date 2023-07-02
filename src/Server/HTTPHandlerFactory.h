@@ -1,11 +1,13 @@
 #pragma once
 
+#include <memory>
 #include <Common/AsynchronousMetrics.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Coordination/KeeperDispatcher.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -136,6 +138,10 @@ createPrometheusMainHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
     const std::string & name);
+
+template <class ContextWithKeeperDispatcherPtr>
+HTTPRequestHandlerFactoryPtr
+createJoinClusterMainHandlerFactory(IServer & server, ContextWithKeeperDispatcherPtr& context, const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer

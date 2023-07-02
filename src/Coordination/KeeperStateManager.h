@@ -30,6 +30,12 @@ struct ConfigUpdateAction
     KeeperServerConfigPtr server;
 };
 
+/// Action to add server to cluster
+struct AddToClusterAction
+{
+    KeeperServerConfigPtr server;
+};
+
 using ConfigUpdateActions = std::vector<ConfigUpdateAction>;
 
 /// Responsible for managing our and cluster configuration
@@ -143,6 +149,7 @@ private:
 public:
     /// Parse configuration from xml config.
     KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
+    std::vector<Poco::Net::SocketAddress> parseJoinClusterEndpoints(const Poco::Util::AbstractConfiguration & config) const;
 };
 
 }

@@ -70,7 +70,7 @@ void TinyContext::shutdownKeeperDispatcher() const
     }
 }
 
-void TinyContext::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config_)
+void TinyContext::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config_, bool initial_loading)
 {
     std::lock_guard lock(keeper_dispatcher_mutex);
     if (!keeper_dispatcher)
@@ -81,7 +81,7 @@ void TinyContext::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::A
     if (config_.has("macros"))
         macros = std::make_unique<Macros>(config_, "macros", &Poco::Logger::get("TinyContext"));
 
-    keeper_dispatcher->updateConfiguration(config_, macros);
+    keeper_dispatcher->updateConfiguration(config_, macros, initial_loading);
 }
 
 }
