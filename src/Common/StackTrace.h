@@ -65,6 +65,8 @@ public:
     static void symbolize(const FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames);
 
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
+    static void toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback);
+    static void toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback);
 
     /// Displaying the addresses can be disabled for security reasons.
     /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
