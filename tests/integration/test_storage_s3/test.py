@@ -944,7 +944,7 @@ def test_predefined_connection_configuration(started_cluster):
         f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
     )
     assert (
-        "To execute this query it's necessary to have grant USE NAMED COLLECTION ON s3_conf1"
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON s3_conf1"
         in error
     )
     error = instance.query_and_get_error(
@@ -952,7 +952,7 @@ def test_predefined_connection_configuration(started_cluster):
         user="user",
     )
     assert (
-        "To execute this query it's necessary to have grant USE NAMED COLLECTION ON s3_conf1"
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON s3_conf1"
         in error
     )
 
@@ -973,12 +973,12 @@ def test_predefined_connection_configuration(started_cluster):
 
     error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
     assert (
-        "To execute this query it's necessary to have grant USE NAMED COLLECTION ON no_collection"
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON no_collection"
         in error
     )
     error = instance.query_and_get_error("SELECT * FROM s3(no_collection)", user="user")
     assert (
-        "To execute this query it's necessary to have grant USE NAMED COLLECTION ON no_collection"
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON no_collection"
         in error
     )
     instance = started_cluster.instances["dummy"]  # has named collection access
