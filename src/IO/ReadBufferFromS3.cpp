@@ -1,3 +1,4 @@
+#include <IO/HTTPCommon.h>
 #include <IO/S3Common.h>
 #include "config.h"
 
@@ -35,31 +36,41 @@ namespace ProfileEvents
 
 namespace
 {
-void resetSession(Aws::S3::Model::GetObjectResult & read_result)
+DB::PooledHTTPSessionPtr getSession(Aws::S3::Model::GetObjectResult & read_result)
 {
     if (auto * session_aware_stream = dynamic_cast<DB::S3::SessionAwareIOStream<DB::PooledHTTPSessionPtr> *>(&read_result.GetBody()))
-    {
-        auto & session
-            = static_cast<Poco::Net::HTTPClientSession &>(*static_cast<DB::PooledHTTPSessionPtr &>(session_aware_stream->getSession()));
-        session.reset();
-    }
+        return static_cast<DB::PooledHTTPSessionPtr &>(session_aware_stream->getSession());
     else if (!dynamic_cast<DB::S3::SessionAwareIOStream<DB::HTTPSessionPtr> *>(&read_result.GetBody()))
-    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session of unexpected type encountered");
+    return {};
+}
+
+void resetSession(Aws::S3::Model::GetObjectResult & read_result)
+{
+    if (auto session = getSession(read_result); !session.isNull())
+    {
+        auto & http_session = static_cast<Poco::Net::HTTPClientSession &>(*session);
+        http_session.reset();
     }
 }
 
 void resetSessionIfNeeded(bool read_all_range_successfully, std::optional<Aws::S3::Model::GetObjectResult> & read_result)
 {
-    if (!read_all_range_successfully && read_result)
+    if (!read_result)
+        return;
+
+    if (!read_all_range_successfully)
     {
         /// When we abandon a session with an ongoing GetObject request and there is another one trying to delete the same object this delete
         /// operation will hang until GetObject's session idle timeouts. So we have to call `reset()` on GetObject's session session immediately.
         resetSession(*read_result);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromS3ResetSessions);
     }
-    else
+    else if (auto session = getSession(*read_result); !session.isNull())
+    {
+        DB::markSessionForReuse(session);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromS3PreservedSessions);
+    }
 }
 }
 

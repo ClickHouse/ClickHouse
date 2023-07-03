@@ -1,6 +1,7 @@
 #include <IO/HTTPCommon.h>
 
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Poco/Any.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -41,6 +42,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -271,26 +273,16 @@ namespace
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
-            /// We store exception messages in session data.
-            /// Poco HTTPSession also stores exception, but it can be removed at any time.
             const auto & session_data = session->sessionData();
-            if (!session_data.empty())
+            if (session_data.empty() || !Poco::AnyCast<HTTPSessionReuseTag>(&session_data))
             {
-                auto msg = Poco::AnyCast<std::string>(session_data);
-                if (!msg.empty())
-                {
-                    LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
+                session->reset();
 
-                    if (resolve_host)
-                    {
-                        updateHostIfIpChanged(session, DNSResolver::instance().resolveHost(host).toString());
-                    }
-                }
-                /// Reset the message, once it has been printed,
-                /// otherwise you will get report for failed parts on and on,
-                /// even for different tables (since they uses the same session).
-                session->attachSessionData({});
+                if (resolve_host)
+                    updateHostIfIpChanged(session, DNSResolver::instance().resolveHost(host).toString());
             }
+
+            session->attachSessionData({});
 
             setTimeouts(*session, timeouts);
 
@@ -386,6 +378,26 @@ Exception HTTPException::makeExceptionMessage(
         "HTTP status code: {} {}, "
         "body: {}",
         uri, static_cast<int>(http_status), reason, body);
+}
+
+void markSessionForReuse(Poco::Net::HTTPSession & session)
+{
+    const auto & session_data = session.sessionData();
+    if (!session_data.empty() && !Poco::AnyCast<HTTPSessionReuseTag>(&session_data))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Data of an unexpected type ({}) is attached to the session", session_data.type().name());
+
+    session.attachSessionData(HTTPSessionReuseTag{});
+}
+
+void markSessionForReuse(HTTPSessionPtr session)
+{
+    markSessionForReuse(*session);
+}
+
+void markSessionForReuse(PooledHTTPSessionPtr session)
+{
+    markSessionForReuse(static_cast<Poco::Net::HTTPSession &>(*session));
 }
 
 }
