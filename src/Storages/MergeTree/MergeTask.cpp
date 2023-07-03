@@ -193,6 +193,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
+    if (global_ctx->context->getSettingsRef().allow_experimental_block_number_column
+        && global_ctx->metadata_snapshot->getProjections().empty())
+    {
+        if (!global_ctx->storage_columns.contains(BlockNumberColumn.name))
+        {
+            global_ctx->storage_columns.emplace_back(BlockNumberColumn);
+            global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
+        }
+
+        if (!global_ctx->gathering_columns.contains(BlockNumberColumn.name))
+        {
+            global_ctx->gathering_columns.emplace_back(BlockNumberColumn);
+            global_ctx->gathering_column_names.emplace_back(BlockNumberColumn.name);
+        }
+    }
+
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
 
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
@@ -256,21 +272,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
-    if (global_ctx->context->getSettingsRef().allow_experimental_block_number_column
-        && !ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty())
-    {
-        if (!global_ctx->storage_columns.contains(BlockNumberColumn.name))
-        {
-            global_ctx->storage_columns.emplace_back(BlockNumberColumn);
-            global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
-        }
-
-        if (!global_ctx->gathering_columns.contains(BlockNumberColumn.name))
-        {
-            global_ctx->gathering_columns.emplace_back(BlockNumberColumn);
-            global_ctx->gathering_column_names.emplace_back(BlockNumberColumn.name);
-        }
-    }
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
@@ -904,12 +905,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     /// Using unique_ptr, because MergeStageProgress has no default constructor
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
-
-    if (global_ctx->context->getSettingsRef().allow_experimental_block_number_column &&
-        !ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty()
-        && std::find(global_ctx->merging_column_names.begin(), global_ctx->merging_column_names.end(),
-                     BlockNumberColumn.name) == global_ctx->merging_column_names.end())
-        global_ctx->merging_column_names.emplace_back(BlockNumberColumn.name);
 
     for (const auto & part : global_ctx->future_part->parts)
     {
