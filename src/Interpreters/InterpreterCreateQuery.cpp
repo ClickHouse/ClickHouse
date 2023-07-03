@@ -881,13 +881,16 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-namespace {
-    void checkTemporaryTableEngineName(const String& name) {
+namespace
+{
+    void checkTemporaryTableEngineName(const String& name)
+    {
         if (name.starts_with("Replicated") || name == "KeeperMap")
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
     }
 
-    void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine) {
+    void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine)
+    {
         if (engine == DefaultTableEngine::None)
             throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
 
