@@ -62,7 +62,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
     }
     else
     {
-        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth);
+        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth);
     }
 
     return getImpl<nullptr_on_error>(ast);
