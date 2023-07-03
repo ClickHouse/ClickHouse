@@ -798,9 +798,12 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction& action)
             || raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted();
     else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
-        if (isLeader() && remove->id == state_manager->server_id())
+        if (remove->id == raft_instance->get_leader())
         {
-            raft_instance->yield_leadership();
+            if (isLeader())
+                raft_instance->yield_leadership();
+            else
+                raft_instance->request_leadership();
             return false;
         }
 
