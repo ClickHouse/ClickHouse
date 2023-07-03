@@ -581,9 +581,9 @@ namespace MySQLReplication
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -649,7 +649,7 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read) //-V547
+                                    if (to_read)
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(compressed_decimals));

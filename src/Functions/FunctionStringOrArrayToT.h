@@ -52,7 +52,9 @@ public:
         if (!isStringOrFixedString(arguments[0])
             && !isArray(arguments[0])
             && !isMap(arguments[0])
-            && !isUUID(arguments[0]))
+            && !isUUID(arguments[0])
+            && !isIPv6(arguments[0])
+            && !isIPv4(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeNumber<ResultType>>();
@@ -119,6 +121,22 @@ public:
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col_uuid->size());
             Impl::uuid(col_uuid->getData(), input_rows_count, vec_res);
+            return col_res;
+        }
+        else if (const ColumnIPv6 * col_ipv6 = checkAndGetColumn<ColumnIPv6>(column.get()))
+        {
+            auto col_res = ColumnVector<ResultType>::create();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+            vec_res.resize(col_ipv6->size());
+            Impl::ipv6(col_ipv6->getData(), input_rows_count, vec_res);
+            return col_res;
+        }
+        else if (const ColumnIPv4 * col_ipv4 = checkAndGetColumn<ColumnIPv4>(column.get()))
+        {
+            auto col_res = ColumnVector<ResultType>::create();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+            vec_res.resize(col_ipv4->size());
+            Impl::ipv4(col_ipv4->getData(), input_rows_count, vec_res);
             return col_res;
         }
         else

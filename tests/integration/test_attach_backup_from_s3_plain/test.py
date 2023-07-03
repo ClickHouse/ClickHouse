@@ -37,12 +37,14 @@ def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide
     set send_logs_level='error';
 
     -- BACKUP writes Ordinary like structure
-    set allow_deprecated_database_ordinary=1;
+    -- but what is more important that you cannot ATTACH directly from Atomic
+    -- so Memory engine will work (to avoid using allow_deprecated_database_ordinary).
+    create database ordinary_db engine=Memory;
 
-    create database ordinary_db engine=Ordinary;
+    create table ordinary_db.{table_name} engine=MergeTree() order by key partition by part
+    settings min_bytes_for_wide_part={min_bytes_for_wide_part}
+    as select number%5 part, number key from numbers(100);
 
-    create table ordinary_db.{table_name} engine=MergeTree() order by key partition by part as select number%5 part, number key from numbers(100);
-    -- NOTE: name of backup ("backup") is significant.
     backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}') settings deduplicate_files=0;
 
     drop table ordinary_db.{table_name};
@@ -50,9 +52,11 @@ def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide
     engine=MergeTree()
     order by key partition by part
     settings
-        min_bytes_for_wide_part={min_bytes_for_wide_part},
         max_suspicious_broken_parts=0,
-        storage_policy='{storage_policy}';
+        disk=disk(type=s3_plain,
+            endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{backup_name}/',
+            access_key_id='minio',
+            secret_access_key='minio123');
     """
     )
 

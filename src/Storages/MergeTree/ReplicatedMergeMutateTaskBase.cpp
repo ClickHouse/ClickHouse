@@ -2,6 +2,7 @@
 
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -29,6 +30,9 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     std::exception_ptr saved_exception;
 
     bool retryable_error = false;
@@ -83,7 +87,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         saved_exception = std::current_exception();
     }
 
-
     if (!retryable_error && saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
@@ -91,6 +94,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         auto & log_entry = selected_entry->log_entry;
 
         log_entry->exception = saved_exception;
+        log_entry->last_exception_time = time(nullptr);
 
         if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
         {
@@ -115,8 +119,10 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 }
             }
         }
-
     }
+
+    if (saved_exception)
+        std::rethrow_exception(saved_exception);
 
     return false;
 }
@@ -124,9 +130,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
-    MemoryTrackerThreadSwitcherPtr switcher;
+    std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_mutate_entry);
+        switcher.emplace((*merge_mutate_entry)->thread_group);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -188,7 +194,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentException());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
@@ -204,7 +210,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentException());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 

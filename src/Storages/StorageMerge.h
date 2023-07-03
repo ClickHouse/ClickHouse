@@ -3,7 +3,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
-#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
 namespace DB
@@ -47,6 +47,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
@@ -114,7 +115,7 @@ private:
     friend class ReadFromMerge;
 };
 
-class ReadFromMerge final : public ISourceStep
+class ReadFromMerge final : public SourceStepWithFilter
 {
 public:
     static constexpr auto name = "ReadFromMerge";
@@ -140,15 +141,10 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void addFilter(ActionsDAGPtr expression, std::string column_name)
-    {
-        added_filter_dags.push_back(expression);
-        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
-    }
-
     const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
 
-    void requestReadingInOrder(InputOrderInfoPtr order_info_) { order_info = order_info_; }
+    /// Returns `false` if requested reading cannot be performed.
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
 
 private:
     const size_t required_max_block_size;
@@ -162,14 +158,13 @@ private:
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
+    /// Store read plan for each child table.
+    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
+    std::vector<QueryPlan> child_plans;
+
     SelectQueryInfo query_info;
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
-
-    std::vector<ActionsDAGPtr> added_filter_dags;
-    ActionDAGNodes added_filter_nodes;
-
-    std::string added_filter_column_name;
 
     InputOrderInfoPtr order_info;
 
@@ -182,6 +177,11 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
+    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
+        const ContextPtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name,
+        const StorageSnapshotPtr & storage_snapshot);
+
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -190,15 +190,18 @@ private:
         const Block & header,
         const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
-        Names & real_column_names,
+        Names real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
 
     static void convertingSourceStream(
-        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
+        const Block & header,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Aliases & aliases,
         ContextPtr context,
-        QueryPipelineBuilder & builder);
+        QueryPipelineBuilder & builder,
+        const QueryProcessingStage::Enum & processed_stage);
 };
 
 }

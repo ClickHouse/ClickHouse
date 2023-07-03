@@ -6,13 +6,16 @@ exec &> >(ts)
 ccache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
 [ -O /build ] || git config --global --add safe.directory /build
 
-mkdir -p /build/cmake/toolchain/darwin-x86_64
-tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
-ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
+  mkdir -p /build/cmake/toolchain/darwin-x86_64
+  tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
+  ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+fi
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
@@ -98,7 +101,7 @@ ccache_status
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
   # shellcheck disable=SC2086
-  DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
+  DESTDIR=/build/packages/root ninja $NINJA_FLAGS programs/install
   cp /build/programs/clickhouse-diagnostics /build/packages/root/usr/bin
   cp /build/programs/clickhouse-diagnostics /output
   bash -x /build/packages/build
@@ -174,8 +177,9 @@ fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    tar -cv --zstd -f "coverity-scan.tar.zst" cov-int
-    mv "coverity-scan.tar.zst" /output
+    # Coverity does not understand ZSTD.
+    tar -cvz -f "coverity-scan.tar.gz" cov-int
+    mv "coverity-scan.tar.gz" /output
 fi
 
 ccache_status

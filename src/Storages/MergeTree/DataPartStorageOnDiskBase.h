@@ -36,9 +36,11 @@ public:
     std::string getDiskName() const override;
     std::string getDiskType() const override;
     bool isStoredOnRemoteDisk() const override;
+    std::optional<String> getCacheName() const override;
     bool supportZeroCopyReplication() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
+    bool isReadonly() const override;
     void syncRevision(UInt64 revision) const override;
     UInt64 getRevision() const override;
     std::string getDiskPath() const override;
@@ -52,17 +54,16 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
+        const BackupSettings & backup_settings,
         bool make_temporary_hard_links,
+        BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const override;
 
     MutableDataPartStoragePtr freeze(
         const std::string & to,
         const std::string & dir_path,
-        bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        bool copy_instead_of_hardlink,
-        const NameSet & files_to_copy_instead_of_hardlinks) const override;
+        const ClonePartParams & params) const override;
 
     MutableDataPartStoragePtr clonePart(
         const std::string & to,

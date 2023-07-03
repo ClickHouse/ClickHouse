@@ -184,7 +184,7 @@ struct IndexesSerializationType
             return std::make_shared<DataTypeUInt16>();
         if (type == TUInt32)
             return std::make_shared<DataTypeUInt32>();
-        if (type == TUInt64) //-V547
+        if (type == TUInt64)
             return std::make_shared<DataTypeUInt64>();
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't create DataType from IndexesSerializationType.");
@@ -299,49 +299,6 @@ namespace
         MutableColumnPtr dictionary_map;
         MutableColumnPtr additional_keys_map;
     };
-
-    template <typename T>
-    IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeysRef(PaddedPODArray<T> & index, size_t dict_size)
-    {
-        PaddedPODArray<T> copy(index.cbegin(), index.cend());
-
-        HashMap<T, T> dict_map;
-        HashMap<T, T> add_keys_map;
-
-        for (auto val : index)
-        {
-            if (val < dict_size)
-                dict_map.insert({val, dict_map.size()});
-            else
-                add_keys_map.insert({val, add_keys_map.size()});
-        }
-
-        auto dictionary_map = ColumnVector<T>::create(dict_map.size());
-        auto additional_keys_map = ColumnVector<T>::create(add_keys_map.size());
-        auto & dict_data = dictionary_map->getData();
-        auto & add_keys_data = additional_keys_map->getData();
-
-        for (auto val : dict_map)
-            dict_data[val.second] = val.first;
-
-        for (auto val : add_keys_map)
-            add_keys_data[val.second] = val.first - dict_size;
-
-        for (auto & val : index)
-            val = val < dict_size ? dict_map[val]
-                                  : add_keys_map[val] + dict_map.size();
-
-        for (size_t i = 0; i < index.size(); ++i)
-        {
-            T expected = index[i] < dict_data.size() ? dict_data[index[i]]
-                                                     : add_keys_data[index[i] - dict_data.size()] + dict_size;
-            if (expected != copy[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(expected), toString(copy[i]));
-
-        }
-
-        return {std::move(dictionary_map), std::move(additional_keys_map)};
-    }
 
     template <typename T>
     IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeys(PaddedPODArray<T> & index, size_t dict_size)

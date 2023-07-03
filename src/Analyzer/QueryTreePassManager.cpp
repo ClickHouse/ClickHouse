@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/Context.h>
 
@@ -18,13 +19,13 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
-#include <Analyzer/Passes/CustomizeFunctionsPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
@@ -34,6 +35,13 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
+#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 
 namespace DB
 {
@@ -58,6 +66,14 @@ public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
     {}
+
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    {
+        if (parent->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return false;
+
+        return true;
+    }
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
@@ -99,18 +115,36 @@ private:
 
         for (size_t i = 0; i < expected_argument_types_size; ++i)
         {
-            // Skip lambdas
-            if (WhichDataType(expected_argument_types[i]).isFunction())
-                continue;
+            const auto & expected_argument_type = expected_argument_types[i];
+            const auto & actual_argument_type = actual_argument_columns[i].type;
 
-            if (!expected_argument_types[i]->equals(*actual_argument_columns[i].type))
+            if (!expected_argument_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function {} expected argument {} type is not set after running {} pass",
+                    function->toAST()->formatForErrorMessage(),
+                    i + 1,
+                    pass_name);
+
+            if (!actual_argument_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function {} actual argument {} type is not set after running {} pass",
+                    function->toAST()->formatForErrorMessage(),
+                    i + 1,
+                    pass_name);
+
+            if (!expected_argument_type->equals(*actual_argument_type))
             {
+                /// Aggregate functions remove low cardinality for their argument types
+                if ((function->isAggregateFunction() || function->isWindowFunction()) &&
+                    expected_argument_type->equals(*recursiveRemoveLowCardinality(actual_argument_type)))
+                    continue;
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Function {} expects {} argument to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
-                    expected_argument_types[i]->getName(),
-                    actual_argument_columns[i].type->getName(),
+                    expected_argument_type->getName(),
+                    actual_argument_type->getName(),
                     pass_name);
             }
         }
@@ -124,10 +158,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support _shard_num into shardNum() rewriting.
-  * TODO: Support logical expressions optimizer.
-  * TODO: Support setting convert_query_to_cnf.
-  * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
@@ -213,11 +243,13 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<QueryAnalysisPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
-    manager.addPass(std::make_unique<CountDistinctPass>());
-    manager.addPass(std::make_unique<SumIfToCountIfPass>());
-    manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+    manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
-    manager.addPass(std::make_unique<CustomizeFunctionsPass>());
+    manager.addPass(std::make_unique<CountDistinctPass>());
+    manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
+    manager.addPass(std::make_unique<SumIfToCountIfPass>());
+    manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
+    manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
@@ -226,6 +258,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
+
+    manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
@@ -238,7 +272,12 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
+    manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
+
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+    manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+    manager.addPass(std::make_unique<CrossToInnerJoinPass>());
+    manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 }
 
 }

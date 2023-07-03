@@ -1,11 +1,19 @@
 #include "MarkRange.h"
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+size_t MarkRange::getNumberOfMarks() const
+{
+    return end - begin;
 }
 
 bool MarkRange::operator==(const MarkRange & rhs) const
@@ -63,6 +71,43 @@ void assertSortedAndNonIntersecting(const MarkRanges & ranges)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Expected sorted and non intersecting ranges. Ranges: {}",
             toString(ranges));
+}
+
+size_t MarkRanges::getNumberOfMarks() const
+{
+    size_t result = 0;
+    for (const auto & mark : *this)
+        result += mark.getNumberOfMarks();
+    return result;
+}
+
+void MarkRanges::serialize(WriteBuffer & out) const
+{
+    writeIntBinary(this->size(), out);
+
+    for (const auto & [begin, end] : *this)
+    {
+        writeIntBinary(begin, out);
+        writeIntBinary(end, out);
+    }
+}
+
+String MarkRanges::describe() const
+{
+    return fmt::format("Size: {}, Data: {}", this->size(), fmt::join(*this, ","));
+}
+
+void MarkRanges::deserialize(ReadBuffer & in)
+{
+    size_t size = 0;
+    readIntBinary(size, in);
+
+    this->resize(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        readIntBinary((*this)[i].begin, in);
+        readIntBinary((*this)[i].end, in);
+    }
 }
 
 }

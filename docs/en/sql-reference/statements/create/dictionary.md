@@ -5,7 +5,7 @@ sidebar_label: DICTIONARY
 title: "CREATE DICTIONARY"
 ---
 
-Creates a new [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) with given [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) and [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) and [lifetime](../../../sql-reference/dictionaries/index.md#dictionary-updates).
 
 ## Syntax
 
@@ -29,7 +29,7 @@ The dictionary structure consists of attributes. Dictionary attributes are speci
 
 `ON CLUSTER` clause allows creating dictionary on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-Depending on dictionary [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) one or more attributes can be specified as dictionary keys.
+Depending on dictionary [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) one or more attributes can be specified as dictionary keys.
 
 ## SOURCE
 
@@ -82,6 +82,35 @@ LIFETIME(MIN 0 MAX 1000)
 LAYOUT(FLAT())
 ```
 
+:::note
+When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you must specify a user (`default` or any other user with the role `default_role`) and password when creating a dictionary.
+:::note
+
+```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'passworD43$x';
+
+GRANT default_role TO clickhouse_admin;
+
+CREATE DATABASE foo_db;
+
+CREATE TABLE foo_db.source_table (
+    id UInt64,
+    value String
+) ENGINE = MergeTree
+PRIMARY KEY id;
+
+CREATE DICTIONARY foo_db.id_value_dictionary
+(
+    id UInt64,
+    value String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'source_table' USER 'clickhouse_admin' PASSWORD 'passworD43$x' DB 'foo_db' ))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+```
+
 ### Create a dictionary from a table in a remote ClickHouse service
 
 Input table (in the remote ClickHouse service) `source_table`:
@@ -110,7 +139,7 @@ LIFETIME(MIN 0 MAX 1000)
 ### Create a dictionary from a file available by HTTP(S)
 
 ```sql
-statement: CREATE DICTIONARY default.taxi_zone_dictionary
+CREATE DICTIONARY default.taxi_zone_dictionary
 (
     `LocationID` UInt16 DEFAULT 0,
     `Borough` String,
@@ -125,9 +154,9 @@ LAYOUT(HASHED())
 
 ### Create a dictionary from another database
 
-Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md/#dbms).
+Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
 
 **See Also**
 
-- For more information, see the [Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) section.
-- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+- For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/index.md).

@@ -45,7 +45,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
     const Block & header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IInputFormat(header_, *buf_), buf(std::move(buf_)),
+    : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
         params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
@@ -61,6 +61,7 @@ Chunk ValuesBlockInputFormat::generate()
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
+    size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     for (size_t rows_in_block = 0; rows_in_block < params.max_block_size; ++rows_in_block)
     {
@@ -78,6 +79,8 @@ Chunk ValuesBlockInputFormat::generate()
             throw;
         }
     }
+
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
 
     /// Evaluate expressions, which were parsed using templates, if any
     for (size_t i = 0; i < columns.size(); ++i)
@@ -251,7 +254,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     /// Do not use this template anymore
     templates[column_idx].reset();
     buf->rollbackToCheckpoint();
-    *token_iterator = start;
+    token_iterator = start;
 
     /// It will deduce new template or fallback to slow SQL parser
     return parseExpression(*column, column_idx);
@@ -272,7 +275,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         {
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -602,6 +605,17 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
+    if (got_exception)
+    {
+        /// In case of exception always reset the templates and parser type,
+        /// because they may be in the invalid state.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            templates[i].reset();
+            parser_type_for_column[i] = ParserType::Streaming;
+        }
+    }
+
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.

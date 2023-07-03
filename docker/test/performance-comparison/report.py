@@ -626,7 +626,9 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        if slower_queries > 3:
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
+        # False positives rate should be < 1%: https://shorturl.at/CDEK8
+        if slower_queries > 5:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
@@ -670,7 +672,6 @@ if args.report == "main":
     )
 
 elif args.report == "all-queries":
-
     print((header_template.format()))
 
     add_tested_commits()

@@ -94,7 +94,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(-1U, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return s390x_crc32(-1U, x)
+    return s390x_crc32(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
@@ -221,7 +221,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
     const auto * end = pos + size;
     while (pos + 8 <= end)
     {
-        auto word = unalignedLoadLE<UInt64>(pos);
+        auto word = unalignedLoadLittleEndian<UInt64>(pos);
         updated_value = static_cast<UInt32>(intHashCRC32(word, updated_value));
 
         pos += 8;
@@ -233,7 +233,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
         DB::UInt8 tail_size = end - pos;
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
-        auto word = unalignedLoadLE<UInt64>(end - 8);
+        auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
         /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
         word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
@@ -251,7 +251,10 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
     DB::UInt64 out {0};
-    std::memcpy(&out, &key, sizeof(T));
+    if constexpr (std::endian::native == std::endian::little)
+        std::memcpy(&out, &key, sizeof(T));
+    else
+        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
     return intHash64(out);
 }
 
@@ -344,6 +347,8 @@ DEFINE_HASH(DB::Int256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 DEFINE_HASH(DB::UUID)
+DEFINE_HASH(DB::IPv4)
+DEFINE_HASH(DB::IPv6)
 
 #undef DEFINE_HASH
 

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <DataTypes/DataTypeNumberBase.h>
+#include <Core/Field.h>
 #include <Common/DateLUT.h>
+#include <DataTypes/DataTypeNumberBase.h>
 
 namespace DB
 {
@@ -12,6 +13,7 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Date32; }
     const char * getFamilyName() const override { return family_name; }
+    String getSQLCompatibleName() const override { return "DATE"; }
 
     Field getDefault() const override
     {

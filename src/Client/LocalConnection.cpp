@@ -6,6 +6,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
 
 
@@ -34,14 +35,7 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
 
 LocalConnection::~LocalConnection()
 {
-    try
-    {
-        state.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    state.reset();
 }
 
 bool LocalConnection::hasReadPendingData() const
@@ -79,9 +73,6 @@ void LocalConnection::sendQuery(
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
-    if (!query_parameters.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "clickhouse local does not support query parameters");
-
     /// Suggestion comes without client_info.
     if (client_info)
         query_context = session.makeQueryContext(*client_info);
@@ -96,6 +87,7 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
+    query_context->addQueryParameters(query_parameters);
 
     state.reset();
     state.emplace();
@@ -490,7 +482,7 @@ void LocalConnection::setDefaultDatabase(const String & database)
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    return DBMS_TCP_PROTOCOL_VERSION;
 }
 
 const String & LocalConnection::getServerTimezone(const ConnectionTimeouts &)
@@ -508,7 +500,7 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
+void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

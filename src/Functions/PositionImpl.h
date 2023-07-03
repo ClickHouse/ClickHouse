@@ -113,7 +113,7 @@ struct PositionCaseSensitiveUTF8
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        for (auto it = pos; it != end; ++it)
+        for (const auto *it = pos; it != end; ++it)
         {
             if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
             {
@@ -128,7 +128,7 @@ struct PositionCaseSensitiveUTF8
     static size_t countChars(const char * begin, const char * end)
     {
         size_t res = 0;
-        for (auto it = begin; it != end; ++it)
+        for (const auto *it = begin; it != end; ++it)
             if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
                 ++res;
         return res;
@@ -202,6 +202,53 @@ struct PositionImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
+        /// Fast path when needle is empty
+        if (needle.empty())
+        {
+            /// Needle is empty and start_pos doesn't exist --> always return 1
+            if (start_pos == nullptr)
+            {
+                for (auto & r : res)
+                    r = 1;
+                return;
+            }
+
+            ColumnString::Offset prev_offset = 0;
+            size_t rows = haystack_offsets.size();
+
+            if (const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos))
+            {
+                /// Needle is empty and start_pos is constant
+                UInt64 start = std::max(start_pos_const->getUInt(0), static_cast<UInt64>(1));
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    size_t haystack_size = Impl::countChars(
+                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
+                    res[i] = (start <= haystack_size + 1) ? start : 0;
+
+                    pos = begin + haystack_offsets[i];
+                    prev_offset = haystack_offsets[i];
+                }
+                return;
+            }
+            else
+            {
+                /// Needle is empty and start_pos is not constant
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    size_t haystack_size = Impl::countChars(
+                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
+                    UInt64 start = start_pos->getUInt(i);
+                    start = std::max(static_cast<UInt64>(1), start);
+                    res[i] = (start <= haystack_size + 1) ? start : 0;
+
+                    pos = begin + haystack_offsets[i];
+                    prev_offset = haystack_offsets[i];
+                }
+                return;
+            }
+        }
+
         /// Current index in the array of strings.
         size_t i = 0;
 
@@ -253,7 +300,7 @@ struct PositionImpl
     {
         auto start = std::max(start_pos, UInt64(1));
 
-        if (needle.size() == 0)
+        if (needle.empty())
         {
             size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
             res = start <= haystack_size + 1 ? start : 0;

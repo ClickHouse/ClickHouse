@@ -27,6 +27,7 @@ public:
     String getName() const override { return "CSVRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetParser() override;
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
@@ -74,6 +75,7 @@ public:
     std::vector<String> readRow() { return readRowImpl<false>(); }
     std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
+    bool checkForSuffix() override;
 
     template <bool is_header>
     std::vector<String> readRowImpl();

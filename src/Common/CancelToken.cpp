@@ -35,26 +35,26 @@ namespace
 
 void CancelToken::Registry::insert(CancelToken * token)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     threads[token->thread_id] = token;
 }
 
 void CancelToken::Registry::remove(CancelToken * token)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     threads.erase(token->thread_id);
 }
 
 void CancelToken::Registry::signal(UInt64 tid)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (auto it = threads.find(tid); it != threads.end())
         it->second->signalImpl();
 }
 
 void CancelToken::Registry::signal(UInt64 tid, int code, const String & message)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (auto it = threads.find(tid); it != threads.end())
         it->second->signalImpl(code, message);
 }

@@ -10,11 +10,13 @@ from os import getenv
 from pprint import pformat
 from typing import Dict, List
 
+from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
+from github.WorkflowRun import WorkflowRun
 
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
-from github_helper import GitHub, NamedUser, PullRequest
+from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
 
 
@@ -45,7 +47,18 @@ class Reviews:
                 self.reviews[user] = r
                 continue
 
-            if r.submitted_at < self.reviews[user].submitted_at:
+            # Do not process other statuses than STATES for existing user keys
+            if r.state not in self.STATES:
+                continue
+
+            # If the user has a status other than STATES, we overwrite it by a
+            # review w/ a proper state w/o checking the date
+            if self.reviews[user].state not in self.STATES:
+                self.reviews[user] = r
+                continue
+
+            # Keep the latest review per user
+            if self.reviews[user].submitted_at < r.submitted_at:
                 self.reviews[user] = r
 
     def is_approved(self, team: List[NamedUser]) -> bool:
@@ -53,6 +66,13 @@ class Reviews:
         if not self.reviews:
             logging.info("There aren't reviews for PR #%s", self.pr.number)
             return False
+
+        logging.info(
+            "The following users have reviewed the PR:\n  %s",
+            "\n  ".join(
+                f"{user.login}: {review.state}" for user, review in self.reviews.items()
+            ),
+        )
 
         filtered_reviews = {
             user: review
@@ -80,51 +100,66 @@ class Reviews:
             if review.state == "APPROVED"
         }
 
-        if approved:
+        if not approved:
             logging.info(
-                "The following users from %s team approved the PR: %s",
+                "The PR #%s is not approved by any of %s team member",
+                self.pr.number,
                 TEAM_NAME,
-                ", ".join(user.login for user in approved.keys()),
             )
-            # The only reliable place to get the 100% accurate last_modified
-            # info is when the commit was pushed to GitHub. The info is
-            # available as a header 'last-modified' of /{org}/{repo}/commits/{sha}.
-            # Unfortunately, it's formatted as 'Wed, 04 Jan 2023 11:05:13 GMT'
+            return False
 
-            commit = self.pr.head.repo.get_commit(self.pr.head.sha)
-            if commit.stats.last_modified is None:
-                logging.warning(
-                    "Unable to get info about the commit %s", self.pr.head.sha
-                )
-                return False
+        logging.info(
+            "The following users from %s team approved the PR: %s",
+            TEAM_NAME,
+            ", ".join(user.login for user in approved.keys()),
+        )
 
-            last_changed = datetime.strptime(
-                commit.stats.last_modified, "%a, %d %b %Y %H:%M:%S GMT"
+        # The only reliable place to get the 100% accurate last_modified
+        # info is when the commit was pushed to GitHub. The info is
+        # available as a header 'last-modified' of /{org}/{repo}/commits/{sha}.
+        # Unfortunately, it's formatted as 'Wed, 04 Jan 2023 11:05:13 GMT'
+        commit = self.pr.head.repo.get_commit(self.pr.head.sha)
+        if commit.stats.last_modified is None:
+            logging.warning("Unable to get info about the commit %s", self.pr.head.sha)
+            return False
+
+        last_changed = datetime.strptime(
+            commit.stats.last_modified, "%a, %d %b %Y %H:%M:%S GMT"
+        )
+        logging.info("The PR is changed at %s", last_changed.isoformat())
+
+        approved_at = max(review.submitted_at for review in approved.values())
+        if approved_at == datetime.fromtimestamp(0):
+            logging.info(
+                "Unable to get `datetime.fromtimestamp(0)`, "
+                "here's debug info about reviews: %s",
+                "\n".join(pformat(review) for review in self.reviews.values()),
             )
+        else:
+            logging.info("The PR is approved at %s", approved_at.isoformat())
 
-            approved_at = max(review.submitted_at for review in approved.values())
-            if approved_at == datetime.fromtimestamp(0):
-                logging.info(
-                    "Unable to get `datetime.fromtimestamp(0)`, "
-                    "here's debug info about reviews: %s",
-                    "\n".join(pformat(review) for review in self.reviews.values()),
-                )
-            else:
-                logging.info(
-                    "The PR is approved at %s",
-                    approved_at.isoformat(),
-                )
+        if approved_at < last_changed:
+            logging.info(
+                "There are changes done at %s after approval at %s",
+                last_changed.isoformat(),
+                approved_at.isoformat(),
+            )
+            return False
+        return True
 
-            if approved_at < last_changed:
-                logging.info(
-                    "There are changes after approve at %s",
-                    approved_at.isoformat(),
-                )
-                return False
-            return True
 
-        logging.info("The PR #%s is not approved", self.pr.number)
-        return False
+def get_workflows_for_head(repo: Repository, head_sha: str) -> List[WorkflowRun]:
+    # The monkey-patch until the PR is merged:
+    # https://github.com/PyGithub/PyGithub/pull/2408
+    return list(
+        PaginatedList(
+            WorkflowRun,
+            repo._requester,  # type:ignore # pylint:disable=protected-access
+            f"{repo.url}/actions/runs",
+            {"head_sha": head_sha},
+            list_item="workflow_runs",
+        )
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,9 +170,24 @@ def parse_args() -> argparse.Namespace:
         "status and green commit statuses could be done",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="if set, the script won't merge the PR, just check the conditions",
+    )
+    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
+    )
+    parser.add_argument(
+        "--check-running-workflows", default=True, help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--no-check-running-workflows",
+        dest="check_running_workflows",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="(dangerous) if set, skip checking for running workflows for the PR head",
     )
     parser.add_argument("--check-green", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -175,7 +225,7 @@ def main():
     args = parse_args()
     logging.info("Going to process PR #%s in repo %s", args.pr, args.repo)
     token = args.token or get_best_robot_token()
-    gh = GitHub(token, per_page=100)
+    gh = GitHub(token)
     repo = gh.get_repo(args.repo)
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
@@ -193,6 +243,19 @@ def main():
     if not_ready_to_merge:
         logging.info("The PR #%s is not ready for merge, stopping", pr.number)
         return
+
+    if args.check_running_workflows:
+        workflows = get_workflows_for_head(repo, pr.head.sha)
+        workflows_in_progress = [wf for wf in workflows if wf.status != "completed"]
+        # At most one workflow in progress is fine. We check that there no
+        # cases like, e.g. PullRequestCI and DocksCheck in progress at once
+        if len(workflows_in_progress) > 1:
+            logging.info(
+                "The PR #%s has more than one workflows in progress, check URLs:\n%s",
+                pr.number,
+                "\n".join(wf.html_url for wf in workflows_in_progress),
+            )
+            return
 
     if args.check_green:
         logging.info("Checking that all PR's statuses are green")
@@ -217,7 +280,8 @@ def main():
             return
 
     logging.info("Merging the PR")
-    pr.merge()
+    if not args.dry_run:
+        pr.merge()
 
 
 if __name__ == "__main__":

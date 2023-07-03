@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -76,6 +75,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         columns,
         ConstraintsDescription{},
         String{},
+        global_context->getSettingsRef().rename_files_after_processing,
     };
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
@@ -88,7 +88,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     if (structure == "auto")
     {
         if (fd >= 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema inference is not supported for table function '{}' with file descriptor", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
         size_t total_bytes_to_read = 0;
         Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);

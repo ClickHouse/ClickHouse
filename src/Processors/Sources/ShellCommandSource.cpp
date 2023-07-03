@@ -274,7 +274,7 @@ namespace
                     }
                     catch (...)
                     {
-                        std::lock_guard<std::mutex> lock(send_data_lock);
+                        std::lock_guard lock(send_data_lock);
                         exception_during_send_data = std::current_exception();
                     }
                 });
@@ -352,7 +352,11 @@ namespace
                 }
 
                 if (!executor->pull(chunk))
+                {
+                    if (configuration.check_exit_code)
+                        command->wait();
                     return {};
+                }
 
                 current_read_rows += chunk.getNumRows();
             }
@@ -387,7 +391,7 @@ namespace
 
         void rethrowExceptionDuringSendDataIfNeeded()
         {
-            std::lock_guard<std::mutex> lock(send_data_lock);
+            std::lock_guard lock(send_data_lock);
             if (exception_during_send_data)
             {
                 command_is_invalid = true;
@@ -550,11 +554,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
 
+            timeout_write_buffer->finalize();
+            timeout_write_buffer->reset();
+
             if (!is_executable_pool)
             {
-                timeout_write_buffer->next();
-                timeout_write_buffer->reset();
-
                 write_buffer->close();
             }
         };

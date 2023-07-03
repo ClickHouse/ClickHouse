@@ -2,15 +2,22 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/TraceSender.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <base/defines.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
 #include <random>
 
+namespace CurrentMetrics
+{
+    extern const Metric CreatedTimersInQueryProfiler;
+    extern const Metric ActiveTimersInQueryProfiler;
+}
 
 namespace ProfileEvents
 {
@@ -84,48 +91,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
-    : log(&Poco::Logger::get("QueryProfiler"))
-    , pause_signal(pause_signal_)
+#if USE_UNWIND
+Timer::Timer()
+    : log(&Poco::Logger::get("Timer"))
+{}
+
+void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
 {
-#if defined(SANITIZER)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif !USE_UNWIND
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
-#else
-    /// Sanity check.
-    if (!hasPHDRCache())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
-
-    /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    if (period < 1000000)
-        period = 1000000;
-
-    struct sigaction sa{};
-    sa.sa_sigaction = ProfilerImpl::signalHandler;
-    sa.sa_flags = SA_SIGINFO | SA_RESTART;
-
-    if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Failed to clean signal mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
-
-    if (sigaddset(&sa.sa_mask, pause_signal))
-        throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
-
-    if (sigaction(pause_signal, &sa, nullptr))
-        throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-
-    try
+    if (!timer_id)
     {
         struct sigevent sev {};
         sev.sigev_notify = SIGEV_THREAD_ID;
@@ -150,25 +123,117 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
         timer_id.emplace(local_timer_id);
+        CurrentMetrics::add(CurrentMetrics::CreatedTimersInQueryProfiler);
+    }
+}
 
-        /// Randomize offset as uniform random value from 0 to period - 1.
-        /// It will allow to sample short queries even if timer period is large.
-        /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
-        /// It also helps to avoid interference (moire).
-        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(thread_local_rng);
+void Timer::set(UInt32 period)
+{
+    /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
+    if (period < 1000000)
+        period = 1000000;
+    /// Randomize offset as uniform random value from 0 to period - 1.
+    /// It will allow to sample short queries even if timer period is large.
+    /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
+    /// It also helps to avoid interference (moire).
+    UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(thread_local_rng);
 
-        struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
-        struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
+    struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
+    struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
 
-        struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
-        if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
-            throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+    struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
+    if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
+        throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+    CurrentMetrics::add(CurrentMetrics::ActiveTimersInQueryProfiler);
+}
 
+void Timer::stop()
+{
+    if (timer_id)
+    {
+        struct timespec stop_timer{.tv_sec = 0, .tv_nsec = 0};
+        struct itimerspec timer_spec = {.it_interval = stop_timer, .it_value = stop_timer};
+        int err = timer_settime(*timer_id, 0, &timer_spec, nullptr);
+        if (err)
+            LOG_ERROR(log, "Failed to stop query profiler timer {}", errnoToString());
+        chassert(!err && "Failed to stop query profiler timer");
+        CurrentMetrics::sub(CurrentMetrics::ActiveTimersInQueryProfiler);
+    }
+}
+
+Timer::~Timer()
+{
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
+void Timer::cleanup()
+{
+    if (timer_id)
+    {
+        int err = timer_delete(*timer_id);
+        if (err)
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
+        chassert(!err && "Failed to delete query profiler timer");
+
+        timer_id.reset();
+        CurrentMetrics::sub(CurrentMetrics::CreatedTimersInQueryProfiler);
+    }
+}
+#endif
+
+template <typename ProfilerImpl>
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
+    : log(&Poco::Logger::get("QueryProfiler"))
+    , pause_signal(pause_signal_)
+{
+#if defined(SANITIZER)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif !USE_UNWIND
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
+#else
+    /// Sanity check.
+    if (!hasPHDRCache())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
+
+    struct sigaction sa{};
+    sa.sa_sigaction = ProfilerImpl::signalHandler;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+
+    if (sigemptyset(&sa.sa_mask))
+        throwFromErrno("Failed to clean signal mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+
+    if (sigaddset(&sa.sa_mask, pause_signal))
+        throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+
+    if (sigaction(pause_signal, &sa, nullptr))
+        throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+
+    try
+    {
+        timer.createIfNecessary(thread_id, clock_type, pause_signal);
+        timer.set(period);
         signal_handler_disarmed = false;
     }
     catch (...)
     {
-        tryCleanup();
+        timer.cleanup();
         throw;
     }
 #endif
@@ -177,20 +242,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 {
-    tryCleanup();
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 template <typename ProfilerImpl>
-void QueryProfilerBase<ProfilerImpl>::tryCleanup()
+void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
 #if USE_UNWIND
-    if (timer_id.has_value())
-    {
-        if (timer_delete(*timer_id))
-            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
-        timer_id.reset();
-    }
-
+    timer.stop();
     signal_handler_disarmed = true;
 #endif
 }

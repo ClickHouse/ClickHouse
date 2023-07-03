@@ -203,7 +203,7 @@ SOFTWARE.
             len -= 16;
         };
 
-        while (len >= 16) // NOLINT //-V1044
+        while (len >= 16) // NOLINT
             check_packed(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
 
         /// 0 <= len <= 15 for now. Reading data from data - 1 because of right padding of 15 and left padding
@@ -247,6 +247,16 @@ SOFTWARE.
     [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to UUID argument");
+    }
+
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt8> &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to IPv6 argument");
+    }
+
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt8> &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to IPv4 argument");
     }
 };
 

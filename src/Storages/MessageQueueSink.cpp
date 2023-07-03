@@ -1,6 +1,7 @@
 #include <Storages/MessageQueueSink.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -18,6 +19,10 @@ MessageQueueSink::MessageQueueSink(
 
 void MessageQueueSink::onStart()
 {
+    LOG_TEST(
+        &Poco::Logger::get("MessageQueueSink"),
+        "Executing startup for MessageQueueSink");
+
     initialize();
     producer->start(context);
 

@@ -73,7 +73,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
-    DisksMap old_disks_minus_new_disks (result->getDisksMap());
+    DisksMap old_disks_minus_new_disks(result->getDisksMap());
 
     for (const auto & disk_name : keys)
     {
@@ -105,31 +105,48 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         else
             writeString("Disks ", warning);
 
-        int index = 0;
-        for (const auto & [name, _] : old_disks_minus_new_disks)
+        int num_disks_removed_from_config = 0;
+        for (const auto & [name, disk] : old_disks_minus_new_disks)
         {
-            if (index++ > 0)
+            /// Custom disks are not present in config.
+            if (disk->isCustomDisk())
+                continue;
+
+            if (num_disks_removed_from_config++ > 0)
                 writeString(", ", warning);
+
             writeBackQuotedString(name, warning);
         }
 
-        LOG_WARNING(&Poco::Logger::get("DiskSelector"), "{} disappeared from configuration, "
-                                                        "this change will be applied after restart of ClickHouse", warning.str());
+        if (num_disks_removed_from_config > 0)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("DiskSelector"),
+                "{} disappeared from configuration, this change will be applied after restart of ClickHouse",
+                warning.str());
+        }
     }
 
     return result;
 }
 
 
-DiskPtr DiskSelector::get(const String & name) const
+DiskPtr DiskSelector::tryGet(const String & name) const
 {
     assertInitialized();
     auto it = disks.find(name);
     if (it == disks.end())
-        throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk {}", name);
+        return nullptr;
     return it->second;
 }
 
+DiskPtr DiskSelector::get(const String & name) const
+{
+    auto disk = tryGet(name);
+    if (!disk)
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk {}", name);
+    return disk;
+}
 
 const DisksMap & DiskSelector::getDisksMap() const
 {
@@ -141,7 +158,9 @@ const DisksMap & DiskSelector::getDisksMap() const
 void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
 {
     assertInitialized();
-    disks.emplace(name, disk);
+    auto [_, inserted] = disks.emplace(name, disk);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk with name `{}` is already in disks map", name);
 }
 
 

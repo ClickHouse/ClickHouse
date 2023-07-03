@@ -95,6 +95,7 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
 
         explicit ExtractedSettings(const Settings & settings_);
@@ -119,8 +120,9 @@ public:
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
-    /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
+    /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
+    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -138,11 +140,6 @@ public:
 
     void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
-
-    /** Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
-      * The set will not be created if its size hits the limit.
-      */
-    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options = {});
 
     /** Checks if subquery is not a plain StorageSet.
       * Because while making set we will read data from StorageSet which is not allowed.
@@ -199,7 +196,7 @@ protected:
 
     const ASTSelectQuery * getSelectQuery() const;
 
-    bool isRemoteStorage() const { return syntax->is_remote_storage; }
+    bool isRemoteStorage() const;
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
@@ -360,9 +357,6 @@ public:
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
-
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
 
 private:
     StorageMetadataPtr metadata_snapshot;

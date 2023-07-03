@@ -42,12 +42,8 @@
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
-#pragma GCC diagnostic pop
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -85,7 +81,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -112,12 +108,25 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorVectorImplAVX512BW(a, b, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorVectorImplAVX512F(a, b, c);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorVectorImplAVX2(a, b, c);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorVectorImplSSE42(a, b, c);
             return;
@@ -128,7 +137,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -148,12 +157,25 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorConstantImplAVX512BW(a, b, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorConstantImplAVX512F(a, b, c);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorConstantImplAVX2(a, b, c);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorConstantImplSSE42(a, b, c);
             return;
@@ -569,7 +591,7 @@ template <> struct CompileOp<NotEqualsOp>
 {
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
     {
-        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpUNE(x, y);
     }
 };
 
@@ -1208,8 +1230,11 @@ public:
         /// The case when arguments are the same (tautological comparison). Return constant.
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
-        /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
-        if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
+        if (left_type->equals(*right_type) &&
+            !left_type->isNullable() &&
+            !isTuple(left_type) &&
+            !WhichDataType(left_type).isFloat() &&
+            col_left_untyped == col_right_untyped)
         {
             ColumnPtr result_column;
 
@@ -1357,37 +1382,6 @@ public:
             return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
         }
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & types) const override
-    {
-        if (2 != types.size())
-            return false;
-
-        WhichDataType data_type_lhs(types[0]);
-        WhichDataType data_type_rhs(types[1]);
-
-        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
-
-        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
-            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
-            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
-            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
-            return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-
-        return isCompilableType(types[0]) && isCompilableType(types[1]);
-    }
-
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
-    {
-        assert(2 == types.size() && 2 == values.size());
-
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto [x, y] = nativeCastToCommon(b, types[0], values[0], types[1], values[1]);
-        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
-        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
-    }
-#endif
 };
 
 }

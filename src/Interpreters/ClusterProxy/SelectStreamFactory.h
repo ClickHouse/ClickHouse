@@ -26,9 +26,19 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 struct StorageID;
 
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 namespace ClusterProxy
 {
 
+/// select query has database, table and table function names as AST pointers
+/// Creates a copy of query, changes database, table and table function names.
+ASTPtr rewriteSelectQuery(
+    ContextPtr context,
+    const ASTPtr & query,
+    const std::string & remote_database,
+    const std::string & remote_table,
+    ASTPtr table_function_ptr = nullptr);
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 
@@ -80,16 +90,6 @@ public:
         std::unique_ptr<QueryPlan> remote_plan;
     };
 
-    void createForShardWithParallelReplicas(
-        const Cluster::ShardInfo & shard_info,
-        const ASTPtr & query_ast,
-        const StorageID & main_table,
-        ContextPtr context,
-        UInt32 shard_count,
-        std::vector<QueryPlanPtr> & local_plans,
-        Shards & remote_shards);
-
-private:
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;

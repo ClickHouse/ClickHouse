@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
+    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
 {
 }
 
@@ -64,15 +64,14 @@ Chunk ORCBlockInputFormat::generate()
     if (!table || !num_rows)
         return {};
 
+    approx_bytes_read_for_chunk = file_reader->GetRawORCReader()->getStripe(stripe_current)->getDataLength();
     ++stripe_current;
 
     Chunk res;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
-    if (format_settings.defaults_for_omitted_fields)
-        for (const auto & column_idx : missing_columns)
-            block_missing_values.setBits(column_idx, res.getNumRows());
+    BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows, block_missing_values_ptr);
     return res;
 }
 
@@ -128,13 +127,20 @@ void ORCBlockInputFormat::prepareReader()
         "ORC",
         format_settings.orc.import_nested,
         format_settings.orc.allow_missing_columns,
+        format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching);
-    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
-    ArrowFieldIndexUtil<true> field_util(
-        format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.allow_missing_columns);
-    include_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+    const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
+    std::unordered_set<String> nested_table_names;
+    if (format_settings.orc.import_nested)
+        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
+
+    for (int i = 0; i < schema->num_fields(); ++i)
+    {
+        const auto & name = schema->field(i)->name();
+        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
+            include_indices.push_back(i);
+    }
 }
 
 ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
