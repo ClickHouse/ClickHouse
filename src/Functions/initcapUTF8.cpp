@@ -81,7 +81,7 @@ private:
 
     static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
-        auto offset_it = offsets.begin();
+        const auto * offset_it = offsets.begin();
         const UInt8 * begin = src;
 
         /// handle remaining symbols, row by row (to avoid influence of bad UTF8 symbols from one row, to another)
