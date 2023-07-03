@@ -326,6 +326,8 @@ void MergeTreeTransaction::afterFinalize()
     is_read_only = storages.empty();
 
     /// Release shared pointers just in case
+    creating_parts.clear();
+    removing_parts.clear();
     storages.clear();
     mutations.clear();
     finalized = true;

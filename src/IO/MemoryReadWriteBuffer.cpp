@@ -126,6 +126,8 @@ void MemoryWriteBuffer::addChunk()
 
 std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
+    finalize();
+
     auto res = std::make_shared<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
 
     /// invalidate members
