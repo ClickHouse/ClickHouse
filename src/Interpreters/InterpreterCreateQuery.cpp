@@ -914,9 +914,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
-        /// It makes sense when default_table_engine setting is used, but not for temporary tables.
-        /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
+        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
 
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
