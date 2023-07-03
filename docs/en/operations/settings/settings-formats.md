@@ -969,6 +969,35 @@ Result
 a  b
 ```
 
+### input_format_csv_allow_check_deserialize_result {#input_format_csv_allow_check_deserialize_result}
+
+Allow to use whitespace or tab as field delimiter in CSV strings.
+
+Default value: `false`.
+
+### input_format_csv_allow_set_column_default_value_if_deserialize_failed {#input_format_csv_allow_set_column_default_value_if_deserialize_failed}
+
+Allow to set default value to column if the csv input field deserialize failed
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a,b,c' > 1.txt
+./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
+cat 1.txt | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_allow_check_deserialize_result=true, input_format_csv_allow_set_column_default_value_if_deserialize_failed=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  0  1971-01-01
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
