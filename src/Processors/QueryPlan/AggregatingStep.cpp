@@ -319,6 +319,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     {
                         auto column_with_default = col.column->cloneEmpty();
                         col.type->insertDefaultInto(*column_with_default);
+                        column_with_default->finalize();
+
                         auto column = ColumnConst::create(std::move(column_with_default), 0);
                         const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
                         node = &dag->materializeNode(*node);
