@@ -13,10 +13,10 @@ void DataSink::Channel::prepareSendData(const ExchangeDataRequest & prepare_requ
         local_receiver = FragmentMgr::getInstance().findReceiver(prepare_request);
 }
 
-void DataSink::Channel::sendData(Block block)
+void DataSink::Channel::sendData(const Block & block)
 {
     if (is_local)
-        local_receiver->receive(std::move(block));
+        local_receiver->receive(block);
     else
         connection->sendData(block, "", false);
 }
@@ -59,14 +59,14 @@ void DataSink::consume(Chunk chunk)
     if (output_partition.type == PartitionType::UNPARTITIONED)
     {
         for (auto & channel : channels)
-            channel.sendData(std::move(block));
+            channel.sendData(block);
     }
     else if (output_partition.type == PartitionType::HASH_PARTITIONED)
     {
         if (block.info.bucket_num > -1 && output_partition.partition_by_bucket_num)
         {
             size_t which_channel = block.info.bucket_num % channels.size();
-            channels[which_channel].sendData(std::move(block));
+            channels[which_channel].sendData(block);
         }
         else
         {
@@ -104,7 +104,7 @@ void DataSink::consume(Chunk chunk)
                 {
                     Block block_for_send = block.cloneEmpty();
                     block_for_send.setColumns(std::move(mutable_columns[i]));
-                    channels[i].sendData(std::move(block_for_send));
+                    channels[i].sendData(block_for_send);
                 }
             }
         }

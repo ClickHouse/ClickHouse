@@ -29,12 +29,12 @@ std::optional<Chunk> ExchangeDataReceiver::tryGenerate()
 
     if (!block)
     {
-        LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Receive empty block from {} fragment {} exchange id {}", source, fragment_id, plan_id);
+        LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Fragment {} exchange id {} receive empty block from {}", fragment_id, plan_id, source);
         return {};
     }
 
     size_t rows = block.rows();
-    LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Receive {} rows from {} fragment {} exchange id {}", rows, source, fragment_id, plan_id);
+    LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Fragment {} exchange id {} receive {} rows from {}", fragment_id, plan_id, rows, source);
     num_rows += rows;
 
     Chunk chunk(block.getColumns(), rows);

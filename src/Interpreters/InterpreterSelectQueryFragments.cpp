@@ -872,6 +872,7 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments()
 {
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
+    query_plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
     const auto & res_fragments = executeDistributedPlan(query_plan);
 

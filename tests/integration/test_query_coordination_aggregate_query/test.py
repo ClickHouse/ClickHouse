@@ -150,6 +150,16 @@ def test_aggregate_query(started_cluster):
     assert r == rr
 
     print("local table select:")
+    r = node1.query("SELECT sum(id) ids,name,val FROM local_table GROUP BY name,val HAVING ids > 999900000 ORDER BY name,val LIMIT 10 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id) ids,name,val FROM distributed_table GROUP BY name,val HAVING ids > 999900000 ORDER BY name,val LIMIT 10 ")
+    print(rr)
+
+    assert r == rr
+
+    print("local table select:")
     r = node1.query("SELECT uniq(id),val FROM local_table GROUP BY val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
@@ -164,6 +174,47 @@ def test_aggregate_query(started_cluster):
 
     print("distribute table select:")
     rr = node1.query("SELECT * FROM distributed_table a GLOBAL join distributed_table1 b on a.name=b.str order by a.id,a.val,a.name,b.id,b.val,b.str limit 30")
+    print(rr)
+
+    assert r == rr
+
+    print("local table select:")
+    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%')")
+    print(rr)
+
+    assert r == rr
+
+    print("local table select:")
+    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%') or id in (select id from local_table1 where name like '%b%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%') or id in (select id from distributed_table1 where name like '%b%')")
+    print(rr)
+
+    assert r == rr
+
+    print("local table select:")
+    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%') or id in (select id from local_table1 where name like '%b%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%') or id in (select id from distributed_table1 where name like '%b%')")
+    print(rr)
+
+    assert r == rr
+
+
+    print("local table select:")
+    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%' or id in (select id from local_table)) or id in (select id from local_table1 where name like '%b%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%' or id in (select id from distributed_table)) or id in (select id from distributed_table1 where name like '%b%')")
     print(rr)
 
     assert r == rr
