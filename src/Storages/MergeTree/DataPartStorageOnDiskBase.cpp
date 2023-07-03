@@ -415,41 +415,41 @@ void DataPartStorageOnDiskBase::backup(
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     const std::string & to,
     const std::string & dir_path,
-    bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    bool copy_instead_of_hardlink,
-    const NameSet & files_to_copy_instead_of_hardlinks,
-    DiskTransactionPtr external_transaction) const
+    const ClonePartParams & params) const
 {
     auto disk = volume->getDisk();
-    if (external_transaction)
-        external_transaction->createDirectories(to);
+    if (params.external_transaction)
+        params.external_transaction->createDirectories(to);
     else
         disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks, external_transaction);
+    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, params.make_source_readonly, {}, params.copy_instead_of_hardlink,
+                params.files_to_copy_instead_of_hardlinks, params.external_transaction);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
 
-    if (external_transaction)
+    if (params.external_transaction)
     {
-        external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        if (!params.keep_metadata_version)
+            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
         disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        if (!params.keep_metadata_version)
+            disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
     bool to_detached = dir_path.starts_with("detached/");
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !external_transaction);
+    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
