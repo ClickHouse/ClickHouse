@@ -126,7 +126,6 @@ ThreadStatus::ThreadStatus()
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     chassert(current_thread == this);
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
     return thread_group;
 }
 
