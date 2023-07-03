@@ -49,8 +49,8 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
-        " Reference: " + getHexUIntLowercase(expected_checksum.high64) + getHexUIntLowercase(expected_checksum.low64)
-        + ". Actual: " + getHexUIntLowercase(calculated_checksum.high64) + getHexUIntLowercase(calculated_checksum.low64)
+        " Reference: " + getHexUIntLowercase(expected_checksum)
+        + ". Actual: " + getHexUIntLowercase(calculated_checksum)
         + ". Size of compressed block: " + toString(size);
 
     const char * message_hardware_failure = "This is most likely due to hardware failure. "
