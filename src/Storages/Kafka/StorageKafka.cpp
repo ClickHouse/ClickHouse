@@ -646,15 +646,15 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
-    if (!kafka_config.has_property("statistics.interval.ms"))
+    if (!config.has(config_prefix + "." + "statistics_interval_ms"))
     {
-        kafka_config.set("statistics.interval.ms", "10"); // every 10 milliseconds
+        kafka_config.set("statistics.interval.ms", "600"); // every 600 milliseconds
     }
+
     if (kafka_config.get("statistics.interval.ms") != "0")
     {
         kafka_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json_string)
         {
-            // LOG_DEBUG(log, "kafka statistics {}", stat_json_string);
             rdkafka_stat = std::make_shared<const String>(stat_json_string);
         });
     }
