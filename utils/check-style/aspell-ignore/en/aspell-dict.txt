@@ -473,6 +473,7 @@ MSan
 MVCC
 MacBook
 MacOS
+MapState
 MarkCacheBytes
 MarkCacheFiles
 MarksLoaderThreads
@@ -2265,6 +2266,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2459,6 +2461,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime

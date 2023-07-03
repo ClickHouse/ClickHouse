@@ -239,8 +239,9 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
     if (!best_partition_id_to_optimize.empty())
         res.emplace(std::move(best_partition_id_to_optimize));
 
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: {}",
-              all_partition_ids.size(), res.size(), fmt::join(res, ", "));
+    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}]"
+              "(max_total_size_to_merge={}, merge_with_ttl_allowed{})",
+              all_partition_ids.size(), res.size(), fmt::join(res, ", "), max_total_size_to_merge, merge_with_ttl_allowed);
     return res;
 }
 
