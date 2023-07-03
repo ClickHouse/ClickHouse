@@ -82,11 +82,14 @@ def wait_configs_equal(left_config: str, right_zk: KazooClient, timeout: float =
     Check whether get /keeper/config result in left_config is equal
     to get /keeper/config on right_zk ZK connection.
     """
-    elapsed: float = 0.
-    while sorted(left_config.split("\n")) != sorted(get_config_str(right_zk).split("\n")):
+    elapsed: float = 0.0
+    while sorted(left_config.split("\n")) != sorted(
+        get_config_str(right_zk).split("\n")
+    ):
         time.sleep(1)
         elapsed += 1
         if elapsed >= timeout:
             raise Exception(
                 f"timeout while checking nodes configs to get equal. "
-                f"Left: {left_config}, right: {get_config_str(right_zk)}")
+                f"Left: {left_config}, right: {get_config_str(right_zk)}"
+            )
