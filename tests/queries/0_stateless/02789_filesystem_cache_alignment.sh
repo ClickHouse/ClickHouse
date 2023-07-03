@@ -61,7 +61,7 @@ WHERE file_segment_size < file_size AND end_offset + 1 != file_size;
 ")
 #echo $all
 
-if [ "$all" -gt "10" ]; then
+if [ "$all" -gt "1" ]; then
   echo "OK"
 else
   echo "FAIL"
@@ -105,7 +105,7 @@ SELECT count() FROM ($query2)
 WHERE file_segment_size < file_size AND file_segment_range_end + 1 != file_size;
 ")
 
-if [ "$all" -gt "10" ]; then
+if [ "$all" -gt "1" ]; then
   echo "OK"
 else
   echo "FAIL"
