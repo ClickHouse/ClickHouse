@@ -42,10 +42,13 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
+/// As the result stack overflow on destruction is possible
+/// and to avoid it we need to count the depth and have a threshold.
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
     using FieldVector::FieldVector; \
+    size_t nested_field_depth = 0; \
 }
 
 DEFINE_FIELD_VECTOR(Array);
@@ -62,6 +65,7 @@ using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTrackin
 struct X : public FieldMap \
 { \
     using FieldMap::FieldMap; \
+    size_t nested_field_depth = 0; \
 }
 
 DEFINE_FIELD_MAP(Object);
@@ -677,21 +681,43 @@ private:
 
     Types::Which which;
 
-    /// Field may contain a Field inside in case when Field stores Array, Tuple, Map or Object.
-    /// As the result stack overflow on destruction is possible
-    /// and to avoid it we need to count the depth and have a threshold.
-    size_t nested_field_depth = 0;
-
-    /// Check whether T is already a Field with composite underlying type.
+    /// StorageType and Original are the same for Array, Tuple, Map, Object
     template <typename StorageType, typename Original>
     size_t calculateAndCheckFieldDepth(Original && x)
     {
         size_t result = 0;
 
-        if constexpr (std::is_same_v<StorageType, Array> || std::is_same_v<StorageType, Tuple> || std::is_same_v<StorageType, Map>)
-            std::for_each(x.begin(), x.end(), [this, &result](auto & elem){ result = std::max(result, elem.nested_field_depth); });
-        else if constexpr (std::is_same_v<StorageType, Object>)
-            std::for_each(x.begin(), x.end(), [this, &result](auto & elem){ result = std::max(result, elem.second.nested_field_depth); });
+        if constexpr (std::is_same_v<StorageType, Array>
+            || std::is_same_v<StorageType, Tuple>
+            || std::is_same_v<StorageType, Map>
+            || std::is_same_v<StorageType, Object>)
+        {
+            result = x.nested_field_depth;
+
+            auto calculate_max = [](const Field & elem, size_t result)
+            {
+                switch (elem.which)
+                {
+                    case Types::Array:
+                        return std::max(result, elem.template get<Array>().nested_field_depth);
+                    case Types::Tuple:
+                        return std::max(result, elem.template get<Tuple>().nested_field_depth);
+                    case Types::Map:
+                        return std::max(result, elem.template get<Map>().nested_field_depth);
+                    case Types::Object:
+                        return std::max(result, elem.template get<Object>().nested_field_depth);
+                    default:
+                        return result;
+                }
+            };
+
+            if constexpr (std::is_same_v<StorageType, Object>)
+                for (auto & [_, value] : x)
+                    result = calculate_max(value, result);
+            else
+                for (auto & value : x)
+                    result = calculate_max(value, result);
+        }
 
         if (result >= DBMS_MAX_NESTED_FIELD_DEPTH)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Too deep Field");
@@ -711,9 +737,17 @@ private:
         // we must initialize the entire wide stored type, and not just the
         // nominal type.
         using StorageType = NearestFieldType<UnqualifiedType>;
+
         /// Incrementing the depth since we create a new Field.
-        nested_field_depth = calculateAndCheckFieldDepth<StorageType>(x) + 1;
+        auto depth = calculateAndCheckFieldDepth<StorageType>(x) + 1;
         new (&storage) StorageType(std::forward<T>(x));
+
+        if constexpr (std::is_same_v<StorageType, Array>
+            || std::is_same_v<StorageType, Tuple>
+            || std::is_same_v<StorageType, Map>
+            || std::is_same_v<StorageType, Object>)
+            reinterpret_cast<StorageType *>(&storage)->nested_field_depth = depth + 1;
+
         which = TypeToEnum<UnqualifiedType>::value;
     }
 
@@ -724,8 +758,6 @@ private:
         using JustT = std::decay_t<T>;
         assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
-        /// Do not increment the depth, because it is an assignment.
-        nested_field_depth = calculateAndCheckFieldDepth<JustT>(x);
         *ptr = std::forward<T>(x);
     }
 
