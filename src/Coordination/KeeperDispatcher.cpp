@@ -337,8 +337,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_s3.startup(config, macros);
 
     keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
-    keeper_context->initialize(config);
-    keeper_context->dispatcher = this;
+    keeper_context->initialize(config, this);
 
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
@@ -762,7 +761,7 @@ void KeeperDispatcher::clusterUpdateThread()
     }
 }
 
-void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions&& actions)
+void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
 {
     if (shutdown_called) return;
     for (auto && action : actions)

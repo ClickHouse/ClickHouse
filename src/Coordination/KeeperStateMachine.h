@@ -12,8 +12,6 @@
 
 namespace DB
 {
-class KeeperDispatcher;
-
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 

@@ -1,5 +1,4 @@
 #include "KeeperReconfiguration.h"
-#include <charconv>
 #include <unordered_set>
 #include <base/find_symbols.h>
 #include <fmt/format.h>
@@ -45,8 +44,8 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 
     for (std::string_view leaving_server : leaving_arr)
     {
-        int id;
-        if (std::from_chars(leaving_server.begin(), leaving_server.end(), id).ec != std::error_code{})
+        int32_t id;
+        if (!tryParse(id, leaving_server))
             return {};
 
         if (remove_ids.contains(id))

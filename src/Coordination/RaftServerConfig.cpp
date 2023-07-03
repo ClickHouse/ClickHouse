@@ -31,7 +31,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
     if (!id_str.starts_with("server."))
         return std::nullopt;
 
-    int id;
+    Int32 id;
     if (std::from_chars(std::next(id_str.begin(), 7), id_str.end(), id).ec != std::error_code{})
         return std::nullopt;
     if (id <= 0)
