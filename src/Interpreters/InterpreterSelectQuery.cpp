@@ -849,71 +849,44 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             need_analyze_again = true;
             LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
         }
-        else if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
+        else if (auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+                 storage_merge_tree && settings.parallel_replicas_min_number_of_rows_per_replica)
         {
-            std::optional<UInt64> rows_to_read{};
-
-            auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-            if (storage_merge_tree)
+            /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
+            addPrewhereAliasActions();
+            auto & prewhere_info = analysis_result.prewhere_info;
+            if (prewhere_info)
             {
-                /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
-                addPrewhereAliasActions();
-                auto & prewhere_info = analysis_result.prewhere_info;
-                if (prewhere_info)
-                {
-                    query_info.prewhere_info = prewhere_info;
-                    if (query.prewhere() && !query.where())
-                        query_info.prewhere_info->need_filter = true;
-                }
-
-                ActionDAGNodes added_filter_nodes;
-                if (additional_filter_info)
-                    added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
-
-                if (analysis_result.before_where)
-                    added_filter_nodes.nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
-
-                auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-
-                auto local_limits = getStorageLimits(*context, options);
-
-                if (!query.distinct
-                        && !query.limit_with_ties
-                        && !query.prewhere()
-                        && !query.where()
-                        && query_info.filter_asts.empty()
-                        && !query.groupBy()
-                        && !query.having()
-                        && !query.orderBy()
-                        && !query.limitBy()
-                        && !query.join()
-                        && !query_analyzer->hasAggregation()
-                        && !query_analyzer->hasWindow()
-                        && query.limitLength()
-                        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-                {
-                    query_info.limit = limit_length + limit_offset;
-                }
-                /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-                rows_to_read.emplace(
-                    storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info, added_filter_nodes));
+                query_info.prewhere_info = prewhere_info;
+                if (query.prewhere() && !query.where())
+                    query_info.prewhere_info->need_filter = true;
             }
 
-            if (!rows_to_read.has_value())
-                rows_to_read = storage->totalRows(settings);
+            ActionDAGNodes added_filter_nodes;
+            if (additional_filter_info)
+                added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
 
-            /// Open question: How should we treat 0 estimated rows to read?
-            /// It is a real estimation of 0 rows?
-            size_t number_of_replicas_to_use = rows_to_read.has_value()
-                ? *rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica
-                : settings.allow_experimental_parallel_reading_from_replicas;
+            if (analysis_result.before_where)
+                added_filter_nodes.nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
 
+            auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+
+            auto local_limits = getStorageLimits(*context, options);
+
+            if (!query.distinct && !query.limit_with_ties && !query.prewhere() && !query.where() && query_info.filter_asts.empty()
+                && !query.groupBy() && !query.having() && !query.orderBy() && !query.limitBy() && !query.join()
+                && !query_analyzer->hasAggregation() && !query_analyzer->hasWindow() && query.limitLength()
+                && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+            {
+                query_info.limit = limit_length + limit_offset;
+            }
+            /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+            UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info, added_filter_nodes);
+            /// Note that we treat an estimation of 0 rows as a real estimation of no data to be read
+            size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
             LOG_TRACE(
-                log,
-                "Estimated {} rows to read, which is work enough for {} parallel replicas",
-                rows_to_read.has_value() ? *rows_to_read : 0,
-                number_of_replicas_to_use);
+                log, "Estimated {} rows to read, which is work enough for {} parallel replicas", rows_to_read, number_of_replicas_to_use);
 
             if (number_of_replicas_to_use <= 1)
             {
