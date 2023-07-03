@@ -2,7 +2,6 @@
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Parsers/isDiskFunction.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Parsers/formatAST.h>
@@ -10,6 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -107,8 +107,8 @@ namespace
 
 std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr context)
 {
-    if (isDiskFunction(disk_function))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function");
+    if (!isDiskFunction(disk_function))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
 
     auto ast = disk_function->clone();
 
