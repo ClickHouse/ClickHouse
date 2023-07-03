@@ -1,31 +1,20 @@
-drop table if exists array_jaccard_index;
+SELECT ['a'] AS arr_1, ['a', 'aa', 'aaa'] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
+SELECT [1, 1.1, 2.2] AS arr_1, [2.2, 3.3, 444] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
+SELECT [toUInt16(1)] AS arr_1, [toUInt32(1)] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
+SELECT [1,2] AS arr_1, [1,2,3,4] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
+SELECT [[1,2], [3,4]] AS arr_1, [[1,2], [3,5]] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
 
-create table array_jaccard_index (arr Array(UInt8)) engine = MergeTree order by arr;
+DROP TABLE IF EXISTS array_jaccard_index;
 
-insert into array_jaccard_index values ([1,2,3]);
+CREATE TABLE array_jaccard_index (arr Array(UInt8)) engine = MergeTree ORDER BY arr;
+INSERT INTO array_jaccard_index values ([1,2,3]);
+INSERT INTO array_jaccard_index values ([1,2]);
+INSERT INTO array_jaccard_index values ([1]);
 
-insert into array_jaccard_index values ([1,2]);
-
-insert into array_jaccard_index values ([1]);
-
-select arr as arr_1, [1,2] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) from array_jaccard_index order by arr;
-
-select arr as arr_1, [] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) from array_jaccard_index order by arr;
-
-select [] as arr_1, arr as arr_2,  round(arrayJaccardIndex(arr_1, arr_2), 2) from array_jaccard_index order by arr;
-
-select [1,2] as arr_1, arr as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) from array_jaccard_index order by arr;
-
-select arr as arr_1, arr as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) from array_jaccard_index order by arr;
+SELECT arr AS arr_1, [1,2] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) FROM array_jaccard_index ORDER BY arr;
+SELECT arr AS arr_1, [] AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) FROM array_jaccard_index ORDER BY arr;
+SELECT [] AS arr_1, arr AS arr_2,  round(arrayJaccardIndex(arr_1, arr_2), 2) FROM array_jaccard_index ORDER BY arr;
+SELECT [1,2] AS arr_1, arr AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) FROM array_jaccard_index ORDER BY arr;
+SELECT arr AS arr_1, arr AS arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2) FROM array_jaccard_index ORDER BY arr;
 
 drop table array_jaccard_index;
-
-select ['a'] as arr_1, ['a', 'aa', 'aaa'] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
-
-select [1, 1.1, 2.2] as arr_1, [2.2, 3.3, 444] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
-
-select [toUInt16(1)] as arr_1, [toUInt32(1)] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
-
-select [1,2] as arr_1, [1,2,3,4] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
-
-select [[1,2], [3,4]] as arr_1, [[1,2], [3,5]] as arr_2, round(arrayJaccardIndex(arr_1, arr_2), 2);
