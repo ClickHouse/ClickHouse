@@ -48,25 +48,28 @@ namespace
 NamesAndTypesList StorageSystemAsyncLoader::getNamesAndTypes()
 {
     return {
-        { "job",               std::make_shared<DataTypeString>() },
-        { "job_id",            std::make_shared<DataTypeUInt64>() },
-        { "dependencies",      std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-        { "dependencies_left", std::make_shared<DataTypeUInt64>() },
-        { "status",            std::make_shared<DataTypeEnum8>(getTypeEnumValues<LoadStatus>()) },
-        { "is_executing",      std::make_shared<DataTypeUInt8>() },
-        { "is_blocked",        std::make_shared<DataTypeUInt8>() },
-        { "is_ready",          std::make_shared<DataTypeUInt8>() },
-        { "elapsed",           std::make_shared<DataTypeFloat64>()},
-        { "pool_id",           std::make_shared<DataTypeInt64>() },
-        { "pool",              std::make_shared<DataTypeString>() },
-        { "priority",          std::make_shared<DataTypeInt64>() },
-        { "ready_seqno",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-        { "waiters",           std::make_shared<DataTypeUInt64>() },
-        { "exception",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()) },
-        { "schedule_time",     std::make_shared<DataTypeDateTime64>(TIME_SCALE) },
-        { "enqueue_time",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
-        { "start_time",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
-        { "finish_time",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
+        { "job",                std::make_shared<DataTypeString>() },
+        { "job_id",             std::make_shared<DataTypeUInt64>() },
+        { "dependencies",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
+        { "dependencies_left",  std::make_shared<DataTypeUInt64>() },
+        { "status",             std::make_shared<DataTypeEnum8>(getTypeEnumValues<LoadStatus>()) },
+        { "is_executing",       std::make_shared<DataTypeUInt8>() },
+        { "is_blocked",         std::make_shared<DataTypeUInt8>() },
+        { "is_ready",           std::make_shared<DataTypeUInt8>() },
+        { "elapsed",            std::make_shared<DataTypeFloat64>()},
+        { "pool_id",            std::make_shared<DataTypeInt64>() },
+        { "pool",               std::make_shared<DataTypeString>() },
+        { "priority",           std::make_shared<DataTypeInt64>() },
+        { "execution_pool_id",  std::make_shared<DataTypeInt64>() },
+        { "execution_pool",     std::make_shared<DataTypeString>() },
+        { "execution_priority", std::make_shared<DataTypeInt64>() },
+        { "ready_seqno",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
+        { "waiters",            std::make_shared<DataTypeUInt64>() },
+        { "exception",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()) },
+        { "schedule_time",      std::make_shared<DataTypeDateTime64>(TIME_SCALE) },
+        { "enqueue_time",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
+        { "start_time",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
+        { "finish_time",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
     };
 }
 
@@ -123,6 +126,9 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
         res_columns[i++]->insert(state.job->pool());
         res_columns[i++]->insert(async_loader.getPoolName(state.job->pool()));
         res_columns[i++]->insert(async_loader.getPoolPriority(state.job->pool()).value);
+        res_columns[i++]->insert(state.job->executionPool());
+        res_columns[i++]->insert(async_loader.getPoolName(state.job->executionPool()));
+        res_columns[i++]->insert(async_loader.getPoolPriority(state.job->executionPool()).value);
         res_columns[i++]->insert(ready_seqno);
         res_columns[i++]->insert(state.job->waitersCount());
         res_columns[i++]->insert(exception);

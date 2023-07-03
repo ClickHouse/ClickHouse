@@ -649,13 +649,16 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
 
 void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock)
 {
+    Pool & old_pool = pools[job->pool_id];
+    Pool & new_pool = pools[new_pool_id];
+    if (old_pool.priority <= new_pool.priority)
+        return; // Never lower priority or change pool leaving the same priority
+
+    // Note that there is no point in prioritizing finished jobs, but because we do not lock `job.mutex` here (due to recursion),
+    // Races are inevitable, so we prioritize all job unconditionally: both finished and pending.
+
     if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
     {
-        Pool & old_pool = pools[job->pool_id];
-        Pool & new_pool = pools[new_pool_id];
-        if (old_pool.priority <= new_pool.priority)
-            return; // Never lower priority or change pool leaving the same priority
-
         // Requeue job into the new pool queue without allocations
         if (UInt64 ready_seqno = info->second.ready_seqno)
         {
@@ -663,14 +666,13 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
             if (canSpawnWorker(new_pool, lock))
                 spawn(new_pool, lock);
         }
-
-        // Set user-facing pool (may affect executing jobs)
-        job->pool_id.store(new_pool_id);
-
-        // Recurse into dependencies
-        for (const auto & dep : job->dependencies)
-            prioritize(dep, new_pool_id, lock);
     }
+
+    job->pool_id.store(new_pool_id);
+
+    // Recurse into dependencies
+    for (const auto & dep : job->dependencies)
+        prioritize(dep, new_pool_id, lock);
 }
 
 void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock)
