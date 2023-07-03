@@ -102,7 +102,7 @@ namespace
 
 std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr context)
 {
-    if (!disk_function->as<ASTFunction>())
+    if (isDiskFunction(disk_function))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function");
 
     auto ast = disk_function->clone();
