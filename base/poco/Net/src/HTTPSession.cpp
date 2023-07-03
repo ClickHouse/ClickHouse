@@ -13,8 +13,8 @@
 
 
 #include "Poco/Net/HTTPSession.h"
-#include "Poco/Net/HTTPBufferAllocator.h"
 #include "Poco/Net/NetException.h"
+#include "Poco/Net/HTTPBasicStreamBuf.h"
 #include <cstring>
 
 
@@ -70,7 +70,7 @@ HTTPSession::~HTTPSession()
 {
 	try
 	{
-		if (_pBuffer) HTTPBufferAllocator::deallocate(_pBuffer, HTTPBufferAllocator::BUFFER_SIZE);
+		if (_pBuffer) delete[] _pBuffer;
 	}
 	catch (...)
 	{
@@ -177,10 +177,10 @@ void HTTPSession::refill()
 {
 	if (!_pBuffer)
 	{
-		_pBuffer = HTTPBufferAllocator::allocate(HTTPBufferAllocator::BUFFER_SIZE);
+		_pBuffer = new char[HTTP_DEFAULT_BUFFER_SIZE];
 	}
 	_pCurrent = _pEnd = _pBuffer;
-	int n = receive(_pBuffer, HTTPBufferAllocator::BUFFER_SIZE);
+	int n = receive(_pBuffer, HTTP_DEFAULT_BUFFER_SIZE);
 	_pEnd += n;
 }
 
