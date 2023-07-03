@@ -77,8 +77,16 @@ def get_config_str(zk: KazooClient) -> str:
     return zk.get("/keeper/config")[0].decode("utf-8")
 
 
-def configs_equal(left: str, right: str) -> bool:
+def wait_configs_equal(left_config: str, right_zk: KazooClient, timeout: float = 30.0):
     """
-    Check whether /keeper/config nodes are equal
+    Check whether get /keeper/config result in left_config is equal
+    to get /keeper/config on right_zk ZK connection.
     """
-    return sorted(left.split("\n")) == sorted(right.split("\n"))
+    elapsed: float = 0.
+    while sorted(left_config.split("\n")) != sorted(get_config_str(right_zk).split("\n")):
+        time.sleep(1)
+        elapsed += 1
+        if elapsed >= timeout:
+            raise Exception(
+                f"timeout while checking nodes configs to get equal. "
+                f"Left: {left_config}, right: {get_config_str(right_zk)}")
