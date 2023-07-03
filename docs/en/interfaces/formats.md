@@ -472,6 +472,8 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
 - [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
 - [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values. Default value - `false`.
+- [input_format_csv_allow_check_deserialize](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_check_deserialize) - Allow to check whether the csv input field can be deserialized. Default value - `false`.
+- [input_format_csv_allow_set_default_if_deserialize_failed](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_set_default_if_deserialize_failed) - Allow to set default value to column if the csv input field deserialize failed. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
