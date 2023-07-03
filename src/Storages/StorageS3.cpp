@@ -10,6 +10,7 @@
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/ProxyConfigurationProvider.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 
@@ -1281,6 +1282,16 @@ void StorageS3::Configuration::connect(ContextPtr context)
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler);
+
+    auto proxy_config = S3::ProxyConfigurationProvider::get("", context->getConfigRef());
+
+    if (proxy_config)
+    {
+        client_configuration.per_request_configuration
+            = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
+        client_configuration.error_report
+            = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
+    }
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);

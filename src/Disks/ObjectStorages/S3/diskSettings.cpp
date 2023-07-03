@@ -14,12 +14,10 @@
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/ProxyConfigurationProvider.h>
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
-#include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
-#include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Common/Macros.h>
@@ -43,70 +41,6 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractC
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
 }
-
-std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
-    const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)
-{
-    auto endpoint = Poco::URI(proxy_resolver_config.getString(prefix + ".endpoint"));
-    auto proxy_scheme = proxy_resolver_config.getString(prefix + ".proxy_scheme");
-    if (proxy_scheme != "http" && proxy_scheme != "https")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy resolver config: {}", proxy_scheme);
-    auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
-    auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
-
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}",
-        endpoint.toString(), proxy_scheme, proxy_port);
-
-    return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port, cache_ttl);
-}
-
-std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(
-    const String & prefix, const Poco::Util::AbstractConfiguration & proxy_config)
-{
-    std::vector<String> keys;
-    proxy_config.keys(prefix, keys);
-
-    std::vector<Poco::URI> proxies;
-    for (const auto & key : keys)
-        if (startsWith(key, "uri"))
-        {
-            Poco::URI proxy_uri(proxy_config.getString(prefix + "." + key));
-
-            if (proxy_uri.getScheme() != "http" && proxy_uri.getScheme() != "https")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy uri: {}", proxy_uri.toString());
-            if (proxy_uri.getHost().empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host in proxy uri: {}", proxy_uri.toString());
-
-            proxies.push_back(proxy_uri);
-
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy: {}", proxy_uri.toString());
-        }
-
-    if (!proxies.empty())
-        return std::make_shared<S3::ProxyListConfiguration>(proxies);
-
-    return nullptr;
-}
-
-std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & prefix, const Poco::Util::AbstractConfiguration & config)
-{
-    if (!config.has(prefix + ".proxy"))
-        return nullptr;
-
-    std::vector<String> config_keys;
-    config.keys(prefix + ".proxy", config_keys);
-
-    if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
-    {
-        if (resolver_configs > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
-
-        return getProxyResolverConfiguration(prefix + ".proxy.resolver", config);
-    }
-
-    return getProxyListConfiguration(prefix + ".proxy", config);
-}
-
 
 std::unique_ptr<S3::Client> getClient(
     const Poco::Util::AbstractConfiguration & config,
@@ -133,7 +67,7 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;
 
-    auto proxy_config = getProxyConfiguration(config_prefix, config);
+    auto proxy_config = S3::ProxyConfigurationProvider::get(config_prefix, config);
     if (proxy_config)
     {
         client_configuration.per_request_configuration
