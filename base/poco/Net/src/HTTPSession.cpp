@@ -70,14 +70,6 @@ HTTPSession::~HTTPSession()
 {
 	try
 	{
-		if (_pBuffer) delete[] _pBuffer;
-	}
-	catch (...)
-	{
-		poco_unexpected();
-	}
-	try
-	{
 		close();
 	}
 	catch (...)
@@ -177,10 +169,10 @@ void HTTPSession::refill()
 {
 	if (!_pBuffer)
 	{
-		_pBuffer = new char[HTTP_DEFAULT_BUFFER_SIZE];
+		_pBuffer = std::make_unique<char[]>(HTTP_DEFAULT_BUFFER_SIZE);
 	}
-	_pCurrent = _pEnd = _pBuffer;
-	int n = receive(_pBuffer, HTTP_DEFAULT_BUFFER_SIZE);
+	_pCurrent = _pEnd = _pBuffer.get();
+	int n = receive(_pBuffer.get(), HTTP_DEFAULT_BUFFER_SIZE);
 	_pEnd += n;
 }
 
@@ -199,7 +191,7 @@ void HTTPSession::connect(const SocketAddress& address)
 	_socket.setNoDelay(true);
 	// There may be leftover data from a previous (failed) request in the buffer,
 	// so we clear it.
-	_pCurrent = _pEnd = _pBuffer;
+	_pCurrent = _pEnd = _pBuffer.get();
 }
 
 
