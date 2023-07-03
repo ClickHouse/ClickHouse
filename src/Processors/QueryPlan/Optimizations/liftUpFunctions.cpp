@@ -29,16 +29,14 @@ const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 namespace DB::QueryPlanOptimizations
 {
 
-/// This is a check that output columns with the same name have the same types.
-/// This is ok to have such a situation in DAG, but not for Block.
-/// TODO: we should have a different data structure for headers.
+/// This is a check that output columns does not have the same name
+/// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
 static bool areOutputsAreConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
 {
-    std::unordered_map<std::string_view, const IDataType *> name_to_type;
+    std::unordered_set<std::string_view> names;
     for (const auto & output : outputs)
     {
-        auto [it, inserted] = name_to_type.emplace(output->result_name, output->result_type.get());
-        if (!inserted && !it->second->equals(*output->result_type))
+        if (!names.emplace(output->result_name).second)
             return false;
     }
 
