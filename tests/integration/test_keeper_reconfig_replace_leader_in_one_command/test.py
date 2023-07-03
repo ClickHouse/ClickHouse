@@ -62,11 +62,11 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
 
     zk2 = get_fake_zk(node2)
     zk2.sync("/test_four_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk2))
+    ku.wait_configs_equal(config, zk2)
 
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_four_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk3))
+    ku.wait_configs_equal(config, zk3)
 
     for i in range(100):
         assert zk2.exists(f"/test_four_{i}") is not None
@@ -91,7 +91,7 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
 
     zk4 = get_fake_zk(node4)
     zk4.sync("/test_four_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk4))
+    ku.wait_configs_equal(config, zk4)
 
     for i in range(100):
         assert zk4.exists(f"test_four_{i}") is not None
@@ -107,13 +107,13 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
     zk2.close()
     zk2 = get_fake_zk(node2)
     zk2.sync("/test_four_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk2))
+    ku.wait_configs_equal(config, zk2)
 
     zk3.stop()
     zk3.close()
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_four_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk3))
+    ku.configs_equal(config, zk3)
 
     for i in range(200):
         assert zk2.exists(f"test_four_{i}") is not None

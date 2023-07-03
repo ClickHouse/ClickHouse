@@ -70,11 +70,11 @@ def test_reconfig_remove_followers_from_3(started_cluster):
 
     zk2 = get_fake_zk(node2)
     zk2.sync("/test_two_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk2))
+    ku.wait_configs_equal(config, zk2)
 
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_two_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk3))
+    ku.wait_configs_equal(config, zk3)
 
     for i in range(100):
         assert zk2.exists(f"test_two_{i}") is not None
@@ -92,7 +92,7 @@ def test_reconfig_remove_followers_from_3(started_cluster):
     zk2.stop()
     zk2.close()
     zk2 = get_fake_zk(node2)
-    assert ku.configs_equal(config, ku.get_config_str(zk2))
+    ku.wait_configs_equal(config, zk2)
 
     for i in range(100):
         assert zk2.exists(f"test_two_{i}") is not None

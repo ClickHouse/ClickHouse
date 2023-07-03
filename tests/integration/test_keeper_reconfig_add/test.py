@@ -91,7 +91,7 @@ def test_reconfig_add(started_cluster):
     assert "node3" not in config
 
     zk2 = get_fake_zk(node2)
-    assert ku.configs_equal(config, ku.get_config_str(zk2))
+    ku.wait_configs_equal(config, zk2)
 
     for i in range(100):
         assert zk2.exists(f"/test_three_{i}") is not None
@@ -132,7 +132,7 @@ def test_reconfig_add(started_cluster):
     assert "node3" in config
 
     zk3 = get_fake_zk(node3)
-    assert ku.configs_equal(config, ku.get_config_str(zk3))
+    ku.wait_configs_equal(config, zk3)
 
     for i in range(100):
         assert zk3.exists(f"/test_four_{i}") is not None

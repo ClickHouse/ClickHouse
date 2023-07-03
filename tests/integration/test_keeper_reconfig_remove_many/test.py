@@ -54,11 +54,11 @@ def test_reconfig_remove_2_and_leader(started_cluster):
 
     zk4 = get_fake_zk(node4)
     zk4.sync("/test_two_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk4))
+    ku.wait_configs_equal(config, zk4)
 
     zk5 = get_fake_zk(node5)
     zk5.sync("/test_two_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk5))
+    ku.wait_configs_equal(config, zk5)
 
     for i in range(100):
         assert zk4.exists(f"test_two_{i}") is not None
@@ -83,7 +83,7 @@ def test_reconfig_remove_2_and_leader(started_cluster):
     zk1 = get_fake_zk(node1)
     zk1.sync("/test_two_0")
 
-    assert ku.configs_equal(config, ku.get_config_str(zk1))
+    ku.wait_configs_equal(config, zk1)
 
     for i in range(200):
         assert zk1.exists(f"test_two_{i}") is not None
@@ -128,11 +128,11 @@ def test_reconfig_remove_2_and_leader(started_cluster):
     zk2.close()
     zk2 = get_fake_zk(node2)
     zk2.sync("/test_leader_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk2))
+    ku.wait_configs_equal(config, zk2)
 
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_leader_0")
-    assert ku.configs_equal(config, ku.get_config_str(zk3))
+    ku.wait_configs_equal(config, zk3)
 
     for i in range(100):
         assert zk2.exists(f"test_leader_{i}") is not None
