@@ -24,6 +24,8 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
+#include <Interpreters/Context.h>
+
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -34,6 +36,8 @@
 #include "Core/Defines.h"
 #include "config.h"
 #include "config_version.h"
+#include "config_tools.h"
+
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -42,6 +46,8 @@
 
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
+
+#include <Disks/registerDisks.h>
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -131,7 +137,10 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
+        auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+                                      "{0} client [OPTION]\n"
+#endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
                                       commandName());
         help_formatter.setHeader(header_str);
@@ -196,9 +205,12 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
-struct Keeper::KeeperHTTPContext : public IHTTPContext
+namespace
 {
-    explicit KeeperHTTPContext(TinyContextPtr context_)
+
+struct KeeperHTTPContext : public IHTTPContext
+{
+    explicit KeeperHTTPContext(ContextPtr context_)
         : context(std::move(context_))
     {}
 
@@ -219,12 +231,12 @@ struct Keeper::KeeperHTTPContext : public IHTTPContext
 
     uint64_t getMaxFieldNameSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 1048576);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
     }
 
     uint64_t getMaxFieldValueSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 1048576);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
     uint64_t getMaxChunkSize() const override
@@ -242,12 +254,14 @@ struct Keeper::KeeperHTTPContext : public IHTTPContext
         return {context->getConfigRef().getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
     }
 
-    TinyContextPtr context;
+    ContextPtr context;
 };
 
-HTTPContextPtr Keeper::httpContext()
+HTTPContextPtr httpContext()
 {
-    return std::make_shared<KeeperHTTPContext>(tiny_context);
+    return std::make_shared<KeeperHTTPContext>(Context::getGlobalContextInstance());
+}
+
 }
 
 int Keeper::main(const std::vector<std::string> & /*args*/)
@@ -301,8 +315,8 @@ try
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
-    DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
+    DateLUT::serverTimezoneInstance();
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
@@ -311,10 +325,21 @@ try
     std::mutex servers_lock;
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    tiny_context = std::make_shared<TinyContext>();
+    auto shared_context = Context::createShared();
+    auto global_context = Context::createGlobal(shared_context.get());
+
+    global_context->makeGlobalContext();
+    global_context->setPath(path);
+    global_context->setRemoteHostFilter(config());
+
+    if (config().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+
+    registerDisks(/*global_skip_access_check=*/false);
+
     /// This object will periodically calculate some metrics.
     KeeperAsynchronousMetrics async_metrics(
-        tiny_context,
+        global_context,
         config().getUInt("asynchronous_metrics_update_period_s", 1),
         [&]() -> std::vector<ProtocolServerMetrics>
         {
@@ -339,12 +364,12 @@ try
     }
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    tiny_context->initializeKeeperDispatcher(/* start_async = */ true);
-    FourLetterCommandFactory::registerCommands(*tiny_context->getKeeperDispatcher());
+    global_context->initializeKeeperDispatcher(/* start_async = */ true);
+    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
-    auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+    auto config_getter = [&] () -> const Poco::Util::AbstractConfiguration &
     {
-        return tiny_context->getConfigRef();
+        return global_context->getConfigRef();
     };
 
     auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
@@ -366,7 +391,7 @@ try
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, tiny_context->getKeeperDispatcher(),
+                        config_getter, global_context->getKeeperDispatcher(),
                         tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
         });
 
@@ -384,7 +409,7 @@ try
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, tiny_context->getKeeperDispatcher(),
+                        config_getter, global_context->getKeeperDispatcher(),
                         tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
 #else
             UNUSED(port);
@@ -436,7 +461,7 @@ try
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
             if (config->has("keeper_server"))
-                tiny_context->updateKeeperConfiguration(*config);
+                global_context->updateKeeperConfiguration(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -467,7 +492,7 @@ try
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        tiny_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

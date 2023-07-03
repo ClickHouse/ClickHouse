@@ -51,7 +51,7 @@ String ParallelReadRequest::describe() const
     return result;
 }
 
-void ParallelReadRequest::deserialize(ReadBuffer & in)
+ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -60,12 +60,24 @@ void ParallelReadRequest::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
+    CoordinationMode mode;
+    size_t replica_num;
+    size_t min_number_of_marks;
+    RangesInDataPartsDescription description;
+
     uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
     readIntBinary(min_number_of_marks, in);
     description.deserialize(in);
+
+    return ParallelReadRequest(
+        mode,
+        replica_num,
+        min_number_of_marks,
+        std::move(description)
+    );
 }
 
 void ParallelReadRequest::merge(ParallelReadRequest & other)
@@ -125,7 +137,7 @@ String InitialAllRangesAnnouncement::describe()
     return result;
 }
 
-void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
+InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -134,11 +146,21 @@ void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
+    CoordinationMode mode;
+    RangesInDataPartsDescription description;
+    size_t replica_num;
+
     uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     description.deserialize(in);
     readIntBinary(replica_num, in);
+
+    return InitialAllRangesAnnouncement {
+        mode,
+        description,
+        replica_num
+    };
 }
 
 }
