@@ -108,6 +108,9 @@ namespace ProfileEvents
 namespace DB
 {
 
+static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_SUBQUERIES;
@@ -869,6 +872,28 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 if (analysis_result.before_where)
                     added_filter_nodes.nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
+
+                auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+
+                auto local_limits = getStorageLimits(*context, options);
+
+                if (!query.distinct
+                        && !query.limit_with_ties
+                        && !query.prewhere()
+                        && !query.where()
+                        && query_info.filter_asts.empty()
+                        && !query.groupBy()
+                        && !query.having()
+                        && !query.orderBy()
+                        && !query.limitBy()
+                        && !query.join()
+                        && !query_analyzer->hasAggregation()
+                        && !query_analyzer->hasWindow()
+                        && query.limitLength()
+                        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+                {
+                    query_info.limit = limit_length + limit_offset;
+                }
                 /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
                 rows_to_read.emplace(
