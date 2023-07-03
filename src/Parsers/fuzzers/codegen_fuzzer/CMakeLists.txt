@@ -42,4 +42,4 @@ clickhouse_add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
 set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier")
 
 target_include_directories(codegen_select_fuzzer SYSTEM BEFORE PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(codegen_select_fuzzer PRIVATE ch_contrib::protobuf_mutator ch_contrib::protoc dbms ${LIB_FUZZING_ENGINE})
+target_link_libraries(codegen_select_fuzzer PRIVATE ch_contrib::protobuf ch_contrib::protobuf_mutator ch_contrib::protoc dbms ${LIB_FUZZING_ENGINE})
