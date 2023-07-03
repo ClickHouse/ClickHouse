@@ -356,15 +356,15 @@ bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
     return hasMemoryOverflow(total_rows, total_bytes);
 }
 
-GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
+GraceHashJoin::Buckets GraceHashJoin::rehashBuckets()
 {
     std::unique_lock lock(rehash_mutex);
+
+    if (!isPowerOf2(buckets.size())) [[unlikely]]
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of buckets should be power of 2 but it's {}", buckets.size());
+
+    const size_t to_size = buckets.size() * 2;
     size_t current_size = buckets.size();
-
-    if (to_size <= current_size)
-        return buckets;
-
-    chassert(isPowerOf2(to_size));
 
     if (to_size > max_num_buckets)
     {
@@ -623,6 +623,8 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "");
+
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
@@ -638,10 +640,6 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     if (current_block.rows() > 0)
     {
         std::lock_guard lock(hash_join_mutex);
-        if (!isPowerOf2(buckets_snapshot.size())) [[unlikely]]
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken buckets. its size({}) is not power of 2", buckets_snapshot.size());
-        }
         if (!hash_join)
             hash_join = makeInMemoryJoin();
 
@@ -653,7 +651,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         current_block = {};
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
-        buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
+        buckets_snapshot = rehashBuckets();
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
 
