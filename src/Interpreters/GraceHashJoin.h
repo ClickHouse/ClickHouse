@@ -75,6 +75,8 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
 
+    String descriptionForPlan() const override { return "GraceHashJoin"; }
+
     bool supportParallelJoin() const override { return true; }
     bool supportTotals() const override { return false; }
 

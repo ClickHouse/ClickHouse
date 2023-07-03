@@ -8,7 +8,7 @@ String1_0	String2_0	String3_0	String4_0	1
 1
 Expression ((Projection + Before ORDER BY))
   Filter (WHERE)
-    Join (JOIN FillRightFirst)
+    Join (FillRightFirst HashJoin)
       Filter (( + Before JOIN))
         ReadFromMergeTree (default.t1)
         Indexes:

@@ -47,6 +47,7 @@ public:
     virtual bool alwaysReturnsEmptySet() const override { return false; }
 
     virtual bool isFilled() const override { return true; }
+    String descriptionForPlan() const override { return "DirectJoin"; }
 
     virtual IBlocksStreamPtr
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override

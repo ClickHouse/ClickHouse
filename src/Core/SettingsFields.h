@@ -459,22 +459,25 @@ template <typename Enum, typename Traits>
 struct SettingFieldMultiEnum
 {
     using EnumType = Enum;
-    using ValueType = MultiEnum<Enum>;
-    using StorageType = typename ValueType::StorageType;
+    using ValueType = std::vector<Enum>;
 
     ValueType value;
     bool changed = false;
 
     explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
     explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
-    explicit SettingFieldMultiEnum(StorageType s) : value(s) {}
     explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
 
     operator ValueType() const { return value; } /// NOLINT
-    explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
+    operator MultiEnum<EnumType>() const /// NOLINT
+    {
+        MultiEnum<EnumType> res;
+        for (const auto & v : value)
+            res.set(v);
+        return res;
+    }
 
-    SettingFieldMultiEnum & operator= (StorageType x) { changed = true; value.setValue(x); return *this; }
     SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
@@ -482,14 +485,10 @@ struct SettingFieldMultiEnum
     {
         static const String separator = ",";
         String result;
-        for (StorageType i = 0; i < Traits::getEnumSize(); ++i)
+        for (const auto & v : value)
         {
-            const auto v = static_cast<Enum>(i);
-            if (value.isSet(v))
-            {
-                result += Traits::toString(v);
-                result += separator;
-            }
+            result += Traits::toString(v);
+            result += separator;
         }
 
         if (!result.empty())
@@ -508,6 +507,7 @@ private:
         static const String separators=", ";
 
         ValueType result;
+        std::unordered_set<EnumType> values_set;
 
         //to avoid allocating memory on substr()
         const std::string_view str_view{str};
@@ -519,7 +519,12 @@ private:
             if (value_end == std::string::npos)
                 value_end = str_view.size();
 
-            result.set(Traits::fromString(str_view.substr(value_start, value_end - value_start)));
+            auto value = Traits::fromString(str_view.substr(value_start, value_end - value_start));
+            /// Deduplicate values
+            auto [_, inserted] = values_set.emplace(value);
+            if (inserted)
+                result.push_back(value);
+
             value_start = str_view.find_first_not_of(separators, value_end);
         }
 

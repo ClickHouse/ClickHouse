@@ -78,7 +78,7 @@ Expression (Projection)
   Distinct
     Distinct (Preliminary DISTINCT)
       Expression (Before ORDER BY)
-        Join (JOIN FillRightFirst)
+        Join (FillRightFirst HashJoin)
           Expression ((Before JOIN + Projection))
             Distinct
               Distinct (Preliminary DISTINCT)
@@ -227,7 +227,7 @@ FROM
 Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
   Aggregating
     Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-      Join (JOIN FillRightFirst)
+      Join (FillRightFirst HashJoin)
         Expression (Before JOIN)
           ReadFromStorage (SystemNumbers)
         Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -260,7 +260,7 @@ Expression (Projection)
       Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
         Aggregating
           Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-            Join (JOIN FillRightFirst)
+            Join (FillRightFirst HashJoin)
               Expression (Before JOIN)
                 ReadFromStorage (SystemNumbers)
               Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -292,7 +292,7 @@ Expression (Projection)
         Rollup
           Aggregating
             Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-              Join (JOIN FillRightFirst)
+              Join (FillRightFirst HashJoin)
                 Expression (Before JOIN)
                   ReadFromStorage (SystemNumbers)
                 Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -322,7 +322,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
   Rollup
     Aggregating
       Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-        Join (JOIN FillRightFirst)
+        Join (FillRightFirst HashJoin)
           Expression (Before JOIN)
             ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -357,7 +357,7 @@ Expression (Projection)
         Cube
           Aggregating
             Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-              Join (JOIN FillRightFirst)
+              Join (FillRightFirst HashJoin)
                 Expression (Before JOIN)
                   ReadFromStorage (SystemNumbers)
                 Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -387,7 +387,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
   Cube
     Aggregating
       Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-        Join (JOIN FillRightFirst)
+        Join (FillRightFirst HashJoin)
           Expression (Before JOIN)
             ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -422,7 +422,7 @@ Expression (Projection)
         TotalsHaving
           Aggregating
             Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-              Join (JOIN FillRightFirst)
+              Join (FillRightFirst HashJoin)
                 Expression (Before JOIN)
                   ReadFromStorage (SystemNumbers)
                 Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
@@ -453,7 +453,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
   TotalsHaving
     Aggregating
       Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-        Join (JOIN FillRightFirst)
+        Join (FillRightFirst HashJoin)
           Expression (Before JOIN)
             ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))

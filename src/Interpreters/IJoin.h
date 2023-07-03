@@ -85,6 +85,7 @@ public:
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
     virtual JoinPipelineType pipelineType() const { return JoinPipelineType::FillRightFirst; }
+    virtual String descriptionForPlan() const = 0;
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }

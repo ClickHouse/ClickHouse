@@ -1645,7 +1645,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         expressions.join,
                         settings.max_block_size);
 
-                    filled_join_step->setStepDescription("JOIN");
+                    filled_join_step->setStepDescription(expressions.join->descriptionForPlan());
                     query_plan.addStep(std::move(filled_join_step));
                 }
                 else
@@ -1734,7 +1734,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         max_streams,
                         analysis_result.optimize_read_in_order);
 
-                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
+                    join_step->setStepDescription(fmt::format("{} {}", expressions.join->pipelineType(), expressions.join->descriptionForPlan()));
                     std::vector<QueryPlanPtr> plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));

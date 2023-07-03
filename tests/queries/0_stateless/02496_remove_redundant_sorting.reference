@@ -115,7 +115,7 @@ FROM
 ) AS t2
 -- explain
 Expression ((Projection + Before ORDER BY))
-  Join (JOIN FillRightFirst)
+  Join (FillRightFirst HashJoin)
     Expression ((Before JOIN + Projection))
       Sorting (Sorting for ORDER BY)
         Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
@@ -163,7 +163,7 @@ ORDER BY t1.number, t2.number
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
-      Join (JOIN FillRightFirst)
+      Join (FillRightFirst HashJoin)
         Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
           ReadFromStorage (SystemNumbers)
         Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))

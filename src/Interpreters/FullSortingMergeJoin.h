@@ -104,6 +104,8 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getTotalByteCount should not be called");
     }
 
+    String descriptionForPlan() const override { return "FullSortingMergeJoin"; }
+
     bool alwaysReturnsEmptySet() const override { return false; }
 
     IBlocksStreamPtr
