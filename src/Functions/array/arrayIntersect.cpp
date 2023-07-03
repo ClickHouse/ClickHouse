@@ -565,29 +565,31 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             null_map.push_back(1);
         }
 
-        // for (const auto & pair : map)
-        // {
-        //     if (pair.getMapped() == args)
-        //     {
-        //         ++result_offset;
-        //         if constexpr (is_numeric_column)
-        //             result_data.insertValue(pair.getKey());
-        //         else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-        //             result_data.insertData(pair.getKey().data, pair.getKey().size);
-        //         else
-        //             result_data.deserializeAndInsertFromArena(pair.getKey().data);
+        for (const auto & pair : map)
+        {
+            if (pair.getMapped() == args)
+            {
+                ++result_offset;
+                // if constexpr (is_numeric_column)
+                //     result_data.insertValue(pair.getKey());
+                // else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                //     result_data.insertData(pair.getKey().data, pair.getKey().size);
+                // else
+                //     result_data.deserializeAndInsertFromArena(pair.getKey().data);
 
-        //         if (all_nullable)
-        //             null_map.push_back(0);
-        //     }
-        // }
-        result_offsets.getElement(row) = result_offset;
+                // if (all_nullable)
+                //     null_map.push_back(0);
+            }
+        }
+        // result_offsets.getElement(row) = result_offset;
     }
 
     for (size_t row = 0; row < rows; ++row)
     {
+        bool all_has_nullable = all_nullable;
         for (size_t arg_num = 0; arg_num < 1; ++arg_num)
         {
+            bool current_has_nullable = false;
             const auto & arg = arrays.args[arg_num];
             size_t off;
             // const array has only one row
@@ -599,8 +601,12 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             prev_off[arg_num] = off;
             if (arg.is_const)
                 prev_off[arg_num] = 0;
+            // throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", result_offset);
             for (size_t res_num = 0; res_num < result_offset; ++res_num)
             {
+                if (arg.null_map && (*arg.null_map)[row])
+                    current_has_nullable = true;
+
                 typename Map::LookupResult pair;
 
                 if constexpr (is_numeric_column)
@@ -615,13 +621,20 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     pair = map.find(columns[arg_num]->serializeValueIntoArena(res_num, arena, data));
                 }
 
+                prev_off[arg_num] = off;
+                if (arg.is_const)
+                    prev_off[arg_num] = 0;
+
+                if (!current_has_nullable)
+                    all_has_nullable = false;
+
                 if (pair->getMapped() == args)//for (const auto & pair : map)
                 {
                     if constexpr (is_numeric_column)
                     {
                         if (pair->getKey() == columns[arg_num]->getElement(res_num))
                         {
-                            ++result_offset;
+                            // ++result_offset;
                             result_data.insertValue(pair->getKey());
                         } 
                     }
@@ -629,7 +642,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     {
                         if (pair->getKey() == columns[arg_num]->getDataAt(res_num))
                         {
-                            ++result_offset;
+                            // ++result_offset;
                             result_data.insertData(pair->getKey().data, pair->getKey().size);
                         } 
                     }
@@ -638,14 +651,21 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                         const char * data = nullptr;
                         if (pair->getKey() == columns[arg_num]->serializeValueIntoArena(res_num, arena, data))
                         {
-                            ++result_offset;
+                            // ++result_offset;
                             result_data.deserializeAndInsertFromArena(pair->getKey().data);
                         } 
                     }
                     if (all_nullable)
                         null_map.push_back(0);
                 }
-        }
+            }
+            if (all_has_nullable)
+            {
+                ++result_offset;
+                result_data.insertDefault();
+                null_map.push_back(1);
+            }
+            result_offsets.getElement(row) = result_offset;
 
 
     }
