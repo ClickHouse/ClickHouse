@@ -112,12 +112,12 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type: str, package_type: str, sanitizer: str) -> bool:
-    return build_type == "" and package_type == "deb" and sanitizer == ""
+def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bool:
+    return not debug_build and package_type == "deb" and sanitizer == ""
 
 
 def parse_env_variables(
-    build_type: str,
+    debug_build: bool,
     compiler: str,
     sanitizer: str,
     package_type: str,
@@ -167,6 +167,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
+        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_darwin_arm:
         cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
@@ -181,6 +182,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake"
         )
+        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_arm:
         cc = compiler[: -len(ARM_SUFFIX)]
         cmake_flags.append(
@@ -231,7 +233,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(build_type, package_type, sanitizer):
+        if is_release_build(debug_build, package_type, sanitizer):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -251,8 +253,8 @@ def parse_env_variables(
 
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
-    if build_type:
-        result.append(f"BUILD_TYPE={build_type.capitalize()}")
+    if debug_build:
+        result.append("BUILD_TYPE=DEBUG")
     else:
         result.append("BUILD_TYPE=None")
 
@@ -357,22 +359,21 @@ def parse_args() -> argparse.Namespace:
         help="ClickHouse git repository",
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
-    parser.add_argument("--build-type", choices=("debug", ""), default="")
+    parser.add_argument("--debug-build", action="store_true")
 
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-15",
-            "clang-15-darwin",
-            "clang-15-darwin-aarch64",
-            "clang-15-aarch64",
-            "clang-15-aarch64-v80compat",
-            "clang-15-ppc64le",
-            "clang-15-amd64-compat",
-            "clang-15-freebsd",
-            "gcc-11",
+            "clang-16",
+            "clang-16-darwin",
+            "clang-16-darwin-aarch64",
+            "clang-16-aarch64",
+            "clang-16-aarch64-v80compat",
+            "clang-16-ppc64le",
+            "clang-16-amd64-compat",
+            "clang-16-freebsd",
         ),
-        default="clang-15",
+        default="clang-16",
         help="a compiler to use",
     )
     parser.add_argument(
@@ -463,7 +464,7 @@ def main():
         build_image(image_with_version, dockerfile)
 
     env_prepared = parse_env_variables(
-        args.build_type,
+        args.debug_build,
         args.compiler,
         args.sanitizer,
         args.package_type,

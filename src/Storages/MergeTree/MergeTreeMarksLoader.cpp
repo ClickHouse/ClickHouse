@@ -30,7 +30,7 @@ namespace ErrorCodes
 }
 
 MergeTreeMarksLoader::MergeTreeMarksLoader(
-    DataPartStoragePtr data_part_storage_,
+    MergeTreeDataPartInfoForReaderPtr data_part_reader_,
     MarkCache * mark_cache_,
     const String & mrk_path_,
     size_t marks_count_,
@@ -39,7 +39,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     const ReadSettings & read_settings_,
     ThreadPool * load_marks_threadpool_,
     size_t columns_in_mark_)
-    : data_part_storage(std::move(data_part_storage_))
+    : data_part_reader(data_part_reader_)
     , mark_cache(mark_cache_)
     , mrk_path(mrk_path_)
     , marks_count(marks_count_)
@@ -98,6 +98,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+
     size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
     size_t expected_uncompressed_size = mark_size * marks_count;
@@ -133,6 +135,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
+        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
@@ -146,23 +149,25 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     else
     {
-        size_t i = 0;
-        size_t granularity;
-        while (!reader->eof())
+        for (size_t i = 0; i < marks_count; ++i)
         {
+            if (reader->eof())
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
+                    mrk_path, marks_count, expected_uncompressed_size, i, reader->count());
+
+            size_t granularity;
             reader->readStrict(
                 reinterpret_cast<char *>(plain_marks.data() + i * columns_in_mark), columns_in_mark * sizeof(MarkInCompressedFile));
             readIntBinary(granularity, *reader);
-            ++i;
         }
 
-        if (i * mark_size != expected_uncompressed_size)
-        {
+        if (!reader->eof())
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
-                mrk_path, marks_count, expected_uncompressed_size, i, reader->count());
-        }
+                "Too many marks in file {}, marks expected {} (bytes size {})",
+                mrk_path, marks_count, expected_uncompressed_size);
     }
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
@@ -176,6 +181,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks()
 {
     MarkCache::MappedPtr loaded_marks;
+
+    auto data_part_storage = data_part_reader->getDataPartStorage();
 
     if (mark_cache)
     {
