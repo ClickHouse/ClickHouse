@@ -1435,6 +1435,9 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
 
             if (table)
             {
+                if (auto set = data.prepared_sets->findStorage(set_key))
+                    return set;
+
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
                     return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
             }
