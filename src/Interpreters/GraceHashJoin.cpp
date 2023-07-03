@@ -638,10 +638,9 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     if (current_block.rows() > 0)
     {
         std::lock_guard lock(hash_join_mutex);
-        auto current_buckets = getCurrentBuckets();
-        if (!isPowerOf2(current_buckets.size())) [[unlikely]]
+        if (!isPowerOf2(buckets_snapshot.size())) [[unlikely]]
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken buckets. its size({}) is not power of 2", current_buckets.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken buckets. its size({}) is not power of 2", buckets_snapshot.size());
         }
         if (!hash_join)
             hash_join = makeInMemoryJoin();
@@ -654,7 +653,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         current_block = {};
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
-        buckets_snapshot = rehashBuckets(current_buckets.size() * 2);
+        buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
 
