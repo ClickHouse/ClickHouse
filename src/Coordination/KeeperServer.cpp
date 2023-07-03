@@ -26,6 +26,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Disks/DiskLocal.h>
 
 namespace DB
 {
@@ -124,7 +125,6 @@ KeeperServer::KeeperServer(
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
         snapshots_queue_,
-        configuration_and_settings_->snapshot_storage_path,
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
@@ -134,10 +134,10 @@ KeeperServer::KeeperServer(
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
         "keeper_server",
-        configuration_and_settings_->log_storage_path,
-        configuration_and_settings_->state_file_path,
+        "state",
         config,
-        coordination_settings);
+        coordination_settings,
+        keeper_context);
 }
 
 /**
@@ -413,7 +413,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     launchRaftServer(config, enable_ipv6);
 
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
+    keeper_context->setServerState(KeeperContext::Phase::RUNNING);
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -428,7 +428,7 @@ void KeeperServer::shutdownRaftServer()
 
     raft_instance->shutdown();
 
-    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+    keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
         raft_instance->create_snapshot();
