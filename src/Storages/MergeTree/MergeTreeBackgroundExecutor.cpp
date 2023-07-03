@@ -182,7 +182,6 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         }
         catch (...)
         {
-            printExceptionWithRespectToAbort(log);
             pending.remove(id);
         }
 
