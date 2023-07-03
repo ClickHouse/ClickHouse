@@ -5,6 +5,7 @@
 #include <IO/VarInt.h>
 #include <Core/Block.h>
 #include <base/EnumReflection.h>
+#include <Storages/BlockNumberColumn.h>
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -283,8 +284,16 @@ SerializationInfoByName SerializationInfoByName::readJSON(
             auto it = column_type_by_name.find(name);
 
             if (it == column_type_by_name.end())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Found unexpected column '{}' in serialization infos", name);
+            {
+                if (name == BlockNumberColumn.name)
+                {
+                    auto info = BlockNumberColumn.type->createSerializationInfo(settings);
+                    infos.emplace(name, std::move(info));
+                    continue;
+                }
+                else
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Found unexpected column '{}' in serialization infos", name);
+            }
 
             auto info = it->second->createSerializationInfo(settings);
             info->fromJSON(*elem_object);
