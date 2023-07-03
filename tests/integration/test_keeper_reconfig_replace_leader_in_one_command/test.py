@@ -113,7 +113,7 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
     zk3.close()
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_four_0")
-    ku.configs_equal(config, zk3)
+    ku.wait_configs_equal(config, zk3)
 
     for i in range(200):
         assert zk2.exists(f"test_four_{i}") is not None
