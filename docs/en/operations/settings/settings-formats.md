@@ -964,6 +964,31 @@ Result
 a  b
 ```
 
+
+### input_format_csv_allow_set_column_default_value_if_no_input {#input_format_csv_allow_set_column_default_value_if_no_input}
+
+Allow to set column default value if the column has no input in deserialization.
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a,b' >> 1.txt && echo 'a,b,c' >> 1.txt
+./clickhouse local -q "create table test_tbl (x String, y String, z String) engine=MergeTree order by x"
+cat 1.txt | ./clickhouse local -q "INSERT INTO test_tbl SETTINGS input_format_csv_allow_set_column_default_value_if_no_input=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  b  
+a  b  c
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
