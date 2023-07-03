@@ -9,7 +9,7 @@ cluster = helpers.cluster.ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/fast_background_pool.xml"],
+    main_configs=["configs/fast_background_pool.xml", "configs/compat.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -227,7 +227,7 @@ def test_merge_tree_load_parts_filesystem_error(started_cluster):
     # It can be a filesystem exception triggered at initialization of part storage but it hard
     # to trigger it because it should be an exception on stat/listDirectory.
     # The most easy way to trigger such exception is to use chmod but clickhouse server
-    # is run with root user in integration test and this won't work. So let's do some
+    # is run with root user in integration test and this won't work. So let's do
     # some stupid things: create a table without adaptive granularity and change mark
     # extensions of data files in part to make clickhouse think that it's a compact part which
     # cannot be created in such table. This will trigger a LOGICAL_ERROR on part creation.
@@ -240,7 +240,8 @@ def test_merge_tree_load_parts_filesystem_error(started_cluster):
         ).strip()
 
         node3.exec_in_container(
-            ["bash", "-c", f"mv {part_path}id.mrk {part_path}id.mrk3"], privileged=True
+            ["bash", "-c", f"mv {part_path}id.cmrk {part_path}id.cmrk3"],
+            privileged=True,
         )
 
     corrupt_part("mt_load_parts", "all_1_1_0")

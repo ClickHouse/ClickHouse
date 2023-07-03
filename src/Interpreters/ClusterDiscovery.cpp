@@ -125,10 +125,12 @@ ClusterDiscovery::ClusterDiscovery(
             ClusterInfo(
                 /* name_= */ key,
                 /* zk_root_= */ config.getString(prefix + ".path"),
+                /* host_name= */ config.getString(prefix + ".my_hostname", getFQDNOrHostName()),
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(prefix + ".shard", 0),
-                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer")
+                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer"),
+                /* invisible= */ ConfigHelper::getBool(config, prefix + ".invisible")
             )
         );
     }
@@ -149,7 +151,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        int * version,
                                        bool set_callback)
 {
-    auto watch_callback = [cluster_name, clusters_to_update=clusters_to_update](auto) { clusters_to_update->set(cluster_name); };
+    auto watch_callback = [cluster_name, my_clusters_to_update = clusters_to_update](auto) { my_clusters_to_update->set(cluster_name); };
 
     Coordination::Stat stat;
     Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
@@ -219,7 +221,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     std::vector<Strings> shards;
     {
-        std::map<size_t, Strings> replica_adresses;
+        std::map<size_t, Strings> replica_addresses;
 
         for (const auto & [_, node] : cluster_info.nodes_info)
         {
@@ -228,11 +230,11 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
                 LOG_WARNING(log, "Node '{}' in cluster '{}' has different 'secure' value, skipping it", node.address, cluster_info.name);
                 continue;
             }
-            replica_adresses[node.shard_id].emplace_back(node.address);
+            replica_addresses[node.shard_id].emplace_back(node.address);
         }
 
-        shards.reserve(replica_adresses.size());
-        for (auto & [_, replicas] : replica_adresses)
+        shards.reserve(replica_addresses.size());
+        for (auto & [_, replicas] : replica_addresses)
             shards.emplace_back(std::move(replicas));
     }
 
@@ -244,7 +246,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
-        /* priority= */ 1,
+        /* priority= */ Priority{1},
         /* cluster_name= */ "",
         /* password= */ ""};
     auto cluster = std::make_shared<Cluster>(
@@ -292,6 +294,12 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         registerInZk(zk, cluster_info);
         nodes_info.clear();
         return false;
+    }
+
+    if (cluster_info.current_cluster_is_invisible)
+    {
+        LOG_DEBUG(log, "cluster '{}' is invisible!", cluster_info.name);
+        return true;
     }
 
     if (!needUpdate(node_uuids, nodes_info))
