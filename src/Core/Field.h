@@ -48,7 +48,7 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 struct X : public FieldVector \
 { \
     using FieldVector::FieldVector; \
-    size_t nested_field_depth = 0; \
+    uint8_t nested_field_depth = 0; \
 }
 
 DEFINE_FIELD_VECTOR(Array);
@@ -65,7 +65,7 @@ using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTrackin
 struct X : public FieldMap \
 { \
     using FieldMap::FieldMap; \
-    size_t nested_field_depth = 0; \
+    uint8_t nested_field_depth = 0; \
 }
 
 DEFINE_FIELD_MAP(Object);
@@ -296,10 +296,11 @@ decltype(auto) castToNearestFieldType(T && x)
   */
 #define DBMS_MIN_FIELD_SIZE 32
 
+/// Note: uint8_t is used for storing depth value.
 #if defined(SANITIZER) || !defined(NDEBUG)
     #define DBMS_MAX_NESTED_FIELD_DEPTH 64
 #else
-    #define DBMS_MAX_NESTED_FIELD_DEPTH 256
+    #define DBMS_MAX_NESTED_FIELD_DEPTH 255
 #endif
 
 /** Discriminated union of several types.
@@ -683,9 +684,9 @@ private:
 
     /// StorageType and Original are the same for Array, Tuple, Map, Object
     template <typename StorageType, typename Original>
-    size_t calculateAndCheckFieldDepth(Original && x)
+    uint8_t calculateAndCheckFieldDepth(Original && x)
     {
-        size_t result = 0;
+        uint8_t result = 0;
 
         if constexpr (std::is_same_v<StorageType, Array>
             || std::is_same_v<StorageType, Tuple>
@@ -694,29 +695,29 @@ private:
         {
             result = x.nested_field_depth;
 
-            auto calculate_max = [](const Field & elem, size_t result)
+            auto get_depth = [](const Field & elem)
             {
                 switch (elem.which)
                 {
                     case Types::Array:
-                        return std::max(result, elem.template get<Array>().nested_field_depth);
+                        return elem.template get<Array>().nested_field_depth;
                     case Types::Tuple:
-                        return std::max(result, elem.template get<Tuple>().nested_field_depth);
+                        return elem.template get<Tuple>().nested_field_depth;
                     case Types::Map:
-                        return std::max(result, elem.template get<Map>().nested_field_depth);
+                        return elem.template get<Map>().nested_field_depth;
                     case Types::Object:
-                        return std::max(result, elem.template get<Object>().nested_field_depth);
+                        return elem.template get<Object>().nested_field_depth;
                     default:
-                        return result;
+                        return static_cast<uint8_t>(0);
                 }
             };
 
             if constexpr (std::is_same_v<StorageType, Object>)
                 for (auto & [_, value] : x)
-                    result = calculate_max(value, result);
+                    result = std::max(get_depth(value), result);
             else
                 for (auto & value : x)
-                    result = calculate_max(value, result);
+                    result = std::max(get_depth(value), result);
         }
 
         if (result >= DBMS_MAX_NESTED_FIELD_DEPTH)
