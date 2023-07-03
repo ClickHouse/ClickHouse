@@ -60,13 +60,15 @@ public:
 
     size_t use(const CacheGuard::Lock &) override;
 
-    Iterator remove(const CacheGuard::Lock &) override;
+    void remove(const CacheGuard::Lock &) override;
 
     void invalidate() override;
 
     void updateSize(int64_t size) override;
 
 private:
+    void checkUsable() const;
+
     LRUFileCachePriority * cache_priority;
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };
