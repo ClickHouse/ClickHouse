@@ -648,8 +648,6 @@ void FileSegment::complete()
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        detach(segment_lock, *locked_key);
-        setDownloadState(State::DETACHED, segment_lock);
         locked_key->removeFileSegment(offset(), segment_lock);
         return;
     }
@@ -798,7 +796,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         }
 
         chassert(reserved_size >= downloaded_size);
-        chassert((reserved_size == 0) || queue_iterator);
         check_iterator(queue_iterator);
     }
 
@@ -872,6 +869,7 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     cache = nullptr;
+    queue_iterator = nullptr;
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
@@ -890,7 +888,7 @@ void FileSegment::use()
 
     if (!cache)
     {
-        chassert(isCompleted(true));
+        chassert(isDetached());
         return;
     }
 
@@ -898,7 +896,7 @@ void FileSegment::use()
     if (it)
     {
         auto cache_lock = cache->lockCache();
-        it->use(cache_lock);
+        hits_count = it->use(cache_lock);
     }
 }
 
