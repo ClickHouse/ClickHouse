@@ -23,3 +23,7 @@ function run_with_retry()
     echo "Command '$*' failed after $total_retries retries, exiting"
     exit 1
 }
+
+function fn_exists() {
+    declare -F "$1" > /dev/null;
+}
