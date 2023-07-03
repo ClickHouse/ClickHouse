@@ -295,6 +295,19 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     return true;
 }
 
+void KeeperStateMachine::reconfigure(const KeeperStorage::RequestForSession& request_for_session)
+{
+    std::lock_guard _(storage_and_responses_lock);
+    KeeperStorage::ResponseForSession response = processReconfiguration(request_for_session);
+    if (!responses_queue.push(response))
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+        LOG_WARNING(log,
+            "Failed to push response with session id {} to the queue, probably because of shutdown",
+            response.session_id);
+    }
+}
+
 KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
     const KeeperStorage::RequestForSession& request_for_session)
 {
@@ -399,14 +412,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
         response->session_id = session_id;
         try_push(response_for_session);
-    }
-    // Processing reconfig request as an ordinary one (in KeeperStorage) brings multiple inconsistencies
-    // regarding replays of old reconfigurations in new nodes. Thus the storage is not involved.
-    // See https://github.com/ClickHouse/ClickHouse/pull/49450 for details
-    else if (op_num == Coordination::OpNum::Reconfig)
-    {
-        std::lock_guard lock(storage_and_responses_lock);
-        try_push(processReconfiguration(*request_for_session));
     }
     else
     {

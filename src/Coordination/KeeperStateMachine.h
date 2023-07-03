@@ -126,6 +126,8 @@ public:
 
     void recalculateStorageStats();
 
+    void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
+
 private:
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored

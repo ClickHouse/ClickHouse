@@ -90,6 +90,12 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
+                if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                {
+                    server->getKeeperStateMachine()->reconfigure(request);
+                    continue;
+                }
+
                 KeeperStorage::RequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
 
