@@ -97,7 +97,7 @@ run_query_with_pure_parallel_replicas "${query_id_base}_0_10M" 10000000 "$whole_
 run_query_with_pure_parallel_replicas "${query_id_base}_0_6M" 6000000 "$whole_table_query" # 1.6 replicas -> 1 replica -> No parallel replicas
 run_query_with_pure_parallel_replicas "${query_id_base}_0_5M" 5000000 "$whole_table_query"
 run_query_with_pure_parallel_replicas "${query_id_base}_0_1M" 1000000 "$whole_table_query"
-#
+
 ##### Reading 2M rows without filters as partition (p=3) is pruned completely
 query_with_partition_pruning="SELECT sum(number) FROM test_parallel_replicas_automatic_count WHERE p != 3 format Null"
 run_query_with_pure_parallel_replicas "${query_id_base}_1_0" 0 "$query_with_partition_pruning"
@@ -105,7 +105,7 @@ run_query_with_pure_parallel_replicas "${query_id_base}_1_10M" 10000000 "$query_
 run_query_with_pure_parallel_replicas "${query_id_base}_1_1M" 1000000 "$query_with_partition_pruning"
 run_query_with_pure_parallel_replicas "${query_id_base}_1_500k" 500000 "$query_with_partition_pruning"
 
-## Reading ~500k rows as index filter should prune granules from partition=1 and partition=2, and drop p3 completely
+#### Reading ~500k rows as index filter should prune granules from partition=1 and partition=2, and drop p3 completely
 query_with_index="SELECT sum(number) FROM test_parallel_replicas_automatic_count WHERE number < 500_000 format Null"
 run_query_with_pure_parallel_replicas "${query_id_base}_2_0" 0 "$query_with_index"
 run_query_with_pure_parallel_replicas "${query_id_base}_2_1M" 1000000 "$query_with_index"
@@ -113,7 +113,22 @@ run_query_with_pure_parallel_replicas "${query_id_base}_2_300k" 300000 "$query_w
 run_query_with_pure_parallel_replicas "${query_id_base}_2_200k" 200000 "$query_with_index"
 run_query_with_pure_parallel_replicas "${query_id_base}_2_100k" 100000 "$query_with_index"
 
-# Custom key parallel replicas: Not implemented
+#### Reading 1M (because of LIMIT)
+limit_table_query="SELECT sum(number) FROM (SELECT number FROM test_parallel_replicas_automatic_count LIMIT 1_000_000) format Null"
+run_query_with_pure_parallel_replicas "${query_id_base}_3_0" 0 "$limit_table_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_3_10M" 10000000 "$limit_table_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_3_1M" 1000000 "$limit_table_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_3_500k" 500000 "$limit_table_query"
+
+#### Reading 10M (because of LIMIT is applied after aggregations)
+limit_agg_table_query="SELECT sum(number) FROM test_parallel_replicas_automatic_count LIMIT 1_000_000 format Null"
+run_query_with_pure_parallel_replicas "${query_id_base}_4_0" 0 "$limit_agg_table_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_4_10M" 10000000 "$limit_agg_table_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_4_1M" 1000000 "$limit_agg_table_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_4_500k" 500000 "$limit_agg_table_query"
+
+
+#### Custom key parallel replicas: Not implemented
 #whole_table_query="SELECT sum(number) FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_parallel_replicas_automatic_count) format Null"
 #run_query_with_custom_key_parallel_replicas "${query_id_base}_0_0" 0 "$whole_table_query"
 #run_query_with_custom_key_parallel_replicas "${query_id_base}_0_10M" 10000000 "$whole_table_query"
