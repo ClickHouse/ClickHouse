@@ -881,45 +881,21 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_table_engine)
-{
-    switch (default_table_engine)
-    {
-        case DefaultTableEngine::Log:
-            return "Log";
-
-        case DefaultTableEngine::StripeLog:
-            return "StripeLog";
-
-        case DefaultTableEngine::MergeTree:
-            return "MergeTree";
-
-        case DefaultTableEngine::ReplacingMergeTree:
-            return "ReplacingMergeTree";
-
-        case DefaultTableEngine::ReplicatedMergeTree:
-            return "ReplicatedMergeTree";
-
-        case DefaultTableEngine::ReplicatedReplacingMergeTree:
-            return "ReplicatedReplacingMergeTree";
-
-        case DefaultTableEngine::Memory:
-            return "Memory";
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "default_table_engine is set to unknown value");
+namespace {
+    void checkTemporaryTableEngineName(const String& name) {
+        if (name.starts_with("Replicated") || name == "KeeperMap")
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
     }
-}
 
-void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine)
-{
-    if (engine == DefaultTableEngine::None)
-        throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
+    void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine) {
+        if (engine == DefaultTableEngine::None)
+            throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
 
-    auto engine_ast = std::make_shared<ASTFunction>();
-    engine_ast->name = getTableEngineName(engine);
-    engine_ast->no_empty_args = true;
-    storage.set(storage.engine, engine_ast);
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
+        engine_ast->no_empty_args = true;
+        storage.set(storage.engine, engine_ast);
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -942,21 +918,18 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
-        if (create.storage && create.storage->engine)
+        if (!create.storage)
         {
-            if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
-            return;
+            auto storage_ast = std::make_shared<ASTStorage>();
+            create.set(create.storage, storage_ast);
         }
-        else
+
+        if (!create.storage->engine)
         {
-            if (!create.storage)
-            {
-                auto storage_ast = std::make_shared<ASTStorage>();
-                create.set(create.storage, storage_ast);
-            }
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
         }
+
+        checkTemporaryTableEngineName(create.storage->engine->name);
         return;
     }
 
