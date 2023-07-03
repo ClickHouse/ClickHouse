@@ -396,7 +396,7 @@ def arryToString(expected_clickhouse_values):
 
 #  if expected_clickhouse_values is "", compare MySQL and ClickHouse query results directly
 @pytest.mark.parametrize(
-    "case_name, mysql_type, expected_ch_type, mysql_values, expected_clickhouse_values , setting_mysql_datatypes_support_level",
+    "case_name, mysql_type, expected_ch_type, mysql_values, expected_clickhouse_values, setting_mysql_datatypes_support_level",
     [
         pytest.param(
             "common_types",
@@ -725,11 +725,10 @@ def arryToString(expected_clickhouse_values):
             "decimal,datetime64",
             id="datetime_6_1",
         ),
-        # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
         pytest.param(
             "decimal_40_6",
             "decimal(40, 6) NOT NULL",
-            "String",
+            "Decimal(40, 6)",
             decimal_values,
             "",
             "decimal,datetime64",
@@ -999,3 +998,25 @@ def test_restart_server(started_cluster):
             clickhouse_node.restart_clickhouse()
             clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
+
+
+def test_memory_leak(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
+        )
+        clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.restart_clickhouse()

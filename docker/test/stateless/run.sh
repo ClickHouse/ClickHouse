@@ -15,6 +15,12 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
+# shellcheck disable=SC1091
+source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
+
+# shellcheck disable=SC1091
+source /usr/share/clickhouse-test/ci/utils.lib || true # FIXME: to not break old builds, clean on 2023-09-01
+
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
@@ -85,6 +91,24 @@ fi
 
 sleep 5
 
+attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+
+function fn_exists() {
+    declare -F "$1" > /dev/null;
+}
+
+# FIXME: to not break old builds, clean on 2023-09-01
+function try_run_with_retry() {
+    local total_retries="$1"
+    shift
+
+    if fn_exists run_with_retry; then
+        run_with_retry "$total_retries" "$@"
+    else
+        "$@"
+    fi
+}
+
 function run_tests()
 {
     set -x
@@ -132,11 +156,13 @@ function run_tests()
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
+    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a test_output/test_result.txt
+        --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+    | ts '%Y-%m-%d %H:%M:%S' \
+    | tee -a test_output/test_result.txt
     set -e
 }
 
@@ -169,7 +195,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
+rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
+rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
 # Compress tables.
@@ -215,8 +242,8 @@ fi
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
     # FIXME: remove once only github actions will be left

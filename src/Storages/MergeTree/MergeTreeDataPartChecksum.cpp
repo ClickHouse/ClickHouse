@@ -1,6 +1,6 @@
 #include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -46,6 +46,10 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
+    /// Skip inverted index files, these have a default MergeTreeDataPartChecksum with file_size == 0
+    if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+        return;
+
     if (!storage.exists(name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
 
@@ -74,6 +78,10 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     for (const auto & it : files)
     {
         const String & name = it.first;
+
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+            continue;
 
         auto jt = rhs.files.find(name);
         if (jt == rhs.files.end())
@@ -146,9 +154,9 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
         assertString("\n\tsize: ", in);
         readText(sum.file_size, in);
         assertString("\n\thash: ", in);
-        readText(sum.file_hash.first, in);
+        readText(sum.file_hash.low64, in);
         assertString(" ", in);
-        readText(sum.file_hash.second, in);
+        readText(sum.file_hash.high64, in);
         assertString("\n\tcompressed: ", in);
         readText(sum.is_compressed, in);
         if (sum.is_compressed)
@@ -156,9 +164,9 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
             assertString("\n\tuncompressed size: ", in);
             readText(sum.uncompressed_size, in);
             assertString("\n\tuncompressed hash: ", in);
-            readText(sum.uncompressed_hash.first, in);
+            readText(sum.uncompressed_hash.low64, in);
             assertString(" ", in);
-            readText(sum.uncompressed_hash.second, in);
+            readText(sum.uncompressed_hash.high64, in);
         }
         assertChar('\n', in);
 
@@ -299,19 +307,7 @@ static void updateHash(SipHash & hash, const std::string & data)
 /// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
 String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
-    SipHash hash_of_all_files;
-
-    for (const auto & [name, checksum] : files)
-    {
-        updateHash(hash_of_all_files, name);
-        hash_of_all_files.update(checksum.file_hash);
-    }
-
-    UInt64 lo;
-    UInt64 hi;
-    hash_of_all_files.get128(lo, hi);
-
-    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
+    return getHexUIntUppercase(getTotalChecksumUInt128());
 }
 
 MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTotalChecksumUInt128() const

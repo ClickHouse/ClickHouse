@@ -217,7 +217,7 @@ void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & co
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE and UPDATE mutation supported for EmbeddedRocksDB");
 }
 
-void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPtr context_, bool /*force_wait*/)
+void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPtr context_)
 {
     if (commands.empty())
         return;
@@ -230,26 +230,31 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
+        MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = true;
+        settings.return_mutated_rows = true;
+
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             context_,
-            /*can_execute_*/ true,
-            /*return_all_columns_*/ true,
-            /*return_deleted_rows_*/ true);
+            settings);
+
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 
+        auto header = interpreter->getUpdatedHeader();
+        auto primary_key_pos = header.getPositionByName(primary_key);
+
         Block block;
         while (executor.pull(block))
         {
-            auto column_it = std::find_if(block.begin(), block.end(), [&](const auto & column) { return column.name == primary_key; });
-            assert(column_it != block.end());
+            auto & column_type_name = block.getByPosition(primary_key_pos);
 
-            auto column = column_it->column;
+            auto column = column_type_name.column;
             auto size = column->size();
 
             rocksdb::WriteBatch batch;
@@ -258,7 +263,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
             {
                 wb_key.restart();
 
-                column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
+                column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
                 auto status = batch.Delete(wb_key.str());
                 if (!status.ok())
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
@@ -274,10 +279,19 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
     if (commands.front().column_to_update_expression.contains(primary_key))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
+
+    MutationsInterpreter::Settings settings(true);
+    settings.return_all_columns = true;
+    settings.return_mutated_rows = true;
 
     auto interpreter = std::make_unique<MutationsInterpreter>(
-        storage_ptr, metadata_snapshot, commands, context_, /*can_execute_*/ true, /*return_all_columns*/ true);
+        storage_ptr,
+        metadata_snapshot,
+        commands,
+        context_,
+        settings);
+
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
@@ -447,7 +461,7 @@ Pipe StorageEmbeddedRocksDB::read(
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }

@@ -11,6 +11,7 @@ public:
     SerializationInfoTuple(MutableSerializationInfos elems_, Names names_, const Settings & settings_);
 
     bool hasCustomSerialization() const override;
+    bool structureEquals(const SerializationInfo & rhs) const override;
 
     void add(const IColumn & column) override;
     void add(const SerializationInfo & other) override;
@@ -18,6 +19,11 @@ public:
     void replaceData(const SerializationInfo & other) override;
 
     MutableSerializationInfoPtr clone() const override;
+
+    MutableSerializationInfoPtr createWithType(
+        const IDataType & old_type,
+        const IDataType & new_type,
+        const Settings & new_settings) const override;
 
     void serialializeKindBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;

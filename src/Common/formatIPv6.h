@@ -7,7 +7,7 @@
 #include <utility>
 #include <base/range.h>
 #include <base/unaligned.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
@@ -82,11 +82,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
             break;
     }
 
-    if constexpr (std::endian::native == std::endian::little)
-        memcpy(dst, &result, sizeof(result));
-    else
-        reverseMemcpy(dst, &result, sizeof(result));
-
+    memcpy(dst, &result, sizeof(result));
     return true;
 }
 
@@ -192,6 +188,9 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
         if (*src == '.') /// mixed IPv4 parsing
         {
             if (groups <= 1 && zptr == nullptr) /// IPv4 block can't be the first
+                return clear_dst();
+
+            if (group_start) /// first octet of IPv4 should be already parsed as an IPv6 group
                 return clear_dst();
 
             ++src;

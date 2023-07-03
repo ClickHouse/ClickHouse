@@ -19,7 +19,7 @@ settings
 as select number, repeat(toString(number), 5) from numbers(1e6);
 
 {# check each local_filesystem_read_method #}
-{% for read_method in ['read', 'mmap', 'pread_threadpool', 'pread_fake_async'] %}
+{% for read_method in ['read', 'mmap', 'io_uring', 'pread_threadpool', 'pread_fake_async'] %}
 {# check w/ O_DIRECT and w/o (min_bytes_to_use_direct_io) #}
 {% for direct_io in [0, 1] %}
 {# check local_filesystem_read_prefetch (just a smoke test) #}

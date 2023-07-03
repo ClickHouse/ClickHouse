@@ -35,8 +35,9 @@ struct GetColumnsOptions
         Materialized = 2,
         Aliases = 4,
         Ephemeral = 8,
-
+        OrdinaryAndAliases = Ordinary | Aliases,
         AllPhysical = Ordinary | Materialized,
+        AllPhysicalAndAliases = AllPhysical | Aliases,
         All = AllPhysical | Aliases | Ephemeral,
     };
 
@@ -175,6 +176,7 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
+    bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
 

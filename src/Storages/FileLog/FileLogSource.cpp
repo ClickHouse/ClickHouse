@@ -77,8 +77,8 @@ Chunk FileLogSource::generate()
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto input_format
-        = FormatFactory::instance().getInputFormat(storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
 

@@ -6,7 +6,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <Common/ArenaAllocator.h>
 #include <Common/PODArray_fwd.h>
 #include <base/types.h>
 #include <DataTypes/DataTypeArray.h>
@@ -80,11 +79,15 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
             u = u2;
 
         Float64 z = (u - meanrank) / sd;
+
+        if (unlikely(!std::isfinite(z)))
+            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+
         if (alternative == Alternative::TwoSided)
             z = std::abs(z);
 
-        auto standart_normal_distribution = boost::math::normal_distribution<Float64>();
-        auto cdf = boost::math::cdf(standart_normal_distribution, z);
+        auto standard_normal_distribution = boost::math::normal_distribution<Float64>();
+        auto cdf = boost::math::cdf(standard_normal_distribution, z);
 
         Float64 p_value = 0;
         if (alternative == Alternative::TwoSided)

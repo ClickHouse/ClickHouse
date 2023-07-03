@@ -389,7 +389,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
-    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
         return SerializationNullable::deserializeTextQuotedImpl(column, *in, format_settings, serialization);
 
     serialization->deserializeTextQuoted(column, *in, format_settings);

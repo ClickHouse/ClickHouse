@@ -98,7 +98,7 @@ public:
     /// Storage metadata can be set separately in setInMemoryMetadata method
     explicit IStorage(StorageID storage_id_)
         : storage_id(std::move(storage_id_))
-        , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
+        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
@@ -135,6 +135,10 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
+    /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
+    /// This is needed for engines whose aggregates data from multiple tables, like Merge.
+    virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
+
     /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
     virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }
 
@@ -142,6 +146,8 @@ public:
     virtual bool supportsReplication() const { return false; }
 
     /// Returns true if the storage supports parallel insert.
+    /// If false, each INSERT query will call write() only once.
+    /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
@@ -174,6 +180,8 @@ public:
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
 
+    /// Returns true if asynchronous inserts are enabled for table.
+    virtual bool areAsynchronousInsertsEnabled() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -271,7 +279,7 @@ public:
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
-    /// Lock table for alter. This lock must be acuqired in ALTER queries to be
+    /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
@@ -364,6 +372,16 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Should we process blocks of data returned by the storage in parallel
+    /// even when the storage returned only one stream of data for reading?
+    /// It is beneficial, for example, when you read from a file quickly,
+    /// but then do heavy computations on returned blocks.
+    ///
+    /// This is enabled by default, but in some cases shouldn't be done (for
+    /// example it is disabled for all system tables, since it is pretty
+    /// useless).
+    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
+
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
@@ -385,11 +403,14 @@ public:
       * passed in all parts of the returned streams. Storage metadata can be
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
+      *
+      * async_insert - set to true if the write is part of async insert flushing
       */
     virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/)
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
@@ -481,13 +502,14 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
     }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr, bool /*force_wait*/)
+    virtual void mutate(const MutationCommands &, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
@@ -498,7 +520,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
-    virtual void waitForMutation(const String & /*mutation_id*/)
+    virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
@@ -639,6 +661,12 @@ public:
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
     virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
+    /// Creates a storage snapshot but without holding a data specific to storage.
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }

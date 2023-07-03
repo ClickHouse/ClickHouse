@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
@@ -5,8 +6,6 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -80,7 +79,11 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while reading from part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
 }
@@ -125,7 +128,11 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while reading from part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
 }
@@ -133,9 +140,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-    if (alter_conversions.isColumnRenamed(name_in_storage))
+    if (alter_conversions->isColumnRenamed(name_in_storage))
     {
-        name_in_storage = alter_conversions.getColumnOldName(name_in_storage);
+        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
         return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
     }
 
@@ -200,16 +207,20 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while reading from part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
 }
 
-IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
+IMergeTreeReader::ColumnPositionLevel IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
     auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
-        Names offsets_streams;
+        std::vector<std::pair<String, size_t>> offsets_streams;
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
@@ -217,7 +228,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
 
             auto subname = ISerialization::getSubcolumnNameForStream(subpath);
             auto full_name = Nested::concatenateName(name_in_storage, subname);
-            offsets_streams.push_back(full_name);
+            offsets_streams.emplace_back(full_name, ISerialization::getArrayLevel(subpath));
         });
 
         return offsets_streams;
@@ -227,7 +238,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
     auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
 
     size_t max_matched_streams = 0;
-    ColumnPosition position;
+    ColumnPositionLevel position_level;
 
     /// Find column that has maximal number of matching
     /// offsets columns with required_column.
@@ -238,23 +249,26 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
             continue;
 
         auto offsets_streams = get_offsets_streams(data_part_info_for_read->getSerialization(part_column), name_in_storage);
-        NameSet offsets_streams_set(offsets_streams.begin(), offsets_streams.end());
+        NameToIndexMap offsets_streams_map(offsets_streams.begin(), offsets_streams.end());
 
         size_t i = 0;
+        auto it = offsets_streams_map.end();
         for (; i < required_offsets_streams.size(); ++i)
         {
-            if (!offsets_streams_set.contains(required_offsets_streams[i]))
+            auto current_it = offsets_streams_map.find(required_offsets_streams[i].first);
+            if (current_it == offsets_streams_map.end())
                 break;
+            it = current_it;
         }
 
-        if (i && (!position || i > max_matched_streams))
+        if (i && (!position_level || i > max_matched_streams))
         {
             max_matched_streams = i;
-            position = data_part_info_for_read->getColumnPosition(part_column.name);
+            position_level.emplace(*data_part_info_for_read->getColumnPosition(part_column.name), it->second);
         }
     }
 
-    return position;
+    return position_level;
 }
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
@@ -262,6 +276,19 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
     if (num_columns_to_read != requested_columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::readRows. "
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
+}
+
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
+{
+    const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
+    return fmt::format(
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
+        data_part_storage->getFullPath(),
+        data_part_info_for_read->getTableName(),
+        data_part_storage->getDiskName(),
+        data_part_storage->getDiskType(),
+        from_mark,
+        max_rows_to_read);
 }
 
 }

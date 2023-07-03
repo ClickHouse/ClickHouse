@@ -58,6 +58,16 @@ struct LengthUTF8Impl
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to UUID argument");
     }
+
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to IPv6 argument");
+    }
+
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to IPv4 argument");
+    }
 };
 
 struct NameLengthUTF8

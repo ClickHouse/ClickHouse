@@ -1,6 +1,11 @@
-[![ClickHouse — open source distributed column-oriented DBMS](https://github.com/ClickHouse/clickhouse-presentations/raw/master/images/logo-400x240.png)](https://clickhouse.com)
+[<img alt="ClickHouse — open source distributed column-oriented DBMS" width="400px" src="https://clickhouse.com/images/ch_gh_logo_rounded.png" />](https://clickhouse.com?utm_source=github)
 
 ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.
+
+## How To Install (Linux, macOS, FreeBSD)
+```
+curl https://clickhouse.com/ | sh
+```
 
 ## Useful Links
 
@@ -9,12 +14,33 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Tutorial](https://clickhouse.com/docs/en/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/en/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
-* [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-rxm3rdrk-lIUmhLC3V8WTaL0TGxsOmg) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
+* [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Code Browser (Woboq)](https://clickhouse.com/codebrowser/ClickHouse/index.html) with syntax highlight and navigation.
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlight, powered by github.dev.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
-## Upcoming events
-* **Recording available**: [**v23.1 Release Webinar**](https://www.youtube.com/watch?v=zYSZXBnTMSE) 23.1 is the ClickHouse New Year release. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release. Inverted indices, query cache, and so -- very -- much more.
-* **Recording available**: [**ClickHouse Meetup at the CHEQ office in Tel Aviv**](https://www.meetup.com/clickhouse-tel-aviv-user-group/events/289599423/) - We are very excited to be holding our next in-person ClickHouse meetup at the CHEQ office in Tel Aviv! Hear from CHEQ, ServiceNow and Contentsquare, as well as a deep dive presentation from ClickHouse CTO Alexey Milovidov. Join us for a fun evening of talks, food and discussion!
+## Upcoming Events
+
+* [**v23.6 Release Webinar**](https://clickhouse.com/company/events/v23-6-release-call?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-06) - Jun 29 - 23.6 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
+* [**ClickHouse Meetup in Boston**](https://www.meetup.com/clickhouse-boston-user-group/events/293913596) - Jul 18
+* [**ClickHouse Meetup in NYC**](https://www.meetup.com/clickhouse-new-york-user-group/events/293913441) - Jul 19
+* [**ClickHouse Meetup in Toronto**](https://www.meetup.com/clickhouse-toronto-user-group/events/294183127) - Jul 20
+* [**ClickHouse Meetup in Singapore**](https://www.meetup.com/clickhouse-singapore-meetup-group/events/294428050/) - Jul 27
+* [**ClickHouse Meetup in Paris**](https://www.meetup.com/clickhouse-france-user-group/events/294283460) - Sep 12
+
+Also, keep an eye out for upcoming meetups around the world. Somewhere else you want us to be? Please feel free to reach out to tyler <at> clickhouse <dot> com.
+
+## Recent Recordings
+* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
+* **Recording available**: [**v23.4 Release Webinar**](https://www.youtube.com/watch?v=4rrf6bk_mOg) Faster Parquet Reading, Asynchonous Connections to Reoplicas, Trailing Comma before FROM, extractKeyValuePairs, integrations updates, and so much more! Watch it now!
+* **All release webinar recordings**: [YouTube playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU)
+
+  
+ ## Interested in joining ClickHouse and making it your full time job? 
+  
+We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics. Here, you will have an opportunity to solve some of the most cutting edge technical challenges and have direct ownership of your work and vision. If you are a contributor by nature, a thinker as well as a doer - we’ll definitely click!
+  
+Check out our **current openings** here: https://clickhouse.com/company/careers 
+  
+Cant find what you are looking for, but want to let us know you are interested in joining ClickHouse? Email careers@clickhouse.com! 

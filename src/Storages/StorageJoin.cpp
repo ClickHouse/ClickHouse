@@ -21,21 +21,24 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/String.h> /// toLower
+#include <Poco/String.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_JOIN_KEYS;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int DEADLOCK_AVOIDED;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+    extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 StorageJoin::StorageJoin(
@@ -78,10 +81,18 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
     return tryLockTimed(lock, type, query_id, acquire_timeout);
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const std::chrono::milliseconds acquire_timeout
+        = context ? context->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    return lock->getLock(type, query_id, acquire_timeout, false);
+}
+
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -89,9 +100,13 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    disk->removeRecursive(path);
+    if (disk->exists(path))
+        disk->removeRecursive(path);
+    else
+        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+
     disk->createDirectories(path);
-    disk->createDirectories(path + "tmp/");
+    disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
@@ -104,7 +119,7 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine Join supports only DELETE mutations");
 }
 
-void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context, bool /*force_wait*/)
+void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 {
     /// Firstly acquire lock for mutation, that locks changes of data.
     /// We cannot acquire rwlock here, because read lock is needed
@@ -123,7 +138,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context, 
     // New scope controls lifetime of pipeline.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+        MutationsInterpreter::Settings settings(true);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -205,12 +221,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Names left_key_names_resorted;
     for (const auto & key_name : key_names)
     {
-        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
+        const auto & renamed_key = analyzed_join->renamedRightColumnNameWithAlias(key_name);
         /// find position of renamed_key in key_names_right
         auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
         if (it == key_names_right.end())
             throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
+                "Key '{}' not found in JOIN ON section. Join engine key{} '{}' have to be used",
+                key_name, key_names.size() > 1 ? "s" : "", fmt::join(key_names, ", "));
         const size_t key_position = std::distance(key_names_right.begin(), it);
         left_key_names_resorted.push_back(key_names_left[key_position]);
     }
@@ -234,8 +251,12 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 {
     Block block_to_insert = block;
     convertRightBlock(block_to_insert);
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+    /// Protection from `INSERT INTO test_table_join SELECT * FROM test_table_join`
+    if (!holder)
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+
     join->addJoinedBlock(block_to_insert, true);
 }
 
@@ -548,7 +569,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
+                static_cast<void *>(new typename Map::const_iterator(map.begin())),
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());

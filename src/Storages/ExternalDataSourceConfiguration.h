@@ -9,7 +9,7 @@
 namespace DB
 {
 
-#define EMPTY_SETTINGS(M)
+#define EMPTY_SETTINGS(M, ALIAS)
 DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
 struct EmptySettings : public BaseSettings<EmptySettingsTraits> {};
@@ -34,18 +34,6 @@ struct ExternalDataSourceConfiguration
 };
 
 
-struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
-{
-    String on_conflict;
-};
-
-
-struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
-{
-    bool replace_query = false;
-    String on_duplicate_clause;
-};
-
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
 struct ExternalDataSourceInfo
@@ -54,20 +42,6 @@ struct ExternalDataSourceInfo
     StorageSpecificArgs specific_args;
     SettingsChanges settings_changes;
 };
-
-/* If there is a storage engine's configuration specified in the named_collections,
- * this function returns valid for usage ExternalDataSourceConfiguration struct
- * otherwise std::nullopt is returned.
- *
- * If any configuration options are provided as key-value engine arguments, they will override
- * configuration values, i.e. ENGINE = PostgreSQL(postgresql_configuration, database = 'postgres_database');
- *
- * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
- * is returned in EngineArgs struct.
- */
-template <typename T = EmptySettingsTraits>
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
 
 using HasConfigKeyFunc = std::function<bool(const String &)>;
 
@@ -91,7 +65,6 @@ struct ExternalDataSourcesByPriority
 ExternalDataSourcesByPriority
 getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
 
-
 struct URLBasedDataSourceConfiguration
 {
     String url;
@@ -109,18 +82,6 @@ struct URLBasedDataSourceConfiguration
     void set(const URLBasedDataSourceConfiguration & conf);
 };
 
-struct StorageS3Configuration : URLBasedDataSourceConfiguration
-{
-    S3::AuthSettings auth_settings;
-    S3Settings::RequestSettings request_settings;
-};
-
-
-struct StorageS3ClusterConfiguration : StorageS3Configuration
-{
-    String cluster_name;
-};
-
 struct URLBasedDataSourceConfig
 {
     URLBasedDataSourceConfiguration configuration;
@@ -129,8 +90,5 @@ struct URLBasedDataSourceConfig
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
-
-template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
 
 }

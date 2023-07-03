@@ -219,13 +219,9 @@ static ReturnType safeDeserialize(
 /// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, typename std::enable_if_t<std::is_same_v<ReturnType, bool>, ReturnType>* = nullptr>
 static ReturnType safeDeserialize(
-        IColumn & column, const ISerialization & nested,
+        IColumn & column, const ISerialization &,
         CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
-    assert(!dynamic_cast<ColumnNullable *>(&column));
-    assert(!dynamic_cast<const SerializationNullable *>(&nested));
-    UNUSED(nested);
-
     bool insert_default = check_for_null();
     if (insert_default)
         column.insertDefault();
@@ -359,6 +355,9 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
         /// It can happen only if there is a string instead of a number
         /// or if someone uses tab or LF in TSV null_representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
+        /// We also should delete incorrectly deserialized value from nested column.
+        nested_column.popBack(1);
+
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
             throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                                        "containing '\\t' or '\\n' may not work correctly for large input.");
@@ -451,6 +450,8 @@ ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, Re
 
         /// We have some unread data in PeekableReadBuffer own memory.
         /// It can happen only if there is an unquoted string instead of a number.
+        /// We also should delete incorrectly deserialized value from nested column.
+        nested_column.popBack(1);
         throw DB::ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while parsing Nullable: got an unquoted string {} instead of a number",
@@ -583,6 +584,9 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         /// It can happen only if there is an unquoted string instead of a number
         /// or if someone uses csv delimiter, LF or CR in CSV null representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
+        /// We also should delete incorrectly deserialized value from nested column.
+        nested_column.popBack(1);
+
         if (null_representation.find(settings.csv.delimiter) != std::string::npos || null_representation.find('\r') != std::string::npos
             || null_representation.find('\n') != std::string::npos)
             throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "

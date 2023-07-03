@@ -52,7 +52,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings, {});
     };
 
     size_t offset = 0;
@@ -71,11 +71,11 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
 }
 
-Int64 ConnectionPoolWithFailover::getPriority() const
+Priority ConnectionPoolWithFailover::getPriority() const
 {
-    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto &a, const auto &b)
+    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto & a, const auto & b)
     {
-        return a->getPriority() - b->getPriority();
+        return a->getPriority() < b->getPriority();
     }))->getPriority();
 }
 
@@ -112,11 +112,12 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 
 std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const ConnectionTimeouts & timeouts,
                                                                         const Settings * settings,
-                                                                        PoolMode pool_mode)
+                                                                        PoolMode pool_mode,
+                                                                        AsyncCallback async_callback)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback);
     };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry);
@@ -144,11 +145,12 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyChecked(
     const ConnectionTimeouts & timeouts,
     const Settings * settings, PoolMode pool_mode,
-    const QualifiedTableName & table_to_check)
+    const QualifiedTableName & table_to_check,
+    AsyncCallback async_callback)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check);
+        return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback);
     };
 
     return getManyImpl(settings, pool_mode, try_get_entry);
@@ -209,8 +211,32 @@ ConnectionPoolWithFailover::tryGetEntry(
         const ConnectionTimeouts & timeouts,
         std::string & fail_message,
         const Settings * settings,
-        const QualifiedTableName * table_to_check)
+        const QualifiedTableName * table_to_check,
+        [[maybe_unused]] AsyncCallback async_callback)
 {
+#if defined(OS_LINUX)
+    if (async_callback)
+    {
+        ConnectionEstablisherAsync connection_establisher_async(&pool, &timeouts, settings, log, table_to_check);
+        while (true)
+        {
+            connection_establisher_async.resume();
+            if (connection_establisher_async.isFinished())
+                break;
+
+            async_callback(
+                connection_establisher_async.getFileDescriptor(),
+                0,
+                AsyncEventTimeoutType::NONE,
+                "Connection establisher file descriptor",
+                AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+        }
+
+        fail_message = connection_establisher_async.getFailMessage();
+        return connection_establisher_async.getResult();
+    }
+#endif
+
     ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
     TryResult result;
     connection_establisher.run(result, fail_message);

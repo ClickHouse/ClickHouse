@@ -18,7 +18,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Andriod'
+  name: 'Android'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -42,7 +42,8 @@ create dictionary regexp_dict1
 PRIMARY KEY(regexp)
 SOURCE(YAMLRegExpTree(PATH '$yaml'))
 LIFETIME(0)
-LAYOUT(regexp_tree);
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
 
 select dictGet('regexp_dict1', ('name', 'version'), 'Linux/123.45.67 tlinux');
 select dictGet('regexp_dict1', ('name', 'version'), '31/tclwebkit1024');
@@ -56,7 +57,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Andriod'
+  name: 'Android'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -84,6 +85,22 @@ EOL
 $CLICKHOUSE_CLIENT -n --query="
 system reload dictionary regexp_dict1; -- { serverError 318 }
 "
+
+cat > "$yaml" <<EOL
+- name: BlackBerry WebKit
+  regexp: (PlayBook).{1,200}RIM Tablet OS (\d+)\.(\d+)\.(\d+)
+  version: '\2.\3'
+- name: BlackBerry WebKit
+  regexp: (Black[bB]erry|BB10).{1,200}Version/(\d+)\.(\d+)\.(\d+)
+  version: '\2.\3'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+system reload dictionary regexp_dict1;
+select dictGet('regexp_dict1', ('name', 'version'), 'Mozilla/5.0 (BB10; Touch) AppleWebKit/537.3+ (KHTML, like Gecko) Version/10.0.9.388 Mobile Safari/537.3+');
+select dictGet('regexp_dict1', ('name', 'version'), 'Mozilla/5.0 (PlayBook; U; RIM Tablet OS 1.0.0; en-US) AppleWebKit/534.8+ (KHTML, like Gecko) Version/0.0.1 Safari/534.8+');
+"
+
 cat > "$yaml" <<EOL
 - regexp: 'abc'
   col_bool: 'true'
@@ -111,9 +128,121 @@ LAYOUT(regexp_tree);
 select dictGet('regexp_dict2', ('col_bool','col_uuid', 'col_date', 'col_datetime', 'col_array'), 'abc');
 "
 
+cat > "$yaml" <<EOL
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  topological_index: 1
+  paths:
+    - regexp: 'clickhouse\.com/docs(.*)'
+      tag: 'ClickHouse Documentation'
+      topological_index: 0
+      captured: '\1'
+      parent: 'ClickHouse'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+  topological_index: 2
+
+- regexp: 'github.com'
+  tag: 'GitHub'
+  topological_index: 3
+  captured: 'NULL'
+EOL
+
+# dictGetAll
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String,
+    topological_index Int64,
+    captured Nullable(String),
+    parent String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com');
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com', 2);
+
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com/docs/en');
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'clickhouse.com/docs/en', 2);
+
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'github.com/clickhouse/tree/master/docs');
+select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'github.com/clickhouse/tree/master/docs', 2);
+"
+
+# Test that things work the same for "simple" regexps that go through Hyperscan and "complex" regexps that go through RE2.
+# An easy way to force the use of RE2 is to disable Hyperscan.
+# This tree is constructed purposely so that text might (falsely) match leaf nodes without matching their corresponding parent nodes
+cat > "$yaml" <<EOL
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  paths:
+    - regexp: 'docs'
+      tag: 'ClickHouse Documentation'
+
+- regexp: 'github\.com'
+  tag: 'GitHub'
+  paths:
+    - regexp: 'docs'
+      tag: 'GitHub Documentation'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
+
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGet('regexp_dict3', 'tag', 'docs.github.com');
+select dictGetAll('regexp_dict3', 'tag', 'docs.github.com');
+select dictGet('regexp_dict3', 'tag', '/docs');
+select dictGetAll('regexp_dict3', 'tag', '/docs');
+
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = false);
+
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGet('regexp_dict3', 'tag', 'docs.github.com');
+select dictGetAll('regexp_dict3', 'tag', 'docs.github.com');
+select dictGet('regexp_dict3', 'tag', '/docs');
+select dictGetAll('regexp_dict3', 'tag', '/docs');
+"
+
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
 drop dictionary regexp_dict2;
+drop dictionary regexp_dict3;
 "
 
 rm -rf "$USER_FILES_PATH/test_02504"

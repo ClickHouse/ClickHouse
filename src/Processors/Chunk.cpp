@@ -2,6 +2,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -23,11 +24,11 @@ Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
     checkNumRowsIsConsistent();
 }
 
-static Columns unmuteColumns(MutableColumns && mut_columns)
+static Columns unmuteColumns(MutableColumns && mutable_columns)
 {
     Columns columns;
-    columns.reserve(mut_columns.size());
-    for (auto & col : mut_columns)
+    columns.reserve(mutable_columns.size());
+    for (auto & col : mutable_columns)
         columns.emplace_back(std::move(col));
 
     return columns;
@@ -78,23 +79,23 @@ void Chunk::checkNumRowsIsConsistent()
 MutableColumns Chunk::mutateColumns()
 {
     size_t num_columns = columns.size();
-    MutableColumns mut_columns(num_columns);
+    MutableColumns mutable_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        mut_columns[i] = IColumn::mutate(std::move(columns[i]));
+        mutable_columns[i] = IColumn::mutate(std::move(columns[i]));
 
     columns.clear();
     num_rows = 0;
 
-    return mut_columns;
+    return mutable_columns;
 }
 
 MutableColumns Chunk::cloneEmptyColumns() const
 {
     size_t num_columns = columns.size();
-    MutableColumns mut_columns(num_columns);
+    MutableColumns mutable_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        mut_columns[i] = columns[i]->cloneEmpty();
-    return mut_columns;
+        mutable_columns[i] = columns[i]->cloneEmpty();
+    return mutable_columns;
 }
 
 Columns Chunk::detachColumns()
@@ -171,14 +172,19 @@ std::string Chunk::dumpStructure() const
 
 void Chunk::append(const Chunk & chunk)
 {
-    MutableColumns mutation = mutateColumns();
-    for (size_t position = 0; position < mutation.size(); ++position)
+    append(chunk, 0, chunk.getNumRows());
+}
+
+void Chunk::append(const Chunk & chunk, size_t from, size_t length)
+{
+    MutableColumns mutable_columns = mutateColumns();
+    for (size_t position = 0; position < mutable_columns.size(); ++position)
     {
         auto column = chunk.getColumns()[position];
-        mutation[position]->insertRangeFrom(*column, 0, column->size());
+        mutable_columns[position]->insertRangeFrom(*column, from, length);
     }
-    size_t rows = mutation[0]->size();
-    setColumns(std::move(mutation), rows);
+    size_t rows = mutable_columns[0]->size();
+    setColumns(std::move(mutable_columns), rows);
 }
 
 void ChunkMissingValues::setBit(size_t column_idx, size_t row_idx)
@@ -197,13 +203,21 @@ const ChunkMissingValues::RowsBitMask & ChunkMissingValues::getDefaultsBitmask(s
     return none;
 }
 
+void convertToFullIfConst(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->convertToFullColumnIfConst();
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
 void convertToFullIfSparse(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
-
     chunk.setColumns(std::move(columns), num_rows);
 }
 

@@ -14,7 +14,7 @@ The `INSERT` query uses both parsers:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input_format_values_interpret_expressions](../operations/settings/settings-formats.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
+The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input_format_values_interpret_expressions](../operations/settings/settings-formats.md#input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 
 Data can have any format. When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
 It allows for avoiding issues with large `INSERT` queries.
@@ -31,30 +31,30 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ClickHouse supports either SQL-style and C-style comments:
 
--   SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
--   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
+- SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
+- C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords
 
 Keywords are case-insensitive when they correspond to:
 
--   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
--   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
+- SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
+- Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
 
-Keywords are not reserved; they are treated as such only in the corresponding context. If you use [identifiers](#syntax-identifiers) with the same name as the keywords, enclose them into double-quotes or backticks. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
+Keywords are not reserved; they are treated as such only in the corresponding context. If you use [identifiers](#identifiers) with the same name as the keywords, enclose them into double-quotes or backticks. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
 ## Identifiers
 
 Identifiers are:
 
--   Cluster, database, table, partition, and column names.
--   Functions.
--   Data types.
--   [Expression aliases](#syntax-expression_aliases).
+- Cluster, database, table, partition, and column names.
+- Functions.
+- Data types.
+- [Expression aliases](#expression_aliases).
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
@@ -70,10 +70,10 @@ There are numeric, string, compound, and `NULL` literals.
 
 Numeric literal tries to be parsed:
 
--   First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
--   If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
--   If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
--   Otherwise, it returns an error.
+- First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+- If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
+- If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+- Otherwise, it returns an error.
 
 Literal value has the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
@@ -83,9 +83,13 @@ Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`
 
 ### String
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. It means that you can use the sequences `\'`and`\\`. The value will have the [String](../sql-reference/data-types/string.md) type.
+String literals must be enclosed in single quotes, double quotes are not supported.
+Escaping works either
 
-In string literals, you need to escape at least `'` and `\`. Single quotes can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
+- using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
+- using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
+
+In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
 
 ### Compound
 
@@ -104,7 +108,7 @@ Depending on the data format (input or output), `NULL` may have a different repr
 
 There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
-In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#operator-is-null) and [IS NOT NULL](../sql-reference/operators/index.md) operators and the related functions `isNull` and `isNotNull`.
+In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#is-null) and [IS NOT NULL](../sql-reference/operators/index.md#is-not-null) operators and the related functions `isNull` and `isNotNull`.
 
 ### Heredoc
 
@@ -130,20 +134,22 @@ Result:
 
 ## Defining and Using Query Parameters
 
-Query parameters can be defined using the syntax `param_name=value`, where `name` is the name of the parameter. Parameters can by defined using the `SET` command, or from the command-line using `--param`.
+Query parameters allow you to write generic queries that contain abstract placeholders instead of concrete identifiers. When a query with query parameters is executed, all placeholders are resolved and replaced by the actual query parameter values.
 
-To retrieve a query parameter, you specify the name of the parameter along with its data type surrounded by curly braces:
+There are two way to define a query parameter:
+
+- use the `SET param_<name>=<value>` command
+- use `--param_<name>='<value>'` as an argument to `clickhouse-client` on the command line. `<name>` is the name of the query parameter and `<value>` is its value
+
+A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
+
+For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each with a different data type:
 
 ```sql
-{name:datatype}
-```
-
-For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each of a different data type:
-
-```sql
-SET param_a = 13, param_b = 'str';
+SET param_a = 13;
+SET param_b = 'str';
 SET param_c = '2022-08-04 18:30:53';
-SET param_d = {'10': [11, 12], '13': [14, 15]}';
+SET param_d = {'10': [11, 12], '13': [14, 15]};
 
 SELECT
    {a: UInt32},
@@ -158,9 +164,9 @@ Result:
 13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
 ```
 
-If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is being retrieved as a `String`:
+If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is retrieved as a `String`:
 
-```sql
+```bash
 clickhouse-client --param_message='hello' --query="SELECT {message: String}"
 ```
 
@@ -177,11 +183,14 @@ SET param_mytablename = "uk_price_paid";
 SELECT * FROM {mytablename:Identifier};
 ```
 
+:::note
+Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
+:::
 
 ## Functions
 
 Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets. In contrast to standard SQL, the brackets are required, even for an empty argument list. Example: `now()`.
-There are regular and aggregate functions (see the section “Aggregate functions”). Some aggregate functions can contain two lists of arguments in brackets. Example: `quantile (0.9) (x)`. These aggregate functions are called “parametric” functions, and the arguments in the first list are called “parameters”. The syntax of aggregate functions without parameters is the same as for regular functions.
+There are regular and aggregate functions (see the section [Aggregate functions](/docs/en/sql-reference/aggregate-functions/index.md)). Some aggregate functions can contain two lists of arguments in brackets. Example: `quantile (0.9) (x)`. These aggregate functions are called “parametric” functions, and the arguments in the first list are called “parameters”. The syntax of aggregate functions without parameters is the same as for regular functions.
 
 ## Operators
 
@@ -190,7 +199,7 @@ For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, mult
 
 ## Data Types and Database Table Engines
 
-Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an argument list in brackets. For more information, see the sections “Data types,” “Table engines,” and “CREATE”.
+Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an argument list in brackets. For more information, see the sections [Data types](/docs/en/sql-reference/data-types/index.md), [Table engines](/docs/en/engines/table-engines/index.md), and [CREATE](/docs/en/sql-reference/statements/create/index.md).
 
 ## Expression Aliases
 
@@ -200,19 +209,19 @@ An alias is a user-defined name for expression in a query.
 expr AS alias
 ```
 
--   `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
+- `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
 
-        For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
+    For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        In the [CAST](./functions/type-conversion-functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
+    In the [CAST](./functions/type-conversion-functions.md#castx-t) function, the `AS` keyword has another meaning. See the description of the function.
 
--   `expr` — Any expression supported by ClickHouse.
+- `expr` — Any expression supported by ClickHouse.
 
-        For example, `SELECT column_name * 2 AS double FROM some_table`.
+    For example, `SELECT column_name * 2 AS double FROM some_table`.
 
--   `alias` — Name for `expr`. Aliases should comply with the [identifiers](#syntax-identifiers) syntax.
+- `alias` — Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.
 
-        For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
+    For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
 ### Notes on Usage
 
@@ -245,11 +254,11 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception. You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer_column_name_to_alias) to `1`.
+In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception. You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer-column-name-to-alias) to `1`.
 
 ## Asterisk
 
-In a `SELECT` query, an asterisk can replace the expression. For more information, see the section “SELECT”.
+In a `SELECT` query, an asterisk can replace the expression. For more information, see the section [SELECT](/docs/en/sql-reference/statements/select/index.md#asterisk).
 
 ## Expressions
 

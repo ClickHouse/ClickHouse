@@ -8,6 +8,8 @@
 # Since our replication queue executing tasks concurrently it may happen, that we download already mutated
 # part before source part.
 
+# Messages about deleting of tmp-fetch directories are ok.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +31,8 @@ for i in $(seq $REPLICAS); do
                  max_replicated_merges_in_queue = 1000,
                  temporary_directories_lifetime = 10,
                  cleanup_delay_period = 3,
-                 cleanup_delay_period_random_add = 0"
+                 cleanup_delay_period_random_add = 0,
+                 cleanup_thread_preferred_points_per_iteration=0"
 done
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"

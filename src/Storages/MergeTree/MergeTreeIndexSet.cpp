@@ -73,7 +73,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
-        settings.low_cardinality_max_dictionary_size = 0; //-V1048
+        settings.low_cardinality_max_dictionary_size = 0;
 
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
@@ -146,7 +146,7 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -554,7 +554,10 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     if (atomFromAST(node))
     {
         if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            node = makeASTFunction("__bitWrapperFunc", node);
+            /// __bitWrapperFunc* uses default implementation for Nullable types
+            /// Here we additionally convert Null to 0,
+            /// otherwise condition 'something OR NULL' will always return Null and filter everything.
+            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("ifNull", node, std::make_shared<ASTLiteral>(Field(0))));
     }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);

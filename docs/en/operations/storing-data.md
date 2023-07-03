@@ -45,11 +45,11 @@ Configuration markup:
 
 Required parameters:
 
--   `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
+- `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
 
 Optional parameters:
 
--   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
+- `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
 
 ## Using Virtual File System for Data Encryption {#encrypted-virtual-file-system}
 
@@ -78,16 +78,16 @@ When writing the same file to `disk2`, it will actually be written to the physic
 
 Required parameters:
 
--   `type` — `encrypted`. Otherwise the encrypted disk is not created.
--   `disk` — Type of disk for data storage.
--   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
+- `type` — `encrypted`. Otherwise the encrypted disk is not created.
+- `disk` — Type of disk for data storage.
+- `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
     You can specify multiple keys using the `id` attribute (see example above).
 
 Optional parameters:
 
--   `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
--   `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
--   `algorithm` — [Algorithm](/docs/en/sql-reference/statements/create/table.md/#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
+- `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
+- `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
+- `algorithm` — [Algorithm](/docs/en/sql-reference/statements/create/table.md/#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
 
 Example of disk configuration:
 
@@ -135,11 +135,13 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <volumes>
-                <main>
-                    <disk>cache</disk>
-                </main>
-            </volumes>
+            <s3-cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```
@@ -159,16 +161,20 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <volumes>
-                <main>
-                    <disk>s3</disk>
-                </main>
-            </volumes>
+            <s3-cache>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```
 
-Cache **configuration settings**:
+File Cache **disk configuration settings**:
+
+These settings should be defined in the disk configuration section.
 
 - `path` - path to the directory with cache. Default: None, this setting is obligatory.
 
@@ -178,29 +184,33 @@ Cache **configuration settings**:
 
 - `enable_filesystem_query_cache_limit` - allow to limit the size of cache which is downloaded within each query (depends on user setting `max_query_cache_size`). Default: `false`.
 
-- `enable_cache_hits_threshold` - a number, which defines how many times some data needs to be read before it will be cached. Default: `0`, e.g. the data is cached at the first attempt to read it.
+- `enable_cache_hits_threshold` - number which defines how many times some data needs to be read before it will be cached. Default: `false`. This threshold can be defined by `cache_hits_threshold`. Default: `0`, e.g. the data is cached at the first attempt to read it.
+
+- `enable_bypass_cache_with_threshold` - allows to skip cache completely in case the requested read range exceeds the threshold. Default: `false`. This threshold can be defined by `bypass_cache_threashold`. Default: `268435456` (`256Mi`).
 
 - `do_not_evict_index_and_mark_files` - do not evict small frequently used files according to cache policy. Default: `false`. This setting was added in version 22.8. If you used filesystem cache before this version, then it will not work on versions starting from 22.8 if this setting is set to `true`. If you want to use this setting, clear old cache created before version 22.8 before upgrading.
 
-- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `104857600` (`100Mi`).
+- `max_file_segment_size` - a maximum size of a single cache file in bytes or in readable format (`ki, Mi, Gi, etc`, example `10Gi`). Default: `8388608` (`8Mi`).
 
-- `max_elements` - a limit for a number of cache files. Default: `1048576`.
+- `max_elements` - a limit for a number of cache files. Default: `10000000`.
 
-Cache **query settings**:
+File Cache **query/profile settings**:
+
+Some of these settings will disable cache features per query/profile that are enabled by default or in disk configuration settings. For example, you can enable cache in disk configuration and disable it per query/profile setting `enable_filesystem_cache` to `false`. Also setting `cache_on_write_operations` to `true` in disk configuration means that "write-though" cache is enabled. But if you need to disable this general setting per specific queries then setting `enable_filesystem_cache_on_write_operations` to `false` means that write operations cache will be disabled for a specific query/profile.
 
 - `enable_filesystem_cache` - allows to disable cache per query even if storage policy was configured with `cache` disk type. Default: `true`.
 
 - `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`.
 
-- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on.
+- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. Default: `false`.
 
-- `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. Default: `false`.
+- `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. It can be turn on for specific queries or enabled in a profile. Default: `false`.
 
 - `max_query_cache_size` - a limit for the cache size, which can be written to local cache storage. Requires enabled `enable_filesystem_query_cache_limit` in cache configuration. Default: `false`.
 
-- `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by cost of evicting previously downloaded (within current query) data, e.g. second behaviour allows to preserve `last recentltly used` behaviour while keeping query cache limit.
+- `skip_download_if_exceeds_query_cache` - allows to change the behaviour of setting `max_query_cache_size`. Default: `true`. If this setting is turned on and cache download limit during query was reached, no more cache will be downloaded to cache storage. If this setting is turned off and cache download limit during query was reached, cache will still be written by cost of evicting previously downloaded (within current query) data, e.g. second behaviour allows to preserve `last recently used` behaviour while keeping query cache limit.
 
-** Warning **
+**Warning**
 Cache configuration settings and cache query settings correspond to the latest ClickHouse version, for earlier versions something might not be supported.
 
 Cache **system tables**:
@@ -211,7 +221,7 @@ Cache **system tables**:
 
 Cache **commands**:
 
-- `SYSTEM DROP FILESYSTEM CACHE (<path>) (ON CLUSTER)`
+- `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` is only supported when no `<cache_name>` is provided
 
 - `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions <= `22.8` the command is named `SHOW CACHES`)
 
@@ -227,10 +237,10 @@ Result:
 └───────────┘
 ```
 
-- `DESCRIBE CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW CACHES` command. (For versions <= `22.8` the command is named `DESCRIBE CACHE`)
+- `DESCRIBE FILESYSTEM CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions <= `22.8` the command is named `DESCRIBE CACHE`)
 
 ```sql
-DESCRIBE CACHE 's3_cache'
+DESCRIBE FILESYSTEM CACHE 's3_cache'
 ```
 
 ``` text
@@ -442,14 +452,14 @@ SETTINGS storage_policy='web';
 
 Required parameters:
 
--   `type` — `web`. Otherwise the disk is not created.
--   `endpoint` — The endpoint URL in `path` format. Endpoint URL must contain a root path to store data, where they were uploaded.
+- `type` — `web`. Otherwise the disk is not created.
+- `endpoint` — The endpoint URL in `path` format. Endpoint URL must contain a root path to store data, where they were uploaded.
 
 Optional parameters:
 
--   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
--   `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
--   `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
+- `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
+- `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
+- `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
 
 If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/docs/en/operations/settings/settings.md/#http_connection_timeout), [http_receive_timeout](/docs/en/operations/settings/settings.md/#http_receive_timeout), [keep_alive_timeout](/docs/en/operations/server-configuration-parameters/settings.md/#keep-alive-timeout).
 
@@ -467,6 +477,6 @@ Use [http_max_single_read_retries](/docs/en/operations/settings/settings.md/#htt
 
 Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
 
-:::warning Zero-copy replication is not ready for production
+:::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 :::

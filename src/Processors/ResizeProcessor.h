@@ -10,7 +10,7 @@ namespace DB
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
-  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever is is not full).
+  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
   * Doesn't do any heavy calculations.
   * Doesn't preserve an order of data.
   *
@@ -18,7 +18,7 @@ namespace DB
   * - union data from multiple inputs to single output - to serialize data that was processed in parallel.
   * - split data from single input to multiple outputs - to allow further parallel processing.
   */
-class ResizeProcessor : public IProcessor
+class ResizeProcessor final : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.

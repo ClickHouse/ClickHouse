@@ -1,34 +1,34 @@
-#include <vector>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/ResizeProcessor.h>
-#include <Processors/LimitTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/MergeJoinTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
+#include <Common/typeid_cast.h>
+#include "Core/UUID.h"
+#include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Common/typeid_cast.h>
-#include <Common/CurrentThread.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/ConcatProcessor.h>
-#include <Core/SortDescription.h>
-#include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/ResizeProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
+#include <QueryPipeline/narrowPipe.h>
 
 namespace DB
 {
@@ -569,16 +569,22 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
-void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
+void QueryPipelineBuilder::addCreatingSetsTransform(
+    const Block & res_header,
+    SetAndKeyPtr set_and_key,
+    StoragePtr external_table,
+    const SizeLimits & limits,
+    PreparedSetsCachePtr prepared_sets_cache)
 {
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
             getHeader(),
             res_header,
-            std::move(subquery_for_set),
+            std::move(set_and_key),
+            std::move(external_table),
             limits,
-            context);
+            std::move(prepared_sets_cache));
 
     InputPort * totals_port = nullptr;
 

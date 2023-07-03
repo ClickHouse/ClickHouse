@@ -1,14 +1,16 @@
 #include <Coordination/KeeperLogStore.h>
 #include <IO/CompressionMethod.h>
+#include <Disks/DiskLocal.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_)
+KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, KeeperContextPtr keeper_context)
     : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, rotate_interval_, force_sync_, log, compress_logs_)
+    , changelog(log, log_file_settings, keeper_context)
 {
-    if (force_sync_)
+    if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
     else
         LOG_INFO(log, "force_sync disabled");
@@ -90,8 +92,7 @@ bool KeeperLogStore::compact(uint64_t last_log_index)
 bool KeeperLogStore::flush()
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
-    return true;
+    return changelog.flush();
 }
 
 void KeeperLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)

@@ -115,6 +115,16 @@ struct CRCFunctionWrapper
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", std::string(Impl::name));
     }
 
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", std::string(Impl::name));
+    }
+
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", std::string(Impl::name));
+    }
+
 private:
     static ReturnType doCRC(const ColumnString::Chars & buf, size_t offset, size_t size)
     {

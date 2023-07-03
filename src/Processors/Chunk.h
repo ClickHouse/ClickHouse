@@ -102,6 +102,7 @@ public:
     std::string dumpStructure() const;
 
     void append(const Chunk & chunk);
+    void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
 private:
     Columns columns;
@@ -148,6 +149,7 @@ private:
 /// It's needed, when you have to access to the internals of the column,
 /// or when you need to perform operation with two columns
 /// and their structure must be equal (e.g. compareAt).
+void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
 
 }

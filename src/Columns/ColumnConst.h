@@ -230,12 +230,12 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*data);
         data->forEachSubcolumnRecursively(callback);
@@ -251,6 +251,11 @@ public:
     double getRatioOfDefaultRows(double) const override
     {
         return data->isDefaultAt(0) ? 1.0 : 0.0;
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return data->isDefaultAt(0) ? s : 0;
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

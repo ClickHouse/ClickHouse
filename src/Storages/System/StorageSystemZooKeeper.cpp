@@ -9,14 +9,23 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/IFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
@@ -155,8 +164,38 @@ public:
     }
 };
 
+/// Type of path to be fetched
+enum class ZkPathType
+{
+    Exact,   /// Fetch all nodes under this path
+    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
+    Recurse, /// Fatch all nodes under this path, recursively
+};
+
+/// List of paths to be feched from zookeeper
+using Paths = std::deque<std::pair<String, ZkPathType>>;
+
+class ReadFromSystemZooKeeper final : public SourceStepWithFilter
+{
+public:
+    ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info_, ContextPtr context_);
+
+    String getName() const override { return "ReadFromSystemZooKeeper"; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+    void applyFilters() override;
+
+private:
+    void fillData(MutableColumns & res_columns);
+
+    std::shared_ptr<const StorageLimitsList> storage_limits;
+    ContextPtr context;
+    Paths paths;
+};
+
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
-        : IStorageSystemOneBlock<StorageSystemZooKeeper>(table_id_)
+        : IStorage(table_id_)
 {
         StorageInMemoryMetadata storage_metadata;
         ColumnsDescription desc;
@@ -173,7 +212,27 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         setInMemoryMetadata(storage_metadata);
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
+bool StorageSystemZooKeeper::mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const
+{
+    return node->as<ASTIdentifier>() && node->getColumnName() == "path";
+}
+
+void StorageSystemZooKeeper::read(
+    QueryPlan & query_plan,
+    const Names & /*column_names*/,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
+    size_t /*num_streams*/)
+{
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    auto read_step = std::make_unique<ReadFromSystemZooKeeper>(header, query_info, context);
+    query_plan.addStep(std::move(read_step));
+}
+
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
@@ -204,17 +263,6 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
     };
 }
 
-/// Type of path to be fetched
-enum class ZkPathType
-{
-    Exact,   /// Fetch all nodes under this path
-    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
-    Recurse, /// Fatch all nodes under this path, recursively
-};
-
-/// List of paths to be feched from zookeeper
-using Paths = std::deque<std::pair<String, ZkPathType>>;
-
 static String pathCorrected(const String & path)
 {
     String path_corrected;
@@ -229,125 +277,103 @@ static String pathCorrected(const String & path)
     return path_corrected;
 }
 
-
-static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, bool allow_unrestricted)
+static bool isPathNode(const ActionsDAG::Node * node)
 {
-    const auto * function = elem.as<ASTFunction>();
-    if (!function)
-        return false;
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
 
-    if (function->name == "and")
+    return node->result_name == "path";
+}
+
+static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextPtr context, bool allow_unrestricted)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return;
+
+    auto function_name = node.function_base->getName();
+    if (function_name == "and")
     {
-        for (const auto & child : function->arguments->children)
-            if (extractPathImpl(*child, res, context, allow_unrestricted))
-                return true;
+        for (const auto * child : node.children)
+            extractPathImpl(*child, res, context, allow_unrestricted);
 
-        return false;
+        return;
     }
 
-    const auto & args = function->arguments->as<ASTExpressionList &>();
-    if (args.children.size() != 2)
-        return false;
+    if (node.children.size() != 2)
+        return;
 
-    if (function->name == "in")
+    if (function_name == "in")
     {
-        const ASTIdentifier * ident = args.children.at(0)->as<ASTIdentifier>();
-        if (!ident || ident->name() != "path")
-            return false;
+        if (!isPathNode(node.children.at(0)))
+            return;
 
-        ASTPtr value = args.children.at(1);
+        auto value = node.children.at(1)->column;
+        if (!value)
+            return;
 
-        if (value->as<ASTSubquery>())
-        {
-            auto interpreter_subquery = interpretSubquery(value, context, {}, {});
-            auto pipeline = interpreter_subquery->execute().pipeline;
-            SizeLimits limites(context->getSettingsRef().max_rows_in_set, context->getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
-            Set set(limites, true, context->getSettingsRef().transform_null_in);
-            set.setHeader(pipeline.getHeader().getColumnsWithTypeAndName());
+        const IColumn * column = value.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
 
-            PullingPipelineExecutor executor(pipeline);
-            Block block;
-            while (executor.pull(block))
-            {
-                set.insertFromBlock(block.getColumnsWithTypeAndName());
-            }
-            set.finishInsert();
+        const ColumnSet * column_set = typeid_cast<const ColumnSet *>(column);
+        if (!column_set)
+            return;
 
-            set.checkColumnsNumber(1);
-            const auto & set_column = *set.getSetElements()[0];
-            for (size_t row = 0; row < set_column.size(); ++row)
-                res.emplace_back(set_column[row].safeGet<String>(), ZkPathType::Exact);
-        }
-        else
-        {
-            auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-            const auto * literal = evaluated->as<ASTLiteral>();
-            if (!literal)
-                return false;
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return;
 
-            if (String str; literal->value.tryGet(str))
-            {
-                res.emplace_back(str, ZkPathType::Exact);
-            }
-            else if (Tuple tuple; literal->value.tryGet(tuple))
-            {
-                for (auto element : tuple)
-                    res.emplace_back(element.safeGet<String>(), ZkPathType::Exact);
-            }
-            else
-                return false;
-        }
+        auto set = future_set->buildOrderedSetInplace(context);
+        if (!set || !set->hasExplicitSetElements())
+            return;
 
-        return true;
+        set->checkColumnsNumber(1);
+        auto type = set->getElementsTypes()[0];
+        if (!isString(removeNullable(removeLowCardinality(type))))
+            return;
+
+        auto values = set->getSetElements()[0];
+        size_t size = values->size();
+
+        for (size_t row = 0; row < size; ++row)
+            res.emplace_back(values->getDataAt(row).toString(), ZkPathType::Exact);
     }
-    else if (function->name == "equals")
+    else if (function_name == "equals")
     {
-        const ASTIdentifier * ident;
-        ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
-        else
-            return false;
+        const ActionsDAG::Node * value = nullptr;
 
-        if (ident->name() != "path")
-            return false;
+        if (isPathNode(node.children.at(0)))
+            value = node.children.at(1);
+        else if (isPathNode(node.children.at(1)))
+            value = node.children.at(0);
 
-        auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal)
-            return false;
+        if (!value || !value->column)
+            return;
 
-        if (literal->value.getType() != Field::Types::String)
-            return false;
+        if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+            return;
 
-        res.emplace_back(literal->value.safeGet<String>(), ZkPathType::Exact);
-        return true;
+        if (value->column->size() != 1)
+            return;
+
+        res.emplace_back(value->column->getDataAt(0).toString(), ZkPathType::Exact);
     }
-    else if (allow_unrestricted && function->name == "like")
+    else if (allow_unrestricted && function_name == "like")
     {
-        const ASTIdentifier * ident;
-        ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
-        else
-            return false;
+        if (!isPathNode(node.children.at(0)))
+            return;
 
-        if (ident->name() != "path")
-            return false;
+        const auto * value = node.children.at(1);
+        if (!value->column)
+            return;
 
-        auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal)
-            return false;
+        if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+            return;
 
-        if (literal->value.getType() != Field::Types::String)
-            return false;
+        if (value->column->size() != 1)
+            return;
 
-        String pattern = literal->value.safeGet<String>();
+        String pattern = value->column->getDataAt(0).toString();
         bool has_metasymbol = false;
         String prefix; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)
@@ -376,31 +402,32 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
         }
 
         res.emplace_back(prefix, has_metasymbol ? ZkPathType::Prefix : ZkPathType::Exact);
-
-        return true;
     }
-
-    return false;
 }
 
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
-static Paths extractPath(const ASTPtr & query, ContextPtr context, bool allow_unrestricted)
+static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, ContextPtr context, bool allow_unrestricted)
 {
-    const auto & select = query->as<ASTSelectQuery &>();
-    if (!select.where())
-        return allow_unrestricted ? Paths{{"/", ZkPathType::Recurse}} : Paths();
-
     Paths res;
-    return extractPathImpl(*select.where(), res, context, allow_unrestricted) ? res : Paths();
+    for (const auto * node : filter_nodes)
+        extractPathImpl(*node, res, context, allow_unrestricted);
+
+    if (filter_nodes.empty() && allow_unrestricted)
+        res.emplace_back("/", ZkPathType::Recurse);
+
+    return res;
 }
 
 
-void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void ReadFromSystemZooKeeper::applyFilters()
 {
-    Paths paths = extractPath(query_info.query, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+}
 
+void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
+{
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     if (paths.empty())
@@ -409,60 +436,106 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
                         "or path IN ('path1','path2'...) or path IN (subquery) "
                         "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
 
+    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
+
+    struct ListTask
+    {
+        String path;
+        ZkPathType path_type;
+        String prefix;
+        String path_corrected;
+        String path_part;
+    };
+    std::vector<ListTask> list_tasks;
     std::unordered_set<String> added;
     while (!paths.empty())
     {
-        auto [path, path_type] = std::move(paths.front());
-        paths.pop_front();
-
-        String prefix;
-        if (path_type == ZkPathType::Prefix)
+        list_tasks.clear();
+        std::vector<String> paths_to_list;
+        while (!paths.empty() && static_cast<Int64>(list_tasks.size()) < max_inflight_requests)
         {
-            prefix = path;
-            size_t last_slash = prefix.rfind('/');
-            path = prefix.substr(0, last_slash == String::npos ? 0 : last_slash);
-        }
+            auto [path, path_type] = std::move(paths.front());
+            paths.pop_front();
 
-        String path_corrected = pathCorrected(path);
-
-        /// Node can be deleted concurrently. It's Ok, we don't provide any
-        /// consistency guarantees for system.zookeeper table.
-        zkutil::Strings nodes;
-        zookeeper->tryGetChildren(path_corrected, nodes);
-
-        String path_part = path_corrected;
-        if (path_part == "/")
-            path_part.clear();
-
-        if (!prefix.empty())
-        {
-            // Remove nodes that do not match specified prefix
-            std::erase_if(nodes, [&prefix, &path_part] (const String & node)
+            ListTask task;
+            task.path = path;
+            task.path_type = path_type;
+            if (path_type == ZkPathType::Prefix)
             {
-                return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
-            });
+                task.prefix = path;
+                size_t last_slash = task.prefix.rfind('/');
+                path = task.prefix.substr(0, last_slash == String::npos ? 0 : last_slash);
+            }
+
+            task.path_corrected = pathCorrected(path);
+
+            paths_to_list.emplace_back(task.path_corrected);
+            list_tasks.emplace_back(std::move(task));
+        }
+        auto list_responses = zookeeper->tryGetChildren(paths_to_list);
+
+        struct GetTask
+        {
+            size_t list_task_idx;   /// Index of 'parent' request in list_tasks
+            String node;            /// Node name
+        };
+        std::vector<GetTask> get_tasks;
+        std::vector<String> paths_to_get;
+        for (size_t list_task_idx = 0; list_task_idx < list_tasks.size(); ++list_task_idx)
+        {
+            auto & list_result = list_responses[list_task_idx];
+            /// Node can be deleted concurrently. It's Ok, we don't provide any
+            /// consistency guarantees for system.zookeeper table.
+            if (list_result.error == Coordination::Error::ZNONODE)
+                continue;
+
+            auto & task = list_tasks[list_task_idx];
+            context->getProcessListElement()->checkTimeLimit();
+
+            Strings nodes = std::move(list_result.names);
+
+            task.path_part = task.path_corrected;
+            if (task.path_part == "/")
+                task.path_part.clear();
+
+            if (!task.prefix.empty())
+            {
+                // Remove nodes that do not match specified prefix
+                std::erase_if(nodes, [&task] (const String & node)
+                {
+                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;
+                });
+            }
+
+            get_tasks.reserve(get_tasks.size() + nodes.size());
+            for (const String & node : nodes)
+            {
+                paths_to_get.emplace_back(task.path_part + '/' + node);
+                get_tasks.emplace_back(GetTask{list_task_idx, node});
+            }
         }
 
-        std::vector<std::future<Coordination::GetResponse>> futures;
-        futures.reserve(nodes.size());
-        for (const String & node : nodes)
-            futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
+        auto get_responses = zookeeper->tryGet(paths_to_get);
 
-        for (size_t i = 0, size = nodes.size(); i < size; ++i)
+        for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
-            auto res = futures[i].get();
+            auto & res = get_responses[i];
             if (res.error == Coordination::Error::ZNONODE)
                 continue; /// Node was deleted meanwhile.
 
+            auto & get_task = get_tasks[i];
+            auto & list_task = list_tasks[get_task.list_task_idx];
+            context->getProcessListElement()->checkTimeLimit();
+
             // Deduplication
-            String key = path_part + '/' + nodes[i];
+            String key = list_task.path_part + '/' + get_task.node;
             if (auto [it, inserted] = added.emplace(key); !inserted)
                 continue;
 
             const Coordination::Stat & stat = res.stat;
 
             size_t col_num = 0;
-            res_columns[col_num++]->insert(nodes[i]);
+            res_columns[col_num++]->insert(get_task.node);
             res_columns[col_num++]->insert(res.data);
             res_columns[col_num++]->insert(stat.czxid);
             res_columns[col_num++]->insert(stat.mzxid);
@@ -476,9 +549,9 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(stat.numChildren);
             res_columns[col_num++]->insert(stat.pzxid);
             res_columns[col_num++]->insert(
-                path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
+                list_task.path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
 
-            if (path_type != ZkPathType::Exact && res.stat.numChildren > 0)
+            if (list_task.path_type != ZkPathType::Exact && res.stat.numChildren > 0)
             {
                 paths.emplace_back(key, ZkPathType::Recurse);
             }
@@ -486,5 +559,26 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     }
 }
 
+ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info, ContextPtr context_)
+    : SourceStepWithFilter({.header = header})
+    , storage_limits(query_info.storage_limits)
+    , context(std::move(context_))
+{
+}
+
+void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    const auto & header = getOutputStream().header;
+    MutableColumns res_columns = header.cloneEmptyColumns();
+    fillData(res_columns);
+
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
+
+    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+    source->setStorageLimits(storage_limits);
+    processors.emplace_back(source);
+    pipeline.init(Pipe(std::move(source)));
+}
 
 }

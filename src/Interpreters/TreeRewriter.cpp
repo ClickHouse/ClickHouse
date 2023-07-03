@@ -8,6 +8,7 @@
 
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
+#include <Interpreters/ComparisonTupleEliminationVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
@@ -363,24 +364,17 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 {
     ASTs & elements = select_query->select()->children;
 
-    std::unordered_map<String, size_t> required_columns_with_duplicate_count;
-    /// Order of output columns should match order in required_result_columns,
-    /// otherwise UNION queries may have incorrect header when subselect has duplicated columns.
-    ///
-    /// NOTE: multimap is required since there can be duplicated column names.
-    std::unordered_multimap<String, size_t> output_columns_positions;
+    std::map<String, size_t> required_columns_with_duplicate_count;
 
     if (!required_result_columns.empty())
     {
         /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
-        for (size_t i = 0; i < required_result_columns.size(); ++i)
+        for (const auto & name : required_result_columns)
         {
-            const auto & name = required_result_columns[i];
             if (remove_dups)
                 required_columns_with_duplicate_count[name] = 1;
             else
                 ++required_columns_with_duplicate_count[name];
-            output_columns_positions.emplace(name, i);
         }
     }
     else if (remove_dups)
@@ -392,8 +386,8 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     else
         return;
 
-    ASTs new_elements(elements.size() + output_columns_positions.size());
-    size_t new_elements_size = 0;
+    ASTs new_elements;
+    new_elements.reserve(elements.size());
 
     NameSet remove_columns;
 
@@ -401,35 +395,17 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     {
         String name = elem->getAliasOrColumnName();
 
-        /// Columns that are presented in output_columns_positions should
-        /// appears in the same order in the new_elements, hence default
-        /// result_index goes after all elements of output_columns_positions
-        /// (it is for columns that are not located in
-        /// output_columns_positions, i.e. untuple())
-        size_t result_index = output_columns_positions.size() + new_elements_size;
-
-        /// Note, order of duplicated columns is not important here (since they
-        /// are the same), only order for unique columns is important, so it is
-        /// fine to use multimap here.
-        if (auto it = output_columns_positions.find(name); it != output_columns_positions.end())
-        {
-            result_index = it->second;
-            output_columns_positions.erase(it);
-        }
-
         auto it = required_columns_with_duplicate_count.find(name);
         if (required_columns_with_duplicate_count.end() != it && it->second)
         {
-            new_elements[result_index] = elem;
+            new_elements.push_back(elem);
             --it->second;
-            ++new_elements_size;
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
-            new_elements[result_index] = elem;
-            ++new_elements_size;
+            new_elements.push_back(elem);
         }
         else
         {
@@ -440,25 +416,18 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Never remove untuple. It's result column may be in required columns.
             /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
-            {
-                new_elements[result_index] = elem;
-                ++new_elements_size;
-            }
+                new_elements.push_back(elem);
+
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
             if (func && !select_query->groupBy())
             {
                 GetAggregatesVisitor::Data data = {};
                 GetAggregatesVisitor(data).visit(elem);
                 if (!data.aggregates.empty())
-                {
-                    new_elements[result_index] = elem;
-                    ++new_elements_size;
-                }
+                    new_elements.push_back(elem);
             }
         }
     }
-    /// Remove empty nodes.
-    std::erase(new_elements, ASTPtr{});
 
     if (select_query->interpolate())
     {
@@ -483,10 +452,14 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 
 /// Replacing scalar subqueries with constant values.
 void executeScalarSubqueries(
-    ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, Scalars & local_scalars, bool only_analyze)
+    ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, Scalars & local_scalars, bool only_analyze, bool is_create_parameterized_view)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, local_scalars, only_analyze};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{
+        WithContext{context}, subquery_depth, scalars,
+        local_scalars, only_analyze, is_create_parameterized_view,
+        /*replace_only_to_literals=*/ false, /*max_literal_size=*/ std::nullopt};
+
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -655,10 +628,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     {
         bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
         if (join_on_const_ok)
-        {
-            table_join.on_expression = nullptr;
             return;
-        }
 
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
@@ -1256,7 +1226,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
+    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze, select_options.is_create_parameterized_view);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1264,11 +1234,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
+     /// Only apply AST optimization for initial queries.
+    const bool ast_optimizations_allowed =
+        getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+        && !select_options.ignore_ast_optimizations;
 
-    /// Only apply AST optimization for initial queries.
-    const bool ast_optimizations_allowed
-        = getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !select_options.ignore_ast_optimizations;
+    bool optimize_multiif_to_if = ast_optimizations_allowed && settings.optimize_multiif_to_if;
+    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif, optimize_multiif_to_if);
+
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
@@ -1370,12 +1343,12 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries, is_create_parameterized_view);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
+    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif, false);
 
     if (allow_aggregations)
     {
@@ -1458,6 +1431,13 @@ void TreeRewriter::normalize(
     /// compatibility.
     if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
         FunctionNameNormalizer().visit(query.get());
+
+    if (settings.optimize_move_to_prewhere)
+    {
+        /// Required for PREWHERE
+        ComparisonTupleEliminationVisitor::Data data_comparison_tuple_elimination;
+        ComparisonTupleEliminationVisitor(data_comparison_tuple_elimination).visit(query);
+    }
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);

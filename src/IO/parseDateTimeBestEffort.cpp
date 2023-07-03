@@ -287,7 +287,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 UInt8 hour_or_day_of_month_or_month = 0;
                 if (num_digits == 2)
                     readDecimalNumber<2>(hour_or_day_of_month_or_month, digits);
-                else if (num_digits == 1)   //-V547
+                else if (num_digits == 1)
                     readDecimalNumber<1>(hour_or_day_of_month_or_month, digits);
                 else
                     return on_error(ErrorCodes::LOGICAL_ERROR, "Cannot read DateTime: logical error, unexpected branch in code");
@@ -320,6 +320,11 @@ ReturnType parseDateTimeBestEffortImpl(
                         else
                             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after hour and minute: {}", num_digits);
                     }
+                }
+                else if (checkChar(',', in))
+                {
+                    if (month && !day_of_month)
+                        day_of_month = hour_or_day_of_month_or_month;
                 }
                 else if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                 {
@@ -573,12 +578,16 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
-    if (!year)
-        year = 2000;
-    if (!month)
-        month = 1;
     if (!day_of_month)
         day_of_month = 1;
+    if (!month)
+        month = 1;
+    if (!year)
+    {
+        time_t now = time(nullptr);
+        UInt16 curr_year = local_time_zone.toYear(now);
+        year = now < local_time_zone.makeDateTime(curr_year, month, day_of_month, hour, minute, second) ? curr_year - 1 : curr_year;
+    }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 

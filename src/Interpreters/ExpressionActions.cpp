@@ -584,6 +584,12 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             {
                 /// Do not execute function if it's result is already known.
                 res_column.column = action.node->column->cloneResized(num_rows);
+                /// But still need to remove unused arguments.
+                for (const auto & argument : action.arguments)
+                {
+                    if (!argument.needed_later)
+                        columns[argument.pos] = {};
+                }
                 break;
             }
 
@@ -842,6 +848,23 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
+void ExpressionActions::describeActions(WriteBuffer & out, std::string_view prefix) const
+{
+    bool first = true;
+
+    for (const auto & action : actions)
+    {
+        out << prefix << (first ? "Actions: " : "         ");
+        out << action.toString() << '\n';
+        first = false;
+    }
+
+    out << prefix << "Positions:";
+    for (const auto & pos : result_positions)
+        out << ' ' << pos;
+    out << '\n';
+}
+
 JSONBuilder::ItemPtr ExpressionActions::toTree() const
 {
     auto inputs_array = std::make_unique<JSONBuilder::JSONArray>();
@@ -913,14 +936,12 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         for (const auto & action : actions)
         {
             if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
-            {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
-                {
-                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
-                        return true;
-                }
-            }
+                    if (auto future_set = column_set->getData())
+                        if (auto set = future_set->get())
+                            if (set->getTotalRowCount() == 0)
+                                return true;
         }
     }
 
@@ -1088,12 +1109,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
 ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
 }
 
 const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
 }
 
 }

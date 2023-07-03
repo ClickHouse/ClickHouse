@@ -2,16 +2,17 @@
 
 from base64 import b64decode
 from collections import namedtuple
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 from threading import Thread
 from queue import Queue
 import json
-import os
+import re
 import time
 
-import jwt
 import requests  # type: ignore
-import boto3  # type: ignore
+
+from lambda_shared.pr import CATEGORY_TO_LABEL, check_pr_description
+from lambda_shared.token import get_cached_access_token
 
 
 NEED_RERUN_ON_EDITED = {
@@ -20,7 +21,6 @@ NEED_RERUN_ON_EDITED = {
 }
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    "DocsReleaseChecks",
     "BackportPR",
 }.union(NEED_RERUN_ON_EDITED)
 
@@ -48,58 +48,6 @@ class Worker(Thread):
                 raise
             print(f"Exception occured, still continue: {e}")
         self.queue.task_done()
-
-
-def get_installation_id(jwt_token):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.get("https://api.github.com/app/installations", headers=headers)
-    response.raise_for_status()
-    data = response.json()
-    for installation in data:
-        if installation["account"]["login"] == "ClickHouse":
-            installation_id = installation["id"]
-    return installation_id
-
-
-def get_access_token(jwt_token, installation_id):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.post(
-        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["token"]
-
-
-def get_key_and_app_from_aws():
-    secret_name = "clickhouse_github_secret_key"
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-    )
-    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-    data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
-
-
-def get_token_from_aws():
-    private_key, app_id = get_key_and_app_from_aws()
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    return get_access_token(encoded_jwt, installation_id)
 
 
 def _exec_get_with_retry(url: str, token: str) -> dict:
@@ -269,11 +217,11 @@ def get_workflow_description(workflow_url: str, token: str) -> WorkflowDescripti
     )
 
 
-def _exec_post_with_retry(url, token):
+def _exec_post_with_retry(url: str, token: str, json: Optional[Any] = None) -> Any:
     headers = {"Authorization": f"token {token}"}
     for i in range(MAX_RETRY):
         try:
-            response = requests.post(url, headers=headers)
+            response = requests.post(url, headers=headers, json=json)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
@@ -291,7 +239,7 @@ def exec_workflow_url(urls_to_post, token):
 
 
 def main(event):
-    token = get_token_from_aws()
+    token = get_cached_access_token()
     DEBUG_INFO["event"] = event
     if event["isBase64Encoded"]:
         event_data = json.loads(b64decode(event["body"]))
@@ -302,10 +250,20 @@ def main(event):
     action = event_data["action"]
     print("Got action", event_data["action"])
     pull_request = event_data["pull_request"]
-    labels = {label["name"] for label in pull_request["labels"]}
-    print("PR has labels", labels)
-    if action == "closed" or (action == "labeled" and "do not test" in labels):
-        print("PR merged/closed or manually labeled 'do not test' will kill workflows")
+    label = ""
+    if action == "labeled":
+        label = event_data["label"]["name"]
+        print("Added label:", label)
+
+    print("PR has labels", {label["name"] for label in pull_request["labels"]})
+    if action == "opened" or (
+        action == "labeled" and pull_request["created_at"] == pull_request["updated_at"]
+    ):
+        print("Freshly opened PR, nothing to do")
+        return
+
+    if action == "closed" or label == "do not test":
+        print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
         )
@@ -323,48 +281,8 @@ def main(event):
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
         return
-    elif action == "edited":
-        print("PR is edited, check if it needs to rerun")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
-        most_recent_workflow = workflow_descriptions[-1]
-        if (
-            most_recent_workflow.status == "completed"
-            and most_recent_workflow.name in NEED_RERUN_ON_EDITED
-        ):
-            print(
-                "The PR's body is changed and workflow is finished. "
-                "Rerun to check the description"
-            )
-            exec_workflow_url([most_recent_workflow.rerun_url], token)
-            print("Rerun finished, exiting")
-            return
-    elif action == "synchronize":
-        print("PR is synchronized, going to stop old actions")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        urls_to_cancel = []
-        for workflow_description in workflow_descriptions:
-            if (
-                workflow_description.status != "completed"
-                and workflow_description.conclusion != "cancelled"
-                and workflow_description.head_sha != pull_request["head"]["sha"]
-            ):
-                urls_to_cancel.append(workflow_description.cancel_url)
-        print(f"Found {len(urls_to_cancel)} workflows to cancel")
-        exec_workflow_url(urls_to_cancel, token)
-    elif action == "labeled" and event_data["label"]["name"] == "can be tested":
+
+    if label == "can be tested":
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -401,9 +319,46 @@ def main(event):
                 break
             print("Still have strange status")
             time.sleep(3)
+        return
 
-    else:
-        print("Nothing to do")
+    if action == "edited":
+        print("PR is edited, check if the body is correct")
+        error, category = check_pr_description(pull_request["body"])
+        if error:
+            print(
+                f"The PR's body is wrong, is going to comment it. The error is: {error}"
+            )
+            post_json = {
+                "body": "This is an automatic comment. The PR descriptions does not "
+                f"match the [template]({pull_request['base']['repo']['html_url']}/"
+                "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1).\n\n"
+                f"Please, edit it accordingly.\n\nThe error is: {error}"
+            }
+            _exec_post_with_retry(pull_request["comments_url"], token, json=post_json)
+        return
+
+    if action == "synchronize":
+        print("PR is synchronized, going to stop old actions")
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
+        workflow_descriptions = (
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
+        )
+        urls_to_cancel = []
+        for workflow_description in workflow_descriptions:
+            if (
+                workflow_description.status != "completed"
+                and workflow_description.conclusion != "cancelled"
+                and workflow_description.head_sha != pull_request["head"]["sha"]
+            ):
+                urls_to_cancel.append(workflow_description.cancel_url)
+        print(f"Found {len(urls_to_cancel)} workflows to cancel")
+        exec_workflow_url(urls_to_cancel, token)
+        return
+
+    print("Nothing to do")
 
 
 def handler(event, _):

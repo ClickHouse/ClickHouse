@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
-#include <Core/Types.h>
+#include <Core/TypeId.h>
 
 #include "config.h"
 
@@ -418,21 +418,23 @@ public:
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
-    using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const {}
-
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback callback);
+    virtual void forEachSubcolumn(MutableColumnCallback) {}
+
+    /// Default implementation calls the mutable overload using const_cast.
+    using ColumnCallback = std::function<void(const WrappedPtr &)>;
+    virtual void forEachSubcolumn(ColumnCallback) const;
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
-    using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
-
     using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback);
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
+
+    /// Default implementation calls the mutable overload using const_cast.
+    using RecursiveColumnCallback = std::function<void(const IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
@@ -441,9 +443,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
     }
 
-    /// Returns ration of values in column, that equal to default value of column.
+    /// Returns ratio of values in column, that are equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
     [[nodiscard]] virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
+
+    /// Returns number of values in column, that are equal to default value of column.
+    [[nodiscard]] virtual UInt64 getNumberOfDefaultRows() const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -583,6 +588,9 @@ protected:
     /// Template is to devirtualize calls to 'isDefaultAt' method.
     template <typename Derived>
     double getRatioOfDefaultRowsImpl(double sample_ratio) const;
+
+    template <typename Derived>
+    UInt64 getNumberOfDefaultRowsImpl() const;
 
     template <typename Derived>
     void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;

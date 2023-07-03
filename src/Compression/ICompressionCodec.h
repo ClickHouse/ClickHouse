@@ -102,9 +102,15 @@ public:
     /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
     virtual bool isFloatingPointTimeSeriesCodec() const { return false; }
 
+    /// If the codec's purpose is to calculate deltas between consecutive values.
+    virtual bool isDeltaCompression() const { return false; }
+
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
+
+    /// Is this the DEFLATE_QPL codec?
+    virtual bool isDeflateQpl() const { return false; }
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }

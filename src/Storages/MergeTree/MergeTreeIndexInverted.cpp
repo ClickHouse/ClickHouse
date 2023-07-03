@@ -123,7 +123,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
     auto row_id = store->getNextRowIDRange(rows_read);
@@ -201,6 +201,7 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
             rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
             return;
         }
+
         rpn = std::move(
                 RPNBuilder<RPNElement>(
                         query_info.filter_actions_dag->getOutputs().at(0), context_,
@@ -208,10 +209,10 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
                         {
                             return this->traverseAtomAST(node, out);
                         }).extractRPN());
+        return;
     }
 
     ASTPtr filter_node = buildFilterNode(query_info.query);
-
     if (!filter_node)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
@@ -226,7 +227,6 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
         query_info.prepared_sets,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return traverseAtomAST(node, out); });
     rpn = std::move(builder).extractRPN();
-
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
@@ -426,6 +426,7 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name == "hasToken" ||
+                 function_name == "hasTokenOrNull" ||
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
                  function_name == "multiSearchAny")
@@ -568,7 +569,7 @@ bool MergeTreeConditionInverted::traverseASTEquals(
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    else if (function_name == "hasToken")
+    else if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -654,8 +655,12 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
-    if (!prepared_set && !prepared_set->hasExplicitSetElements())
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
     for (const auto & data_type : prepared_set->getDataTypes())
@@ -747,7 +752,7 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
             const auto & gin_type = assert_cast<const DataTypeArray &>(*index_data_type);
             data_type = WhichDataType(gin_type.getNestedType());
         }
-        else if (data_type.isLowCarnality())
+        else if (data_type.isLowCardinality())
         {
             const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
             data_type = WhichDataType(low_cardinality.getDictionaryType());

@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/mongodb
-sidebar_position: 5
+sidebar_position: 135
 sidebar_label: MongoDB
 ---
 
@@ -21,17 +21,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 **Engine Parameters**
 
--   `host:port` — MongoDB server address.
+- `host:port` — MongoDB server address.
 
--   `database` — Remote database name.
+- `database` — Remote database name.
 
--   `collection` — Remote collection name.
+- `collection` — Remote collection name.
 
--   `user` — MongoDB user.
+- `user` — MongoDB user.
 
--   `password` — User password.
+- `password` — User password.
 
--   `options` — MongoDB connection string options (optional parameter).
+- `options` — MongoDB connection string options (optional parameter).
 
 ## Usage Example {#usage-example}
 

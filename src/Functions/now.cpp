@@ -1,13 +1,11 @@
-#include <DataTypes/DataTypeDateTime.h>
-
-#include <Functions/IFunction.h>
-#include <Core/DecimalFunctions.h>
-#include <Functions/FunctionFactory.h>
-
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-
 #include <ctime>
-
+#include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -90,7 +88,10 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<NowOverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
+    explicit NowOverloadResolver(ContextPtr context)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+    {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -105,7 +106,7 @@ public:
         }
         if (arguments.size() == 1)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
         }
         return std::make_shared<DataTypeDateTime>();
     }
@@ -124,10 +125,12 @@ public:
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
                 time(nullptr), DataTypes{arguments.front().type},
-                std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0)));
+                std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments)));
 
         return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
     }
+private:
+    const bool allow_nonconst_timezone_arguments;
 };
 
 }

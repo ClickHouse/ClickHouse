@@ -12,7 +12,14 @@ namespace DB
 REGISTER_FUNCTION(Hashing)
 {
     factory.registerFunction<FunctionSipHash64>();
+    factory.registerFunction<FunctionSipHash64Keyed>();
     factory.registerFunction<FunctionSipHash128>();
+    factory.registerFunction<FunctionSipHash128Keyed>();
+    factory.registerFunction<FunctionSipHash128Reference>(FunctionDocumentation{
+        .description="Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.",
+        .examples{{"hash", "SELECT hex(sipHash128Reference('foo', '\\x01', 3))", ""}},
+        .categories{"Hash"}
+    });
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();
@@ -25,10 +32,10 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
     factory.registerFunction<FunctionXXH3>(
-        {
-            "Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
-            Documentation::Examples{{"hash", "SELECT xxh3('ClickHouse')"}},
-            Documentation::Categories{"Hash"}
+        FunctionDocumentation{
+            .description="Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
+            .examples{{"hash", "SELECT xxh3('ClickHouse')", ""}},
+            .categories{"Hash"}
         },
         FunctionFactory::CaseSensitive);
 
@@ -36,16 +43,16 @@ REGISTER_FUNCTION(Hashing)
 
 
     factory.registerFunction<FunctionBLAKE3>(
-    {
-        R"(
+    FunctionDocumentation{
+        .description=R"(
 Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
 This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
 The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
 It returns a BLAKE3 hash as a byte array with type FixedString(32).
 )",
-        Documentation::Examples{
-            {"hash", "SELECT hex(BLAKE3('ABC'))"}},
-        Documentation::Categories{"Hash"}
+        .examples{
+            {"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
+        .categories{"Hash"}
     },
     FunctionFactory::CaseSensitive);
 }

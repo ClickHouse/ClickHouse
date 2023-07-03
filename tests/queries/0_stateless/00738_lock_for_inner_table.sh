@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-fasttest
 
 set -e
 
@@ -19,7 +19,7 @@ CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT sleepEachRow(0.0
 
 ${CLICKHOUSE_CLIENT} --query_id insert_$CLICKHOUSE_DATABASE --query "INSERT INTO tab_00738 SELECT number FROM numbers(10000000)" &
 
-function drop()
+function drop_inner_id()
 {
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE \`.inner_id.$uuid\`" -n
 }
@@ -35,16 +35,32 @@ function wait_for_query_to_start()
 
     # query already finished, fail
     if [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = 'insert_$CLICKHOUSE_DATABASE'") == 0 ]]; then
-        exit 2
+        return 2
     fi
 }
 
-export -f wait_for_query_to_start
-timeout 5 bash -c wait_for_query_to_start
+function drop_at_exit()
+{
+    echo "DROP TABLE IF EXISTS tab_00738;
+DROP TABLE IF EXISTS mv;" | ${CLICKHOUSE_CLIENT} -n
+}
 
-drop &
+ret_code=0
+export -f wait_for_query_to_start
+timeout 15 bash -c wait_for_query_to_start || ret_code=$?
+
+if [[ $ret_code ==  124 ]] || [[ $ret_code ==  2 ]]; then
+    # suppressing test inaccuracy
+    # $ret_code == 124 -- wait_for_query_to_start didn't catch the insert command in running state
+    # $ret_code == 2 -- wait_for_query_to_start caught the insert command running but command ended too fast
+    wait
+    drop_at_exit
+    exit 0
+fi
+
+drop_inner_id
 
 wait
 
-echo "DROP TABLE IF EXISTS tab_00738;
-DROP TABLE IF EXISTS mv;" | ${CLICKHOUSE_CLIENT} -n
+drop_at_exit
+

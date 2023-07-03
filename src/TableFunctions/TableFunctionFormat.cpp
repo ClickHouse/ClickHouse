@@ -4,6 +4,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Parsers/ASTLiteral.h>
 
@@ -38,23 +39,29 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 2 arguments: format and data", getName());
+    if (args.size() != 2 && args.size() != 3)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 2 or 3 arguments: format, [structure], data", getName());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     format = checkAndGetLiteralArgument<String>(args[0], "format");
-    data = checkAndGetLiteralArgument<String>(args[1], "data");
+    data = checkAndGetLiteralArgument<String>(args.back(), "data");
+    if (args.size() == 3)
+        structure = checkAndGetLiteralArgument<String>(args[1], "structure");
 }
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
+    if (structure == "auto")
     {
-        return std::make_unique<ReadBufferFromString>(data);
-    };
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
+        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
+        {
+            return std::make_unique<ReadBufferFromString>(data);
+        };
+        return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
+    }
+    return parseColumnsListFromString(structure, context);
 }
 
 Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr context) const
@@ -89,9 +96,9 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-static const Documentation format_table_function_documentation =
+static const FunctionDocumentation format_table_function_documentation =
 {
-    R"(
+    .description=R"(
 Extracts table structure from data and parses it according to specified input format.
 Syntax: `format(format_name, data)`.
 Parameters:
@@ -99,7 +106,7 @@ Parameters:
     - `data ` - String literal or constant expression that returns a string containing data in specified format.
 Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
 )",
-    Documentation::Examples
+    .examples
     {
         {
             "First example",
@@ -124,7 +131,7 @@ Result:
 │ 124 │ World │
 └─────┴───────┘
 ```
-)"
+)", ""
         },
         {
             "Second example",
@@ -147,10 +154,10 @@ Result:
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-)"
+)", ""
         },
     },
-    Documentation::Categories{"format", "table-functions"}
+    .categories{"format", "table-functions"}
 };
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)

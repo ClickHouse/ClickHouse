@@ -16,6 +16,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <optional>
+#include <vector>
+#include <memory>
+#include <string>
 
 namespace DB
 {
@@ -33,8 +37,12 @@ struct Packet
     Progress progress;
     ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
-    PartitionReadRequest request;
-    PartitionReadResponse response;
+
+    /// The part of parallel replicas protocol
+    std::optional<InitialAllRangesAnnouncement> announcement;
+    std::optional<ParallelReadRequest> request;
+
+    std::string server_timezone;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -104,7 +112,7 @@ public:
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
-    virtual void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) = 0;
+    virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;

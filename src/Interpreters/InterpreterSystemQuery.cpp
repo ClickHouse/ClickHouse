@@ -7,6 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -58,7 +60,17 @@
 #include <algorithm>
 #include <unistd.h>
 
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
+
 #include "config.h"
+
+namespace CurrentMetrics
+{
+    extern const Metric RestartReplicaThreads;
+    extern const Metric RestartReplicaThreadsActive;
+}
 
 namespace DB
 {
@@ -327,9 +339,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->dropMMappedFileCache();
             break;
-        case Type::DROP_QUERY_RESULT_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_RESULT_CACHE);
-            getContext()->dropQueryResultCache();
+        case Type::DROP_QUERY_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            getContext()->dropQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -338,19 +350,27 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
+#if USE_AWS_S3
+        case Type::DROP_S3_CLIENT_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
+            S3::ClientCacheRegistry::instance().clearCacheForAll();
+            break;
+#endif
+
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            if (query.filesystem_cache_path.empty())
+
+            if (query.filesystem_cache_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeIfReleasable();
+                    cache_data->cache->removeAllReleasable();
             }
             else
             {
-                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->removeIfReleasable();
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                cache->removeAllReleasable();
             }
             break;
         }
@@ -498,7 +518,7 @@ BlockIO InterpreterSystemQuery::execute()
             dropDatabaseReplica(query);
             break;
         case Type::SYNC_REPLICA:
-            syncReplica();
+            syncReplica(query);
             break;
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
@@ -563,6 +583,18 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+        case Type::ENABLE_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::enableFailPoint(query.fail_point_name);
+            break;
+        }
+        case Type::DISABLE_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::disableFailPoint(query.fail_point_name);
+            break;
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -586,6 +618,7 @@ void InterpreterSystemQuery::restoreReplica()
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
+    LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = need_ddl_guard
         ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
         : nullptr;
@@ -629,6 +662,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     database->attachTable(system_context, replica.table_name, table, data_path);
 
     table->startup();
+    LOG_TRACE(log, "Restarted replica {}", replica);
     return table;
 }
 
@@ -674,11 +708,12 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
-    ThreadPool pool(std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size()));
+    size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
+    LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
+    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
 
     for (auto & replica : replica_names)
     {
-        LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
         pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
     }
     pool.wait();
@@ -778,7 +813,6 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
         return false;
 
     ReplicatedTableStatus status;
-    auto zookeeper = getContext()->getZooKeeper();
     storage_replicated->getStatus(status);
 
     /// Do not allow to drop local replicas and active remote replicas
@@ -787,13 +821,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main use case is to drop dead replica, which cannot become active.
-    /// This check prevents only from accidental drop of some other replica.
-    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
-        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", query.replica);
-
-    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, log);
+    storage_replicated->dropReplica(status.zookeeper_path, query.replica, log);
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
 
     return true;
@@ -804,11 +832,13 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
-    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query)
+    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query_)
     {
-        if (!query.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query.replica_zk_path))
+        if (!query_.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query_.replica_zk_path))
             return;
-        if (replicated->getFullReplicaName() != query.replica)
+        String full_replica_name = query_.shard.empty() ? query_.replica
+                                                        : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
+        if (replicated->getFullReplicaName() != full_replica_name)
             return;
 
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local database {}, which has the same path in ZooKeeper "
@@ -823,7 +853,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -848,7 +878,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
 
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -861,22 +891,23 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, query);
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.replica);
+        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica);
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-void InterpreterSystemQuery::syncReplica()
+void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
-        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
-        if (!storage_replicated->waitForShrinkingQueueSize(0, getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
+        auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
@@ -969,7 +1000,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_RESULT_CACHE:
+        case Type::DROP_QUERY_CACHE:
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #endif
@@ -978,6 +1009,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
+#if USE_AWS_S3
+        case Type::DROP_S3_CLIENT_CACHE:
+#endif
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -1149,15 +1183,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
         case Type::UNKNOWN:
         case Type::END: break;
     }
     return required_access;
-}
-
-void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
-{
-    elem.query_kind = "System";
 }
 
 }

@@ -29,6 +29,7 @@ public:
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
@@ -46,8 +47,6 @@ public:
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
-
-    bool supportsVerticalMerge() const override { return true; }
 
     String getFileNameForColumn(const NameAndTypePair & column) const override;
 
