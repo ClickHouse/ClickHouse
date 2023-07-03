@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -147,7 +148,6 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
-            file_suffix = "";
             break;
     }
     return std::to_string(offset) + file_suffix;
@@ -385,7 +385,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
     return removeFileSegmentImpl(it, file_segment->lock());
@@ -413,6 +413,8 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->invalidate();
 
+    file_segment->detach(segment_lock, *this);
+
     const auto path = key_metadata->getFileSegmentPath(*file_segment);
     bool exists = fs::exists(path);
     if (exists)
@@ -431,7 +433,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
     else if (file_segment->downloaded_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 
-    file_segment->detach(segment_lock, *this);
     return key_metadata->erase(it);
 }
 
