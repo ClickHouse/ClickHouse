@@ -314,6 +314,9 @@ KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
+    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, true))
+        return bad_request(ZNOAUTH);
+
     KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
