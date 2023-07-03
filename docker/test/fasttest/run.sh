@@ -171,6 +171,7 @@ function run_cmake
         "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
         "-DENABLE_LIBURING=1"
+        "-DLINKER_NAME=mold"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
