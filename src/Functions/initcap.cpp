@@ -14,6 +14,8 @@ struct InitcapImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
+        if (data.empty())
+            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), res_data.data());
