@@ -628,16 +628,10 @@ void FileSegment::complete()
         resetDownloaderUnlocked(segment_lock);
     }
 
-    auto remove_from_cache = [&, this]()
-    {
-        locked_key->removeFileSegment(offset(), segment_lock);
-        setDetachedState(segment_lock);
-    };
-
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        remove_from_cache();
+        locked_key->removeFileSegment(offset(), segment_lock);
         return;
     }
 
@@ -659,7 +653,7 @@ void FileSegment::complete()
         case State::EMPTY:
         {
             if (is_last_holder)
-                remove_from_cache();
+                locked_key->removeFileSegment(offset(), segment_lock);
             break;
         }
         case State::PARTIALLY_DOWNLOADED:
@@ -692,7 +686,7 @@ void FileSegment::complete()
             {
                 if (current_downloaded_size == 0)
                 {
-                    remove_from_cache();
+                    locked_key->removeFileSegment(offset(), segment_lock);
                 }
                 else
                 {
@@ -810,7 +804,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         }
 
         chassert(reserved_size >= downloaded_size);
-        chassert((reserved_size == 0) || queue_iterator);
         check_iterator(queue_iterator);
     }
 
@@ -884,6 +877,7 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     cache = nullptr;
+    queue_iterator = nullptr;
     cache_writer.reset();
     remote_file_reader.reset();
 }
@@ -904,7 +898,7 @@ void FileSegment::use()
 
     if (!cache)
     {
-        chassert(isCompleted(true));
+        chassert(isDetached());
         return;
     }
 
