@@ -739,7 +739,7 @@ private:
         using StorageType = NearestFieldType<UnqualifiedType>;
 
         /// Incrementing the depth since we create a new Field.
-        auto depth = calculateAndCheckFieldDepth<StorageType>(x) + 1;
+        auto depth = calculateAndCheckFieldDepth<StorageType>(x);
         new (&storage) StorageType(std::forward<T>(x));
 
         if constexpr (std::is_same_v<StorageType, Array>
