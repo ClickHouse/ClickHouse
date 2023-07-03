@@ -3203,7 +3203,7 @@ ENGINE = Log
 
 ## default_temporary_table_engine {#default_temporary_table_engine}
 
-Same as [default_temporary_table_engine](#default_temporary_table_engine) but for temporary tables.
+Same as [default_table_engine](#default_table_engine) but for temporary tables.
 
 Default value: `Memory`.
 
