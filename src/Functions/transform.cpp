@@ -698,6 +698,8 @@ namespace
 
             const DataTypePtr & from_type = arguments[0].type;
 
+            std::lock_guard lock(cache.mutex);
+
             if (from_type->onlyNull())
             {
                 cache.is_empty = true;
@@ -710,8 +712,6 @@ namespace
             if (!array_from || !array_to)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays.", getName());
-
-            std::lock_guard lock(cache.mutex);
 
             const ColumnPtr & from_column_uncasted = array_from->getDataPtr();
 
