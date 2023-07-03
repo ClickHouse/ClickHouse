@@ -292,10 +292,10 @@ try
 
     DB::Memory<> memory;
     memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
-    codec_128->doDecompressData(input.data(), input.size(), memory.data(), input.size() - 31);
+    codec_128->doDecompressData(input.data(), static_cast<UInt32>(input.size()), memory.data(), static_cast<UInt32>(input.size() - 31));
 
     memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
-    codec_256->doDecompressData(input.data(), input.size(), memory.data(), input.size() - 31);
+    codec_256->doDecompressData(input.data(), static_cast<UInt32>(input.size()), memory.data(), static_cast<UInt32>(input.size() - 31));
     return 0;
 }
 catch (...)

@@ -1449,8 +1449,10 @@ struct Transformer
                 if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
                     bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-
+#   pragma clang diagnostic pop
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
