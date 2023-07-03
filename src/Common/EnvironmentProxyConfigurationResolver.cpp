@@ -13,7 +13,7 @@ std::optional<ProxyConfiguration> EnvironmentProxyConfigurationResolver::resolve
     if (const auto * proxy_host = std::getenv(https ? PROXY_HTTPS_ENVIRONMENT_VARIABLE : PROXY_HTTP_ENVIRONMENT_VARIABLE))
     {
         auto uri = Poco::URI(proxy_host);
-        return ProxyConfiguration {uri.getHost(), https ? "https" : "http", uri.getPort()};
+        return ProxyConfiguration {uri.getHost(), uri.getScheme(), uri.getPort()};
     }
 
     return {};
