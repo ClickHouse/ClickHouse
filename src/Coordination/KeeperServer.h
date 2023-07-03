@@ -17,8 +17,6 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-class KeeperDispatcher;
-
 class KeeperServer
 {
 private:

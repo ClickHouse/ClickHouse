@@ -793,10 +793,10 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction& action)
 {
     std::lock_guard _{server_write_mutex};
 
-    if (const auto* add = std::get_if<AddRaftServer>(&action))
+    if (const auto * add = std::get_if<AddRaftServer>(&action))
         return raft_instance->get_srv_config(add->id) != nullptr
             || raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted();
-    else if (const auto* remove = std::get_if<RemoveRaftServer>(&action))
+    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
         if (isLeader() && remove->id == state_manager->server_id())
         {
@@ -807,7 +807,7 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction& action)
         return raft_instance->get_srv_config(remove->id) == nullptr
             || raft_instance->remove_srv(remove->id)->get_accepted();
     }
-    else if (const auto* update = std::get_if<UpdateRaftServerPriority>(&action))
+    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
         if (auto ptr = raft_instance->get_srv_config(update->id); ptr == nullptr)
             throw Exception(ErrorCodes::RAFT_ERROR,
@@ -851,7 +851,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         std::this_thread::sleep_for(sleep_time * (i + 1));
     };
 
-    if (const auto* add = std::get_if<AddRaftServer>(&action))
+    if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
@@ -863,7 +863,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
                 backoff_on_refusal(i);
         }
     }
-    else if (const auto* remove = std::get_if<RemoveRaftServer>(&action))
+    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
         if (remove->id == state_manager->server_id())
         {
@@ -884,7 +884,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
                 backoff_on_refusal(i);
         }
     }
-    else if (const auto* update = std::get_if<UpdateRaftServerPriority>(&action))
+    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return;
@@ -928,7 +928,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
             backoff(i);
         }
     }
-    else if (std::get_if<UpdateRaftServerPriority>(&action) != nullptr)
+    else if (std::holds_alternative<UpdateRaftServerPriority>(action))
         return true;
 
     return false;

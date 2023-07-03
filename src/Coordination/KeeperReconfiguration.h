@@ -1,6 +1,6 @@
 #pragma once
-#include "Coordination/KeeperSnapshotManager.h"
-#include "Coordination/RaftServerConfig.h"
+#include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/RaftServerConfig.h>
 
 namespace DB
 {

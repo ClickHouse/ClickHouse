@@ -24,7 +24,7 @@ public:
         SHUTDOWN
     };
 
-    void initialize(const Poco::Util::AbstractConfiguration & config);
+    void initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_);
 
     Phase getServerState() const;
     void setServerState(Phase server_state_);
@@ -51,6 +51,8 @@ public:
     const KeeperFeatureFlags & getFeatureFlags() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
+
+    constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
 private:
     /// local disk defined using path or disk name
@@ -90,5 +92,4 @@ private:
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
-
 }

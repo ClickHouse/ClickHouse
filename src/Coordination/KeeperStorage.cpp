@@ -1088,7 +1088,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         if (request.path == Coordination::keeper_config_path)
         {
             response.data = serializeClusterConfig(
-                storage.keeper_context->dispatcher->getStateMachine().getClusterConfig());
+                storage.keeper_context->getDispatcher()->getStateMachine().getClusterConfig());
             response.error = Coordination::Error::ZOK;
             return response_ptr;
         }

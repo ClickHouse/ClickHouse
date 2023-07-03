@@ -3,6 +3,8 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -14,15 +16,13 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
-#include "Coordination/KeeperStorage.h"
-#include "Coordination/KeeperReconfiguration.h"
-
 #include <Disks/DiskLocal.h>
 
 
 namespace ProfileEvents
 {
     extern const Event KeeperCommits;
+    extern const Event KeeperReconfigRequest;
     extern const Event KeeperCommitsFailed;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
@@ -298,6 +298,8 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
 KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
     const KeeperStorage::RequestForSession& request_for_session)
 {
+    ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
+
     const auto& request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
     const int64_t zxid = request_for_session.zxid;
@@ -312,7 +314,7 @@ KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    KeeperDispatcher& dispatcher = *keeper_context->dispatcher;
+    KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
     if (!dispatcher.clusterUpdateQueueEmpty())
