@@ -37,6 +37,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
+            // XXX
             {"array_1", [](const IDataType & type) { return isArray(type.getPtr()); }, nullptr, "Array"},
             {"array_2", [](const IDataType & type) { return isArray(type.getPtr()); }, nullptr, "Array"},
         };
@@ -45,7 +46,7 @@ public:
     }
 
     template <bool is_const_left, bool is_const_right>
-    static inline void getArraySize(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t & left_size, size_t & right_size, const size_t & i)
+    static void getArraySize(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t & left_size, size_t & right_size, const size_t & i)
     {
         if constexpr (is_const_left)
             left_size = left_offsets[0];
@@ -58,7 +59,7 @@ public:
     }
 
     template <bool is_const_left, bool is_const_right>
-    static inline void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    static void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
     {
         size_t left_size;
         size_t right_size;
@@ -71,14 +72,14 @@ public:
     }
 
     template <bool is_const_left, bool is_const_right>
-    static inline void vectorWithEmptyIntersect(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    static void vectorWithEmptyIntersect(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
     {
         size_t left_size;
         size_t right_size;
         for (size_t i = 0; i < res.size(); ++i)
         {
             getArraySize<is_const_left, is_const_right>(left_offsets, right_offsets, left_size, right_size, i);
-            if (unlikely(!left_size && !right_size))
+            if ((!left_size && !right_size))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregate functions cannot be performed on two empty arrays");
             res[i] = 0;
         }

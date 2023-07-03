@@ -998,7 +998,7 @@ SELECT
 
 ## arrayJaccardIndex
 
-Returns the jaccard similarity between two arrays.
+Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.
 
 **Example**
 
