@@ -689,9 +689,9 @@ private:
         size_t result = 0;
 
         if constexpr (std::is_same_v<StorageType, Array> || std::is_same_v<StorageType, Tuple> || std::is_same_v<StorageType, Map>)
-            std::for_each(x.begin(), x.end(), [this, &x](auto & elem){ nested_field_depth = std::max(nested_field_depth, elem.nested_field_depth); });
+            std::for_each(x.begin(), x.end(), [this, &result](auto & elem){ result = std::max(result, elem.nested_field_depth); });
         else if constexpr (std::is_same_v<StorageType, Object>)
-            std::for_each(x.begin(), x.end(), [this, &x](auto & elem){ nested_field_depth = std::max(nested_field_depth, elem.second.nested_field_depth); });
+            std::for_each(x.begin(), x.end(), [this, &result](auto & elem){ result = std::max(result, elem.second.nested_field_depth); });
 
         if (result >= DBMS_MAX_NESTED_FIELD_DEPTH)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Too deep Field");
@@ -711,10 +711,10 @@ private:
         // we must initialize the entire wide stored type, and not just the
         // nominal type.
         using StorageType = NearestFieldType<UnqualifiedType>;
-        new (&storage) StorageType(std::forward<T>(x));
-        which = TypeToEnum<UnqualifiedType>::value;
         /// Incrementing the depth since we create a new Field.
         nested_field_depth = calculateAndCheckFieldDepth<StorageType>(x) + 1;
+        new (&storage) StorageType(std::forward<T>(x));
+        which = TypeToEnum<UnqualifiedType>::value;
     }
 
     /// Assuming same types.
@@ -724,9 +724,9 @@ private:
         using JustT = std::decay_t<T>;
         assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
-        *ptr = std::forward<T>(x);
         /// Do not increment the depth, because it is an assignment.
         nested_field_depth = calculateAndCheckFieldDepth<JustT>(x);
+        *ptr = std::forward<T>(x);
     }
 
     template <typename CharT>
