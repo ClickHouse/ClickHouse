@@ -1580,6 +1580,7 @@ indexOf
 infi
 initialQueryID
 initializeAggregation
+initcap
 injective
 innogames
 inodes

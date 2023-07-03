@@ -1257,3 +1257,11 @@ Result:
 ## initcap
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
+
+## initcapUTF8
+
+Like [initcap](#initcap), assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+
+If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
