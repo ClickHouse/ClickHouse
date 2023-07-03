@@ -90,15 +90,11 @@ private:
             const FormatSettings & settings)>;
 
     // Incompatible with FileSegmentationEngine.
-    // When created using SeekableReadBufferFactoryPtr, the IInputFormat doesn't support
-    // resetParser() and setReadBuffer().
     //
     // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
     // and get some information about projections (min/max/count per column per row group).
     using RandomAccessInputCreator = std::function<InputFormatPtr(
-            // exactly one of these two is nullptr
-            ReadBuffer * buf,
-            SeekableReadBufferFactoryPtr buf_factory,
+            ReadBuffer & buf,
             const Block & header,
             const FormatSettings & settings,
             const ReadSettings& read_settings,
@@ -153,8 +149,11 @@ private:
 public:
     static FormatFactory & instance();
 
-    // Format parser from a single ReadBuffer.
-    // Parallelizes parsing (when possible) but not reading.
+    /// This has two tricks up its sleeve:
+    ///  * Parallel reading.
+    ///    To enable it, make sure `buf` is a SeekableReadBuffer implementing readBigAt().
+    ///  * Parallel parsing.
+    /// `buf` must outlive the returned IInputFormat.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -162,23 +161,13 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt) const;
-
-    // Format parser from a random-access source (factory of seekable read buffers).
-    // Parallelizes both parsing and reading when possible.
-    // Prefer this over getInput() when reading from random-access source like file or HTTP.
-    InputFormatPtr getInputRandomAccess(
-        const String & name,
-        SeekableReadBufferFactoryPtr buf_factory,
-        const Block & sample,
-        ContextPtr context,
-        UInt64 max_block_size,
-        bool is_remote_fs,
-        CompressionMethod compression,
-        // if nullopt, getFormatSettings(context) is used
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        std::optional<size_t> max_parsing_threads = std::nullopt,
         std::optional<size_t> max_download_threads = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt) const;
+        // affects things like buffer sizes and parallel reading
+        bool is_remote_fs = false,
+        // allows to do: buf -> parallel read -> decompression,
+        // because parallel read after decompression is not possible
+        CompressionMethod compression = CompressionMethod::None) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -250,6 +239,8 @@ public:
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
 
+    bool checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const;
+
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
@@ -270,28 +261,14 @@ private:
 
     const Creators & getCreators(const String & name) const;
 
-    InputFormatPtr getInputImpl(
-        const String & name,
-        // exactly one of the following two is nullptr
-        SeekableReadBufferFactoryPtr buf_factory,
-        ReadBuffer * buf,
-        const Block & sample,
-        ContextPtr context,
-        UInt64 max_block_size,
-        bool is_remote_fs,
-        CompressionMethod compression,
-        const std::optional<FormatSettings> & format_settings,
-        std::optional<size_t> max_download_threads,
-        std::optional<size_t> max_parsing_threads) const;
-
-    // Creates a ReadBuffer to give to an input format.
-    // Returns nullptr if we should give it the whole factory.
-    std::unique_ptr<ReadBuffer> prepareReadBuffer(
-        SeekableReadBufferFactoryPtr & buf_factory,
+    // Creates a ReadBuffer to give to an input format. Returns nullptr if we should use `buf` directly.
+    std::unique_ptr<ReadBuffer> wrapReadBufferIfNeeded(
+        ReadBuffer & buf,
         CompressionMethod compression,
         const Creators & creators,
         const FormatSettings & format_settings,
         const Settings & settings,
+        bool is_remote_fs,
         size_t max_download_threads) const;
 };
 

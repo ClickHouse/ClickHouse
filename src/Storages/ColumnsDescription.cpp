@@ -130,7 +130,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -380,15 +380,6 @@ NamesAndTypesList ColumnsDescription::getEphemeral() const
         for (const auto & col : columns)
             if (col.default_desc.kind == ColumnDefaultKind::Ephemeral)
                 ret.emplace_back(col.name, col.type);
-    return ret;
-}
-
-NamesAndTypesList ColumnsDescription::getWithDefaultExpression() const
-{
-    NamesAndTypesList ret;
-    for (const auto & col : columns)
-        if (col.default_desc.expression)
-            ret.emplace_back(col.name, col.type);
     return ret;
 }
 

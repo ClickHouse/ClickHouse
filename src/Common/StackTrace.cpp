@@ -9,6 +9,10 @@
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
 #include <atomic>
 #include <filesystem>
 #include <map>
@@ -340,8 +344,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
 
     using enum DB::Dwarf::LocationInfoMode;
     const auto mode = fatal ? FULL_WITH_INLINE : FAST;
@@ -358,6 +360,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
         const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
+        DB::WriteBufferFromOwnString out;
         out << i << ". ";
 
         if (std::error_code ec; object && std::filesystem::exists(object->name, ec) && !ec)
@@ -376,7 +379,10 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             out << "?";
 
         if (shouldShowAddress(physical_addr))
-            out << " @ " << physical_addr;
+        {
+            out << " @ ";
+            DB::writePointerHex(physical_addr, out);
+        }
 
         out << " in " << (object ? object->name : "?");
 
@@ -393,7 +399,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         callback(out.str());
-        out.str({});
     }
 #else
     for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)
@@ -404,6 +409,21 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
 
 void StackTrace::toStringEveryLine(std::function<void(std::string_view)> callback) const
 {
+    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback)
+{
+    toStringEveryLineImpl(true, {frame_pointers, 0, static_cast<size_t>(std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback)
+{
+    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
+
+    StackTrace::FramePointers frame_pointers{};
+    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
+
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
@@ -431,8 +451,7 @@ String toStringCached(const StackTrace::FramePointers & pointers, size_t offset,
         return it->second;
     else
     {
-        std::ostringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        out.exceptions(std::ios::failbit);
+        DB::WriteBufferFromOwnString out;
         toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
 
         return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;

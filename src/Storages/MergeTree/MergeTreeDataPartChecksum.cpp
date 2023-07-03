@@ -154,9 +154,9 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
         assertString("\n\tsize: ", in);
         readText(sum.file_size, in);
         assertString("\n\thash: ", in);
-        readText(sum.file_hash.first, in);
+        readText(sum.file_hash.low64, in);
         assertString(" ", in);
-        readText(sum.file_hash.second, in);
+        readText(sum.file_hash.high64, in);
         assertString("\n\tcompressed: ", in);
         readText(sum.is_compressed, in);
         if (sum.is_compressed)
@@ -164,9 +164,9 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
             assertString("\n\tuncompressed size: ", in);
             readText(sum.uncompressed_size, in);
             assertString("\n\tuncompressed hash: ", in);
-            readText(sum.uncompressed_hash.first, in);
+            readText(sum.uncompressed_hash.low64, in);
             assertString(" ", in);
-            readText(sum.uncompressed_hash.second, in);
+            readText(sum.uncompressed_hash.high64, in);
         }
         assertChar('\n', in);
 

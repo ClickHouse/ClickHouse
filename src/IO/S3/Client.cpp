@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 
+#include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -10,6 +11,7 @@
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
+#include <aws/core/utils/logging/ErrorMacros.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
@@ -112,14 +114,31 @@ std::unique_ptr<Client> Client::create(const Client & other)
     return std::unique_ptr<Client>(new Client(other));
 }
 
+namespace
+{
+
+ProviderType deduceProviderType(const std::string & url)
+{
+    if (url.find(".amazonaws.com") != std::string::npos)
+        return ProviderType::AWS;
+
+    if (url.find("storage.googleapis.com") != std::string::npos)
+        return ProviderType::GCS;
+
+    return ProviderType::UNKNOWN;
+}
+
+}
+
 Client::Client(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
-    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const Aws::Client::ClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
     bool use_virtual_addressing)
-    : Aws::S3::S3Client(credentials_provider, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    , credentials_provider(credentials_provider_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -128,8 +147,27 @@ Client::Client(
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
     endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
 
-    provider_type = getProviderTypeFromURL(initial_endpoint);
+    provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
+
+    if (provider_type == ProviderType::GCS)
+    {
+        /// GCS can operate in 2 modes for header and query params names:
+        /// - with both x-amz and x-goog prefixes allowed (but cannot mix different prefixes in same request)
+        /// - only with x-goog prefix
+        /// first mode is allowed only with HMAC (or unsigned requests) so when we
+        /// find credential keys we can simply behave as the underlying storage is S3
+        /// otherwise, we need to be aware we are making requests to GCS
+        /// and replace all headers with a valid prefix when needed
+        if (credentials_provider)
+        {
+            auto credentials = credentials_provider->GetAWSCredentials();
+            if (credentials.IsEmpty())
+                api_mode = ApiMode::GCS;
+        }
+    }
+
+    LOG_TRACE(log, "API mode: {}", toString(api_mode));
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -140,6 +178,7 @@ Client::Client(
 Client::Client(const Client & other)
     : Aws::S3::S3Client(other)
     , initial_endpoint(other.initial_endpoint)
+    , credentials_provider(other.credentials_provider)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
@@ -149,6 +188,11 @@ Client::Client(const Client & other)
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+}
+
+Aws::Auth::AWSCredentials Client::getCredentials() const
+{
+    return credentials_provider->GetAWSCredentials();
 }
 
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
@@ -208,7 +252,7 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
 {
     const auto & bucket = request.GetBucket();
 
-    request.setProviderType(provider_type);
+    request.setApiMode(api_mode);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -220,7 +264,7 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
     if (auto uri = getURIForBucket(bucket); uri.has_value())
         request.overrideURI(std::move(*uri));
 
-    auto result = Aws::S3::S3Client::HeadObject(request);
+    auto result = HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
     if (result.IsSuccess())
         return result;
 
@@ -277,70 +321,128 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
 
     request.overrideURI(std::move(*bucket_uri));
 
-    return Aws::S3::S3Client::HeadObject(request);
+    /// The next call is NOT a recurcive call
+    /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
+    return HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
 }
+
+/// For each request, we wrap the request functions from Aws::S3::Client with doRequest
+/// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(const ListObjectsV2Request & request) const
 {
-    return doRequest(request, [this](const Model::ListObjectsV2Request & req) { return Aws::S3::S3Client::ListObjectsV2(req); });
+    return doRequest(request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
 Model::ListObjectsOutcome Client::ListObjects(const ListObjectsRequest & request) const
 {
-    return doRequest(request, [this](const Model::ListObjectsRequest & req) { return Aws::S3::S3Client::ListObjects(req); });
+    return doRequest(request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
 Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::GetObjectRequest & req) { return Aws::S3::S3Client::GetObject(req); });
+    return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
 {
     return doRequest(
-        request, [this](const Model::AbortMultipartUploadRequest & req) { return Aws::S3::S3Client::AbortMultipartUpload(req); });
+        request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
 Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
 {
     return doRequest(
-        request, [this](const Model::CreateMultipartUploadRequest & req) { return Aws::S3::S3Client::CreateMultipartUpload(req); });
+        request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
 {
-    return doRequest(
-        request, [this](const Model::CompleteMultipartUploadRequest & req) { return Aws::S3::S3Client::CompleteMultipartUpload(req); });
+    auto outcome = doRequest(
+        request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
+
+    if (!outcome.IsSuccess() || provider_type != ProviderType::GCS)
+        return outcome;
+
+    const auto & key = request.GetKey();
+    const auto & bucket = request.GetBucket();
+
+    /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
+    /// for the object (e.g. for backups)
+    /// We don't care if the compose fails, because the upload was still successful, only the
+    /// performance for copying the object will be affected
+    S3::ComposeObjectRequest compose_req;
+    compose_req.SetBucket(bucket);
+    compose_req.SetKey(key);
+    compose_req.SetComponentNames({key});
+    compose_req.SetContentType("binary/octet-stream");
+    auto compose_outcome = ComposeObject(compose_req);
+
+    if (compose_outcome.IsSuccess())
+        LOG_TRACE(log, "Composing object was successful");
+    else
+        LOG_INFO(log, "Failed to compose object. Message: {}, Key: {}, Bucket: {}", compose_outcome.GetError().GetMessage(), key, bucket);
+
+    return outcome;
 }
 
 Model::CopyObjectOutcome Client::CopyObject(const CopyObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::CopyObjectRequest & req) { return Aws::S3::S3Client::CopyObject(req); });
+    return doRequest(request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
 Model::PutObjectOutcome Client::PutObject(const PutObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::PutObjectRequest & req) { return Aws::S3::S3Client::PutObject(req); });
+    return doRequest(request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
 Model::UploadPartOutcome Client::UploadPart(const UploadPartRequest & request) const
 {
-    return doRequest(request, [this](const Model::UploadPartRequest & req) { return Aws::S3::S3Client::UploadPart(req); });
+    return doRequest(request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
 Model::UploadPartCopyOutcome Client::UploadPartCopy(const UploadPartCopyRequest & request) const
 {
-    return doRequest(request, [this](const Model::UploadPartCopyRequest & req) { return Aws::S3::S3Client::UploadPartCopy(req); });
+    return doRequest(request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
 Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::DeleteObjectRequest & req) { return Aws::S3::S3Client::DeleteObject(req); });
+    return doRequest(request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
 {
-    return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return Aws::S3::S3Client::DeleteObjects(req); });
+    return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
+}
+
+Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & request) const
+{
+    auto request_fn = [this](const ComposeObjectRequest & req)
+    {
+        auto & endpoint_provider = const_cast<Client &>(*this).accessEndpointProvider();
+        AWS_OPERATION_CHECK_PTR(endpoint_provider, ComposeObject, Aws::Client::CoreErrors, Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE);
+
+        if (!req.BucketHasBeenSet())
+        {
+            AWS_LOGSTREAM_ERROR("ComposeObject", "Required field: Bucket, is not set")
+            return ComposeObjectOutcome(Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::MISSING_PARAMETER, "MISSING_PARAMETER", "Missing required field [Bucket]", false));
+        }
+
+        if (!req.KeyHasBeenSet())
+        {
+            AWS_LOGSTREAM_ERROR("ComposeObject", "Required field: Key, is not set")
+            return ComposeObjectOutcome(Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::MISSING_PARAMETER, "MISSING_PARAMETER", "Missing required field [Key]", false));
+        }
+
+        auto endpointResolutionOutcome = endpoint_provider->ResolveEndpoint(req.GetEndpointContextParams());
+        AWS_OPERATION_CHECK_SUCCESS(endpointResolutionOutcome, ComposeObject, Aws::Client::CoreErrors, Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE, endpointResolutionOutcome.GetError().GetMessage());
+        endpointResolutionOutcome.GetResult().AddPathSegments(req.GetKey());
+        endpointResolutionOutcome.GetResult().SetQueryString("?compose");
+        return ComposeObjectOutcome(MakeRequest(req, endpointResolutionOutcome.GetResult(), Aws::Http::HttpMethod::HTTP_PUT));
+    };
+
+    return doRequest(request, request_fn);
 }
 
 template <typename RequestType, typename RequestFn>
@@ -348,7 +450,7 @@ std::invoke_result_t<RequestFn, RequestType>
 Client::doRequest(const RequestType & request, RequestFn request_fn) const
 {
     const auto & bucket = request.GetBucket();
-    request.setProviderType(provider_type);
+    request.setApiMode(api_mode);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -421,9 +523,23 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
     throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
 }
 
-ProviderType Client::getProviderType() const
+bool Client::supportsMultiPartCopy() const
 {
-    return provider_type;
+    return provider_type != ProviderType::GCS;
+}
+
+void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
+                      const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const
+{
+    Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
+
+    if (api_mode == ApiMode::GCS)
+    {
+        /// some GCS requests don't like S3 specific headers that the client sets
+        httpRequest->DeleteHeader("x-amz-api-version");
+        httpRequest->DeleteHeader("amz-sdk-invocation-id");
+        httpRequest->DeleteHeader("amz-sdk-request");
+    }
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
@@ -602,7 +718,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
     HTTPHeaderEntries headers,
-    CredentialsConfiguration credentials_configuration)
+    CredentialsConfiguration credentials_configuration,
+    const String & session_token)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -626,7 +743,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     // These will be added after request signing
     client_configuration.extra_headers = std::move(headers);
 
-    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
     auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),

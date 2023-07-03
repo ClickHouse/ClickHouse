@@ -7,6 +7,608 @@ description: This section contains descriptions of server settings that cannot b
 
 # Server Settings
 
+This section contains descriptions of server settings that cannot be changed at the session or query level.
+
+These settings are stored in the `config.xml` file on the ClickHouse server.
+
+Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
+
+Before studying the settings, read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
+
+## allow_use_jemalloc_memory
+
+Allows to use jemalloc memory.
+
+Type: Bool
+
+Default: 1
+
+
+## asynchronous_heavy_metrics_update_period_s
+
+Period in seconds for updating asynchronous metrics.
+
+Type: UInt32
+
+Default: 120
+
+
+## asynchronous_metrics_update_period_s
+
+Period in seconds for updating asynchronous metrics.
+
+Type: UInt32
+
+Default: 1
+
+
+## background_buffer_flush_schedule_pool_size
+
+The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
+
+Type: UInt64
+
+Default: 16
+
+
+## background_common_pool_size
+
+The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for \*MergeTree-engine tables in a background.
+
+Type: UInt64
+
+Default: 8
+
+## background_distributed_schedule_pool_size
+
+The maximum number of threads that will be used for executing distributed sends.
+
+Type: UInt64
+
+Default: 16
+
+
+## background_fetches_pool_size
+
+The maximum number of threads that will be used for fetching data parts from another replica for \*MergeTree-engine tables in a background.
+
+Type: UInt64
+
+Default: 8
+
+## background_merges_mutations_concurrency_ratio
+
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example, if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
+
+Type: Float
+
+Default: 2
+
+## background_merges_mutations_scheduling_policy
+
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
+
+## background_merges_mutations_scheduling_policy
+
+Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
+Could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+- "round_robin" — Every concurrent merge and mutation is executed in round-robin order to ensure starvation-free operation. Smaller merges are completed faster than bigger ones just because they have fewer blocks to merge.
+- "shortest_task_first" — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by INSERTs.
+
+Type: String
+
+Default: round_robin
+
+## background_message_broker_schedule_pool_size
+
+The maximum number of threads that will be used for executing background operations for message streaming.
+
+Type: UInt64
+
+Default: 16
+
+## background_move_pool_size
+
+The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.
+
+Type: UInt64
+
+Default: 8
+
+## background_pool_size
+
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+
+Type: UInt64
+
+Default: 16
+
+## background_schedule_pool_size
+
+The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.
+
+Type: UInt64
+
+Default: 128
+
+## backup_threads
+
+The maximum number of threads to execute BACKUP requests.
+
+Type: UInt64
+
+Default: 16
+
+
+## backups_io_thread_pool_queue_size
+
+The maximum number of jobs that can be scheduled on the Backups IO Thread pool. It is recommended to keep this queue unlimited (0) due to the current S3 backup logic.
+
+Type: UInt64
+
+Default: 0
+
+## cache_size_to_ram_max_ratio
+
+Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.
+
+Type: Double
+
+Default: 0.5
+
+## concurrent_threads_soft_limit_num
+
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
+
+Zero means Unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## concurrent_threads_soft_limit_ratio_to_cores
+
+Same as concurrent_threads_soft_limit_num, but with ratio to cores.
+
+Type: UInt64
+
+Default: 0
+
+
+## default_database
+
+Default database name.
+
+Type: String
+
+Default: default
+
+## disable_internal_dns_cache
+
+Disables the internal DNS cache. Recommended for operating ClickHouse in systems
+with frequently changing infrastructure such as Kubernetes.
+
+Type: Bool
+
+Default: 0
+
+## dns_cache_update_period
+
+Internal DNS cache update period in seconds.
+
+Type: Int32
+
+Default: 15
+
+
+## dns_max_consecutive_failures
+
+Max consecutive resolving failures before dropping a host from ClickHouse DNS cache
+
+Type: UInt32
+
+Default: 1024
+
+
+## index_mark_cache_size
+
+Size of cache for index marks. Zero means disabled.
+
+Type: UInt64
+
+Default: 0
+
+
+## index_uncompressed_cache_size
+
+Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+
+Type: UInt64
+
+Default: 0
+
+
+## io_thread_pool_queue_size
+
+Queue size for IO thread pool. Zero means unlimited.
+
+Type: UInt64
+
+Default: 10000
+
+## mark_cache_policy
+
+Mark cache policy name.
+
+Type: String
+
+Default: SLRU
+
+## mark_cache_size
+
+Size of cache for marks (index of MergeTree family of tables).
+
+Type: UInt64
+
+Default: 5368709120
+
+## max_backup_bandwidth_for_server
+
+The maximum read speed in bytes per second for all backups on server. Zero means unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## max_backups_io_thread_pool_free_size
+
+If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+
+Type: UInt64
+
+Default: 0
+
+## max_backups_io_thread_pool_size
+
+The maximum number of threads that would be used for IO operations for BACKUP queries
+
+Type: UInt64
+
+Default: 1000
+
+## max_concurrent_queries
+
+Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Type: UInt64
+
+Default: 0
+
+## max_concurrent_insert_queries
+
+Limit on total number of concurrent insert queries. Zero means Unlimited.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Type: UInt64
+
+Default: 0
+
+## max_concurrent_select_queries
+
+Limit on total number of concurrently select queries. Zero means Unlimited.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Type: UInt64
+
+Default: 0
+
+## max_connections
+
+Max server connections.
+
+Type: Int32
+
+Default: 1024
+
+## max_io_thread_pool_free_size
+
+Max free size for IO thread pool.
+
+Type: UInt64
+
+Default: 0
+
+## max_io_thread_pool_size
+
+The maximum number of threads that would be used for IO operations
+
+Type: UInt64
+
+Default: 100
+
+## max_local_read_bandwidth_for_server
+
+The maximum speed of local reads in bytes per second. Zero means unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## max_local_write_bandwidth_for_server
+
+The maximum speed of local writes in bytes per second. Zero means unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## max_partition_size_to_drop
+
+Restriction on dropping partitions.
+
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+Default value: 50 GB.
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max-table-size-to-drop)
+:::
+
+## max_remote_read_network_bandwidth_for_server
+
+The maximum speed of data exchange over the network in bytes per second for read. Zero means unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## max_remote_write_network_bandwidth_for_server
+
+The maximum speed of data exchange over the network in bytes per second for write. Zero means unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## max_server_memory_usage
+
+Limit on total memory usage. Zero means Unlimited.
+
+The default `max_server_memory_usage` value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
+
+Type: UInt64
+
+Default: 0
+
+## max_server_memory_usage_to_ram_ratio
+
+Same as max_server_memory_usage but in a ratio to physical RAM. Allows lowering the memory usage on low-memory systems. Zero means unlimited.
+
+On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio` larger than 1.
+
+Type: Double
+
+Default: 0.9
+
+## max_table_size_to_drop
+
+Restriction on deleting tables.
+
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
+
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+
+Default value: 50 GB.
+The value 0 means that you can delete all tables without any restrictions.
+**Example**
+``` xml
+<max_table_size_to_drop>0</max_table_size_to_drop>
+```
+
+## max_temporary_data_on_disk_size
+
+The maximum amount of storage that could be used for external aggregation, joins or sorting.
+Queries that exceed this limit will fail with an exception. Zero means unlimited.
+
+Also see `max_temporary_data_on_disk_size_for_user` and `max_temporary_data_on_disk_size_for_query`.
+
+Type: UInt64
+
+Default: 0
+
+## max_thread_pool_free_size
+
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+
+Type: UInt64
+
+Default: 1000
+
+## max_thread_pool_size
+
+The maximum number of threads that could be allocated from the OS and used for query execution and background operations.
+
+Type: UInt64
+
+Default: 10000
+
+## mmap_cache_size
+
+Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). The amount of data in mapped files can be monitored in the tables system.metrics and system.metric_log with the `MMappedFiles` and `MMappedFileBytes` metrics.  Also, in system.asynchronous_metrics and system.asynchronous_metrics_log by the `MMapCacheCells` metric, and in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` events.
+
+Note that the amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
+
+Type: UInt64
+
+Default: 1000
+
+## restore_threads
+
+The maximum number of threads to execute RESTORE requests.
+
+Type: UInt64
+
+Default: 16
+
+## show_addresses_in_stack_traces
+
+If it is set true will show addresses in stack traces
+
+Type: Bool
+
+Default: 1
+
+## shutdown_wait_unfinished_queries
+
+If set true ClickHouse will wait for running queries finish before shutdown.
+
+Type: Bool
+
+Default: 0
+
+## temporary_data_in_cache
+
+With this option, temporary data will be stored in the cache for the particular disk.
+In this section, you should specify the disk name with the type `cache`.
+In that case, the cache and temporary data will share the same space, and the disk cache can be evicted to create temporary data.
+
+:::note
+Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+:::
+
+**Example**
+
+Both the cache for `local_disk`, and temporary data will be stored in `/tiny_local_cache` on the filesystem, managed by `tiny_local_cache`.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local_disk>
+                <type>local</type>
+                <path>/local_disk/</path>
+            </local_disk>
+
+            <!-- highlight-start -->
+            <tiny_local_cache>
+                <type>cache</type>
+                <disk>local_disk</disk>
+                <path>/tiny_local_cache/</path>
+                <max_size>10M</max_size>
+                <max_file_segment_size>1M</max_file_segment_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+            </tiny_local_cache>
+            <!-- highlight-end -->
+        </disks>
+    </storage_configuration>
+
+    <!-- highlight-start -->
+    <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+    <!-- highlight-end -->
+</clickhouse>
+```
+
+Type: String
+
+Default: 
+
+## thread_pool_queue_size
+
+TThe maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to `max_thread_pool_size`. Zero means unlimited.
+
+Type: UInt64
+
+Default: 10000
+
+## tmp_policy
+
+Policy for storage with temporary data. Also see the MergeTree Table Engine documentation.
+
+:::note
+- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+- `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
+- Policy should have exactly *one volume* with *local* disks.
+:::
+
+**Example**
+
+When `/disk1` is full, temporary data will be stored on `/disk2`.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <path>/disk1/</path>
+            </disk1>
+            <disk2>
+                <path>/disk2/</path>
+            </disk2>
+        </disks>
+
+        <policies>
+            <!-- highlight-start -->
+            <tmp_two_disks>
+                <volumes>
+                    <main>
+                        <disk>disk1</disk>
+                        <disk>disk2</disk>
+                    </main>
+                </volumes>
+            </tmp_two_disks>
+            <!-- highlight-end -->
+        </policies>
+    </storage_configuration>
+
+    <!-- highlight-start -->
+    <tmp_policy>tmp_two_disks</tmp_policy>
+    <!-- highlight-end -->
+</clickhouse>
+```
+Type: String
+
+Default: 
+
+## uncompressed_cache_policy
+
+Uncompressed cache policy name.
+
+Type: String
+
+Default: SLRU
+
+
+## uncompressed_cache_size
+
+Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family. Zero means disabled.
+
+There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
+
+The uncompressed cache is advantageous for very short queries in individual cases.
+
+Type: UInt64
+
+Default: 0
+
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
 The interval in seconds before reloading built-in dictionaries.
@@ -208,7 +810,7 @@ Default value: `3600` (1 hour).
 ## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
 
 Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previousely "hidden"
+If some subdirectory is not used by clickhouse-server and it was previously "hidden"
 (see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec))
 and this directory was not modified for last
 `database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory.
@@ -223,18 +825,6 @@ Parameter of a task that cleans up garbage from `store/` directory.
 Sets scheduling period of the task. Zero means "never".
 
 Default value: `86400` (1 day).
-
-## default_database {#default-database}
-
-The default database.
-
-To get a list of databases, use the [SHOW DATABASES](../../sql-reference/statements/show.md#show-databases) query.
-
-**Example**
-
-``` xml
-<default_database>default</default_database>
-```
 
 ## default_profile {#default-profile}
 
@@ -695,210 +1285,6 @@ For more information, see the section [Creating replicated tables](../../engines
 <macros incl="macros" optional="true" />
 ```
 
-## mark_cache_size {#server-mark-cache-size}
-
-Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
-
-The cache is shared for the server and memory is allocated as needed.
-
-**Example**
-
-``` xml
-<mark_cache_size>5368709120</mark_cache_size>
-```
-
-## max_server_memory_usage {#max_server_memory_usage}
-
-Limits total RAM usage by the ClickHouse server.
-
-Possible values:
-
-- Positive integer.
-- 0 — Auto.
-
-Default value: `0`.
-
-**Additional Info**
-
-The default `max_server_memory_usage` value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
-
-**See also**
-
-- [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
-- [max_server_memory_usage_to_ram_ratio](#max_server_memory_usage_to_ram_ratio)
-
-## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
-
-Defines the fraction of total physical RAM amount, available to the ClickHouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount.
-
-Possible values:
-
-- Positive double.
-- 0 — The ClickHouse server can use all available RAM.
-
-Default value: `0.9`.
-
-**Usage**
-
-On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio` larger than 1.
-
-**Example**
-
-``` xml
-<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
-```
-
-**See Also**
-
-- [max_server_memory_usage](#max_server_memory_usage)
-
-## concurrent_threads_soft_limit_num {#concurrent_threads_soft_limit_num}
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**See Also**
-
-- [Concurrency Control](/docs/en/development/architecture.md#concurrency-control)
-
-## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
-The maximum number of query processing threads as multiple of number of logical cores.
-More details: [concurrent_threads_soft_limit_num](#concurrent_threads_soft_limit_num).
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<concurrent_threads_soft_limit_ratio_to_cores>3</concurrent_threads_soft_limit_ratio_to_cores>
-```
-
-## max_concurrent_queries {#max-concurrent-queries}
-
-The maximum number of simultaneously processed queries.
-Note that other limits also apply: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users).
-
-:::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `100`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries>200</max_concurrent_queries>
-```
-
-## max_concurrent_insert_queries {#max-concurrent-insert-queries}
-
-The maximum number of simultaneously processed `INSERT` queries.
-
-:::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
-```
-
-## max_concurrent_select_queries {#max-concurrent-select-queries}
-
-The maximum number of simultaneously processed `SELECT` queries.
-
-:::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_select_queries>100</max_concurrent_select_queries>
-```
-
-## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
-
-The maximum number of simultaneously processed queries related to MergeTree table per user.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
-```
-
-## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
-
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
-
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
-
-Modifying the setting for one query or user does not affect other queries.
-
-Possible values:
-
-- Positive integer.
-- 0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
-```
-
-**See Also**
-
-- [max_concurrent_queries](#max-concurrent-queries)
-
-## max_connections {#max-connections}
-
-The maximum number of inbound connections.
-
-**Example**
-
-``` xml
-<max_connections>4096</max_connections>
-```
-
 ## max_open_files {#max-open-files}
 
 The maximum number of open files.
@@ -917,9 +1303,9 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a DROP query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -929,6 +1315,28 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
+```
+
+## max_partition_size_to_drop {#max-partition-size-to-drop}
+
+Restriction on dropping partitions.
+
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+
+Default value: 50 GB.
+
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max-table-size-to-drop)
+:::
+
+**Example**
+
+``` xml
+<max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
 ## max_thread_pool_size {#max-thread-pool-size}
@@ -1045,7 +1453,7 @@ Default value: `0`.
 
 ## background_pool_size {#background_pool_size}
 
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
 
 Before changing it, please also take a look at related MergeTree settings, such as [number_of_free_entries_in_pool_to_lower_max_size_of_merge](../../operations/settings/merge-tree-settings.md#number-of-free-entries-in-pool-to-lower-max-size-of-merge) and [number_of_free_entries_in_pool_to_execute_mutation](../../operations/settings/merge-tree-settings.md#number-of-free-entries-in-pool-to-execute-mutation).
 
@@ -1063,8 +1471,8 @@ Default value: 16.
 
 ## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
 
-Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
-`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example, if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
 The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
 
 Possible values:
@@ -1079,91 +1487,35 @@ Default value: 2.
 <background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
 ```
 
-## background_merges_mutations_scheduling_policy {#background_merges_mutations_scheduling_policy}
+## merges_mutations_memory_usage_soft_limit {#merges_mutations_memory_usage_soft_limit}
 
-Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
-Could be applied from the `default` profile for backward compatibility.
+Sets the limit on how much RAM is allowed to use for performing merge and mutation operations.
+Zero means unlimited.
+If ClickHouse reaches this limit, it won't schedule any new background merge or mutation operations but will continue to execute already scheduled tasks.
 
 Possible values:
 
-- "round_robin" — Every concurrent merge and mutation is executed in round-robin order to ensure starvation-free operation. Smaller merges are completed faster than bigger ones just because they have fewer blocks to merge.
-- "shortest_task_first" — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by INSERTs.
-
-Default value: "round_robin".
+-   Any positive integer.
 
 **Example**
 
 ```xml
-<background_merges_mutations_scheduling_policy>shortest_task_first</background_merges_mutations_scheduling_policy>
+<merges_mutations_memory_usage_soft_limit>0</merges_mutations_memory_usage_soft_limit>
 ```
 
-## background_move_pool_size {#background_move_pool_size}
+## merges_mutations_memory_usage_to_ram_ratio {#merges_mutations_memory_usage_to_ram_ratio}
 
-Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+The default `merges_mutations_memory_usage_soft_limit` value is calculated as `memory_amount * merges_mutations_memory_usage_to_ram_ratio`.
 
-Possible values:
+Default value: `0.5`.
 
-- Any positive integer.
+**See also**
 
-Default value: 8.
+-   [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
+-   [merges_mutations_memory_usage_soft_limit](#merges_mutations_memory_usage_soft_limit)
 
-**Example**
 
-```xml
-<background_move_pool_size>36</background_move_pool_size>
-```
 
-## background_fetches_pool_size {#background_fetches_pool_size}
-
-Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime.
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 8.
-
-**Example**
-
-```xml
-<background_fetches_pool_size>36</background_fetches_pool_size>
-```
-
-## background_common_pool_size {#background_common_pool_size}
-
-Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime.
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 8.
-
-**Example**
-
-```xml
-<background_common_pool_size>36</background_common_pool_size>
-```
-
-## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
-
-Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables.
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 16.
-
-## background_schedule_pool_size {#background_schedule_pool_size}
-
-Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period).
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 128.
 
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
@@ -1250,7 +1602,7 @@ Keys for server/client settings:
 - requireTLSv1_2 (default: false) – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips (default: false) – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler (default: `KeyConsoleHandler`)– Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
-- invalidCertificateHandler (default: `ConsoleCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+- invalidCertificateHandler (default: `RejectCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .
 - disableProtocols (default: "") – Protocols that are not allowed to use.
 - preferServerCiphers (default: false) – Preferred server ciphers on the client.
 
@@ -1295,9 +1647,11 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
 **Example**
 
@@ -1371,9 +1725,11 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1427,9 +1783,11 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1455,9 +1813,11 @@ Use the following parameters to configure logging:
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
 If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1482,9 +1842,11 @@ Parameters:
 - `database` — Database name.
 - `table` — Table name.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
 **Example**
 ```xml
@@ -1510,9 +1872,11 @@ Parameters:
 - `database` — Database for storing a table.
 - `table` — Table name.
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 - `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -1523,6 +1887,32 @@ The default server configuration file `config.xml` contains the following settin
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </trace_log>
+```
+
+## asynchronous_insert_log {#server_configuration_parameters-asynchronous_insert_log}
+
+Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `storage_policy` – Name of storage policy to use for the table (optional)
+
+**Example**
+```xml
+<clickhouse>
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </asynchronous_insert_log>
+</clickhouse>
 ```
 
 ## query_masking_rules {#query-masking-rules}
@@ -1548,7 +1938,7 @@ Config fields:
 - `regexp` - RE2 compatible regular expression (mandatory)
 - `replace` - substitution string for sensitive data (optional, by default - six asterisks)
 
-The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parsable queries).
+The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parseable queries).
 
 `system.events` table have counter `QueryMaskingRulesMatch` which have an overall number of query masking rules matches.
 
@@ -1584,6 +1974,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 ``` xml
 <timezone>Asia/Istanbul</timezone>
 ```
+
+**See also**
+
+- [session_timezone](../settings/settings.md#session_timezone)
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
 
@@ -1653,115 +2047,6 @@ Path on the local filesystem to store temporary data for processing large querie
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp_policy {#tmp-policy}
-
-Alternatively, a policy from [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) can be used to store temporary files.
-
-:::note
-- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-- `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
-- Policy should have exactly *one volume* with *local* disks.
-:::
-
-**Example**
-
-```xml<clickhouse>
-    <storage_configuration>
-        <disks>
-            <disk1>
-                <path>/disk1/</path>
-            </disk1>
-            <disk2>
-                <path>/disk2/</path>
-            </disk2>
-        </disks>
-
-        <policies>
-            <tmp_two_disks>
-                <volumes>
-                    <main>
-                        <disk>disk1</disk>
-                        <disk>disk2</disk>
-                    </main>
-                </volumes>
-            </tmp_two_disks>
-        </policies>
-    </storage_configuration>
-
-    <tmp_policy>tmp_two_disks</tmp_policy>
-</clickhouse>
-
-```
-
-When `/disk1` is full, temporary data will be stored on `/disk2`.
-
-## temporary_data_in_cache {#temporary-data-in-cache}
-
-With this option, temporary data will be stored in the cache for the particular disk.
-In this section, you should specify the disk name with the type `cache`.
-In that case, the cache and temporary data will share the same space, and the disk cache can be evicted to create temporary data.
-
-:::note
-- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-:::
-
-**Example**
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <local_disk>
-                <type>local</type>
-                <path>/local_disk/</path>
-            </local_disk>
-
-            <tiny_local_cache>
-                <type>cache</type>
-                <disk>local_disk</disk>
-                <path>/tiny_local_cache/</path>
-                <max_size>10M</max_size>
-                <max_file_segment_size>1M</max_file_segment_size>
-                <cache_on_write_operations>1</cache_on_write_operations>
-                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
-            </tiny_local_cache>
-        </disks>
-    </storage_configuration>
-
-    <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
-</clickhouse>
-```
-
-Cache for `local_disk` and temporary data will be stored in `/tiny_local_cache` on the filesystem, managed by `tiny_local_cache`.
-
-## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
-
-Limit the amount of disk space consumed by temporary files in `tmp_path` for the server.
-Queries that exceed this limit will fail with an exception.
-
-Default value: `0`.
-
-**See also**
-
-- [max_temporary_data_on_disk_size_for_user](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_user)
-- [max_temporary_data_on_disk_size_for_query](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_query)
-- [tmp_path](#tmp-path)
-- [tmp_policy](#tmp-policy)
-- [max_server_memory_usage](#max_server_memory_usage)
-
-## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
-
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
-
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache) is enabled.
-
-The uncompressed cache is advantageous for very short queries in individual cases.
-
-**Example**
-
-``` xml
-<uncompressed_cache_size>8589934592</uncompressed_cache_size>
-```
 
 ## user_files_path {#server_configuration_parameters-user_files_path}
 
@@ -1835,7 +2120,13 @@ This section contains the following parameters:
 - `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
 - `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
 - `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
-
+- zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
+  * random - randomly selects one of ZooKeeper nodes.
+  * in_order - selects the first ZooKeeper node, if it's not available then the second, and so on.
+  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
+  * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
+  * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+    
 **Example configuration**
 
 ``` xml
@@ -1854,6 +2145,8 @@ This section contains the following parameters:
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <zookeeper_load_balancing>random</zookeeper_load_balancing>
 </zookeeper>
 ```
 
@@ -1891,24 +2184,6 @@ Data part headers already stored with this setting can't be restored to their pr
 :::
 
 **Default value:** 0.
-
-## disable_internal_dns_cache {#server-settings-disable-internal-dns-cache}
-
-Disables the internal DNS cache. Recommended for operating ClickHouse in systems
-with frequently changing infrastructure such as Kubernetes.
-
-**Default value:** 0.
-
-## dns_cache_update_period {#server-settings-dns-cache-update-period}
-
-The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
-The update is performed asynchronously, in a separate system thread.
-
-**Default value**: 15.
-
-**See also**
-
-- [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
 
 ## distributed_ddl {#server-settings-distributed_ddl}
 
@@ -2038,16 +2313,6 @@ Possible values:
 - 0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
 
 Default value: `0`.
-
-## mmap_cache_size {#mmap-cache-size}
-
-Sets the cache size (in bytes) for mapped files. This setting allows to avoid frequent open/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/close calls (which are very expensive due to consequent page faults) and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). The amount of data in mapped files can be monitored in [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) system tables by the `MMappedFiles` and `MMappedFileBytes` metrics, in [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) by the `MMapCacheCells` metric, and also in [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) by the `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` events. Note that the amount of data in mapped files does not consume memory directly and is not accounted in query or server memory usage — because this memory can be discarded similar to OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
-
-Possible values:
-
-- Positive integer.
-
-Default value: `1000`.
 
 ## compiled_expression_cache_size {#compiled-expression-cache-size}
 

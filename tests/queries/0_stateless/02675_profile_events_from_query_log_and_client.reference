@@ -1,8 +1,8 @@
 INSERT TO S3
  [ 0 ] S3CompleteMultipartUpload: 1 
  [ 0 ] S3CreateMultipartUpload: 1 
- [ 0 ] S3HeadObject: 1 
- [ 0 ] S3ReadRequestsCount: 1 
+ [ 0 ] S3HeadObject: 2 
+ [ 0 ] S3ReadRequestsCount: 2 
  [ 0 ] S3UploadPart: 1 
  [ 0 ] S3WriteRequestsCount: 3 
 CHECK WITH query_log
