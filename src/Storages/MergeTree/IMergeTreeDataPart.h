@@ -249,6 +249,9 @@ public:
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
 
+    /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
+    bool old_part_with_no_metadata_version_on_disk = false;
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 

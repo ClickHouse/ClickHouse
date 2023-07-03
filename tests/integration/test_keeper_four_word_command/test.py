@@ -252,10 +252,12 @@ def test_cmd_conf(started_cluster):
 
         assert result["four_letter_word_allow_list"] == "*"
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
+        assert result["log_storage_disk"] == "LocalLogDisk"
         assert (
             result["snapshot_storage_path"]
             == "/var/lib/clickhouse/coordination/snapshots"
         )
+        assert result["snapshot_storage_disk"] == "LocalSnapshotDisk"
 
         assert result["session_timeout_ms"] == "30000"
         assert result["min_session_timeout_ms"] == "10000"
