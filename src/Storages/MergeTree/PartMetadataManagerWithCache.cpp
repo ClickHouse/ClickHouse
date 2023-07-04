@@ -250,8 +250,8 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                     ErrorCodes::CORRUPTED_DATA,
                     "Checksums doesn't match in part {} for {}. Expected: {}. Found {}.",
                     part->name, file_path,
-                    getHexUIntUppercase(disk_checksum.high64) + getHexUIntUppercase(disk_checksum.low64),
-                    getHexUIntUppercase(cache_checksums[i].high64) + getHexUIntUppercase(cache_checksums[i].low64));
+                    getHexUIntUppercase(disk_checksum),
+                    getHexUIntUppercase(cache_checksums[i]));
 
             disk_checksums.push_back(disk_checksum);
             continue;
@@ -287,8 +287,8 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                 ErrorCodes::CORRUPTED_DATA,
                 "Checksums doesn't match in projection part {} {}. Expected: {}. Found {}.",
                 part->name, proj_name,
-                getHexUIntUppercase(disk_checksum.high64) + getHexUIntUppercase(disk_checksum.low64),
-                getHexUIntUppercase(cache_checksums[i].high64) + getHexUIntUppercase(cache_checksums[i].low64));
+                getHexUIntUppercase(disk_checksum),
+                getHexUIntUppercase(cache_checksums[i]));
         disk_checksums.push_back(disk_checksum);
     }
     return results;
