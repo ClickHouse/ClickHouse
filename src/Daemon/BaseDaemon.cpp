@@ -154,7 +154,10 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::thread_frame_pointers, out);
+    if (Exception::enable_job_stack_trace)
+        writeVectorBinary(Exception::thread_frame_pointers, out);
+    else
+        writeVarUInt(0, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
