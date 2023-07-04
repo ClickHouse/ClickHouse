@@ -565,6 +565,7 @@ CREATE TABLE system.parts_columns
     `column_data_compressed_bytes` UInt64,
     `column_data_uncompressed_bytes` UInt64,
     `column_marks_bytes` UInt64,
+    `column_modification_time` Nullable(DateTime),
     `serialization_kind` String,
     `subcolumns.names` Array(String),
     `subcolumns.types` Array(String),
@@ -750,6 +751,7 @@ CREATE TABLE system.projection_parts_columns
     `column_data_compressed_bytes` UInt64,
     `column_data_uncompressed_bytes` UInt64,
     `column_marks_bytes` UInt64,
+    `column_modification_time` Nullable(DateTime),
     `bytes` UInt64,
     `marks_size` UInt64,
     `part_name` String

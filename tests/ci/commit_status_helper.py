@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional, Union
 import logging
 
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet  # type: ignore
+from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
