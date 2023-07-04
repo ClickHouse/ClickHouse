@@ -13,20 +13,20 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t (x Int8) ENGINE = MergeTree ORDER BY ()"
 
 
-function thread()
+function thread_optimize()
 {
-    trap 'BREAK=1' 2
-
-    while [[ -z "${BREAK}" ]]
+    while true;
     do
         ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t FINAL;" 2>&1 | tr -d '\n' | rg -v 'Cancelled merging parts' ||:
     done
 }
 
-thread &
-pid=$!
+TIMEOUT=15
+export -f thread_optimize
+timeout $TIMEOUT bash -c thread_optimize 2> /dev/null &
 
-for i in {1..100}; do
+for i in {1..100};
+do
     echo "
         INSERT INTO t VALUES (0);
         INSERT INTO t VALUES (0);
@@ -36,7 +36,6 @@ for i in {1..100}; do
         "
 done | ${CLICKHOUSE_CLIENT} --multiquery
 
-kill -2 "$pid"
 wait
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
