@@ -136,6 +136,7 @@ if (TARGET ch_contrib::hdfs)
 endif()
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
@@ -210,6 +211,7 @@ endif()
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
 endif()
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -344,6 +346,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
+            boost::context
             ch_contrib::cityhash
             ch_contrib::re2
             ch_contrib::re2_st
@@ -351,6 +354,10 @@ target_link_libraries(clickhouse_common_io
             pcg_random
             Poco::Foundation
 )
+
+if (TARGET ch_contrib::fiu)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::fiu)
+endif()
 
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
@@ -406,6 +413,7 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
         Poco::MongoDB
+        Poco::Redis
 )
 
 if (TARGET ch::mysqlxx)
@@ -458,7 +466,7 @@ endif ()
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
 endif ()
-dbms_target_link_libraries (PRIVATE ch_contrib::sparsehash)
+dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
 if (TARGET ch_contrib::protobuf)
     dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
@@ -505,6 +513,10 @@ if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
+if (TARGET ch_contrib::bcrypt)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::bcrypt)
+endif()
+
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
@@ -518,7 +530,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
 if (TARGET ch_contrib::rocksdb)
@@ -539,7 +551,12 @@ if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
 endif ()
 
-dbms_target_link_libraries(PRIVATE _boost_context)
+if (TARGET ch_contrib::accel-config)
+    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
+endif ()
+
+target_link_libraries(clickhouse_common_io PUBLIC boost::context)
+dbms_target_link_libraries(PUBLIC boost::context)
 
 if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
@@ -598,6 +615,7 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gtest_all
+        ch_contrib::gmock_all
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

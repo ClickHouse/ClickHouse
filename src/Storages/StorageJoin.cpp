@@ -89,10 +89,10 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -138,7 +138,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     // New scope controls lifetime of pipeline.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+        MutationsInterpreter::Settings settings(true);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -220,12 +221,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Names left_key_names_resorted;
     for (const auto & key_name : key_names)
     {
-        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
+        const auto & renamed_key = analyzed_join->renamedRightColumnNameWithAlias(key_name);
         /// find position of renamed_key in key_names_right
         auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
         if (it == key_names_right.end())
             throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
+                "Key '{}' not found in JOIN ON section. Join engine key{} '{}' have to be used",
+                key_name, key_names.size() > 1 ? "s" : "", fmt::join(key_names, ", "));
         const size_t key_position = std::distance(key_names_right.begin(), it);
         left_key_names_resorted.push_back(key_names_left[key_position]);
     }

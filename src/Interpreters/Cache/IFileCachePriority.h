@@ -44,13 +44,13 @@ public:
 
         virtual size_t use(const CacheGuard::Lock &) = 0;
 
-        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
+        virtual void remove(const CacheGuard::Lock &) = 0;
 
         virtual const Entry & getEntry() const = 0;
 
         virtual Entry & getEntry() = 0;
 
-        virtual void annul() = 0;
+        virtual void invalidate() = 0;
 
         virtual void updateSize(int64_t size) = 0;
     };
@@ -64,7 +64,7 @@ public:
         CONTINUE,
         REMOVE_AND_CONTINUE,
     };
-    using IterateFunc = std::function<IterationResult(LockedKey &, FileSegmentMetadataPtr)>;
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
 
     IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
 
@@ -85,6 +85,7 @@ public:
 
     virtual void removeAll(const CacheGuard::Lock &) = 0;
 
+    /// From lowest to highest priority.
     virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
 
 private:
@@ -92,4 +93,4 @@ private:
     const size_t max_elements = 0;
 };
 
-};
+}

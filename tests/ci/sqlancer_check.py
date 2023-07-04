@@ -10,10 +10,14 @@ from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import format_description, post_commit_status
+from commit_status_helper import (
+    RerunHelper,
+    format_description,
+    get_commit,
+    post_commit_status,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import (
-    GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     REPORTS_PATH,
     TEMP_PATH,
@@ -21,7 +25,6 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
@@ -46,12 +49,6 @@ def get_run_command(download_url, workspace_path, image):
     )
 
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(GITHUB_REPOSITORY)
-    commit = repo.get_commit(commit_sha)
-    return commit
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -68,8 +65,9 @@ def main():
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -155,10 +153,10 @@ def main():
     test_results = []  # type: TestResults
     # Try to get status message saved by the SQLancer
     try:
-        # with open(
-        #     os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-        # ) as status_f:
-        #     status = status_f.readline().rstrip("\n")
+        with open(
+            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
+        ) as status_f:
+            status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
             test_results.append(TestResult("Server crashed", "FAIL"))
         with open(
@@ -173,7 +171,7 @@ def main():
         ) as desc_f:
             description = desc_f.readline().rstrip("\n")
     except:
-        # status = "failure"
+        status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
     description = format_description(description)
@@ -187,12 +185,10 @@ def main():
         check_name,
     )
 
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
-
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
     print(f"::notice:: {check_name} Report url: {report_url}")
 
     ch_helper = ClickHouseHelper()
-
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         test_results,
@@ -202,11 +198,7 @@ def main():
         report_url,
         check_name,
     )
-
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    print(f"::notice Result: '{status}', '{description}', '{report_url}'")
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
 
 
 if __name__ == "__main__":
