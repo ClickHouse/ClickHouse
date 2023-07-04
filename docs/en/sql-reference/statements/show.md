@@ -290,7 +290,7 @@ The statement produces a result table with the following structure:
 - collation - The sorting of the column in the index, `A` if ascending, `D` if descending, `NULL` if unsorted (Nullable(String))
 - cardinality - Currently unused
 - sub_part - Currently unused
-- packed - Currently unused
+- packed - Always `NULL` because ClickHouse does not support packed (prefix-compressed) indexes like MySQL (Nullable(String))
 - null - Currently unused
 - index_type - The index type, e.g. `PRIMARY`, `MINMAX`, `BLOOM_FILTER` etc. (String)
 - comment - Additional information about the index, currently always `` (empty string) (String)
