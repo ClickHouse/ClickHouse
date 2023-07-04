@@ -79,6 +79,8 @@ private:
 
     KeeperSnapshotManagerS3 snapshot_s3;
 
+    KeeperContextPtr keeper_context;
+
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -194,6 +196,11 @@ public:
     const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
     {
         return configuration_and_settings;
+    }
+
+    const KeeperContextPtr & getKeeperContext() const
+    {
+        return keeper_context;
     }
 
     void incrementPacketsSent()
