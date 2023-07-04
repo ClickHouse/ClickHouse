@@ -163,10 +163,12 @@ private:
         ReaderHolder(
             String path_,
             std::unique_ptr<ReadBuffer> read_buf_,
+            std::shared_ptr<IInputFormat> input_format_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
             : path(std::move(path_))
             , read_buf(std::move(read_buf_))
+            , input_format(input_format_)
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -187,10 +189,15 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
+            input_format = std::move(other.input_format);
             read_buf = std::move(other.read_buf);
             path = std::move(other.path);
             return *this;
         }
+
+        const std::unique_ptr<ReadBuffer> & getReadBuffer() const { return read_buf; }
+
+        const std::shared_ptr<IInputFormat> & getFormat() const { return input_format; }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
@@ -200,6 +207,7 @@ private:
     private:
         String path;
         std::unique_ptr<ReadBuffer> read_buf;
+        std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
@@ -219,6 +227,7 @@ private:
     UInt64 total_rows_approx_max = 0;
     size_t total_rows_count_times = 0;
     UInt64 total_rows_approx_accumulated = 0;
+    size_t total_objects_size = 0;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();
@@ -293,7 +302,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 

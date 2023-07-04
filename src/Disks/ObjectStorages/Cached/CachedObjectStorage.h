@@ -108,11 +108,9 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const override;
+    const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
-    WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
-
-    static bool canUseReadThroughCache();
+    static bool canUseReadThroughCache(const ReadSettings & settings);
 
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
