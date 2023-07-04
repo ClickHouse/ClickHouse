@@ -127,7 +127,6 @@
             "docker/test/fuzzer",
             "docker/test/integration/base",
             "docker/test/keeper-jepsen",
-            "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/stateless"
          ]
