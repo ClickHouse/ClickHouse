@@ -129,6 +129,8 @@ public:
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
 
+        bool operator<(const Range & other) const { return right < other.left; }
+
         size_t size() const { return right - left + 1; }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
@@ -154,6 +156,8 @@ public:
 
     String getPathInLocalCache() const;
 
+    int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
+
     /**
      * ========== Methods for _any_ file segment's owner ========================
      */
@@ -172,8 +176,6 @@ public:
     size_t getHitsCount() const { return hits_count; }
 
     size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
 
     size_t getCurrentWriteOffset(bool sync) const;
 
