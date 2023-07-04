@@ -15,6 +15,10 @@
 
 namespace ProfileEvents
 {
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Microseconds;
+    extern const Event WriteBufferFromS3RequestsErrors;
+
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
     extern const Event S3PutObject;
@@ -135,7 +139,10 @@ namespace
                 LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
             }
             else
+            {
+                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+            }
         }
 
         void completeMultipartUpload()
@@ -184,7 +191,7 @@ namespace
                     LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
                     continue; /// will retry
                 }
-
+                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Tags: {}",
@@ -228,7 +235,12 @@ namespace
                     size_t next_position = std::min(position + normal_part_size, end_position);
                     size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
 
+                    Stopwatch watch;
                     uploadPart(part_number, position, part_size);
+                    watch.stop();
+
+                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, part_size);
+                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                     position = next_position;
                 }
@@ -349,7 +361,7 @@ namespace
                             task->exception = std::current_exception();
                         }
                         task_finish_notify();
-                    }, 0);
+                    }, Priority{});
                 }
                 catch (...)
                 {
@@ -485,16 +497,21 @@ namespace
                 if (for_disk_s3)
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
+                Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
+                watch.stop();
 
                 if (outcome.IsSuccess())
                 {
+                    Int64 object_size = request.GetContentLength();
+                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, object_size);
+                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
                     LOG_TRACE(
                         log,
                         "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}",
                         dest_bucket,
                         dest_key,
-                        request.GetContentLength());
+                        object_size);
                     break;
                 }
 
@@ -523,7 +540,7 @@ namespace
                         request.GetContentLength());
                     continue; /// will retry
                 }
-
+                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Object size: {}",
@@ -567,6 +584,7 @@ namespace
             if (!outcome.IsSuccess())
             {
                 abortMultipartUpload();
+                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 

@@ -2041,7 +2041,7 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
              */
             if (data.hasNullKeyData())
             {
-                has_null_key_data = Method::one_key_nullable_optimization;
+                has_null_key_data = true;
                 out_cols->key_columns[0]->insertDefault();
                 insertAggregatesIntoColumns(data.getNullKeyData(), out_cols->final_aggregate_columns, arena);
                 data.hasNullKeyData() = false;
@@ -2076,6 +2076,7 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
                     res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
                     places.clear();
                     out_cols.reset();
+                    has_null_key_data = false;
                 }
             }
         });

@@ -43,7 +43,7 @@ private:
 
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 
-    void completeFileSegment(FileSegment & file_segment);
+    void completeFileSegment();
 
     FileCache * cache;
     FileSegment::Key key;
@@ -53,7 +53,7 @@ private:
     String query_id;
     String source_path;
 
-    FileSegmentsHolder file_segments{};
+    FileSegmentsHolderPtr file_segments;
 
     size_t expected_write_offset = 0;
 
@@ -72,7 +72,6 @@ public:
         FileCachePtr cache_,
         const String & source_path_,
         const FileCache::Key & key_,
-        bool is_persistent_cache_file_,
         const String & query_id_,
         const WriteSettings & settings_);
 
@@ -89,7 +88,6 @@ private:
     String source_path;
     FileCache::Key key;
 
-    bool is_persistent_cache_file;
     size_t current_download_offset = 0;
     const String query_id;
 

@@ -102,6 +102,17 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
+
+if (ENABLE_WOBOQ_CODEBROWSER)
+    set (ENABLE_EMBEDDED_COMPILER 0)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
+    # woboq codebrowser uses clang tooling, and they could add default system
+    # clang includes, and later clang will warn for those added by itself
+    # includes.
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -259,8 +270,8 @@ endif ()
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
@@ -557,7 +568,7 @@ if (NATIVE_BUILD_TARGETS
 )
     message (STATUS "Building native targets...")
 
-    set (NATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/native")
+    set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
@@ -571,7 +582,7 @@ if (NATIVE_BUILD_TARGETS
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
-        ${CMAKE_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT)
 
