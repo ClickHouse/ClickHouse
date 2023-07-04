@@ -367,9 +367,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     /// I also leave possibility to print several suggestions
                     if (!names.empty())
                     {
-                        exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
+                        exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
                     }
-                    else exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
+                    else exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
                 }
                 else
                 {
@@ -380,9 +380,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     /// There is two options: first is to print just the name of the table
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
+                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
                     }
-                    else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+                    else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
                 }
             }
             return {};
@@ -432,11 +432,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             std::vector<String> names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
-                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())));
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
             }
             else
             {
-                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
             }
         }
         return {};
@@ -450,11 +450,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
         {
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
         }
         else
         {
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist. Maybe you wanted to type {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
         }
     }
     if (!table)
@@ -507,32 +507,33 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
-    DatabaseNameHints hints(*this);
-    std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
-    std::lock_guard lock{databases_mutex};
-    assertDatabaseExistsUnlocked(database_name, names);
+    bool exc = false;
+    DatabasePtr database;
+    {
+        std::lock_guard lock{databases_mutex};
+        assert(!database_name.empty());
+        if (databases.end() == databases.find(database_name) && database_name != "default")
+            exc = true;
+    }
+    if (exc)
+    {
+        DatabaseNameHints hints(*this);
+        std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
+        if (names.empty())
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
+    }
 }
 
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
-}
-
-void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name, const std::vector<String> & names) const
-{
-    assert(!database_name.empty());
-    if (databases.end() == databases.find(database_name) && database_name != "default")
-    {
-        if (names.empty())
-        {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
-        }
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
-        }
-    }
 }
 
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
@@ -571,11 +572,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
         else
         {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
         }
     }
 
@@ -656,11 +657,11 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
         else
         {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist. Maybe you wanted to type {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
         }
     }
     return db;
