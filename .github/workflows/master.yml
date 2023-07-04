@@ -851,8 +851,8 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinRISCV64:
-    needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
+    needs: [ DockerHubPush ]
+    runs-on: [ self-hosted, builder ]
     steps:
       - name: Set envs
         run: |
@@ -864,38 +864,33 @@ jobs:
           BUILD_NAME=binary_riscv64
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
         with:
+          clear-repository: true
+          submodules: true
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ############################################################################################
 ##################################### Docker images  #######################################
