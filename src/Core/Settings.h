@@ -829,7 +829,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
 
-/** The section above is for obsolete settings. Do not add anything there. */
+    /** The section above is for obsolete settings. Do not add anything there. */
 
 
 #define FORMAT_FACTORY_SETTINGS(M, ALIAS) \
