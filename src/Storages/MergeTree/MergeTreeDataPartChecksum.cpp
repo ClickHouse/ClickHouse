@@ -307,19 +307,7 @@ static void updateHash(SipHash & hash, const std::string & data)
 /// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
 String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
-    SipHash hash_of_all_files;
-
-    for (const auto & [name, checksum] : files)
-    {
-        updateHash(hash_of_all_files, name);
-        hash_of_all_files.update(checksum.file_hash);
-    }
-
-    UInt64 lo;
-    UInt64 hi;
-    hash_of_all_files.get128(lo, hi);
-
-    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
+    return getHexUIntUppercase(getTotalChecksumUInt128());
 }
 
 MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTotalChecksumUInt128() const
