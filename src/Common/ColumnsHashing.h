@@ -16,7 +16,6 @@
 #include <memory>
 #include <cassert>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -29,24 +28,42 @@ namespace ColumnsHashing
 
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
-template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
 struct HashMethodOneNumber
-    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, nullable>, Value, Mapped, use_cache, need_offset, nullable>
 {
-    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_cheap_key_calculation = true;
 
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        vec = key_columns[0]->getRawData().data;
+        if constexpr (nullable)
+        {
+            const auto * null_column = checkAndGetColumn<ColumnNullable>(key_columns[0]);
+            vec = null_column->getNestedColumnPtr()->getRawData().data();
+        }
+        else
+        {
+            vec = key_columns[0]->getRawData().data();
+        }
     }
 
-    explicit HashMethodOneNumber(const IColumn * column)
+    explicit HashMethodOneNumber(const IColumn * column) : Base(column)
     {
-        vec = column->getRawData().data;
+        if constexpr (nullable)
+        {
+            const auto * null_column = checkAndGetColumn<ColumnNullable>(column);
+            vec = null_column->getNestedColumnPtr()->getRawData().data();
+        }
+        else
+        {
+            vec = column->getRawData().data();
+        }
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
@@ -71,20 +88,30 @@ struct HashMethodOneNumber
 
 
 /// For the case when there is one string key.
-template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false, bool nullable = false>
 struct HashMethodString
-    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>, Value, Mapped, use_cache, need_offset, nullable>
 {
-    using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_cheap_key_calculation = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn & column = *key_columns[0];
-        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
+        const IColumn * column;
+        if constexpr (nullable)
+        {
+            column = checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr().get();
+        }
+        else
+        {
+            column = key_columns[0];
+        }
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
     }
@@ -104,26 +131,35 @@ struct HashMethodString
     }
 
 protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
 
 /// For the case when there is one fixed-length string key.
-template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false, bool nullable = false>
 struct HashMethodFixedString
-    : public columns_hashing_impl::
-          HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>, Value, Mapped, use_cache, need_offset, nullable>
 {
-    using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_cheap_key_calculation = false;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn & column = *key_columns[0];
-        const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(column);
+        const IColumn * column;
+        if constexpr (nullable)
+        {
+            column = checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr().get();
+        }
+        else
+        {
+            column = key_columns[0];
+        }
+        const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(*column);
         n = column_string.getN();
         chars = &column_string.getChars();
     }
@@ -143,7 +179,7 @@ struct HashMethodFixedString
     }
 
 protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
 
@@ -210,6 +246,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
+    static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
+
     static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings)
     {
         return std::make_shared<LowCardinalityDictionaryCache>(settings);
@@ -235,8 +273,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
         if (!low_cardinality_column)
-            throw Exception("Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
-                            "Excepted LowCardinality, got " + column->getName(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
+                            "Excepted LowCardinality, got {}", column->getName());
         return *low_cardinality_column;
     }
 
@@ -247,8 +285,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
         if (!context)
-            throw Exception("Cache wasn't created for HashMethodSingleLowCardinalityColumn",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
         LowCardinalityDictionaryCache * lcd_cache;
         if constexpr (use_cache)
@@ -257,8 +294,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             if (!lcd_cache)
             {
                 const auto & cached_val = *context;
-                throw Exception("Invalid type for HashMethodSingleLowCardinalityColumn cache: "
-                                + demangle(typeid(cached_val).name()), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSingleLowCardinalityColumn cache: {}",
+                                demangle(typeid(cached_val).name()));
             }
         }
 
@@ -318,7 +355,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
-            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
 
@@ -479,6 +516,8 @@ struct HashMethodKeysFixed
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
+    static constexpr bool has_cheap_key_calculation = true;
+
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
     size_t keys_size;
@@ -577,7 +616,7 @@ struct HashMethodKeysFixed
             columns_data.reset(new const char*[keys_size]);
 
             for (size_t i = 0; i < keys_size; ++i)
-                columns_data[i] = Base::getActualColumns()[i]->getRawData().data;
+                columns_data[i] = Base::getActualColumns()[i]->getRawData().data();
         }
 #endif
     }
@@ -653,13 +692,14 @@ struct HashMethodSerialized
     using Self = HashMethodSerialized<Value, Mapped>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
+    static constexpr bool has_cheap_key_calculation = false;
+
     ColumnRawPtrs key_columns;
     size_t keys_size;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size()) {}
 
-protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
@@ -678,6 +718,8 @@ struct HashMethodHashed
     using Key = UInt128;
     using Self = HashMethodHashed<Value, Mapped, use_cache, need_offset>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+
+    static constexpr bool has_cheap_key_calculation = false;
 
     ColumnRawPtrs key_columns;
 

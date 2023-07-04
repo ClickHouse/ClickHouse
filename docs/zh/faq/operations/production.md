@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/operations/production
 title: Which ClickHouse version to use in production?
 toc_hidden: true
 sidebar_position: 10
@@ -66,6 +67,6 @@ For production use, there are two key options: `stable` and `lts`. Here is some 
 
 Many teams who initially thought that `lts` is the way to go, often switch to `stable` anyway because of some recent feature that’s important for their product.
 
-:::warning    
-One more thing to keep in mind when upgrading ClickHouse: we’re always keeping eye on compatibility across releases, but sometimes it’s not reasonable to keep and some minor details might change. So make sure you check the [changelog](../../whats-new/changelog/) before upgrading to see if there are any notes about backward-incompatible changes.
+:::warning
+One more thing to keep in mind when upgrading ClickHouse: we’re always keeping eye on compatibility across releases, but sometimes it’s not reasonable to keep and some minor details might change. So make sure you check the [changelog](../../whats-new/changelog/index.md) before upgrading to see if there are any notes about backward-incompatible changes.
 :::

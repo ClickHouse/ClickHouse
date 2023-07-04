@@ -65,7 +65,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
 {
     for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
-        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
+        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), static_cast<int>(i));
         packet_endpoint->sendPacket(row_packet);
     }
 }
@@ -74,16 +74,19 @@ void MySQLOutputFormat::finalizeImpl()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;
-    if (QueryStatus * process_list_elem = getContext()->getProcessListElement())
+    if (QueryStatusPtr process_list_elem = getContext()->getProcessListElement())
     {
         CurrentThread::finalizePerformanceCounters();
         QueryStatusInfo info = process_list_elem->getInfo();
         affected_rows = info.written_rows;
+        double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
         human_readable_info = fmt::format(
             "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-            info.read_rows, ReadableSize(info.read_bytes), info.elapsed_seconds,
-            static_cast<size_t>(info.read_rows / info.elapsed_seconds),
-            ReadableSize(info.read_bytes / info.elapsed_seconds));
+            info.read_rows,
+            ReadableSize(info.read_bytes),
+            elapsed_seconds,
+            static_cast<size_t>(info.read_rows / elapsed_seconds),
+            ReadableSize(info.read_bytes / elapsed_seconds));
     }
 
     const auto & header = getPort(PortKind::Main).getHeader();
@@ -106,7 +109,6 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
 }
 

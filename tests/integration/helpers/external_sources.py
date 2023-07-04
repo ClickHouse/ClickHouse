@@ -161,6 +161,29 @@ class SourceMySQL(ExternalSource):
 
 
 class SourceMongo(ExternalSource):
+    def __init__(
+        self,
+        name,
+        internal_hostname,
+        internal_port,
+        docker_hostname,
+        docker_port,
+        user,
+        password,
+        secure=False,
+    ):
+        ExternalSource.__init__(
+            self,
+            name,
+            internal_hostname,
+            internal_port,
+            docker_hostname,
+            docker_port,
+            user,
+            password,
+        )
+        self.secure = secure
+
     def get_source_str(self, table_name):
         return """
             <mongodb>
@@ -170,6 +193,7 @@ class SourceMongo(ExternalSource):
                 <password>{password}</password>
                 <db>test</db>
                 <collection>{tbl}</collection>
+                {options}
             </mongodb>
         """.format(
             host=self.docker_hostname,
@@ -177,6 +201,7 @@ class SourceMongo(ExternalSource):
             user=self.user,
             password=self.password,
             tbl=table_name,
+            options="<options>ssl=true</options>" if self.secure else "",
         )
 
     def prepare(self, structure, table_name, cluster):
@@ -186,6 +211,8 @@ class SourceMongo(ExternalSource):
             user=self.user,
             password=self.password,
         )
+        if self.secure:
+            connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
         self.connection = pymongo.MongoClient(connection_str)
         self.converters = {}
         for field in structure.get_all_fields():
@@ -228,7 +255,7 @@ class SourceMongoURI(SourceMongo):
     def get_source_str(self, table_name):
         return """
             <mongodb>
-                <uri>mongodb://{user}:{password}@{host}:{port}/test</uri>
+                <uri>mongodb://{user}:{password}@{host}:{port}/test{options}</uri>
                 <collection>{tbl}</collection>
             </mongodb>
         """.format(
@@ -237,6 +264,7 @@ class SourceMongoURI(SourceMongo):
             user=self.user,
             password=self.password,
             tbl=table_name,
+            options="?ssl=true" if self.secure else "",
         )
 
 

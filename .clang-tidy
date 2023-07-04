@@ -1,6 +1,14 @@
-# Enable all checks + disale selected checks. Feel free to remove disabled checks from below list if
+# To run clang-tidy from CMake, build ClickHouse with -DENABLE_CLANG_TIDY=1. To show all warnings, it is
+# recommended to pass "-k0" to Ninja.
+
+# Enable all checks + disable selected checks. Feel free to remove disabled checks from below list if
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
+
+# TODO Let clang-tidy check headers in further directories
+#      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
+HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
+
 Checks: '*,
     -abseil-*,
 
@@ -8,14 +16,19 @@ Checks: '*,
 
     -android-*,
 
+    -bugprone-assignment-in-if-condition,
     -bugprone-branch-clone,
     -bugprone-easily-swappable-parameters,
     -bugprone-exception-escape,
     -bugprone-implicit-widening-of-multiplication-result,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
+    -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
+    -bugprone-unchecked-optional-access,
 
     -cert-dcl16-c,
+    -cert-dcl37-c,
+    -cert-dcl51-cpp,
     -cert-err58-cpp,
     -cert-msc32-c,
     -cert-msc51-cpp,
@@ -24,11 +37,12 @@ Checks: '*,
 
     -clang-analyzer-optin.performance.Padding,
     -clang-analyzer-optin.portability.UnixAPI,
-
     -clang-analyzer-security.insecureAPI.bzero,
     -clang-analyzer-security.insecureAPI.strcpy,
 
     -cppcoreguidelines-avoid-c-arrays,
+    -cppcoreguidelines-avoid-const-or-ref-data-members,
+    -cppcoreguidelines-avoid-do-while,
     -cppcoreguidelines-avoid-goto,
     -cppcoreguidelines-avoid-magic-numbers,
     -cppcoreguidelines-avoid-non-const-global-variables,
@@ -53,8 +67,6 @@ Checks: '*,
     -cppcoreguidelines-pro-type-vararg,
     -cppcoreguidelines-slicing,
     -cppcoreguidelines-special-member-functions,
-
-    -concurrency-mt-unsafe,
 
     -darwin-*,
 
@@ -95,11 +107,15 @@ Checks: '*,
 
     -openmp-*,
 
+    -misc-const-correctness,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
+    -misc-confusable-identifiers, # useful but slooow
+    -misc-use-anonymous-namespace,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
+    -modernize-macro-to-enum,
     -modernize-pass-by-value,
     -modernize-return-braced-init-list,
     -modernize-use-auto,
@@ -116,68 +132,49 @@ Checks: '*,
     -portability-simd-intrinsics,
 
     -readability-braces-around-statements,
+    -readability-convert-member-functions-to-static,
     -readability-else-after-return,
     -readability-function-cognitive-complexity,
     -readability-function-size,
     -readability-identifier-length,
+    -readability-identifier-naming, # useful but too slow
     -readability-implicit-bool-conversion,
     -readability-isolate-declaration,
     -readability-magic-numbers,
     -readability-named-parameter,
     -readability-redundant-declaration,
+    -readability-simplify-boolean-expr,
     -readability-static-accessed-through-instance,
     -readability-suspicious-call-argument,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
 
-    -zirkon-*,
+    -zircon-*,
 '
 
 WarningsAsErrors: '*'
 
 CheckOptions:
-  - key: readability-identifier-naming.ClassCase
-    value: CamelCase
-  - key: readability-identifier-naming.EnumCase
-    value: CamelCase
-  - key: readability-identifier-naming.LocalVariableCase
-    value: lower_case
-  - key: readability-identifier-naming.StaticConstantCase
-    value: aNy_CasE
-  - key: readability-identifier-naming.MemberCase
-    value: lower_case
-  - key: readability-identifier-naming.PrivateMemberPrefix
-    value: ''
-  - key: readability-identifier-naming.ProtectedMemberPrefix
-    value: ''
-  - key: readability-identifier-naming.PublicMemberCase
-    value: lower_case
-  - key: readability-identifier-naming.MethodCase
-    value: camelBack
-  - key: readability-identifier-naming.PrivateMethodPrefix
-    value: ''
-  - key: readability-identifier-naming.ProtectedMethodPrefix
-    value: ''
-  - key: readability-identifier-naming.ParameterPackCase
-    value: lower_case
-  - key: readability-identifier-naming.StructCase
-    value: CamelCase
-  - key: readability-identifier-naming.TemplateTemplateParameterCase
-    value: CamelCase
-  - key: readability-identifier-naming.TemplateUsingCase
-    value: lower_case
-  - key: readability-identifier-naming.TypeTemplateParameterCase
-    value: CamelCase
-  - key: readability-identifier-naming.TypedefCase
-    value: CamelCase
-  - key: readability-identifier-naming.UnionCase
-    value: CamelCase
-  - key: readability-identifier-naming.UsingCase
-    value: CamelCase
-  - key: modernize-loop-convert.UseCxx20ReverseRanges
-    value: false
-  - key: performance-move-const-arg.CheckTriviallyCopyableMove
-    value: false
-    # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
-  - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp
-    value: expr-type
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.LocalVariableCase: lower_case
+  readability-identifier-naming.StaticConstantCase: aNy_CasE
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.PrivateMemberPrefix: ''
+  readability-identifier-naming.ProtectedMemberPrefix: ''
+  readability-identifier-naming.PublicMemberCase: lower_case
+  readability-identifier-naming.MethodCase: camelBack
+  readability-identifier-naming.PrivateMethodPrefix: ''
+  readability-identifier-naming.ProtectedMethodPrefix: ''
+  readability-identifier-naming.ParameterPackCase: lower_case
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: lower_case
+  readability-identifier-naming.TypeTemplateParameterCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  modernize-loop-convert.UseCxx20ReverseRanges: false
+  performance-move-const-arg.CheckTriviallyCopyableMove: false
+  # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
+  readability-identifier-naming.TypeTemplateParameterIgnoredRegexp: expr-type
+  cppcoreguidelines-avoid-do-while.IgnoreMacros: true

@@ -1,5 +1,6 @@
 ---
-sidebar_position: 41
+slug: /en/sql-reference/table-functions/url
+sidebar_position: 200
 sidebar_label: url
 ---
 
@@ -12,7 +13,7 @@ sidebar_label: url
 **Syntax**
 
 ``` sql
-url(URL, format, structure)
+url(URL [,format] [,structure] [,headers])
 ```
 
 **Parameters**
@@ -20,6 +21,7 @@ url(URL, format, structure)
 - `URL` — HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md).
 - `format` — [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
+- `headers` - Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.
 
 **Returned value**
 
@@ -30,7 +32,7 @@ A table with the specified format and structure and with data from the defined `
 Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
 
 ``` sql
-SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3;
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
 ```
 
 Inserting data from a `URL` into a table:
@@ -45,3 +47,16 @@ SELECT * FROM test_table;
 
 Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
+
+## Virtual Columns
+
+- `_path` — Path to the `URL`.
+- `_file` — Resource name of the `URL`.
+
+## Storage Settings {#storage-settings}
+
+- [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+
+**See Also**
+
+- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)

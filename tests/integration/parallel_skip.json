@@ -31,6 +31,7 @@
   "test_limited_replicated_fetches/test.py::test_limited_fetches",
   "test_materialized_mysql_database/test.py::test_network_partition_5_7",
   "test_materialized_mysql_database/test.py::test_network_partition_8_0",
+  "test_merge_tree_s3/test.py::test_store_cleanup_disk_s3",
   "test_mysql_database_engine/test.py::test_restart_server",
   "test_parts_delete_zookeeper/test.py::test_merge_doesnt_work_without_zookeeper",
   "test_quorum_inserts_parallel/test.py::test_parallel_quorum_actually_quorum",
@@ -48,6 +49,22 @@
   "test_system_replicated_fetches/test.py::test_system_replicated_fetches",
   "test_zookeeper_config_load_balancing/test.py::test_round_robin",
 
+  "test_global_overcommit_tracker/test.py::test_global_overcommit",
+
   "test_user_ip_restrictions/test.py::test_ipv4",
-  "test_user_ip_restrictions/test.py::test_ipv6"
+  "test_user_ip_restrictions/test.py::test_ipv6",
+
+  "test_server_reload/test.py::test_change_grpc_port",
+  "test_server_reload/test.py::test_change_http_handlers",
+  "test_server_reload/test.py::test_change_http_port",
+  "test_server_reload/test.py::test_change_listen_host",
+  "test_server_reload/test.py::test_change_mysql_port",
+  "test_server_reload/test.py::test_change_postgresql_port",
+  "test_server_reload/test.py::test_change_tcp_port",
+  "test_server_reload/test.py::test_reload_via_client",
+  "test_server_reload/test.py::test_remove_grpc_port",
+  "test_server_reload/test.py::test_remove_http_port",
+  "test_server_reload/test.py::test_remove_mysql_port",
+  "test_server_reload/test.py::test_remove_postgresql_port",
+  "test_server_reload/test.py::test_remove_tcp_port"
 ]

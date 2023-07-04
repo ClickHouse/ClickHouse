@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/special/set
 sidebar_position: 39
 sidebar_label: Set
 ---
@@ -19,4 +20,3 @@ sidebar_label: Set
 При создании таблицы, применяются следующие параметры:
 
 -   [persistent](../../../operations/settings/settings.md#persistent)
-

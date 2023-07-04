@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/special-data-types/interval
 sidebar_position: 61
 sidebar_label: Interval
 ---
@@ -9,6 +10,7 @@ sidebar_label: Interval
 
 :::danger "Внимание"
     Нельзя использовать типы данных `Interval` для хранения данных в таблице.
+:::
 
 Структура:
 

@@ -15,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// Info that represents a scalar or array field in a decomposed view.
@@ -35,6 +35,10 @@ struct FieldInfo
 
     /// Number of dimension in array. 0 if field is scalar.
     size_t num_dimensions;
+
+    /// If true then this field is an array of variadic dimension field
+    /// and we need to normalize the dimension
+    bool need_fold_dimension;
 };
 
 FieldInfo getFieldInfo(const Field & field);
@@ -194,10 +198,6 @@ public:
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
-    /// Finalizes all subcolumns.
-    void finalize();
-    bool isFinalized() const;
-
     /// Part of interface
 
     const char * getFamilyName() const override { return "Object"; }
@@ -206,7 +206,8 @@ public:
     size_t size() const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;
@@ -214,11 +215,29 @@ public:
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
+
+    /// Finalizes all subcolumns.
+    void finalize() override;
+    bool isFinalized() const override;
+
+    /// Order of rows in ColumnObject is undefined.
+    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+
+    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    void getExtremes(Field & min, Field & max) const override;
+
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    void gather(ColumnGathererStream & gatherer) override;
 
     /// All other methods throw exception.
 
@@ -232,30 +251,22 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
-    int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override { throwMustBeConcrete(); }
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeConcrete(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeConcrete(); }
-    void gather(ColumnGathererStream &) override { throwMustBeConcrete(); }
-    void getExtremes(Field &, Field &) const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
+    UInt64 getNumberOfDefaultRows() const override { throwMustBeConcrete(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
 
 private:
     [[noreturn]] static void throwMustBeConcrete()
     {
-        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ColumnObject must be converted to ColumnTuple before use");
     }
 
     template <typename Func>
     MutableColumnPtr applyForSubcolumns(Func && func) const;
 
-    /// For given subcolumn return subcolumn from the same Nested type.
     /// It's used to get shared sized of Nested to insert correct default values.
     const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };
-
 }

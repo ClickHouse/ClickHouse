@@ -1,17 +1,17 @@
 ---
+slug: /en/sql-reference/statements/create/role
 sidebar_position: 40
 sidebar_label: ROLE
+title: "CREATE ROLE"
 ---
 
-# CREATE ROLE
-
-Creates new [roles](../../../operations/access-rights.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
+Creates new [roles](../../../guides/sre/user-management/index.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 
 Syntax:
 
 ``` sql
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] [, name2 [ON CLUSTER cluster_name2] ...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
 ## Managing Roles
@@ -22,7 +22,7 @@ User can have default roles which apply at user login. To set default roles, use
 
 To revoke a role, use the [REVOKE](../../../sql-reference/statements/revoke.md) statement.
 
-To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ## Examples
 

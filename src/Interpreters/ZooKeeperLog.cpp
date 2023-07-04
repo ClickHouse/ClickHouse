@@ -83,9 +83,11 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"List",                static_cast<Int16>(Coordination::OpNum::List)},
                 {"Check",               static_cast<Int16>(Coordination::OpNum::Check)},
                 {"Multi",               static_cast<Int16>(Coordination::OpNum::Multi)},
+                {"MultiRead",           static_cast<Int16>(Coordination::OpNum::MultiRead)},
                 {"Auth",                static_cast<Int16>(Coordination::OpNum::Auth)},
                 {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
                 {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
+                {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();

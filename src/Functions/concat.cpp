@@ -146,8 +146,8 @@ private:
                 constant_strings[i] = const_col->getValue<String>();
             }
             else
-                throw Exception(
-                    "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    column->getName(), getName());
         }
 
         String pattern;
@@ -205,6 +205,10 @@ public:
         {
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         }
+        else if (isMap(arguments.at(0).type))
+        {
+            return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
+        }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
@@ -213,10 +217,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
+                getName(), arguments.size());
 
         /// We always return Strings from concat, even if arguments were fixed strings.
         return std::make_shared<DataTypeString>();
@@ -230,7 +233,7 @@ private:
 
 REGISTER_FUNCTION(Concat)
 {
-    factory.registerFunction<ConcatOverloadResolver>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

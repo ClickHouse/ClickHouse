@@ -1,4 +1,5 @@
 ---
+slug: /zh/introduction/history
 sidebar_position: 4
 sidebar_label: ClickHouse历史
 ---
@@ -50,5 +51,3 @@ Yandex.Metrica 有一个专门用于聚合数据的系统，称为Metrage，它�
 OLAPServer可以很好的工作在非聚合数据上，但是它有诸多限制，导致无法根据需要将其用于所有报表中。如，缺少对数据类型的支持（只支持数据），无法实时增量的更新数据（只能通过每天重写数据完成）。OLAPServer不是一个数据库管理系统，它只是一个数据库。
 
 为了消除OLAPServer的这些局限性，解决所有报表使用非聚合数据的问题，我们开发了ClickHouse数据库管理系统。
-
-[来源文章](https://clickhouse.com/docs/en/introduction/ya_metrika_task/) <!--hide-->

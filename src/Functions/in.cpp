@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -94,6 +95,8 @@ public:
     {
         if constexpr (ignore_set)
             return ColumnUInt8::create(input_rows_count, 0u);
+        if (input_rows_count == 0)
+            return ColumnUInt8::create();
 
         /// Second argument must be ColumnSet.
         ColumnPtr column_set_ptr = arguments[1].column;
@@ -101,8 +104,8 @@ public:
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
-            throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
+                getName(), column_set_ptr->getName());
 
         ColumnsWithTypeAndName columns_of_key_columns;
 
@@ -119,7 +122,14 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        auto set = column_set->getData();
+        auto future_set = column_set->getData();
+        if (!future_set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+
+        auto set = future_set->get();
+        if (!set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
+
         auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
@@ -135,12 +145,16 @@ public:
 
         /// Replace single LowCardinality column to it's dictionary if possible.
         ColumnPtr lc_indexes = nullptr;
+        bool is_const = false;
         if (columns_of_key_columns.size() == 1)
         {
             auto & arg = columns_of_key_columns.at(0);
             const auto * col = arg.column.get();
             if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
+            {
                 col = &const_col->getDataColumn();
+                is_const = true;
+            }
 
             if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(col))
             {
@@ -153,7 +167,13 @@ public:
         auto res = set->execute(columns_of_key_columns, negative);
 
         if (lc_indexes)
-            return res->index(*lc_indexes, 0);
+            res = res->index(*lc_indexes, 0);
+
+        if (is_const)
+            res = ColumnUInt8::create(input_rows_count, res->getUInt(0));
+
+        if (res->size() != input_rows_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());
 
         return res;
     }

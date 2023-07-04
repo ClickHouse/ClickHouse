@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -8,8 +8,8 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StoragePostgreSQL.h>
 
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
@@ -33,7 +33,7 @@ public:
         bool auto_close_connection_);
 
     explicit PoolWithFailover(
-        const DB::StoragePostgreSQLConfiguration & configuration,
+        const DB::StoragePostgreSQL::Configuration & configuration,
         size_t pool_size,
         size_t pool_wait_timeout,
         size_t max_tries_,

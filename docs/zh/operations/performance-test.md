@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/performance-test
 sidebar_position: 54
 sidebar_label: "\u6D4B\u8BD5\u786C\u4EF6"
 ---

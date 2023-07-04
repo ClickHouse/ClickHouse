@@ -47,7 +47,7 @@ public:
 
         const auto & getData() const noexcept { return data; }
 
-        void addChild(StringRef child_path);
+        void addChild(StringRef child_path, bool update_size = true);
 
         void removeChild(StringRef child_path);
 
@@ -63,6 +63,8 @@ public:
         // copy only necessary information for preprocessing and digest calculation
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
+
+        void recalculateSize();
 
     private:
         String data;
@@ -103,10 +105,12 @@ public:
         return first.value == second.value;
     }
 
+    static String generateDigest(const String & userdata);
+
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time;
+        int64_t time{0};
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
         std::optional<Digest> digest;
@@ -218,6 +222,7 @@ public:
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
+        void addDelta(Delta new_delta);
         void addDeltas(std::vector<Delta> new_deltas);
         void commit(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
@@ -229,26 +234,43 @@ public:
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
         {
-            for (const auto & session_auth : storage.session_and_auth[session_id])
+            const auto check_auth = [&](const auto & auth_ids)
             {
-                if (predicate(session_auth))
-                    return true;
-            }
+                for (const auto & auth : auth_ids)
+                {
+                    using TAuth = std::remove_reference_t<decltype(auth)>;
+
+                    const AuthID * auth_ptr = nullptr;
+                    if constexpr (std::is_pointer_v<TAuth>)
+                        auth_ptr = auth;
+                    else
+                        auth_ptr = &auth;
+
+                    if (predicate(*auth_ptr))
+                        return true;
+                }
+                return false;
+            };
 
             if (is_local)
+                return check_auth(storage.session_and_auth[session_id]);
+
+            if (check_auth(storage.session_and_auth[session_id]))
+                return true;
+
+            // check if there are uncommitted
+            const auto auth_it = session_and_auth.find(session_id);
+            if (auth_it == session_and_auth.end())
                 return false;
 
-            for (const auto & delta : deltas)
-            {
-                if (const auto * auth_delta = std::get_if<KeeperStorage::AddAuthDelta>(&delta.operation);
-                    auth_delta && auth_delta->session_id == session_id && predicate(auth_delta->auth_id))
-                    return true;
-            }
-
-            return false;
+            return check_auth(auth_it->second);
         }
 
+        void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
+
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
+
+        std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
 
         struct UncommittedNode
         {
@@ -257,12 +279,41 @@ public:
             int64_t zxid{0};
         };
 
-        mutable std::unordered_map<std::string, UncommittedNode> nodes;
+        struct Hash
+        {
+            auto operator()(const std::string_view view) const
+            {
+                SipHash hash;
+                hash.update(view);
+                return hash.get64();
+            }
+
+            using is_transparent = void; // required to make find() work with different type than key_type
+        };
+
+        struct Equal
+        {
+            auto operator()(const std::string_view a,
+                            const std::string_view b) const
+            {
+                return a == b;
+            }
+
+            using is_transparent = void; // required to make find() work with different type than key_type
+        };
+
+        mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
+        std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
+
         std::list<Delta> deltas;
         KeeperStorage & storage;
     };
 
     UncommittedState uncommitted_state{*this};
+
+    // Apply uncommitted state to another storage using only transactions
+    // with zxid > last_zxid
+    void applyUncommittedState(KeeperStorage & other, int64_t last_zxid);
 
     Coordination::Error commit(int64_t zxid);
 
@@ -385,6 +436,8 @@ public:
 
     void finalize();
 
+    bool isFinalized() const;
+
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
@@ -424,6 +477,7 @@ public:
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 
+    void recalculateStats();
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);

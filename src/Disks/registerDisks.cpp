@@ -2,60 +2,80 @@
 
 #include "DiskFactory.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {
 
-void registerDiskLocal(DiskFactory & factory);
-void registerDiskMemory(DiskFactory & factory);
+void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
 
 #if USE_AWS_S3
-void registerDiskS3(DiskFactory & factory);
+void registerDiskS3(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerDiskAzureBlobStorage(DiskFactory & factory);
+void registerDiskAzureBlobStorage(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
 #if USE_SSL
-void registerDiskEncrypted(DiskFactory & factory);
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
 #if USE_HDFS
-void registerDiskHDFS(DiskFactory & factory);
+void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
-void registerDiskWebServer(DiskFactory & factory);
+void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check);
 
-void registerDiskCache(DiskFactory & factory);
+void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
 
-void registerDisks()
+void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_access_check);
+
+
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+
+void registerDisks(bool global_skip_access_check)
 {
     auto & factory = DiskFactory::instance();
 
-    registerDiskLocal(factory);
-    registerDiskMemory(factory);
+    registerDiskLocal(factory, global_skip_access_check);
 
 #if USE_AWS_S3
-    registerDiskS3(factory);
+    registerDiskS3(factory, global_skip_access_check);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-    registerDiskAzureBlobStorage(factory);
+    registerDiskAzureBlobStorage(factory, global_skip_access_check);
 #endif
 
 #if USE_SSL
-    registerDiskEncrypted(factory);
+    registerDiskEncrypted(factory, global_skip_access_check);
 #endif
 
 #if USE_HDFS
-    registerDiskHDFS(factory);
+    registerDiskHDFS(factory, global_skip_access_check);
 #endif
 
-    registerDiskWebServer(factory);
+    registerDiskWebServer(factory, global_skip_access_check);
 
-    registerDiskCache(factory);
+    registerDiskCache(factory, global_skip_access_check);
+
+    registerDiskLocalObjectStorage(factory, global_skip_access_check);
 }
+
+#else
+
+void registerDisks(bool global_skip_access_check)
+{
+    auto & factory = DiskFactory::instance();
+
+    registerDiskLocal(factory, global_skip_access_check);
+
+#if USE_AWS_S3
+    registerDiskS3(factory, global_skip_access_check);
+#endif
+}
+
+#endif
 
 }

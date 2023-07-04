@@ -1,9 +1,12 @@
-#include "MergeTreeDataPartInMemory.h"
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeReaderInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <DataTypes/NestedUtils.h>
+#include <Disks/createVolume.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -16,22 +19,11 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
-
-MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
-       MergeTreeData & storage_,
-        const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::InMemory, parent_part_)
-{
-    default_codec = CompressionCodecFactory::instance().get("NONE", {});
-}
-
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
     : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::InMemory, parent_part_)
 {
@@ -44,112 +36,117 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const MarkRanges & mark_ranges,
     UncompressedCache * /* uncompressed_cache */,
     MarkCache * /* mark_cache */,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & /* avg_value_size_hints */,
     const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
 {
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
+
     return std::make_unique<MergeTreeReaderInMemory>(
-        ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
+        read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
-    DataPartStorageBuilderPtr data_part_storage_builder_,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & /* indices_to_recalc */,
     const CompressionCodecPtr & /* default_codec */,
     const MergeTreeWriterSettings & writer_settings,
-    const MergeTreeIndexGranularity & /* computed_index_granularity */) const
+    const MergeTreeIndexGranularity & /* computed_index_granularity */)
 {
-    data_part_storage_builder = data_part_storage_builder_;
-    auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
+    auto ptr = std::static_pointer_cast<MergeTreeDataPartInMemory>(shared_from_this());
     return std::make_unique<MergeTreeDataPartWriterInMemory>(
         ptr, columns_list, metadata_snapshot, writer_settings);
 }
 
-DataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const
+MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const
 {
-    auto current_full_path = data_part_storage_builder->getFullPath();
-    data_part_storage_builder->setRelativePath(new_relative_path);
+    auto reservation = storage.reserveSpace(block.bytes(), getDataPartStorage());
+    VolumePtr volume = storage.getStoragePolicy()->getVolume(0);
+    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
-    auto new_data_part_storage = data_part_storage_builder->getStorage();
-    auto new_data_part = storage.createPart(name, new_type, info, new_data_part_storage);
+    auto new_data_part = storage.getDataPartBuilder(name, data_part_volume, new_relative_path)
+        .withPartFormat(storage.choosePartFormatOnDisk(block.bytes(), rows_count))
+        .build();
+
+    auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
+    new_data_part_storage->beginTransaction();
 
     new_data_part->uuid = uuid;
-    new_data_part->setColumns(columns, {});
+    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->partition.value = partition.value;
     new_data_part->minmax_idx = minmax_idx;
 
-    if (data_part_storage_builder->exists())
+    if (new_data_part_storage->exists())
     {
         throw Exception(
             ErrorCodes::DIRECTORY_ALREADY_EXISTS,
             "Could not flush part {}. Part in {} already exists",
-            quoteString(current_full_path),
-            data_part_storage_builder->getFullPath());
+            quoteString(getDataPartStorage().getFullPath()),
+            new_data_part_storage->getFullPath());
     }
 
-    data_part_storage_builder->createDirectories();
+    new_data_part_storage->createDirectories();
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, data_part_storage_builder, metadata_snapshot, columns, indices, compression_codec, NO_TRANSACTION_PTR);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec, NO_TRANSACTION_PTR);
     out.write(block);
+
     const auto & projections = metadata_snapshot->getProjections();
     for (const auto & [projection_name, projection] : projection_parts)
     {
         if (projections.has(projection_name))
         {
-            auto projection_part_storage_builder = data_part_storage_builder->getProjection(projection_name + ".proj");
-            if (projection_part_storage_builder->exists())
+            auto old_projection_part = asInMemoryPart(projection);
+            auto new_projection_part = new_data_part->getProjectionPartBuilder(projection_name)
+                .withPartFormat(storage.choosePartFormatOnDisk(old_projection_part->block.bytes(), rows_count))
+                .build();
+
+            new_projection_part->is_temp = false; // clean up will be done on parent part
+            new_projection_part->setColumns(projection->getColumns(), {}, metadata_snapshot->getMetadataVersion());
+
+            auto new_projection_part_storage = new_projection_part->getDataPartStoragePtr();
+            if (new_projection_part_storage->exists())
             {
                 throw Exception(
                     ErrorCodes::DIRECTORY_ALREADY_EXISTS,
                     "Could not flush projection part {}. Projection part in {} already exists",
                     projection_name,
-                    projection_part_storage_builder->getFullPath());
+                    new_projection_part_storage->getFullPath());
             }
 
-            auto projection_part = asInMemoryPart(projection);
-            auto projection_type = storage.choosePartTypeOnDisk(projection_part->block.bytes(), rows_count);
-            MergeTreePartInfo projection_info("all", 0, 0, 0);
-            auto projection_data_part
-                = storage.createPart(projection_name, projection_type, projection_info, projection_part_storage_builder->getStorage(), parent_part);
-            projection_data_part->is_temp = false; // clean up will be done on parent part
-            projection_data_part->setColumns(projection->getColumns(), {});
-
-            projection_part_storage_builder->createDirectories();
+            new_projection_part_storage->createDirectories();
             const auto & desc = projections.get(name);
             auto projection_compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
             auto projection_indices = MergeTreeIndexFactory::instance().getMany(desc.metadata->getSecondaryIndices());
             MergedBlockOutputStream projection_out(
-                projection_data_part, projection_part_storage_builder, desc.metadata, projection_part->columns, projection_indices,
+                new_projection_part, desc.metadata,
+                new_projection_part->getColumns(), projection_indices,
                 projection_compression_codec, NO_TRANSACTION_PTR);
 
-            projection_out.write(projection_part->block);
-            projection_out.finalizePart(projection_data_part, false);
-            new_data_part->addProjectionPart(projection_name, std::move(projection_data_part));
+            projection_out.write(old_projection_part->block);
+            projection_out.finalizePart(new_projection_part, false);
+            new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
         }
     }
 
     out.finalizePart(new_data_part, false);
+    new_data_part_storage->commitTransaction();
     return new_data_part_storage;
 }
 
-void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
+DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
 {
-    String detached_path = getRelativePathForDetachedPart(prefix);
-    flushToDisk(detached_path, metadata_snapshot);
+    String detached_path = *getRelativePathForDetachedPart(prefix, /* broken */ false);
+    return flushToDisk(detached_path, metadata_snapshot);
 }
 
-void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */, DataPartStorageBuilderPtr) const
+void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */)
 {
-    data_part_storage->setRelativePath(new_relative_path);
-
-    if (data_part_storage_builder)
-        data_part_storage_builder->setRelativePath(new_relative_path);
+    getDataPartStorage().setRelativePath(new_relative_path);
 }
 
 void MergeTreeDataPartInMemory::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const

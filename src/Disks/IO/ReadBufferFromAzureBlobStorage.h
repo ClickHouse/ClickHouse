@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -24,6 +24,7 @@ public:
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
+        bool restricted_seek_ = false,
         size_t read_until_position_ = 0);
 
     off_t seek(off_t off, int whence) override;
@@ -37,10 +38,11 @@ public:
     String getFileName() const override { return path; }
 
     void setReadUntilPosition(size_t position) override;
-
-    Range getRemainingReadRange() const override;
+    void setReadUntilEnd() override;
 
     bool supportsRightBoundedReads() const override { return true; }
+
+    size_t getFileSize() override;
 
 private:
 
@@ -57,6 +59,12 @@ private:
     std::vector<char> tmp_buffer;
     size_t tmp_buffer_size;
     bool use_external_buffer;
+
+    /// There is different seek policy for disk seek and for non-disk seek
+    /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
+    bool restricted_seek;
+
+
     off_t read_until_position = 0;
 
     off_t offset = 0;

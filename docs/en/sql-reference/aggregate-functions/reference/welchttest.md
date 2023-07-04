@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/welchttest
 sidebar_position: 301
 sidebar_label: welchTTest
 ---
@@ -18,21 +19,21 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 **Arguments**
 
--   `sample_data` — Sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — Sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
+- `sample_data` — Sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `sample_index` — Sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
 
--   `confidence_level` — Confidence level in order to calculate confidence intervals. [Float](../../../sql-reference/data-types/float.md).
+- `confidence_level` — Confidence level in order to calculate confidence intervals. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two or four elements (if the optional `confidence_level` is specified)
 
--   calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
--   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
--   [calculated confidence-interval-low.] [Float64](../../../sql-reference/data-types/float.md).
--   [calculated confidence-interval-high.] [Float64](../../../sql-reference/data-types/float.md).
+- calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
+- calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
+- calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
+- calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
 
 
 **Example**
@@ -66,6 +67,5 @@ Result:
 
 **See Also**
 
--   [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
--   [studentTTest function](studentttest.md#studentttest)
-
+- [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
+- [studentTTest function](studentttest.md#studentttest)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
@@ -69,6 +69,8 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
+
     /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
     /// Same as above, but can return nullptr.
@@ -84,7 +86,7 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
+    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter = {}) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
@@ -167,14 +169,18 @@ public:
 
 private:
     friend class AccessControl;
-    ContextAccess() {} /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
+
+    struct FullAccess {};
+    static const FullAccess kFullAccess;
+
+    /// Makes an instance of ContextAccess which provides full access to everything
+    /// without any limitations. This is used for the global context.
+    explicit ContextAccess(FullAccess);
 
     void initialize();
-    void setUser(const UserPtr & user_) const;
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
-    void setSettingsAndConstraints() const;
-    void calculateAccessRights() const;
+    void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
+    void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const AccessFlags & flags) const;
@@ -217,20 +223,23 @@ private:
 
     const AccessControl * access_control = nullptr;
     const Params params;
-    bool is_full_access = false;
-    mutable Poco::Logger * trace_log = nullptr;
-    mutable UserPtr user;
-    mutable String user_name;
-    mutable bool user_was_dropped = false;
-    mutable scope_guard subscription_for_user_change;
-    mutable std::shared_ptr<const EnabledRoles> enabled_roles;
-    mutable scope_guard subscription_for_roles_changes;
-    mutable std::shared_ptr<const EnabledRolesInfo> roles_info;
-    mutable std::shared_ptr<const AccessRights> access;
-    mutable std::shared_ptr<const AccessRights> access_with_implicit;
-    mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies;
-    mutable std::shared_ptr<const EnabledQuota> enabled_quota;
-    mutable std::shared_ptr<const EnabledSettings> enabled_settings;
+    const bool is_full_access = false;
+
+    mutable std::atomic<bool> user_was_dropped = false;
+    mutable std::atomic<Poco::Logger *> trace_log = nullptr;
+
+    mutable UserPtr user TSA_GUARDED_BY(mutex);
+    mutable String user_name TSA_GUARDED_BY(mutex);
+    mutable scope_guard subscription_for_user_change TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const EnabledRoles> enabled_roles TSA_GUARDED_BY(mutex);
+    mutable scope_guard subscription_for_roles_changes TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const EnabledRolesInfo> roles_info TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const AccessRights> access TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const EnabledQuota> enabled_quota TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const EnabledSettings> enabled_settings TSA_GUARDED_BY(mutex);
+
     mutable std::mutex mutex;
 };
 

@@ -12,13 +12,12 @@ from typing import Dict
 
 from github import Github
 
-from commit_status_helper import get_commit, post_commit_status
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from tee_popen import TeePopen
 
@@ -112,6 +111,16 @@ if __name__ == "__main__":
     else:
         check_name_with_group = check_name
 
+    is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
+    if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
+        status = "success"
+        message = "Skipped, not labeled with 'pr-performance'"
+        report_url = GITHUB_RUN_URL
+        post_commit_status(
+            commit, status, report_url, message, check_name_with_group, pr_info
+        )
+        sys.exit(0)
+
     test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
         "test_grep_exclude_filter"
     ]
@@ -121,7 +130,7 @@ if __name__ == "__main__":
             "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
         )
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    rerun_helper = RerunHelper(commit, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -132,6 +141,7 @@ if __name__ == "__main__":
         .replace("(", "_")
         .replace(")", "_")
         .replace(",", "_")
+        .replace("/", "_")
     )
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
@@ -141,11 +151,19 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    docker_env += (
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD"
-    )
+    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
+    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
+    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
+
+    env_extra = {
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
+    }
+
+    docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
         result_path,
@@ -158,23 +176,10 @@ if __name__ == "__main__":
     )
     logging.info("Going to run command %s", run_command)
 
+    run_log_path = os.path.join(temp_path, "run.log")
+
     popen_env = os.environ.copy()
-
-    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
-    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
-    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
-
-    popen_env.update(
-        {
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
-        }
-    )
-
-    run_log_path = os.path.join(temp_path, "runlog.log")
+    popen_env.update(env_extra)
     with TeePopen(run_command, run_log_path, env=popen_env) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -193,7 +198,7 @@ if __name__ == "__main__":
         "all-query-metrics.tsv": os.path.join(
             result_path, "report/all-query-metrics.tsv"
         ),
-        "runlog.log": run_log_path,
+        "run.log": run_log_path,
     }
 
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
@@ -214,6 +219,12 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
 
+    def too_many_slow(msg):
+        match = re.search(r"(|.* )(\d+) slower.*", msg)
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
+        threshold = 5
+        return int(match.group(2).strip()) > threshold if match else False
+
     # Try to fetch status from the report.
     status = ""
     message = ""
@@ -231,7 +242,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message:
+        if "errors" in message.lower() or too_many_slow(message.lower()):
             status = "failure"
         # TODO: Remove until here
     except Exception:
@@ -248,8 +259,8 @@ if __name__ == "__main__":
 
     report_url = GITHUB_RUN_URL
 
-    if uploaded["runlog.log"]:
-        report_url = uploaded["runlog.log"]
+    if uploaded["run.log"]:
+        report_url = uploaded["run.log"]
 
     if uploaded["compare.log"]:
         report_url = uploaded["compare.log"]
@@ -261,7 +272,7 @@ if __name__ == "__main__":
         report_url = uploaded["report.html"]
 
     post_commit_status(
-        gh, pr_info.sha, check_name_with_group, message, status, report_url
+        commit, status, report_url, message, check_name_with_group, pr_info
     )
 
     if status == "error":

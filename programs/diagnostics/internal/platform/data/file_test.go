@@ -133,11 +133,11 @@ func TestConfigFileFrameCopy(t *testing.T) {
 		require.Empty(t, errs)
 		i := 0
 		sizes := map[string]int64{
-			"users.xml":            int64(2039),
+			"users.xml":            int64(2017),
 			"default-password.xml": int64(188),
-			"config.xml":           int64(61282),
+			"config.xml":           int64(61662),
 			"server-include.xml":   int64(168),
-			"user-include.xml":     int64(582),
+			"user-include.xml":     int64(559),
 		}
 		var checkedFiles []string
 		for {

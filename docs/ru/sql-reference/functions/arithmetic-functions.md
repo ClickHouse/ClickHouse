@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/arithmetic-functions
 sidebar_position: 34
 sidebar_label: "Арифметические функции"
 ---
@@ -158,3 +159,149 @@ SELECT min2(-1, 2);
 └─────────────┘
 ```
 
+## multiplyDecimal(a, b[, result_scale])
+
+Совершает умножение двух Decimal. Результат будет иметь тип [Decimal256](../../sql-reference/data-types/decimal.md).
+Scale (размер дробной части) результат можно явно задать аргументом `result_scale`  (целочисленная константа из интервала `[0, 76]`).
+Если этот аргумент не задан, то scale результата будет равен наибольшему из scale обоих аргументов.
+
+**Синтаксис**
+
+```sql
+multiplyDecimal(a, b[, result_scale])
+```
+
+:::note    
+Эта функция работают гораздо медленнее обычной `multiply`.
+В случае, если нет необходимости иметь фиксированную точность и/или нужны быстрые вычисления, следует использовать [multiply](#multiply).
+:::
+
+**Аргументы**
+
+-   `a` — Первый сомножитель/делимое: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `b` — Второй сомножитель/делитель: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `result_scale` — Scale результата: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Результат умножения с заданным scale.
+
+Тип: [Decimal256](../../sql-reference/data-types/decimal.md).
+
+**Примеры**
+
+```sql
+SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1);
+```
+
+```text
+┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
+│                                                           25.2 │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Отличие от стандартных функций**
+```sql
+SELECT toDecimal64(-12.647, 3) * toDecimal32(2.1239, 4);
+SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecimal(a, b);
+```
+
+```text
+┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
+│                                               -26.8609633 │
+└───────────────────────────────────────────────────────────┘
+┌─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
+│                                                         -26.8609 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    toDecimal64(-12.647987876, 9) AS a,
+    toDecimal64(123.967645643, 9) AS b,
+    multiplyDecimal(a, b);
+
+SELECT
+    toDecimal64(-12.647987876, 9) AS a,
+    toDecimal64(123.967645643, 9) AS b,
+    a * b;
+```
+
+```text
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
+│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
+
+Received exception from server (version 22.11.1):
+Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+```
+
+## divideDecimal(a, b[, result_scale])
+
+Совершает деление двух Decimal. Результат будет иметь тип [Decimal256](../../sql-reference/data-types/decimal.md).
+Scale (размер дробной части) результат можно явно задать аргументом `result_scale`  (целочисленная константа из интервала `[0, 76]`).
+Если этот аргумент не задан, то scale результата будет равен наибольшему из scale обоих аргументов.
+
+**Синтаксис**
+
+```sql
+divideDecimal(a, b[, result_scale])
+```
+
+:::note    
+Эта функция работает гораздо медленнее обычной `divide`.
+В случае, если нет необходимости иметь фиксированную точность и/или нужны быстрые вычисления, следует использовать [divide](#divide).
+:::
+
+**Аргументы**
+
+-   `a` — Первый сомножитель/делимое: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `b` — Второй сомножитель/делитель: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `result_scale` — Scale результата: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Результат деления с заданным scale.
+
+Тип: [Decimal256](../../sql-reference/data-types/decimal.md).
+
+**Примеры**
+
+```sql
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10);
+```
+
+```text
+┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
+│                                                -5.7142857142 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Отличие от стандартных функций**
+```sql
+SELECT toDecimal64(-12, 1) / toDecimal32(2.1, 1);
+SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
+```
+
+```text
+┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
+│                                             -5.7 │
+└──────────────────────────────────────────────────┘
+
+┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
+│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
+└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT toDecimal64(-12, 0) / toDecimal32(2.1, 1);
+SELECT toDecimal64(-12, 0) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
+```
+
+```text
+DB::Exception: Decimal result's scale is less than argument's one: While processing toDecimal64(-12, 0) / toDecimal32(2.1, 1). (ARGUMENT_OUT_OF_BOUND)
+
+┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
+│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
+└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```

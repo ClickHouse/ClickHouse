@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/install
 sidebar_position: 11
 sidebar_label: "Установка"
 ---
@@ -76,15 +77,37 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHat и всех остальных дистрибутивов Linux, основанных на rpm.
 
+#### Установка официального репозитория
+
 Сначала нужно подключить официальный репозиторий:
 
 ``` bash
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
+```
 
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+Для систем с пакетным менеджером `zypper` (openSUSE, SLES):
+
+``` bash
+sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+```
+
+Далее любая команда `yum install` может быть заменена на `zypper install`. Чтобы указать желаемую версию, необходимо добавить `-$VERSION` в имени пакета, например `clickhouse-client-22.2.2.22`.
+
+#### Установка сервера и клиента
+
+``` bash
+sudo yum install -y clickhouse-server clickhouse-client
+```
+
+#### Запуск сервера
+
+``` bash
+sudo systemctl enable clickhouse-server
+sudo systemctl start clickhouse-server
+sudo systemctl status clickhouse-server
+clickhouse-client # илм "clickhouse-client --password" если установлен пароль
 ```
 
 <details markdown="1">
@@ -137,8 +160,6 @@ do
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
 done
 
-exit 0
-
 tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
@@ -149,7 +170,7 @@ sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
 tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
 sudo /etc/init.d/clickhouse-server start
 
 tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
@@ -215,7 +236,7 @@ sudo ./clickhouse install
 
 ### Из исходного кода {#from-sources}
 
-Для компиляции ClickHouse вручную, используйте инструкцию для [Linux](../development/build.md) или [Mac OS X](../development/build-osx.md).
+Для компиляции ClickHouse вручную, используйте инструкцию для [Linux](../development/build.mdx) или [Mac OS X](../development/build-osx.md).
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 

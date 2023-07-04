@@ -123,7 +123,9 @@ timeout $TIMEOUT bash -c drop_part_thread &
 wait
 
 check_replication_consistency "dst_" "count(), sum(p), sum(k), sum(v)"
-try_sync_replicas "src_"
+try_sync_replicas "src_" 300
+
+$CLICKHOUSE_CLIENT -q "SELECT table, lost_part_count FROM system.replicas WHERE database=currentDatabase() AND lost_part_count!=0";
 
 for ((i=0; i<16; i++)) do
     $CLICKHOUSE_CLIENT -q "DROP TABLE dst_$i" 2>&1| grep -Fv "is already started to be removing" &

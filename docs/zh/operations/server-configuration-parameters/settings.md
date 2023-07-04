@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
@@ -465,7 +466,7 @@ SSL客户端/服务器配置。
 -   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+-   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .
 -   disableProtocols – Protocols that are not allowed to use.
 -   preferServerCiphers – Preferred server ciphers on the client.
 
@@ -527,8 +528,9 @@ SSL客户端/服务器配置。
 
 包含数据的目录的路径。
 
-!!! note "注"
-    尾部斜杠是强制性的。
+:::note
+尾部斜杠是强制性的。
+:::
 
 **示例**
 
@@ -713,8 +715,9 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 
 用于处理大型查询的临时数据的路径。
 
-!!! note "注"
-    尾部斜杠是强制性的。
+:::note
+尾部斜杠是强制性的。
+:::
 
 **示例**
 
@@ -727,11 +730,12 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 从政策 [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) 存储临时文件。
 如果没有设置 [`tmp_path`](#server-settings-tmp_path) 被使用，否则被忽略。
 
-!!! note "注"
-    - `move_factor` 被忽略
+:::note
+- `move_factor` 被忽略
 - `keep_free_space_bytes` 被忽略
 - `max_data_part_size_bytes` 被忽略
 -您必须在该政策中只有一个卷
+:::
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -774,7 +778,7 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 
 ## zookeeper {#server-settings_zookeeper}
 
-包含允许ClickHouse与 [zookpeer](http://zookeeper.apache.org/) 集群。
+包含允许ClickHouse与 [zookeeper](http://zookeeper.apache.org/) 集群。
 
 ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复制的表，则可以省略此部分参数。
 
@@ -866,5 +870,3 @@ ZooKeeper中数据部分头的存储方法。
 更新是在一个单独的系统线程中异步执行的。
 
 **默认值**: 15.
-
-[原始文章](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

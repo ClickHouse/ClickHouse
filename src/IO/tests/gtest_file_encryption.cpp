@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #include <gtest/gtest.h>
@@ -226,8 +226,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     String key = "1234567812345678";
     FileEncryption::Header header;
     header.algorithm = Algorithm::AES_128_CTR;
-    header.key_id = 1;
-    header.key_hash = calculateKeyHash(key);
+    header.key_fingerprint = calculateKeyFingerprint(key);
     header.init_vector = InitVector::random();
 
     auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);
@@ -251,7 +250,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     rb.seek(0, SEEK_SET);
     ASSERT_EQ(rb.getPosition(), 0);
     res.resize(5);
-    rb.read(res.data(), res.size());
+    ASSERT_EQ(rb.read(res.data(), res.size()), 5);
     ASSERT_EQ(res, data.substr(0, 5));
     res.clear();
 

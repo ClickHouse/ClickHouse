@@ -42,7 +42,9 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 {
     if (UInt64 maybe_block_number = tryParseFileName(file_name_))
         return maybe_block_number;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'", file_name_);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'",
+                    file_name_);
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
@@ -61,7 +63,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
-        commands.writeText(*out);
+        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
         if (tid.isPrehistoric())
         {
@@ -73,6 +75,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             TransactionID::write(tid, *out);
             *out << "\n";
         }
+        out->finalize();
         out->sync();
     }
     catch (...)
@@ -125,7 +128,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
-    create_time = DateLUT::instance().makeDateTime(
+    create_time = DateLUT::serverTimezoneInstance().makeDateTime(
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
@@ -174,7 +177,7 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     out << "block number: " << block_number << "\n";
 
     out << "commands: ";
-    commands.writeText(out);
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());

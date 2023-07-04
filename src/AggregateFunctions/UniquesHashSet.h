@@ -118,7 +118,7 @@ private:
 
     HashValue hash(Value key) const
     {
-        return Hash()(key);
+        return static_cast<HashValue>(Hash()(key));
     }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
@@ -329,9 +329,13 @@ public:
         free();
     }
 
-    void insert(Value x)
+    void ALWAYS_INLINE insert(Value x)
     {
-        HashValue hash_value = hash(x);
+        HashValue hash_value;
+        if constexpr (std::endian::native == std::endian::little)
+            hash_value = hash(x);
+        else
+            hash_value = std::byteswap(hash(x));
         if (!good(hash_value))
             return;
 
@@ -358,7 +362,7 @@ public:
           *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
-        size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));
+        size_t fixed_res = static_cast<size_t>(round(p32 * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
 
@@ -424,14 +428,30 @@ public:
 
         alloc(new_size_degree);
 
-        for (size_t i = 0; i < m_size; ++i)
+        if (m_size <= 1)
         {
-            HashValue x = 0;
-            DB::readIntBinary(x, rb);
-            if (x == 0)
-                has_zero = true;
-            else
-                reinsertImpl(x);
+            for (size_t i = 0; i < m_size; ++i)
+            {
+                HashValue x = 0;
+                DB::readIntBinary(x, rb);
+                if (x == 0)
+                    has_zero = true;
+                else
+                    reinsertImpl(x);
+            }
+        }
+        else
+        {
+            auto hs = std::make_unique<HashValue[]>(m_size);
+            rb.readStrict(reinterpret_cast<char *>(hs.get()), m_size * sizeof(HashValue));
+
+            for (size_t i = 0; i < m_size; ++i)
+            {
+                if (hs[i] == 0)
+                    has_zero = true;
+                else
+                    reinsertImpl(hs[i]);
+            }
         }
     }
 
@@ -458,11 +478,24 @@ public:
             resize(new_size_degree);
         }
 
-        for (size_t i = 0; i < rhs_size; ++i)
+        if (rhs_size <= 1)
         {
-            HashValue x = 0;
-            DB::readIntBinary(x, rb);
-            insertHash(x);
+            for (size_t i = 0; i < rhs_size; ++i)
+            {
+                HashValue x = 0;
+                DB::readIntBinary(x, rb);
+                insertHash(x);
+            }
+        }
+        else
+        {
+            auto hs = std::make_unique<HashValue[]>(rhs_size);
+            rb.readStrict(reinterpret_cast<char *>(hs.get()), rhs_size * sizeof(HashValue));
+
+            for (size_t i = 0; i < rhs_size; ++i)
+            {
+                insertHash(hs[i]);
+            }
         }
     }
 

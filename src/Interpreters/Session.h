@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -32,7 +32,7 @@ public:
     /// Stops using named sessions. The method must be called at the server shutdown.
     static void shutdownNamedSessions();
 
-    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false);
+    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false, const std::string & certificate = "");
     ~Session();
 
     Session(const Session &&) = delete;
@@ -65,6 +65,8 @@ public:
     ContextMutablePtr sessionContext() { return session_context; }
     ContextPtr sessionContext() const { return session_context; }
 
+    ContextPtr  sessionOrGlobalContext() const { return session_context ? session_context : global_context; }
+
     /// Makes a query context, can be used multiple times, with or without makeSession() called earlier.
     /// The query context will be created from a copy of a session context if it exists, or from a copy of
     /// a global context otherwise. In the latter case the function also assigns an user to this context.
@@ -74,6 +76,9 @@ public:
 
     /// Releases the currently used session ID so it becomes available for reuse by another session.
     void releaseSessionID();
+
+    /// Closes and removes session
+    void closeSession(const String & session_id);
 
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;

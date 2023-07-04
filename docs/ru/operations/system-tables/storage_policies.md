@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/storage_policies
+---
 # system.storage_policies {#system_tables-storage_policies}
 
 Содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
@@ -13,4 +16,3 @@
 -   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Значение настройки `prefer_not_to_merge`. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
-

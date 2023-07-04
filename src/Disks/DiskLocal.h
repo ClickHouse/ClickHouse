@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <Disks/DiskLocalCheckThread.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -27,8 +26,6 @@ public:
         UInt64 keep_free_space_bytes_,
         ContextPtr context,
         UInt64 local_disk_check_period_ms);
-
-    const String & getName() const override { return name; }
 
     const String & getPath() const override { return disk_path; }
 
@@ -84,6 +81,9 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    Strings getBlobPath(const String & path) const override;
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
@@ -101,7 +101,9 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType getType() const override { return DiskType::Local; }
+    DataSourceDescription getDataSourceDescription() const override;
+    static DataSourceDescription getLocalDataSourceDescription(const String & path);
+
     bool isRemote() const override { return false; }
 
     bool supportZeroCopyReplication() const override { return false; }
@@ -111,8 +113,9 @@ public:
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
     bool isBroken() const override { return broken; }
+    bool isReadOnly() const override { return readonly; }
 
-    void startup(ContextPtr) override;
+    void startupImpl(ContextPtr context) override;
 
     void shutdown() override;
 
@@ -120,9 +123,7 @@ public:
     /// rudimentary. The more advanced choice would be using
     /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
     bool canRead() const noexcept;
-    bool canWrite() const noexcept;
-
-    DiskObjectStoragePtr createDiskObjectStorage() override;
+    bool canWrite() noexcept;
 
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
@@ -130,28 +131,29 @@ public:
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
 
+protected:
+    void checkAccessImpl(const String & path) override;
+
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
-    /// Setup disk for healthy check. Returns true if it's read-write, false if read-only.
+    /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.
-    bool setup();
+    void setup();
 
     /// Read magic number from disk checker file. Return std::nullopt if exception happens.
     std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
 
-    const String name;
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
     Poco::Logger * logger;
+    DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
-
-    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};

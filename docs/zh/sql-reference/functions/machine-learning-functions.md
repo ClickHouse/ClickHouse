@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/machine-learning-functions
+---
 # 机器学习函数 {#ji-qi-xue-xi-han-shu}
 
 ## evalMLMethod（预测) {#machine_learning_methods-evalmlmethod}

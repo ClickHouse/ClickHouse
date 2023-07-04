@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Common/logger_useful.h>
 #include <base/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>
@@ -34,6 +33,9 @@ struct ShellCommandSourceConfiguration
     size_t number_of_rows_to_read = 0;
     /// Max block size
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    /// Will throw if the command exited with
+    /// non-zero status code
+    size_t check_exit_code = false;
 };
 
 class ShellCommandSourceCoordinator
@@ -58,7 +60,7 @@ public:
         /// Pool size valid only if executable_pool = true
         size_t pool_size = 16;
 
-        /// Max command execution time in milliseconds. Valid only if executable_pool = true
+        /// Max command execution time in seconds. Valid only if executable_pool = true
         size_t max_command_execution_time_seconds = 10;
 
         /// Should pool of processes be created.

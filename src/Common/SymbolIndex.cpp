@@ -1,7 +1,7 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/SymbolIndex.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -37,7 +37,7 @@ But because ClickHouse is linked with most of the symbols exported (-rdynamic fl
 It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
 It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
 it is split to separate binary and provided in clickhouse-common-static-dbg package.
-This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
+This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse.debug and is loaded automatically by tools like gdb, addr2line.
 When you build ClickHouse by yourself, debug info is not split and present in a single huge binary.
 
 What ClickHouse is using to provide good stack traces?
@@ -99,23 +99,25 @@ void updateResources(ElfW(Addr) base_address, std::string_view object_name, std:
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_start"));
 
-            resources.emplace(name, SymbolIndex::ResourcesBlob{
-                base_address,
-                object_name,
-                std::string_view{char_address, 0}, // NOLINT
-            });
+            auto & resource = resources[name];
+            if (!resource.base_address || resource.base_address == base_address)
+            {
+                resource.base_address = base_address;
+                resource.start = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
+                resource.object_name = object_name;
+            }
         }
-        else if (name.ends_with("_end"))
+        if (name.ends_with("_end"))
         {
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_end"));
 
-            auto it = resources.find(name);
-            if (it != resources.end() && it->second.base_address == base_address && it->second.data.empty())
+            auto & resource = resources[name];
+            if (!resource.base_address || resource.base_address == base_address)
             {
-                const char * start = it->second.data.data();
-                assert(char_address >= start);
-                it->second.data = std::string_view{start, static_cast<size_t>(char_address - start)};
+                resource.base_address = base_address;
+                resource.end = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
+                resource.object_name = object_name;
             }
         }
     }
@@ -391,10 +393,22 @@ void collectSymbolsFromELF(
     std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
     local_debug_info_path += ".debug";
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
+    debug_info_path += ".debug";
 
-    if (std::filesystem::exists(local_debug_info_path))
+    /// NOTE: This is a workaround for current package system.
+    ///
+    /// Since nfpm cannot copy file only if it exists,
+    /// and so in cmake empty .debug file is created instead,
+    /// but if we will try to load empty Elf file, then the CANNOT_PARSE_ELF
+    /// exception will be thrown from the Elf::Elf.
+    auto exists_not_empty = [](const std::filesystem::path & path)
+    {
+        return std::filesystem::exists(path) && !std::filesystem::is_empty(path);
+    };
+
+    if (exists_not_empty(local_debug_info_path))
         object_name = local_debug_info_path;
-    else if (std::filesystem::exists(debug_info_path))
+    else if (exists_not_empty(debug_info_path))
         object_name = debug_info_path;
     else if (build_id.size() >= 2)
     {
@@ -412,7 +426,7 @@ void collectSymbolsFromELF(
 
         std::filesystem::path build_id_debug_info_path(
             fmt::format("/usr/lib/debug/.build-id/{}/{}.debug", build_id_hex.substr(0, 2), build_id_hex.substr(2)));
-        if (std::filesystem::exists(build_id_debug_info_path))
+        if (exists_not_empty(build_id_debug_info_path))
             object_name = build_id_debug_info_path;
         else
             object_name = canonical_path;

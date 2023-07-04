@@ -53,7 +53,7 @@ public:
     /// Session was actually removed
     bool remove(int64_t session_id);
 
-    /// Update session expiry time (must be called on hearbeats)
+    /// Update session expiry time (must be called on heartbeats)
     void addNewSessionOrUpdate(int64_t session_id, int64_t timeout_ms);
 
     /// Get all expired sessions

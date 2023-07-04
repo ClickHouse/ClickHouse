@@ -1,6 +1,6 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {

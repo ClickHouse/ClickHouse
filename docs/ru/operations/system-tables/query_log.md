@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/query_log
+---
 # system.query_log {#system_tables-query_log}
 
 Содержит информацию о выполняемых запросах, например, время начала обработки, продолжительность обработки, сообщения об ошибках.
@@ -66,11 +69,11 @@ ClickHouse не удаляет данные из таблица автомати
     -   0 — запрос был инициирован другим запросом при выполнении распределенного запроса.
 -   `user` ([String](../../sql-reference/data-types/string.md)) — пользователь, запустивший текущий запрос.
 -   `query_id` ([String](../../sql-reference/data-types/string.md)) — ID запроса.
--   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел запрос.
+-   `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP адрес, с которого пришел запрос.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого клиент сделал запрос
 -   `initial_user` ([String](../../sql-reference/data-types/string.md)) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID родительского запроса.
--   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
+-   `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого клиент сделал родительский запрос.
 -   `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала обработки запроса (для распределенных запросов).
 -   `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала обработки запроса с точностью до микросекунд (для распределенных запросов).

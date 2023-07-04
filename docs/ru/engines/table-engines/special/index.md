@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/special/
 sidebar_label: "Специальные движки таблиц"
 sidebar_position: 31
 ---
@@ -12,4 +13,3 @@ sidebar_position: 31
 -   [Движки таблиц для интеграции](../../../engines/table-engines/integrations/index.md).
 
 Остальные движки таблиц уникальны по своему назначению и еще не сгруппированы в семейства, поэтому они помещены в эту специальную категорию.
-

@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include "Core/UUID.h"
 
 namespace DB
 {
@@ -27,7 +28,7 @@ public:
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -39,27 +40,19 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-private:
-    enum class Mode
-    {
-        PerReplica,
-        PerShard
-    };
+    void enforceSorting(SortDescription output_sort_description);
+    void enforceAggregationInOrder();
 
+private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
-
     StorageID main_table;
     ASTPtr table_func_ptr;
-
-    ContextPtr context;
-
+    ContextMutablePtr context;
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
-
     std::shared_ptr<const StorageLimitsList> storage_limits;
-
     Poco::Logger * log;
 
     UInt32 shard_count;
@@ -72,13 +65,14 @@ class ReadFromParallelRemoteReplicasStep : public ISourceStep
 {
 public:
     ReadFromParallelRemoteReplicasStep(
+        ASTPtr query_ast_,
+        ClusterPtr cluster_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
-        ClusterProxy::SelectStreamFactory::Shard shard,
         Block header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -89,25 +83,24 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void enforceSorting(SortDescription output_sort_description);
+    void enforceAggregationInOrder();
+
 private:
 
     void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
 
+    ClusterPtr cluster;
+    ASTPtr query_ast;
     ParallelReplicasReadingCoordinatorPtr coordinator;
-    ClusterProxy::SelectStreamFactory::Shard shard;
     QueryProcessingStage::Enum stage;
-
     StorageID main_table;
     ASTPtr table_func_ptr;
-
-    ContextPtr context;
-
+    ContextMutablePtr context;
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
-
     std::shared_ptr<const StorageLimitsList> storage_limits;
-
     Poco::Logger * log;
 };
 

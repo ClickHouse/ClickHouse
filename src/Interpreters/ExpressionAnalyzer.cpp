@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
@@ -32,6 +34,7 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -53,6 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include <QueryPipeline/SizeLimits.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -65,6 +69,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -72,6 +77,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -125,7 +131,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
             if (isNotCreatable(col.type->getTypeId()))
             {
                 if (throw_if_cannot_create_column)
-                    throw Exception("Cannot create column of type " + col.type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot create column of type {}", col.type->getName());
 
                 return false;
             }
@@ -143,6 +149,11 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+    , size_limits_for_set_used_with_index(
+        (settings_.use_index_for_in_with_subqueries_max_values &&
+            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
+        size_limits_for_set :
+        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
     , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
@@ -155,11 +166,13 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     size_t subquery_depth_,
     bool do_global,
     bool is_explain,
-    PreparedSetsPtr prepared_sets_)
+    PreparedSetsPtr prepared_sets_,
+    bool is_create_parameterized_view_)
     : WithContext(context_)
     , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
+    , is_create_parameterized_view(is_create_parameterized_view_)
 {
     /// Cache prepared sets because we might run analysis multiple times
     if (prepared_sets_)
@@ -253,7 +266,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     auto * select_query = query->as<ASTSelectQuery>();
 
     makeAggregateDescriptions(temp_actions, aggregate_descriptions);
-    has_aggregation = !aggregate_descriptions.empty() || (select_query && (select_query->groupBy() || select_query->having()));
+    has_aggregation = !aggregate_descriptions.empty() || (select_query && select_query->groupBy());
 
     if (!has_aggregation)
     {
@@ -308,7 +321,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         const auto & column_name = group_elements_ast[j]->getColumnName();
                         const auto * node = temp_actions->tryFindInOutputs(column_name);
                         if (!node)
-                            throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in GROUP BY): {}", column_name);
 
                         /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
                         if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
@@ -362,7 +375,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInOutputs(column_name);
                     if (!node)
-                        throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in GROUP BY): {}", column_name);
 
                     /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
                     if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
@@ -410,7 +423,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
             if (group_asts.empty())
             {
                 select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-                has_aggregation = select_query->having() || !aggregate_descriptions.empty();
+                has_aggregation = !aggregate_descriptions.empty();
             }
         }
 
@@ -422,7 +435,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
     for (const auto & desc : aggregate_descriptions)
-        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
+        aggregated_columns.emplace_back(desc.column_name, desc.function->getResultType());
 }
 
 
@@ -431,50 +444,11 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(
-            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, prepared_sets, has_global_subqueries);
+            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, prepared_sets, has_global_subqueries, syntax->analyzed_join.get());
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
 
-
-void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options)
-{
-    if (!prepared_sets)
-        return;
-
-    auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
-
-    if (prepared_sets->get(set_key))
-        return; /// Already prepared.
-
-    if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
-    {
-        prepared_sets->set(set_key, set_ptr_from_storage_set);
-        return;
-    }
-
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
-    auto io = interpreter_subquery->execute();
-    PullingAsyncPipelineExecutor executor(io.pipeline);
-
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
-
-    Block block;
-    while (executor.pull(block))
-    {
-        if (block.rows() == 0)
-            continue;
-
-        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
-            return;
-    }
-
-    set->finishInsert();
-
-    prepared_sets->set(set_key, std::move(set));
-}
 
 SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
@@ -489,54 +463,6 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     return storage_set->getSet();
 }
 
-
-/// Performance optimization for IN() if storage supports it.
-void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
-{
-    if (!node || !storage() || !storage()->supportsIndexForIn())
-        return;
-
-    for (auto & child : node->children)
-    {
-        /// Don't descend into subqueries.
-        if (child->as<ASTSubquery>())
-            continue;
-
-        /// Don't descend into lambda functions
-        const auto * func = child->as<ASTFunction>();
-        if (func && func->name == "lambda")
-            continue;
-
-        makeSetsForIndex(child);
-    }
-
-    const auto * func = node->as<ASTFunction>();
-    if (func && functionIsInOrGlobalInOperator(func->name))
-    {
-        const IAST & args = *func->arguments;
-        const ASTPtr & left_in_operand = args.children.at(0);
-
-        if (storage()->mayBenefitFromIndexForIn(left_in_operand, getContext(), metadata_snapshot))
-        {
-            const ASTPtr & arg = args.children.at(1);
-            if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
-            {
-                if (settings.use_index_for_in_with_subqueries)
-                    tryMakeSetForIndexFromSubquery(arg, query_options);
-            }
-            else
-            {
-                auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
-                getRootActions(left_in_operand, true, temp_actions);
-
-                if (prepared_sets && temp_actions->tryFindInOutputs(left_in_operand->getColumnName()))
-                    makeExplicitSet(func, *temp_actions, true, getContext(), settings.size_limits_for_set, *prepared_sets);
-            }
-        }
-    }
-}
-
-
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
@@ -550,8 +476,9 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
-        !isRemoteStorage() /* create_source_for_in */,
-        getAggregationKeysInfo());
+        getAggregationKeysInfo(),
+        false /* build_expression_with_window_functions */,
+        is_create_parameterized_view);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -569,8 +496,9 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
         true /* no_makeset */,
         only_consts,
-        !isRemoteStorage() /* create_source_for_in */,
-        getAggregationKeysInfo());
+        getAggregationKeysInfo(),
+        false /* build_expression_with_window_functions */,
+        is_create_parameterized_view);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -590,8 +518,9 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
-        true /* create_source_for_in */,
-        getAggregationKeysInfo());
+        getAggregationKeysInfo(),
+        false /* build_expression_with_window_functions */,
+        is_create_parameterized_view);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -610,7 +539,6 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
         no_makeset_for_subqueries,
         false /* no_makeset */,
         false /*only_consts */,
-        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         true);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
@@ -725,7 +653,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, actions_dag);
             desc.partition_by_actions.push_back(std::move(actions_dag));
         }
@@ -746,7 +674,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     order_by_element.direction,
                     order_by_element.nulls_direction));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, actions_dag);
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
@@ -918,14 +846,23 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 {
     const auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a select query");
     return select_query;
+}
+
+bool ExpressionAnalyzer::isRemoteStorage() const
+{
+    const Settings & csettings = getContext()->getSettingsRef();
+    // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
+    const bool enable_parallel_processing_of_joins
+        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
+    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
-        throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No aggregation");
     return getSelectQuery();
 }
 
@@ -1000,21 +937,21 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
     return join;
 }
 
-static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
-{
-    ASTPtr expression_list = analyzed_join.rightKeysList();
-    auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
-}
-
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
+
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
+    const auto & settings = context->getSettings();
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
+
+    std::vector<String> tried_algorithms;
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::DIRECT));
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
         if (direct_join)
         {
@@ -1027,6 +964,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::PARTIAL_MERGE));
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
@@ -1036,22 +974,41 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
         if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, right_sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
     {
+        tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-        return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
+    {
+        tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
 
-    throw Exception("Can't execute any of specified algorithms for specified strictness/kind and right storage type",
-                     ErrorCodes::NOT_IMPLEMENTED);
+        // Grace hash join requires that columns exist in left_sample_block.
+        Block left_sample_block(left_sample_columns);
+        if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
+            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
+    }
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    {
+        tried_algorithms.push_back(toString(JoinAlgorithm::AUTO));
+
+        if (MergeJoin::isSupported(analyzed_join))
+            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Can't execute {} join algorithm for this strictness/kind and right storage type",
+        fmt::join(tried_algorithms, " or "));
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1061,7 +1018,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     SelectQueryOptions query_options)
 {
     /// Actions which need to be calculated on joined block.
-    auto joined_block_actions = createJoinedBlockActions(context, analyzed_join);
+    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context);
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
 
@@ -1186,7 +1143,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan, getContext());
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, left_columns, joined_plan, getContext());
     return join;
 }
 
@@ -1209,8 +1166,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     const auto & node = step.actions()->findInOutputs(prewhere_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
-        throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                        filter_type->getName());
 
     ActionsDAGPtr prewhere_actions;
     {
@@ -1292,8 +1249,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     const auto & node = step.actions()->findInOutputs(where_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
-        throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in WHERE: {}",
+                        filter_type->getName());
 
     return true;
 }
@@ -1478,6 +1435,7 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
+
     step.addRequiredOutput(select_query->having()->getColumnName());
 
     return true;
@@ -1513,7 +1471,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     {
         auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
@@ -1635,12 +1593,14 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     NamesWithAliases result_columns;
+    NameSet required_result_columns_set(required_result_columns.begin(), required_result_columns.end());
 
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
         String result_name = ast->getAliasOrColumnName();
-        if (required_result_columns.empty() || required_result_columns.contains(result_name))
+
+        if (required_result_columns_set.empty() || required_result_columns_set.contains(result_name))
         {
             std::string source_name = ast->getColumnName();
 
@@ -1676,6 +1636,15 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     auto actions = chain.getLastActions();
     actions->project(result_columns);
+
+    if (!required_result_columns.empty())
+    {
+        result_columns.clear();
+        for (const auto & column : required_result_columns)
+            result_columns.emplace_back(column, std::string{});
+        actions->project(result_columns);
+    }
+
     return actions;
 }
 
@@ -1747,11 +1716,16 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
 }
 
-ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
+ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
 {
     auto actions = std::make_shared<ActionsDAG>(constant_inputs);
-
     getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
+    return actions;
+}
+
+ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
+{
+    auto actions = getConstActionsDAG(constant_inputs);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
@@ -1800,14 +1774,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     ssize_t where_step_num = -1;
     ssize_t having_step_num = -1;
 
-    auto finalize_chain = [&](ExpressionActionsChain & chain)
+    auto finalize_chain = [&](ExpressionActionsChain & chain) -> ColumnsWithTypeAndName
     {
         if (prewhere_step_num >= 0)
         {
             ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
 
-            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-            NameSet required_source_columns(required_columns.begin(), required_columns.end());
+            auto required_columns_ = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns_.begin(), required_columns_.end());
             /// Add required columns to required output in order not to remove them after prewhere execution.
             /// TODO: add sampling and final execution to common chain.
             for (const auto & column : additional_required_columns_after_prewhere)
@@ -1821,7 +1795,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
+        auto res = chain.getLastStep().getResultColumns();
         chain.clear();
+        return res;
     };
 
     {
@@ -1829,9 +1805,22 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
-            Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
-            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
-                columns_for_sampling.begin(), columns_for_sampling.end());
+            // we evaluate sampling for Merge lazily so we need to get all the columns
+            if (storage->getName() == "Merge")
+            {
+                const auto columns = metadata_snapshot->getColumns().getAll();
+
+                for (const auto & column : columns)
+                {
+                    additional_required_columns_after_prewhere.push_back(column.name);
+                }
+            }
+            else
+            {
+                Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+                additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                    columns_for_sampling.begin(), columns_for_sampling.end());
+            }
         }
 
         if (storage && query.final())
@@ -1902,7 +1891,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     ExpressionActions(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
-                    auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
+
+                    auto & column_elem
+                        = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
                         where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
@@ -1916,6 +1907,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             /// TODO correct conditions
             optimize_aggregation_in_order =
                     context->getSettingsRef().optimize_aggregation_in_order
+                    && (!context->getSettingsRef().query_plan_aggregation_in_order)
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
@@ -1925,7 +1917,55 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             if (settings.group_by_use_nulls)
                 query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
 
-            finalize_chain(chain);
+            auto columns_before_aggregation = finalize_chain(chain);
+
+            /// Here we want to check that columns after aggregation have the same type as
+            /// were promised in query_analyzer.aggregated_columns
+            /// Ideally, they should be equal. In practice, this may be not true.
+            /// As an example, we don't build sets for IN inside ExpressionAnalysis::analyzeAggregation,
+            /// so that constant folding for expression (1 in 1) will not work. This may change the return type
+            /// for functions with LowCardinality argument: function "substr(toLowCardinality('abc'), 1 IN 1)"
+            /// should usually return LowCardinality(String) when (1 IN 1) is constant, but without built set
+            /// for (1 IN 1) constant is not propagated and "substr" returns String type.
+            /// See 02503_in_lc_const_args_bug.sql
+            ///
+            /// As a temporary solution, we add converting actions to the next chain.
+            /// Hopefully, later we can
+            /// * use a new analyzer where this issue is absent
+            /// * or remove ExpressionActionsChain completely and re-implement its logic on top of the query plan
+            {
+                for (auto & col : columns_before_aggregation)
+                    if (!col.column)
+                        col.column = col.type->createColumn();
+
+                Block header_before_aggregation(std::move(columns_before_aggregation));
+
+                auto keys = query_analyzer.aggregationKeys().getNames();
+                const auto & aggregates = query_analyzer.aggregates();
+
+                bool has_grouping = query_analyzer.group_by_kind != GroupByKind::ORDINARY;
+                auto actual_header = Aggregator::Params::getHeader(
+                    header_before_aggregation, /*only_merge*/ false, keys, aggregates, /*final*/ true);
+                actual_header = AggregatingStep::appendGroupingColumn(
+                    std::move(actual_header), keys, has_grouping, settings.group_by_use_nulls);
+
+                Block expected_header;
+                for (const auto & expected : query_analyzer.aggregated_columns)
+                    expected_header.insert(ColumnWithTypeAndName(expected.type, expected.name));
+
+                if (!blocksHaveEqualStructure(actual_header, expected_header))
+                {
+                    auto converting = ActionsDAG::makeConvertingActions(
+                        actual_header.getColumnsWithTypeAndName(),
+                        expected_header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        true);
+
+                    auto & step = chain.lastStep(query_analyzer.aggregated_columns);
+                    auto & actions = step.actions();
+                    actions = ActionsDAG::merge(std::move(*actions), std::move(*converting));
+                }
+            }
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
@@ -1944,20 +1984,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         optimize_read_in_order =
-            settings.optimize_read_in_order
+            settings.optimize_read_in_order && (!settings.query_plan_read_in_order)
             && storage
             && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()
             && join_allow_read_in_order;
-
-        if (storage && optimize_read_in_order)
-        {
-            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
-            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
-                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
-        }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
@@ -1984,7 +2017,24 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getReturnType()});
+                        {f.column_name, f.aggregate_function->getResultType()});
+                }
+            }
+
+            // Here we need to set order by expression as required output to avoid
+            // their removal from the ActionsDAG.
+            const auto * select_query = query_analyzer.getSelectQuery();
+            if (select_query->orderBy())
+            {
+                for (auto & child : select_query->orderBy()->children)
+                {
+                    auto * ast = child->as<ASTOrderByElement>();
+                    ASTPtr order_expression = ast->children.at(0);
+                    if (auto * function = order_expression->as<ASTFunction>();
+                        function && (function->is_window_function || function->compute_after_window_functions))
+                        continue;
+                    const String & column_name = order_expression->getColumnName();
+                    chain.getLastStep().addRequiredOutput(column_name);
                 }
             }
 
@@ -2007,7 +2057,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
             // list of columns is important when we apply SELECT DISTINCT later.
-            const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
                 step.addRequiredOutput(child->getColumnName());
@@ -2101,7 +2150,7 @@ void ExpressionAnalysisResult::checkActions() const
             if (actions)
                 for (const auto & node : actions->getNodes())
                     if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-                        throw Exception("PREWHERE cannot contain ARRAY JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
+                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "PREWHERE cannot contain ARRAY JOIN action");
         };
 
         check_actions(prewhere_info->prewhere_actions);

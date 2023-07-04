@@ -1,15 +1,10 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/copyData.h>
-
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 
@@ -35,12 +30,12 @@ void HDFSObjectStorage::startup()
 
 std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
 {
-    const auto & path = object.absolute_path;
+    const auto & path = object.remote_path;
     const size_t begin_of_path = path.find('/', path.find("//") + 2);
     const String remote_fs_object_path = path.substr(begin_of_path);
     return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
@@ -52,7 +47,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(object.absolute_path, object.absolute_path, config, patchSettings(read_settings));
+    return std::make_unique<ReadBufferFromHDFS>(object.remote_path, object.remote_path, config, patchSettings(read_settings));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
@@ -64,25 +59,24 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     auto disk_read_settings = patchSettings(read_settings);
     auto read_buffer_creator =
         [this, disk_read_settings]
-        (const std::string & path, size_t /* read_until_position */) -> std::shared_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t /* read_until_position */) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         size_t begin_of_path = path.find('/', path.find("//") + 2);
         auto hdfs_path = path.substr(begin_of_path);
         auto hdfs_uri = path.substr(0, begin_of_path);
 
-        return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config, disk_read_settings);
+        return std::make_unique<ReadBufferFromHDFS>(
+            hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
     };
 
-    auto hdfs_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, disk_read_settings);
-    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    return std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator), objects, disk_read_settings, nullptr, /* use_external_buffer */false);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> attributes,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -92,36 +86,22 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
-    auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
-        object.absolute_path, config, settings->replication, patchSettings(write_settings), buf_size,
+    return std::make_unique<WriteBufferFromHDFS>(
+        object.remote_path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-
-void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
-    int32_t num_entries;
-    auto * files_list = hdfsListDirectory(hdfs_fs.get(), path.substr(begin_of_path).c_str(), &num_entries);
-    if (num_entries == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
-
-    for (int32_t i = 0; i < num_entries; ++i)
-        children.emplace_back(files_list[i].mName, files_list[i].mSize);
-}
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
-    const auto & path = object.absolute_path;
+    const auto & path = object.remote_path;
     const size_t begin_of_path = path.find('/', path.find("//") + 2);
 
     /// Add path from root to file name
     int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
 }
 
@@ -166,11 +146,6 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     out->finalize();
 }
 
-
-void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr context)
-{
-    applyRemoteThrottlingSettings(context);
-}
 
 std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
 {

@@ -31,7 +31,7 @@ class AggregationFunctionDeltaSum final
 {
 public:
     AggregationFunctionDeltaSum(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{arguments, params}
+        : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{arguments, params, createResultType()}
     {}
 
     AggregationFunctionDeltaSum()
@@ -40,7 +40,7 @@ public:
 
     String getName() const override { return "deltaSum"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 

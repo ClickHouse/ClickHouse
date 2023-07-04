@@ -5,6 +5,9 @@
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/assert_cast.h>
+#include <Common/Macros.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -14,15 +17,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void registerDiskWebServer(DiskFactory & factory)
+void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & disk_name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr
+    auto creator = [global_skip_access_check](
+        const String & disk_name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & /*map*/) -> DiskPtr
     {
-        String uri{config.getString(config_prefix + ".endpoint")};
+        String uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
         if (!uri.ends_with('/'))
             throw Exception(
@@ -41,15 +46,16 @@ void registerDiskWebServer(DiskFactory & factory)
         auto metadata_storage = std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
         std::string root_path;
 
-        return std::make_shared<DiskObjectStorage>(
+        DiskPtr disk = std::make_shared<DiskObjectStorage>(
             disk_name,
             root_path,
             "DiskWebServer",
             metadata_storage,
             object_storage,
-            DiskType::WebServer,
             /* send_metadata */false,
             /* threadpool_size */16);
+        disk->startup(context, skip_access_check);
+        return disk;
     };
 
     factory.registerDiskType("web", creator);

@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/tutorial
 sidebar_position: 12
 sidebar_label: 使用教程
 ---
@@ -616,8 +617,9 @@ INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 
 启用本机复制[Zookeeper](http://zookeeper.apache.org/)是必需的。 ClickHouse负责所有副本的数据一致性，并在失败后自动运行恢复过程。建议将ZooKeeper集群部署在单独的服务器上（其中没有其他进程，包括运行的ClickHouse）。
 
-!!! note "注意"
-    ZooKeeper不是一个严格的要求：在某些简单的情况下，您可以通过将数据写入应用程序代码中的所有副本来复制数据。 这种方法是**不**建议的，在这种情况下，ClickHouse将无法保证所有副本上的数据一致性。 因此需要由您的应用来保证这一点。
+:::note
+ZooKeeper不是一个严格的要求：在某些简单的情况下，您可以通过将数据写入应用程序代码中的所有副本来复制数据。 这种方法是**不**建议的，在这种情况下，ClickHouse将无法保证所有副本上的数据一致性。 因此需要由您的应用来保证这一点。
+:::
 
 ZooKeeper位置在配置文件中指定:
 
@@ -665,5 +667,3 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
 复制在多主机模式下运行。数据可以加载到任何副本中，然后系统自动将其与其他实例同步。复制是异步的，因此在给定时刻，并非所有副本都可能包含最近插入的数据。至少应该有一个副本允许数据摄入。另一些则会在重新激活后同步数据并修复一致性。请注意，这种方法允许最近插入的数据丢失的可能性很低。
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

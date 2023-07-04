@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/general/columnar-database
 title: Что такое столбцовая база данных?
 sidebar_position: 101
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/integration/json-import
 title: Как импортировать JSON в ClickHouse?
 sidebar_position: 11
 ---
@@ -18,7 +19,7 @@ $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test
 При помощи [интефейса CLI](../../interfaces/cli.md):
 
 ``` bash
-$ echo '{"foo":"bar"}'  | clickhouse-client ---query="INSERT INTO test FORMAT JSONEachRow"
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
 ```
 
 Чтобы не вставлять данные вручную, используйте одну из [готовых библиотек](../../interfaces/index.md).

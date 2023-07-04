@@ -2,7 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/AccessRights.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>

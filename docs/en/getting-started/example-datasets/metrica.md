@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/metrica
 sidebar_label: Web Analytics Data
 description: Dataset consisting of two tables containing anonymized web analytics data with hits and visits
 ---
@@ -83,7 +84,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 1680609
 ```
 
-## An example JOIN 
+## An example JOIN
 
 The hits and visits dataset is used in the ClickHouse test
 routines, this is one of the queries from the test suite. The rest
@@ -130,10 +131,10 @@ FORMAT PrettyCompact"
 
 ## Next Steps
 
-[A Practical Introduction to Sparse Primary Indexes in ClickHouse](../../guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-intro.md) uses the hits dataset to discuss the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/en/guides/best-practices/sparse-primary-indexes.md) uses the hits dataset to discuss the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
 
 Additional examples of queries to these tables can be found among the ClickHouse [stateful tests](https://github.com/ClickHouse/ClickHouse/blob/d7129855757f38ceec3e4ecc6dafacdabe9b178f/tests/queries/1_stateful/00172_parallel_join.sql).
 
 :::note
-The test suite uses a database name `test`, and the tables are named `hits` and `visits`.  You can rename your database and tables, or edit the SQL from the test file.  
+The test suite uses a database name `test`, and the tables are named `hits` and `visits`.  You can rename your database and tables, or edit the SQL from the test file.
 :::

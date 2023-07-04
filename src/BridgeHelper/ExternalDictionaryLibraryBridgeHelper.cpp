@@ -87,19 +87,25 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
      * 2. Bridge crashed or restarted for some reason while server did not.
     **/
     if (result.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check that bridge and server have the same version.", result);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected message from library bridge: {}. "
+                        "Check that bridge and server have the same version.", result);
 
     UInt8 dictionary_id_exists;
     auto parsed = tryParse<UInt8>(dictionary_id_exists, result);
     if (!parsed || (dictionary_id_exists != 0 && dictionary_id_exists != 1))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {} ({}). Check that bridge and server have the same version.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected message from library bridge: {} ({}). "
+                        "Check that bridge and server have the same version.",
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
 
     LOG_TRACE(log, "dictionary_id: {}, dictionary_id_exists on bridge side: {}, library confirmed to be initialized on server side: {}",
               toString(dictionary_id), toString(dictionary_id_exists), library_initialized);
 
     if (dictionary_id_exists && !library_initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Library was not initialized, but bridge responded to already have dictionary id: {}", dictionary_id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Library was not initialized, but bridge responded to already have dictionary id: {}",
+                        dictionary_id);
 
     /// Here we want to say bridge to recreate a new library handler for current dictionary,
     /// because it responded to have lost it, but we know that it has already been created. (It is a direct result of bridge crash).
@@ -233,6 +239,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadKeys(const Block & requ
         WriteBufferFromOStream out_buffer(os);
         auto output_format = getContext()->getOutputFormat(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
         formatBlock(output_format, requested_block);
+        out_buffer.finalize();
     };
     return QueryPipeline(loadBase(uri, out_stream_callback));
 }
@@ -263,7 +270,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadBase(const Poco::URI & 
         0,
         DBMS_DEFAULT_BUFFER_SIZE,
         getContext()->getReadSettings(),
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
+        HTTPHeaderEntries{});
 
     auto source = FormatFactory::instance().getInput(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));

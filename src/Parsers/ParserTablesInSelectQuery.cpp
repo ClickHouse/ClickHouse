@@ -21,9 +21,9 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 {
     auto res = std::make_shared<ASTTableExpression>();
 
-    if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true).parse(pos, res->subquery, expected)
-        && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(true, true), true).parse(pos, res->table_function, expected)
-        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(true, true), true)
+    if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(false, true), allow_alias_without_as_keyword).parse(pos, res->table_function, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(true, true), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
 
@@ -126,7 +126,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     if (is_first)
     {
-        if (!ParserTableExpression().parse(pos, res->table_expression, expected))
+        if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
             return false;
     }
     else if (ParserArrayJoin().parse(pos, res->array_join, expected))
@@ -190,17 +190,17 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
             if (table_join->strictness != JoinStrictness::Unspecified
                 && table_join->kind == JoinKind::Cross)
-                throw Exception("You must not specify ANY or ALL for CROSS JOIN.", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "You must not specify ANY or ALL for CROSS JOIN.");
 
             if ((table_join->strictness == JoinStrictness::Semi || table_join->strictness == JoinStrictness::Anti) &&
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
-                throw Exception("SEMI|ANTI JOIN should be LEFT or RIGHT.", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "SEMI|ANTI JOIN should be LEFT or RIGHT.");
 
             if (!ParserKeyword("JOIN").ignore(pos, expected))
                 return false;
         }
 
-        if (!ParserTableExpression().parse(pos, res->table_expression, expected))
+        if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
             return false;
 
         if (table_join->kind != JoinKind::Comma
@@ -225,8 +225,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             }
             else if (ParserKeyword("ON").ignore(pos, expected))
             {
-                /// OR is operator with lowest priority, so start parsing from it.
-                if (!ParserLogicalOrExpression().parse(pos, table_join->on_expression, expected))
+                if (!ParserExpression().parse(pos, table_join->on_expression, expected))
                     return false;
             }
             else
@@ -261,12 +260,12 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     ASTPtr child;
 
-    if (ParserTablesInSelectQueryElement(true).parse(pos, child, expected))
+    if (ParserTablesInSelectQueryElement(true, allow_alias_without_as_keyword).parse(pos, child, expected))
         res->children.emplace_back(child);
     else
         return false;
 
-    while (ParserTablesInSelectQueryElement(false).parse(pos, child, expected))
+    while (ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
         res->children.emplace_back(child);
 
     node = res;

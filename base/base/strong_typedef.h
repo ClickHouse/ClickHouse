@@ -34,8 +34,10 @@ public:
     template <class Enable = typename std::is_move_assignable<T>::type>
     Self & operator=(T && rhs) { t = std::move(rhs); return *this;}
 
-    operator const T & () const { return t; }
+    // NOLINTBEGIN(google-explicit-constructor)
+    constexpr operator const T & () const { return t; }
     operator T & () { return t; }
+    // NOLINTEND(google-explicit-constructor)
 
     bool operator==(const Self & rhs) const { return t == rhs.t; }
     bool operator<(const Self & rhs) const { return t < rhs.t; }
@@ -58,7 +60,10 @@ namespace std
     };
 }
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
+
 #define STRONG_TYPEDEF(T, D) \
     struct D ## Tag {}; \
     using D = StrongTypedef<T, D ## Tag>; \
 
+// NOLINTEND(bugprone-macro-parentheses)

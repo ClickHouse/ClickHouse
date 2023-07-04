@@ -1,13 +1,7 @@
-# once fixed, please remove similar places in CMakeLists of libuv users (search "ch_contrib::uv")
-if (OS_DARWIN AND COMPILER_GCC)
-    message (WARNING "libuv cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082")
-    return()
-endif()
-
 # This file is a modified version of contrib/libuv/CMakeLists.txt
 
-set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/libuv")
-set (BINARY_DIR "${CMAKE_BINARY_DIR}/contrib/libuv")
+set (SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/libuv")
+set (BINARY_DIR "${PROJECT_BINARY_DIR}/contrib/libuv")
 
 set(uv_sources
     src/fs-poll.c
@@ -15,6 +9,7 @@ set(uv_sources
     src/inet.c
     src/random.c
     src/strscpy.c
+    src/strtok.c
     src/threadpool.c
     src/timer.c
     src/uv-common.c
@@ -75,13 +70,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
   list(APPEND uv_libraries rt)
   list(APPEND uv_sources
+       src/unix/epoll.c
        src/unix/linux-core.c
        src/unix/linux-inotify.c
        src/unix/linux-syscalls.c
        src/unix/procfs-exepath.c
        src/unix/random-getrandom.c
-       src/unix/random-sysctl-linux.c
-       src/unix/sysinfo-loadavg.c)
+       src/unix/random-sysctl-linux.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
@@ -111,6 +106,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OS/390")
        src/unix/pthread-fixes.c
        src/unix/pthread-barrier.c
        src/unix/os390.c
+       src/unix/os390-proctitle.c
        src/unix/os390-syscalls.c)
 endif()
 
@@ -134,11 +130,6 @@ add_library(ch_contrib::uv ALIAS _uv)
 target_compile_definitions(_uv PRIVATE ${uv_defines})
 target_include_directories(_uv SYSTEM PUBLIC ${SOURCE_DIR}/include PRIVATE ${SOURCE_DIR}/src)
 target_link_libraries(_uv ${uv_libraries})
-if (NOT USE_STATIC_LIBRARIES)
-  target_compile_definitions(_uv
-                             INTERFACE USING_UV_SHARED=1
-                             PRIVATE BUILDING_UV_SHARED=1)
-endif()
 
 if(UNIX)
   # Now for some gibbering horrors from beyond the stars...

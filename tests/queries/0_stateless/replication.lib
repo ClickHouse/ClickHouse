@@ -5,6 +5,7 @@
 function try_sync_replicas()
 {
     table_name_prefix=$1
+    time_left=$2
 
     readarray -t empty_partitions_arr < <(${CLICKHOUSE_CLIENT} -q \
         "SELECT DISTINCT substr(new_part_name, 1, position(new_part_name, '_') - 1) AS partition_id
@@ -28,8 +29,10 @@ function try_sync_replicas()
     i=0
     for t in "${tables_arr[@]}"
     do
-        # The size of log may be big, so increase timeout.
-        $CLICKHOUSE_CLIENT --receive_timeout 300 -q "SYSTEM SYNC REPLICA $t" || ($CLICKHOUSE_CLIENT -q \
+        # Do not start new merges (it can make SYNC a bit faster)
+        $CLICKHOUSE_CLIENT -q "ALTER TABLE $t MODIFY SETTING max_replicated_merges_in_queue=0"
+
+        $CLICKHOUSE_CLIENT --receive_timeout $time_left -q "SYSTEM SYNC REPLICA $t STRICT" || ($CLICKHOUSE_CLIENT -q \
             "select 'sync failed, queue:', * from system.replication_queue where database=currentDatabase() and table='$t' order by database, table, node_name" && exit 1) &
         pids[${i}]=$!
         i=$((i + 1))
@@ -48,13 +51,23 @@ function check_replication_consistency()
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
-        sleep 0.5;
+        sleep 1;
         num_tries=$((num_tries+1))
-        if [ $num_tries -eq 200 ]; then
+        if [ $num_tries -eq 250 ]; then
             $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
             break
         fi
     done
+
+    # Touch all data to check that it's readable (and trigger PartCheckThread if needed)
+    while ! $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
+        sleep 1;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 250 ]; then
+            break
+        fi
+    done
+    time_left=$((300 - num_tries))
 
     # Do not check anything if all replicas are readonly,
     # because is this case all replicas are probably lost (it may happen and it's not a bug)
@@ -68,9 +81,9 @@ function check_replication_consistency()
 
     # Trigger pullLogsToQueue(...) and updateMutations(...) on some replica to make it pull all mutations, so it will be possible to kill them
     some_table=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' ORDER BY rand() LIMIT 1")
-    $CLICKHOUSE_CLIENT --receive_timeout 3 -q "SYSTEM SYNC REPLICA $some_table" 1>/dev/null 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA $some_table PULL" 1>/dev/null 2>/dev/null ||:
     some_table=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' ORDER BY rand() LIMIT 1")
-    $CLICKHOUSE_CLIENT --receive_timeout 3 -q "SYSTEM SYNC REPLICA $some_table" 1>/dev/null 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA $some_table PULL" 1>/dev/null 2>/dev/null ||:
 
     # Forcefully cancel mutations to avoid waiting for them to finish
     ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$table_name_prefix%'" > /dev/null
@@ -78,7 +91,7 @@ function check_replication_consistency()
     # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
     wait_for_all_mutations "$table_name_prefix%"
 
-    try_sync_replicas "$table_name_prefix" || exit 1
+    try_sync_replicas "$table_name_prefix" "$time_left" || exit 1
 
     res=$($CLICKHOUSE_CLIENT -q \
     "SELECT
@@ -97,6 +110,7 @@ function check_replication_consistency()
         $CLICKHOUSE_CLIENT -q "select 'mutations', * from system.mutations where database=currentDatabase() and table like '$table_name_prefix%' order by database, table, mutation_id"
         $CLICKHOUSE_CLIENT -q "select 'parts', * from system.parts where database=currentDatabase() and table like '$table_name_prefix%' order by database, table, name"
         echo "Good luck with debugging..."
+        exit 1
     fi
 
 }

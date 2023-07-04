@@ -20,7 +20,7 @@ class FilterTransform : public ISimpleTransform
 public:
     FilterTransform(
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
-        bool remove_filter_column_, bool on_totals_ = false);
+        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
 
     static Block transformHeader(
             Block header,
@@ -43,11 +43,14 @@ private:
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
 
+    std::shared_ptr<std::atomic<size_t>> rows_filtered;
+
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
     bool are_prepared_sets_initialized = false;
 
+    void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Chunk & chunk) const;
 };
 

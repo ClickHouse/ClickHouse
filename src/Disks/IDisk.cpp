@@ -6,9 +6,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -17,6 +15,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 bool IDisk::isDirectoryEmpty(const String & path) const
@@ -24,17 +24,16 @@ bool IDisk::isDirectoryEmpty(const String & path) const
     return !iterateDirectory(path)->isValid();
 }
 
-void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path)
+void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const WriteSettings & settings) /// NOLINT
 {
     LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
     auto in = readFile(from_file_path);
-    auto out = to_disk.writeFile(to_file_path);
+    auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     copyData(*in, *out);
     out->finalize();
 }
-
 
 DiskTransactionPtr IDisk::createTransaction()
 {
@@ -53,18 +52,43 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
     }
 }
 
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> IDisk::writeEncryptedFile(const String &, size_t, WriteMode, const WriteSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
+size_t IDisk::getEncryptedFileSize(const String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
+size_t IDisk::getEncryptedFileSize(size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
+UInt128 IDisk::getEncryptedFileIV(const String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
 
 using ResultsCollector = std::vector<std::future<void>>;
 
-void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results, bool copy_root_dir)
+void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results, bool copy_root_dir, const WriteSettings & settings)
 {
     if (from_disk.isFile(from_path))
     {
         auto result = exec.execute(
-            [&from_disk, from_path, &to_disk, to_path]()
+            [&from_disk, from_path, &to_disk, to_path, &settings]()
             {
                 setThreadName("DiskCopier");
-                from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path));
+                from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
             });
 
         results.push_back(std::move(result));
@@ -80,7 +104,7 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
         }
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results, true);
+            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results, true, settings);
     }
 }
 
@@ -89,7 +113,12 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
     auto & exec = to_disk->getExecutor();
     ResultsCollector results;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir);
+    WriteSettings settings;
+    /// Disable parallel write. We already copy in parallel.
+    /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
+    settings.s3_allow_parallel_part_upload = false;
+
+    asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir, settings);
 
     for (auto & result : results)
         result.wait();
@@ -113,7 +142,7 @@ void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<
 
 void IDisk::truncateFile(const String &, size_t)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
@@ -121,18 +150,87 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-MetadataStoragePtr IDisk::getMetadataStorage()
+void IDisk::startup(ContextPtr context, bool skip_access_check)
 {
-    if (isRemote())
+    if (!skip_access_check)
     {
-        return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), "");
+        if (isReadOnly())
+        {
+            LOG_DEBUG(&Poco::Logger::get("IDisk"),
+                "Skip access check for disk {} (read-only disk).",
+                getName());
+        }
+        else
+            checkAccess();
     }
-    else
+    startupImpl(context);
+}
+
+void IDisk::checkAccess()
+{
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid == DB::UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
+    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
+
+    checkAccessImpl(path);
+}
+
+/// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
+void IDisk::checkAccessImpl(const String & path)
+try
+{
+    const std::string_view payload("test", 4);
+
+    /// write
     {
-        auto object_storage = std::make_shared<LocalObjectStorage>();
-        return std::make_shared<FakeMetadataStorageFromDisk>(
-            std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
+        auto file = writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        try
+        {
+            file->write(payload.data(), payload.size());
+            file->finalize();
+        }
+        catch (...)
+        {
+            /// Log current exception, because finalize() can throw a different exception.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
     }
+
+    /// read
+    {
+        auto file = readFile(path);
+        String buf(payload.size(), '0');
+        file->readStrict(buf.data(), buf.size());
+        if (buf != payload)
+        {
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Content of {}::{} does not matches after read ({} vs {})", name, path, buf, payload);
+        }
+    }
+
+    /// read with offset
+    {
+        auto file = readFile(path);
+        auto offset = 2;
+        String buf(payload.size() - offset, '0');
+        file->seek(offset, 0);
+        file->readStrict(buf.data(), buf.size());
+        if (buf != payload.substr(offset))
+        {
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Content of {}::{} does not matches after read with offset ({} vs {})", name, path, buf, payload.substr(offset));
+        }
+    }
+
+    /// remove
+    removeFile(path);
+}
+catch (Exception & e)
+{
+    e.addMessage(fmt::format("While checking access for disk {}", name));
+    throw;
 }
 
 }

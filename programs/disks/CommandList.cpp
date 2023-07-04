@@ -1,7 +1,6 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -11,7 +10,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandList : public ICommand
+class CommandList final : public ICommand
 {
 public:
     CommandList()
@@ -41,48 +40,52 @@ public:
         if (command_arguments.size() != 1)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name = config.getString("disk", "default");
 
-        String path =  command_arguments[0];
+        const String & path =  command_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String relative_path = validatePathAndGetAsRelative(path);
 
         bool recursive = config.getBool("recursive", false);
 
         if (recursive)
-            listRecursive(disk, full_path);
+            listRecursive(disk, relative_path);
         else
-            list(disk, full_path);
+            list(disk, relative_path);
     }
 
 private:
-    static void list(const DiskPtr & disk, const std::string & full_path)
+    static void list(const DiskPtr & disk, const std::string & relative_path)
     {
         std::vector<String> file_names;
-        disk->listFiles(full_path, file_names);
+        disk->listFiles(relative_path, file_names);
 
         for (const auto & file_name : file_names)
             std::cout << file_name << '\n';
     }
 
-    static void listRecursive(const DiskPtr & disk, const std::string & full_path)
+    static void listRecursive(const DiskPtr & disk, const std::string & relative_path)
     {
         std::vector<String> file_names;
-        disk->listFiles(full_path, file_names);
+        disk->listFiles(relative_path, file_names);
 
-        std::cout << full_path << ":\n";
-        for (const auto & file_name : file_names)
-            std::cout << file_name << '\n';
-        std::cout << "\n";
+        std::cout << relative_path << ":\n";
+
+        if (!file_names.empty())
+        {
+            for (const auto & file_name : file_names)
+                std::cout << file_name << '\n';
+            std::cout << "\n";
+        }
 
         for (const auto & file_name : file_names)
         {
-            auto path = full_path + "/" + file_name;
+            auto path = relative_path + "/" + file_name;
             if (disk->isDirectory(path))
                 listRecursive(disk, path);
         }

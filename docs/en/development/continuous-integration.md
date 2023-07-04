@@ -1,10 +1,10 @@
 ---
+slug: /en/development/continuous-integration
 sidebar_position: 62
 sidebar_label: Continuous Integration Checks
+title: Continuous Integration Checks
 description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
 ---
-
-# Continuous Integration Checks
 
 When you submit a pull request, some automated checks are ran for your code by
 the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
@@ -43,18 +43,13 @@ Tries to build the ClickHouse documentation website. It can fail if you changed
 something in the documentation. Most probable reason is that some cross-link in
 the documentation is wrong. Go to the check report and look for `ERROR` and `WARNING` messages.
 
-### Report Details
-
-- [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check.html)
-- `docs_output.txt` contains the building log. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check/docs_output.txt)
-
 
 ## Description Check
 
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and
-write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
+write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
 ## Push To DockerHub
@@ -72,10 +67,6 @@ This check means that the CI system started to process the pull request. When it
 Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
 If it fails, fix the style errors following the [code style guide](style.md).
 
-### Report Details
-- [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
-- `output.txt` contains the check resulting errors (invalid tabulation etc), blank page means no errors. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt).
-
 
 ## Fast Test
 Normally this is the first check that is ran for a PR. It builds ClickHouse and
@@ -84,8 +75,6 @@ some. If it fails, further checks are not started until it is fixed. Look at
 the report to see which tests fail, then reproduce the failure locally as
 described [here](tests.md#functional-test-locally).
 
-### Report Details
-[Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/fast_test.html)
 
 #### Status Page Files
 - `runlog.out.log` is the general log that includes all other logs.
@@ -113,12 +102,9 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ### Report Details
 
-[Status page example](https://clickhouse-builds.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/clickhouse_build_check/report.html).
-
-- **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
+- **Compiler**: `clang-16`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Split** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
@@ -130,8 +116,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-  - `shared_build.tgz`: build with shared libraries.
-  - `performance.tgz`: Special package for performance tests.
+  - `performance.tar.zst`: Special package for performance tests.
 
 
 ## Special Build Check
@@ -156,10 +141,6 @@ Runs [stateful functional tests](tests.md#functional-tests). Treat them in the s
 Runs [integration tests](tests.md#integration-tests).
 
 
-## Testflows Check
-Runs some tests using Testflows test system. See [here](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally) how to run them locally.
-
-
 ## Stress Test
 Runs stateless functional tests concurrently from several clients to detect
 concurrency-related errors. If it fails:
@@ -167,16 +148,6 @@ concurrency-related errors. If it fails:
     * Fix all other test failures first;
     * Look at the report to find the server logs and check them for possible causes
       of error.
-
-
-## Split Build Smoke Test
-
-Checks that the server build in [split build](../development/developer-instruction.md#split-build)
-configuration can start and run simple queries.  If it fails:
-
-    * Fix other test errors first;
-    * Build the server in [split build](../development/developer-instruction.md#split-build) configuration
-      locally and check whether it can start and run `select 1`.
 
 
 ## Compatibility Check

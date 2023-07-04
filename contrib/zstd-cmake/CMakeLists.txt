@@ -30,24 +30,9 @@
 #  - zstd homepage : http://www.zstd.net/
 # ################################################################
 
-# Get library version based on information from input content (use regular exp)
-function(GetLibraryVersion _content _outputVar1 _outputVar2 _outputVar3)
-    string(REGEX MATCHALL ".*define ZSTD_VERSION_MAJOR+.* ([0-9]+).*define ZSTD_VERSION_MINOR+.* ([0-9]+).*define ZSTD_VERSION_RELEASE+.* ([0-9]+)" VERSION_REGEX "${_content}")
-    SET(${_outputVar1} ${CMAKE_MATCH_1} PARENT_SCOPE)
-    SET(${_outputVar2} ${CMAKE_MATCH_2} PARENT_SCOPE)
-    SET(${_outputVar3} ${CMAKE_MATCH_3} PARENT_SCOPE)
-endfunction()
-
 # Define library directory, where sources and header files are located
 SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib")
 INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_DIR} "${LIBRARY_DIR}/common")
-
-# Read file content
-FILE(READ "${LIBRARY_DIR}/zstd.h" HEADER_CONTENT)
-
-# Parse version
-GetLibraryVersion("${HEADER_CONTENT}" LIBVER_MAJOR LIBVER_MINOR LIBVER_RELEASE)
-MESSAGE(STATUS "ZSTD VERSION ${LIBVER_MAJOR}.${LIBVER_MINOR}.${LIBVER_RELEASE}")
 
 # cd contrib/zstd/lib
 # find . -name '*.c' -or -name '*.S' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'

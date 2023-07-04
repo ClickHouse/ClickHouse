@@ -41,30 +41,26 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 }
 
 void SerializationLowCardinality::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
-    SubstreamData dict_data =
-    {
-        dict_inner_serialization,
-        data.type ? dictionary_type : nullptr,
-        column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr,
-        data.serialization_info,
-    };
+    settings.path.push_back(Substream::DictionaryKeys);
+    auto dict_data = SubstreamData(dict_inner_serialization)
+        .withType(data.type ? dictionary_type : nullptr)
+        .withColumn(column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    path.push_back(Substream::DictionaryKeys);
-    path.back().data = dict_data;
+    settings.path.back().data = dict_data;
+    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
 
-    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
+    settings.path.back() = Substream::DictionaryIndexes;
+    settings.path.back().data = data;
 
-    path.back() = Substream::DictionaryIndexes;
-    path.back().data = data;
-
-    callback(path);
-    path.pop_back();
+    callback(settings.path);
+    settings.path.pop_back();
 }
 
 struct KeysSerializationVersion
@@ -83,7 +79,7 @@ struct KeysSerializationVersion
     static void checkVersion(UInt64 version)
     {
         if (version != SharedDictionariesWithAdditionalKeys)
-            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for SerializationLowCardinality key column.");
     }
 
     explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
@@ -124,7 +120,7 @@ struct IndexesSerializationType
         if (value <= TUInt64)
             return;
 
-        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid type for SerializationLowCardinality index column.");
     }
 
     void serialize(WriteBuffer & buffer) const
@@ -176,8 +172,8 @@ struct IndexesSerializationType
         else if (typeid_cast<const ColumnUInt64 *>(&column))
             type = TUInt64;
         else
-            throw Exception("Invalid Indexes column for IndexesSerializationType. Expected ColumnUInt*, got "
-                            + column.getName(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Indexes column for IndexesSerializationType. "
+                            "Expected ColumnUInt*, got {}", column.getName());
     }
 
     DataTypePtr getDataType() const
@@ -188,10 +184,10 @@ struct IndexesSerializationType
             return std::make_shared<DataTypeUInt16>();
         if (type == TUInt32)
             return std::make_shared<DataTypeUInt32>();
-        if (type == TUInt64) //-V547
+        if (type == TUInt64)
             return std::make_shared<DataTypeUInt64>();
 
-        throw Exception("Can't create DataType from IndexesSerializationType.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't create DataType from IndexesSerializationType.");
     }
 
     IndexesSerializationType() = default;
@@ -225,6 +221,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
+    const IColumn & /*column*/,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -233,8 +230,7 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 
     if (!stream)
-        throw Exception("Got empty stream in SerializationLowCardinality::serializeBinaryBulkStatePrefix",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStatePrefix");
 
     /// Write version and create SerializeBinaryBulkState.
     UInt64 key_version = KeysSerializationVersion::SharedDictionariesWithAdditionalKeys;
@@ -260,8 +256,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
         settings.path.pop_back();
 
         if (!stream)
-            throw Exception("Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix");
 
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *stream);
@@ -306,49 +301,6 @@ namespace
     };
 
     template <typename T>
-    IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeysRef(PaddedPODArray<T> & index, size_t dict_size)
-    {
-        PaddedPODArray<T> copy(index.cbegin(), index.cend());
-
-        HashMap<T, T> dict_map;
-        HashMap<T, T> add_keys_map;
-
-        for (auto val : index)
-        {
-            if (val < dict_size)
-                dict_map.insert({val, dict_map.size()});
-            else
-                add_keys_map.insert({val, add_keys_map.size()});
-        }
-
-        auto dictionary_map = ColumnVector<T>::create(dict_map.size());
-        auto additional_keys_map = ColumnVector<T>::create(add_keys_map.size());
-        auto & dict_data = dictionary_map->getData();
-        auto & add_keys_data = additional_keys_map->getData();
-
-        for (auto val : dict_map)
-            dict_data[val.second] = val.first;
-
-        for (auto val : add_keys_map)
-            add_keys_data[val.second] = val.first - dict_size;
-
-        for (auto & val : index)
-            val = val < dict_size ? dict_map[val]
-                                  : add_keys_map[val] + dict_map.size();
-
-        for (size_t i = 0; i < index.size(); ++i)
-        {
-            T expected = index[i] < dict_data.size() ? dict_data[index[i]]
-                                                     : add_keys_data[index[i] - dict_data.size()] + dict_size;
-            if (expected != copy[i])
-                throw Exception("Expected " + toString(expected) + ", but got " + toString(copy[i]), ErrorCodes::LOGICAL_ERROR);
-
-        }
-
-        return {std::move(dictionary_map), std::move(additional_keys_map)};
-    }
-
-    template <typename T>
     IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeys(PaddedPODArray<T> & index, size_t dict_size)
     {
         T max_less_dict_size = 0;
@@ -389,13 +341,13 @@ namespace
                 }
                 else if (map[val] == 0 && val != zero_pos_value)
                 {
-                    map[val] = cur_pos;
+                    map[val] = static_cast<T>(cur_pos);
                     ++cur_pos;
                 }
             }
             else
             {
-                T shifted_val = val - dict_size;
+                T shifted_val = static_cast<T>(val - dict_size);
                 if (cur_overflowed_pos == 0)
                 {
                     zero_pos_overflowed_value = shifted_val;
@@ -403,7 +355,7 @@ namespace
                 }
                 else if (overflow_map[shifted_val] == 0 && shifted_val != zero_pos_overflowed_value)
                 {
-                    overflow_map[shifted_val] = cur_overflowed_pos;
+                    overflow_map[shifted_val] = static_cast<T>(cur_overflowed_pos);
                     ++cur_overflowed_pos;
                 }
             }
@@ -433,7 +385,7 @@ namespace
             if (val < dict_size)
                 val = map[val];
             else
-                val = overflow_map[val - dict_size] + cur_pos;
+                val = overflow_map[val - dict_size] + static_cast<T>(cur_pos);
         }
 
         return {std::move(dictionary_map), std::move(additional_keys_map)};
@@ -458,8 +410,8 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapIndexWithAdditionalKeys(*data_uint64, dict_size);
         else
-            throw Exception("Indexes column for mapIndexWithAdditionalKeys must be UInt, got " + column.getName(),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}",
+                            column.getName());
     }
 }
 
@@ -480,10 +432,10 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception("Got empty stream for SerializationLowCardinality keys.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality keys.");
 
     if (!indexes_stream)
-        throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality indexes.");
 
     const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
 
@@ -513,17 +465,16 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
                                                                                       settings.low_cardinality_max_dictionary_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
-            throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
-                            " but max dictionary size is " + toString(settings.low_cardinality_max_dictionary_size),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got dictionary with size {} but max dictionary size is {}",
+                            global_dictionary->size(), settings.low_cardinality_max_dictionary_size);
 
         positions = indexes_with_overflow.indexes->index(*positions, 0);
         keys = std::move(indexes_with_overflow.overflowed_keys);
 
         if (global_dictionary->size() < settings.low_cardinality_max_dictionary_size && !keys->empty())
-            throw Exception("Has additional keys, but dict size is " + toString(global_dictionary->size()) +
-                            " which is less then max dictionary size (" + toString(settings.low_cardinality_max_dictionary_size) + ")",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Has additional keys, but dict size is {} which is less "
+                            "then max dictionary size ({})", global_dictionary->size(),
+                            settings.low_cardinality_max_dictionary_size);
     }
 
     if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
@@ -579,10 +530,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception("Got empty stream for SerializationLowCardinality keys.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality keys.");
 
     if (!indexes_stream)
-        throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality indexes.");
 
     auto * low_cardinality_state = checkAndGetState<DeserializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
@@ -635,7 +586,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         if (!low_cardinality_state->index_type.need_global_dictionary)
         {
             if (additional_keys == nullptr)
-                throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "No additional keys found.");
 
             ColumnPtr keys_column = additional_keys;
             if (low_cardinality_state->null_map)
@@ -659,7 +610,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             if (!maps.additional_keys_map->empty())
             {
                 if (additional_keys == nullptr)
-                    throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "No additional keys found.");
 
                 auto used_add_keys = additional_keys->index(*maps.additional_keys_map, 0);
 
@@ -721,22 +672,22 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     column = std::move(mutable_column);
 }
 
-void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr);
+    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
 }
-void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr);
+    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
 }
 
-void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr);
+    serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr, settings);
 }
-void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeImpl(column, &ISerialization::deserializeBinary, istr);
+    deserializeImpl(column, &ISerialization::deserializeBinary, istr, settings);
 }
 
 void SerializationLowCardinality::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

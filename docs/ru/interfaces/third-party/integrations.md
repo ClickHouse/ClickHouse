@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/third-party/integrations
 sidebar_position: 27
 sidebar_label: "Библиотеки для интеграции от сторонних разработчиков"
 ---
@@ -107,4 +108,3 @@ sidebar_label: "Библиотеки для интеграции от сторо
         -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-

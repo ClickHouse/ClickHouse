@@ -23,18 +23,13 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, nested_->getStateType())
         , nested_func(nested_)
     {}
 
     String getName() const override
     {
         return nested_func->getName() + "State";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return getStateType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -69,6 +64,8 @@ public:
         nested_func->destroy(place);
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict) const noexcept override {}
+
     bool hasTrivialDestructor() const override
     {
         return nested_func->hasTrivialDestructor();
@@ -94,6 +91,13 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
+    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
+    {
+        nested_func->merge(place, rhs, thread_pool, arena);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
@@ -107,6 +111,11 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
     }
 
     /// Aggregate function or aggregate function state.

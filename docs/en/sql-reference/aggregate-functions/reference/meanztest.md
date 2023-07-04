@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/meanztest
 sidebar_position: 303
 sidebar_label: meanZTest
 ---
@@ -18,23 +19,23 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 **Arguments**
 
--   `sample_data` — Sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — Sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
+- `sample_data` — Sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `sample_index` — Sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
 
--   `population_variance_x` — Variance for population x. [Float](../../../sql-reference/data-types/float.md).
--   `population_variance_y` — Variance for population y. [Float](../../../sql-reference/data-types/float.md).
--   `confidence_level` — Confidence level in order to calculate confidence intervals. [Float](../../../sql-reference/data-types/float.md).
+- `population_variance_x` — Variance for population x. [Float](../../../sql-reference/data-types/float.md).
+- `population_variance_y` — Variance for population y. [Float](../../../sql-reference/data-types/float.md).
+- `confidence_level` — Confidence level in order to calculate confidence intervals. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with four elements:
 
--   calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
--   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
--   calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
--   calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
+- calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
+- calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
+- calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
+- calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
 
 
 **Example**
@@ -65,4 +66,3 @@ Result:
 │ (3.2841296025548123,0.0010229786769086013,0.8198428246768334,3.2468238419898365) │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
-

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <vector>
+#include <unordered_set>
 
 namespace DB
 {
@@ -10,9 +10,9 @@ namespace DB
 
         virtual ~DNSPTRResolver() = default;
 
-        virtual std::vector<std::string> resolve(const std::string & ip) = 0;
+        virtual std::unordered_set<std::string> resolve(const std::string & ip) = 0;
 
-        virtual std::vector<std::string> resolve_v6(const std::string & ip) = 0;
+        virtual std::unordered_set<std::string> resolve_v6(const std::string & ip) = 0;
 
     };
 }

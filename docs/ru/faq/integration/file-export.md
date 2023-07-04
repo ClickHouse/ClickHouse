@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/integration/file-export
 title: Как экспортировать данные из ClickHouse в файл?
 sidebar_position: 10
 ---

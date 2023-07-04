@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
@@ -174,6 +175,10 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `br`
 - `deflate`
 - `xz`
+- `zstd`
+- `lz4`
+- `bz2`
+- `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
@@ -239,7 +244,7 @@ The username and password can be indicated in one of three ways:
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-1.  In the ‘user’ and ‘password’ URL parameters. Example:
+2.  In the ‘user’ and ‘password’ URL parameters (*We do not recommend using this method as the parameter might be logged by web proxy and cached in the browser*). Example:
 
 <!-- -->
 
@@ -247,7 +252,7 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-1.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+3.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
 
 <!-- -->
 
@@ -288,11 +293,11 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 
 Possible header fields:
 
--   `read_rows` — Number of rows read.
--   `read_bytes` — Volume of data read in bytes.
--   `total_rows_to_read` — Total number of rows to be read.
--   `written_rows` — Number of rows written.
--   `written_bytes` — Volume of data written in bytes.
+- `read_rows` — Number of rows read.
+- `read_bytes` — Volume of data read in bytes.
+- `total_rows_to_read` — Total number of rows to be read.
+- `written_rows` — Number of rows written.
+- `written_bytes` — Volume of data written in bytes.
 
 Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 The optional ‘query_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace_running_query”.
@@ -304,6 +309,7 @@ The HTTP interface allows passing external data (external temporary tables) for 
 ## Response Buffering {#response-buffering}
 
 You can enable response buffering on the server-side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
+Also settings `http_response_buffer_size` and `http_wait_end_of_query` can be used.
 
 `buffer_size` determines the number of bytes in the result to buffer in the server memory. If a result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
 
@@ -327,6 +333,35 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
+### Tabs in URL Parameters
+
+Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
+
+```bash
+curl -sS "http://localhost:8123" -d "SELECT splitByChar('\t', 'abc      123')"
+```
+
+```response
+['abc','123']
+```
+
+However, if you try to encode an actual tab using `%09` in a URL parameter, it won't get parsed properly:
+
+```bash
+curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
+Code: 457. DB::Exception: Value abc	123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
+```
+
+If you are using URL parameters, you will need to encode the `\t` as `%5C%09`. For example:
+
+```bash
+curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar('\t', {arg1:String})"
+```
+
+```response
+['abc','123']
+```
+
 ## Predefined HTTP Interface {#predefined_http_interface}
 
 ClickHouse supports specific queries through the HTTP interface. For example, you can write data to a table as follows:
@@ -335,11 +370,11 @@ ClickHouse supports specific queries through the HTTP interface. For example, yo
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/percona-lab/clickhouse_exporter).
+ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter).
 
 Example:
 
--   First of all, add this section to server configuration file:
+- First of all, add this section to server configuration file:
 
 <!-- -->
 
@@ -358,7 +393,7 @@ Example:
 </http_handlers>
 ```
 
--   You can now request the URL directly for data in the Prometheus format:
+- You can now request the URL directly for data in the Prometheus format:
 
 <!-- -->
 
@@ -413,22 +448,22 @@ As you can see from the example if `http_handlers` is configured in the config.x
 Now `rule` can configure `method`, `headers`, `url`, `handler`:
 - `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the configuration file, it does not match the method portion of the HTTP request.
 
--   `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
+- `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
 
--   `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
+- `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
--   `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
+- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
     `type` currently supports three types: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
 
-    -   `query` — use with `predefined_query_handler` type, executes query when the handler is called.
+    - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
 
-    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request parameters.
+    - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request parameters.
 
-    -   `status` — use with `static` type, response status code.
+    - `status` — use with `static` type, response status code.
 
-    -   `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
-    -   `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
+    - `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
 Next are the configuration methods for different `type`.
 
@@ -440,7 +475,7 @@ Next are the configuration methods for different `type`.
 
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
-:::warning
+:::note
 To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
 :::
 
@@ -471,7 +506,7 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-:::warning
+:::note
 In one `predefined_query_handler` only supports one `query` of an insert type.
 :::
 

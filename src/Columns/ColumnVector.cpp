@@ -81,8 +81,8 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
     auto s = data.size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -90,7 +90,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = intHashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }
@@ -466,11 +466,10 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception("Parameters start = "
-            + toString(start) + ", length = "
-            + toString(length) + " are out of bound in ColumnVector<T>::insertRangeFrom method"
-            " (data.size() = " + toString(src_vec.data.size()) + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                        "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
+                        toString(start), toString(length), toString(src_vec.data.size()));
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -486,30 +485,62 @@ static inline UInt64 blsr(UInt64 mask)
 #endif
 }
 
+/// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
+/// Otherwise it returns the special value: 0xFF.
+uint8_t prefixToCopy(UInt64 mask)
+{
+    if (mask == 0)
+        return 0;
+    if (mask == static_cast<UInt64>(-1))
+        return 64;
+    /// Row with index 0 correspond to the least significant bit.
+    /// So the length of the prefix to copy is 64 - #(leading zeroes).
+    const UInt64 leading_zeroes = __builtin_clzll(mask);
+    if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
+        return 64 - leading_zeroes;
+    else
+        return 0xFF;
+}
+
+uint8_t suffixToCopy(UInt64 mask)
+{
+    const auto prefix_to_copy = prefixToCopy(~mask);
+    return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
+}
+
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_BYTES>
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     while (filt_pos < filt_end_aligned)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+        const uint8_t prefix_to_copy = prefixToCopy(mask);
 
-        if (0xffffffffffffffff == mask)
+        if (0xFF != prefix_to_copy)
         {
-            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+            res_data.insert(data_pos, data_pos + prefix_to_copy);
         }
         else
         {
-            while (mask)
+            const uint8_t suffix_to_copy = suffixToCopy(mask);
+            if (0xFF != suffix_to_copy)
             {
-                size_t index = std::countr_zero(mask);
-                res_data.push_back(data_pos[index]);
-                mask = blsr(mask);
+                res_data.insert(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+            }
+            else
+            {
+                while (mask)
+                {
+                    size_t index = std::countr_zero(mask);
+                    res_data.push_back(data_pos[index]);
+                    mask = blsr(mask);
+                }
             }
         }
 
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
     }
 }
 )
@@ -542,7 +573,7 @@ inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
         _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
 }
 
-template <typename T, typename Container, size_t SIMD_BYTES>
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
@@ -552,12 +583,12 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
     size_t current_offset = res_data.size();
     size_t reserve_size = res_data.size();
-    size_t alloc_size = SIMD_BYTES * 2;
+    size_t alloc_size = SIMD_ELEMENTS * 2;
 
     while (filt_pos < filt_end_aligned)
     {
         /// to avoid calling resize too frequently, resize to reserve buffer.
-        if (reserve_size - current_offset < SIMD_BYTES)
+        if (reserve_size - current_offset < SIMD_ELEMENTS)
         {
             reserve_size += alloc_size;
             resize<T>(res_data, reserve_size);
@@ -568,16 +599,16 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xffffffffffffffff == mask)
         {
-            for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
+            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                 _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
                         _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
-            current_offset += SIMD_BYTES;
+            current_offset += SIMD_ELEMENTS;
         }
         else
         {
             if (mask)
             {
-                for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
+                for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                 {
                     compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
                             reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
@@ -591,8 +622,8 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
         }
 
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
     }
     /// resize to the real size.
     res_data.resize(current_offset);
@@ -619,18 +650,18 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     /** A slightly more optimized version.
       * Based on the assumption that often pieces of consecutive values
       *  completely pass or do not pass the filter.
-      * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+      * Therefore, we will optimistically check the parts of `SIMD_ELEMENTS` values.
       */
-    static constexpr size_t SIMD_BYTES = 64;
-    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+    static constexpr size_t SIMD_ELEMENTS = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
 #if USE_MULTITARGET_CODE
     static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
     if (VBMI2_CAPABLE && isArchSupported(TargetArch::AVX512VBMI2))
-        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
-        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
 
     while (filt_pos < filt_end)
     {
@@ -716,7 +747,7 @@ namespace
       */
     template<typename IntType>
     requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE42Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
+    void replicateSSE2Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
     {
         const IntType * data_copy_begin_ptr = nullptr;
         size_t offsets_size = offsets.size();
@@ -801,7 +832,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     const size_t size = data.size();
     if (size != offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
     if (0 == size)
         return this->create();
@@ -811,7 +842,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 #ifdef __SSE2__
     if constexpr (std::is_same_v<T, UInt32>)
     {
-        replicateSSE42Int32(getData().data(), res->getData().data(), offsets);
+        replicateSSE2Int32(getData().data(), res->getData().data(), offsets);
         return res;
     }
 #endif
@@ -879,9 +910,6 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
-
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {
@@ -899,11 +927,11 @@ ColumnPtr ColumnVector<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [compressed = std::move(compressed), column_size = data_size]
+        [my_compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
             return res;
         });
 }
@@ -918,7 +946,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = safeGet<T>(default_field);
+    T default_value = static_cast<T>(default_field.safeGet<T>());
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];
@@ -942,5 +970,7 @@ template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
 template class ColumnVector<UUID>;
+template class ColumnVector<IPv4>;
+template class ColumnVector<IPv6>;
 
 }

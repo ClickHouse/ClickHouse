@@ -2,6 +2,7 @@
 
 
 #include <Poco/PatternFormatter.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include "ExtendedLogChannel.h"
 #include "OwnPatternFormatter.h"
 
@@ -25,8 +26,19 @@ class Loggers;
 class OwnJSONPatternFormatter : public OwnPatternFormatter
 {
 public:
-    OwnJSONPatternFormatter();
+    OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config);
 
     void format(const Poco::Message & msg, std::string & text) override;
     void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const override;
+
+private:
+    std::string date_time;
+    std::string thread_name;
+    std::string thread_id;
+    std::string level;
+    std::string query_id;
+    std::string logger_name;
+    std::string message;
+    std::string source_file;
+    std::string source_line;
 };

@@ -26,6 +26,10 @@ description: |
     that allows generating analytical data reports in real time.
     This package provides common files for both clickhouse server and client
 
+deb:
+  fields:
+    Source: clickhouse
+
 contents:
 - src: root/usr/bin/clickhouse
   dst: /usr/bin/clickhouse
