@@ -23,7 +23,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="23.5.3.24"
+ARG VERSION="23.6.1.1524"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -48,14 +48,15 @@ ARG TARGETARCH
 RUN arch="${TARGETARCH:-amd64}" \
     && if [ -n "${deb_location_url}" ]; then \
         echo "installing from custom url with deb packages: ${deb_location_url}" \
-        rm -rf /tmp/clickhouse_debs \
+        && rm -rf /tmp/clickhouse_debs \
         && mkdir -p /tmp/clickhouse_debs \
         && for package in ${PACKAGES}; do \
             { wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_${arch}.deb" -P /tmp/clickhouse_debs || \
                 wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_all.deb" -P /tmp/clickhouse_debs ; } \
             || exit 1 \
         ; done \
-        && dpkg -i /tmp/clickhouse_debs/*.deb ; \
+        && dpkg -i /tmp/clickhouse_debs/*.deb \
+        && rm -rf /tmp/* ; \
     fi
 
 # install from a single binary
@@ -65,11 +66,12 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
         && mkdir -p /tmp/clickhouse_binary \
         && wget --progress=bar:force:noscroll "${single_binary_location_url}" -O /tmp/clickhouse_binary/clickhouse \
         && chmod +x /tmp/clickhouse_binary/clickhouse \
-        && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" ; \
+        && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" \
+        && rm -rf /tmp/* ; \
     fi
 
 # A fallback to installation from ClickHouse repository
-RUN if ! clickhouse local -q "SELECT ''" > /dev/null; then \
+RUN if ! clickhouse local -q "SELECT ''" > /dev/null 2>&1; then \
         apt-get update \
         && apt-get install --yes --no-install-recommends \
             apt-transport-https \
@@ -90,12 +92,12 @@ RUN if ! clickhouse local -q "SELECT ''" > /dev/null; then \
             packages="${packages} ${package}=${VERSION}" \
         ; done \
         && apt-get install --allow-unauthenticated --yes --no-install-recommends ${packages} || exit 1 \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && apt-get autoremove --purge -yq libksba8 \
-    && apt-get autoremove -yq \
+        && rm -rf \
+            /var/lib/apt/lists/* \
+            /var/cache/debconf \
+            /tmp/* \
+        && apt-get autoremove --purge -yq libksba8 \
+        && apt-get autoremove -yq \
     ; fi
 
 # post install
