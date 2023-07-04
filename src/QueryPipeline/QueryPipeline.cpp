@@ -1,3 +1,5 @@
+#include <QueryPipeline/QueryPipeline.h>
+
 #include <queue>
 #include <QueryPipeline/Chain.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -7,12 +9,12 @@
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/ISource.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -576,13 +578,31 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     return true;
 }
 
-void QueryPipeline::streamIntoQueryCache(std::shared_ptr<StreamInQueryCacheTransform> transform)
+void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer)
 {
     assert(pulling());
 
-    connect(*output, transform->getInputPort());
-    output = &transform->getOutputPort();
-    processors->emplace_back(transform);
+    /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is
+    /// to write each chunk into the query cache. All transforms hold a refcounted reference to the same query cache writer object.
+    /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the
+    /// expensive stuff like cloning chunks happens outside lock scopes).
+
+    auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCache::Writer::ChunkType chunk_type)
+    {
+        if (!out_port)
+            return;
+
+        auto transform = std::make_shared<StreamInQueryCacheTransform>(out_port->getHeader(), query_cache_writer, chunk_type);
+        connect(*out_port, transform->getInputPort());
+        out_port = &transform->getOutputPort();
+        processors->emplace_back(std::move(transform));
+    };
+
+    using enum QueryCache::Writer::ChunkType;
+
+    add_stream_in_query_cache_transform(output, Result);
+    add_stream_in_query_cache_transform(totals, Totals);
+    add_stream_in_query_cache_transform(extremes, Extremes);
 }
 
 void QueryPipeline::finalizeWriteInQueryCache()
@@ -591,10 +611,31 @@ void QueryPipeline::finalizeWriteInQueryCache()
         processors->begin(), processors->end(),
         [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryCacheTransform *>(&*processor); });
 
-    /// the pipeline should theoretically contain just one StreamInQueryCacheTransform
-
+    /// The pipeline can contain up to three StreamInQueryCacheTransforms which all point to the same query cache writer object.
+    /// We can call finalize() on any of them.
     if (it != processors->end())
         dynamic_cast<StreamInQueryCacheTransform &>(**it).finalizeWriteInQueryCache();
+}
+
+void QueryPipeline::readFromQueryCache(
+        std::unique_ptr<SourceFromChunks> source,
+        std::unique_ptr<SourceFromChunks> source_totals,
+        std::unique_ptr<SourceFromChunks> source_extremes)
+{
+    /// Construct the pipeline from the input source processors. The processors are provided by the query cache to produce chunks of a
+    /// previous query result.
+
+    auto add_stream_from_query_cache_source = [&](OutputPort *& out_port, std::unique_ptr<SourceFromChunks> source_)
+    {
+        if (!source_)
+            return;
+        out_port = &source_->getPort();
+        processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
+    };
+
+    add_stream_from_query_cache_source(output, std::move(source));
+    add_stream_from_query_cache_source(totals, std::move(source_totals));
+    add_stream_from_query_cache_source(extremes, std::move(source_extremes));
 }
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)

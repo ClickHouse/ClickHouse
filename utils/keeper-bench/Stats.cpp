@@ -132,7 +132,7 @@ void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_t
     {
         Value specific_results(kObjectType);
 
-        specific_results.AddMember("total_requests", Value(collector.requests), allocator);
+        specific_results.AddMember("total_requests", Value(static_cast<uint64_t>(collector.requests)), allocator);
 
         auto [rps, bps] = collector.getThroughput(concurrency);
         specific_results.AddMember("requests_per_second", Value(rps), allocator);

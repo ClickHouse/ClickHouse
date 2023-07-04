@@ -8,7 +8,7 @@
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <mutex>
@@ -194,7 +194,7 @@ private:
             futures.push_back(
                         scheduleFromThreadPool<void>(
                             std::move(worker),
-                            IOThreadPool::get(),
+                            getIOThreadPool().get(),
                             "DP_BytesOnDisk"));
         }
 

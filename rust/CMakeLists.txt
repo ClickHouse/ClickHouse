@@ -14,8 +14,18 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
+    set(RUSTFLAGS "[]")
+    set(RUST_CARGO_BUILD_STD "")
+    # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
+    if (SANITIZE STREQUAL "memory")
+        set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
+        set(RUSTFLAGS "[\"-Zsanitizer=memory\", \"-Zsanitizer-memory-track-origins\"]")
+    endif()
+
     message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
     message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
+    message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
+    message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
     # NOTE: requires RW access for the source dir
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml.in" "${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml" @ONLY)
@@ -34,9 +44,18 @@ function(clickhouse_import_crate)
     else()
         set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
     endif()
-    # NOTE: we may use LTO for rust too
 
-    corrosion_import_crate(NO_STD ${ARGN})
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+        set(profile "")
+    else()
+        if (ENABLE_THINLTO)
+            set(profile "release-thinlto")
+        else()
+            set(profile "release")
+        endif()
+    endif()
+
+    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
 endfunction()
 
 # Add crate from the build directory.

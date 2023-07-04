@@ -29,7 +29,8 @@ def create_table(cluster, table_name, additional_settings=None):
         SETTINGS
             storage_policy='hdfs',
             old_parts_lifetime=0,
-            index_granularity=512
+            index_granularity=512,
+            temporary_directories_lifetime=1
         """.format(
         table_name
     )
@@ -234,12 +235,7 @@ def test_attach_detach_partition(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
     hdfs_objects = fs.listdir("/clickhouse")
-    assert (
-        len(hdfs_objects)
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
-    )
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
@@ -410,7 +406,7 @@ def test_move_replace_partition_to_another_table(cluster):
         - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
-    node.query("DROP TABLE hdfs_clone NO DELAY")
+    node.query("DROP TABLE hdfs_clone SYNC")
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 

@@ -4,20 +4,22 @@ sidebar_position: 73
 sidebar_label: Building and Benchmarking DEFLATE_QPL
 description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 ---
+
 # Build Clickhouse with DEFLATE_QPL
-- Make sure your target machine meet the QPL required [Prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
-- Pass the following flag to CMake when building ClickHouse, depending on the capabilities of your target machine:
+
+- Make sure your target machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
+- Pass the following flag to CMake when building ClickHouse:
+
 ``` bash
-cmake -DENABLE_AVX2=1 -DENABLE_QPL=1 ..
+cmake -DENABLE_QPL=1 ..
 ```
-or
-``` bash
-cmake -DENABLE_AVX512=1 -DENABLE_QPL=1 ..
-```
+
 - For generic requirements, please refer to Clickhouse generic [build instructions](/docs/en/development/build.md)
 
 # Run Benchmark with DEFLATE_QPL
+
 ## Files list
+
 The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) give example to run benchmark with python scripts:
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
@@ -28,48 +30,60 @@ The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/C
 `database_files` means it will store database files according to lz4/deflate/zstd codec.
 
 ## Run benchmark automatically for Star Schema:
+
 ``` bash
 $ cd ./benchmark_sample/client_scripts
 $ sh run_ssb.sh
 ```
+
 After complete, please check all the results in this folder:`./output/`
 
 In case you run into failure, please manually run benchmark as below sections.
 
 ## Definition
+
 [CLICKHOUSE_EXE] means the path of clickhouse executable program.
 
 ## Environment
+
 - CPU: Sapphire Rapid
 - OS Requirements refer to [System Requirements for QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)
 - IAA Setup refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration)
 - Install python modules:
+
 ``` bash
 pip3 install clickhouse_driver numpy
 ```
+
 [Self-check for IAA]
+
 ``` bash
 $ accel-config list | grep -P 'iax|state'
 ```
+
 Expected output like this:
 ``` bash
     "dev":"iax1",
     "state":"enabled",
             "state":"enabled",
 ```
+
 If you see nothing output, it means IAA is not ready to work. Please check IAA setup again.
 
 ## Generate raw data
+
 ``` bash
 $ cd ./benchmark_sample
 $ mkdir rawdata_dir && cd rawdata_dir
 ```
+
 Use [`dbgen`](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
 The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
 
 ## Database setup
+
 Set up database with LZ4 codec
 
 ``` bash
@@ -77,6 +91,7 @@ $ cd ./database_dir/lz4
 $ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
 ```
+
 Here you should see the message `Connected to ClickHouse server` from console which means client successfully setup connection with server.
 
 Complete below three steps mentioned in [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema)
@@ -114,6 +129,7 @@ You are expected to see below output:
 └───────────┘
 ```
 [Self-check for IAA Deflate codec]
+
 At the first time you execute insertion or query from client, clickhouse server console is expected to print this log:
 ```text
 Hardware-assisted DeflateQpl codec is ready!
@@ -125,17 +141,21 @@ Initialization of hardware-assisted DeflateQpl codec failed
 That means IAA devices is not ready, you need check IAA setup again.
 
 ## Benchmark with single instance 
+
 - Before start benchmark, Please disable C6 and set CPU frequency governor to be `performance`
+
 ``` bash
 $ cpupower idle-set -d 3
 $ cpupower frequency-set -g performance
 ```
+
 - To eliminate impact of memory bound on cross sockets, we use `numactl` to bind server on one socket and client on another socket.
 - Single instance means single server connected with single client
 
 Now run benchmark for LZ4/Deflate/ZSTD respectively:
 
 LZ4:
+
 ``` bash
 $ cd ./database_dir/lz4 
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
@@ -144,13 +164,16 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > lz4.log
 ```
 
 IAA deflate:
+
 ``` bash
 $ cd ./database_dir/deflate
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ cd ./client_scripts
 $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate.log
 ```
+
 ZSTD:
+
 ``` bash
 $ cd ./database_dir/zstd
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
@@ -170,6 +193,7 @@ How to check performance metrics:
 We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 
 ## Benchmark with multi-instances
+
 - To reduce impact of memory bound on too much threads, We recommend run benchmark with multi-instances.
 - Multi-instance means multiple（2 or 4）servers connected with respective client.
 - The cores of one socket need to be divided equally and assigned to the servers respectively.
@@ -182,35 +206,46 @@ There are 2 differences:
 Here we assume there are 60 cores per socket and take 2 instances for example.
 Launch server for first instance
 LZ4:
+
 ``` bash
 $ cd ./database_dir/lz4
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 ```
+
 ZSTD:
+
 ``` bash
 $ cd ./database_dir/zstd
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 ```
+
 IAA Deflate:
+
 ``` bash
 $ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 ```
+
 [Launch server for second instance]
 
 LZ4:
+
 ``` bash
 $ cd ./database_dir && mkdir lz4_s2 && cd lz4_s2
 $ cp ../../server_config/config_lz4_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
 ```
+
 ZSTD:
+
 ``` bash
 $ cd ./database_dir && mkdir zstd_s2 && cd zstd_s2
 $ cp ../../server_config/config_zstd_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null&
 ```
+
 IAA Deflate:
+
 ``` bash
 $ cd ./database_dir && mkdir deflate_s2 && cd deflate_s2
 $ cp ../../server_config/config_deflate_s2.xml ./
@@ -220,19 +255,24 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/d
 Creating tables && Inserting data for second instance
 
 Creating tables:
+
 ``` bash
 $ [CLICKHOUSE_EXE] client -m --port=9001 
 ```
+
 Inserting data:
+
 ``` bash
 $ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
 ```
+
 - [TBL_FILE_NAME] represents the name of a file named with the regular expression: *. tbl under `./benchmark_sample/rawdata_dir/ssb-dbgen`.
 - `--port=9001` stands for the assigned port for server instance which is also defined in config_lz4_s2.xml/config_zstd_s2.xml/config_deflate_s2.xml. For even more instances, you need replace it with the value: 9002/9003 which stand for s3/s4 instance respectively. If you don't assign it, the port is 9000 by default which has been used by first instance.
 
 Benchmarking with 2 instances
 
 LZ4:
+
 ``` bash
 $ cd ./database_dir/lz4
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
@@ -241,7 +281,9 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/n
 $ cd ./client_scripts
 $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2  > lz4_2insts.log
 ```
+
 ZSTD:
+
 ``` bash
 $ cd ./database_dir/zstd
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
@@ -250,7 +292,9 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/
 $ cd ./client_scripts
 $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2insts.log
 ```
+
 IAA deflate
+
 ``` bash
 $ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
@@ -259,9 +303,11 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/d
 $ cd ./client_scripts
 $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > deflate_2insts.log
 ```
+
 Here the last argument: `2` of client_stressing_test.py stands for the number of instances. For more instances, you need replace it with the value: 3 or 4. This script support up to 4 instances/
 
 Now three logs should be output as expected:
+
 ``` text
 lz4_2insts.log
 deflate_2insts.log
@@ -275,7 +321,9 @@ Benchmark setup for 4 instances is similar with 2 instances above.
 We recommend use 2 instances benchmark data as final report for review.
 
 ## Tips
+
 Each time before launch new clickhouse server, please make sure no background clickhouse process running, please check and kill old one:
+
 ``` bash
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]

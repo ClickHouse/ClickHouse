@@ -2,6 +2,7 @@ from time import sleep
 import pytest
 import re
 import os.path
+import random, string
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
@@ -65,9 +66,9 @@ def drop_after_test():
     try:
         yield
     finally:
-        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' NO DELAY")
-        node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' NO DELAY")
-        node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' NO DELAY")
+        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
 
 
@@ -107,7 +108,7 @@ def test_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -138,7 +139,7 @@ def test_empty_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -172,7 +173,7 @@ def test_replicated_database():
     )
 
     # Drop table on both nodes.
-    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name}")
@@ -201,7 +202,7 @@ def test_different_tables_on_nodes():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
@@ -224,7 +225,7 @@ def test_backup_restore_on_single_replica():
     backup_name = new_backup_name()
     node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
 
-    node1.query("DROP DATABASE mydb NO DELAY")
+    node1.query("DROP DATABASE mydb SYNC")
 
     # Cannot restore table because it already contains data on other replicas.
     expected_error = "already contains some data"
@@ -243,7 +244,7 @@ def test_backup_restore_on_single_replica():
     )
 
     # Can restore table with allow_non_empty_tables=true.
-    node1.query("DROP DATABASE mydb NO DELAY")
+    node1.query("DROP DATABASE mydb SYNC")
     node1.query(
         f"RESTORE DATABASE mydb FROM {backup_name} SETTINGS allow_non_empty_tables=true"
     )
@@ -266,7 +267,7 @@ def test_table_with_parts_in_queue_considered_non_empty():
     backup_name = new_backup_name()
     node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
 
-    node1.query("DROP DATABASE mydb NO DELAY")
+    node1.query("DROP DATABASE mydb SYNC")
 
     # Cannot restore table because it already contains data on other replicas.
     expected_error = "already contains some data"
@@ -295,7 +296,7 @@ def test_replicated_table_with_not_synced_insert():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -325,7 +326,7 @@ def test_replicated_table_with_not_synced_merge():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -348,7 +349,7 @@ def test_replicated_table_restored_into_bigger_cluster():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster3' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster3' tbl")
@@ -372,7 +373,7 @@ def test_replicated_table_restored_into_smaller_cluster():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster1' FROM {backup_name}")
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
@@ -410,7 +411,7 @@ def test_replicated_database_async():
         TSV([["BACKUP_CREATED", ""]]),
     )
 
-    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
 
     [id, status] = node1.query(
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
@@ -454,7 +455,7 @@ def test_keeper_value_max_size():
         settings={"backup_restore_keeper_value_max_size": 50},
     )
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -541,7 +542,7 @@ def test_async_backups_to_same_destination(interface, on_cluster):
     assert num_failed_backups == len(ids) - 1
 
     # Check that the succeeded backup is all right.
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
     node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
     assert node1.query("SELECT * FROM tbl") == "1\n"
 
@@ -568,7 +569,7 @@ def test_required_privileges():
     node1.query("GRANT BACKUP ON tbl TO u1")
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl2"
     assert expected_error in node1.query_and_get_error(
@@ -582,7 +583,7 @@ def test_required_privileges():
 
     assert node2.query("SELECT * FROM tbl2") == "100\n"
 
-    node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
 
     expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl"
@@ -703,7 +704,7 @@ def test_projection():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     assert (
         node1.query(
@@ -724,6 +725,58 @@ def test_projection():
         )
         == "2\n"
     )
+
+
+def test_file_deduplication():
+    # Random column name helps finding it in logs.
+    column_name = "".join(random.choice(string.ascii_letters) for x in range(10))
+
+    # Make four replicas in total: 2 on each host.
+    node1.query(
+        f"""
+        CREATE TABLE tbl ON CLUSTER 'cluster' (
+        {column_name} Int32
+        ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{{replica}}')
+        ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0
+        """
+    )
+
+    node1.query(
+        f"""
+        CREATE TABLE tbl2 ON CLUSTER 'cluster' (
+        {column_name} Int32
+        ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{{replica}}-2')
+        ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0
+        """
+    )
+
+    # Unique data.
+    node1.query(
+        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
+    )
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl, TABLE tbl2 ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
+
+    # The bin file should be written to the backup once, and skipped three times (because there are four replicas in total).
+    bin_file_writing_log_line = (
+        f"Writing backup for file .*{column_name}.bin .* (disk default)"
+    )
+    bin_file_skip_log_line = f"Writing backup for file .*{column_name}.bin .* skipped"
+
+    num_bin_file_writings = int(node1.count_in_log(bin_file_writing_log_line)) + int(
+        node2.count_in_log(bin_file_writing_log_line)
+    )
+    num_bin_file_skips = int(node1.count_in_log(bin_file_skip_log_line)) + int(
+        node2.count_in_log(bin_file_skip_log_line)
+    )
+
+    assert num_bin_file_writings == 1
+    assert num_bin_file_skips == 3
 
 
 def test_replicated_table_with_not_synced_def():
@@ -755,7 +808,7 @@ def test_replicated_table_with_not_synced_def():
     backup_name = new_backup_name()
     node2.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # But synced after RESTORE anyway
     node1.query(
@@ -768,7 +821,7 @@ def test_replicated_table_with_not_synced_def():
         "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
     ) == TSV([["x", "String"], ["y", "String"]])
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node2.query(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
@@ -795,7 +848,7 @@ def test_table_in_replicated_database_with_not_synced_def():
     backup_name = new_backup_name()
     node2.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
 
     # But synced after RESTORE anyway
     node1.query(
@@ -808,7 +861,7 @@ def test_table_in_replicated_database_with_not_synced_def():
         "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
     ) == TSV([["x", "String"], ["y", "String"]])
 
-    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
 
     node2.query(
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
@@ -870,7 +923,7 @@ def test_mutation():
     assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
     assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
@@ -1006,7 +1059,7 @@ def test_stop_other_host_during_backup(kill):
     node2.start_clickhouse()
 
     if status == "BACKUP_CREATED":
-        node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+        node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
         assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
     elif status == "BACKUP_FAILED":

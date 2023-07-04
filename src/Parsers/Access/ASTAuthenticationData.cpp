@@ -108,6 +108,15 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 parameters = true;
                 break;
             }
+            case AuthenticationType::BCRYPT_PASSWORD:
+            {
+                if (contains_hash)
+                    auth_type_name = "bcrypt_hash";
+
+                prefix = "BY";
+                password = true;
+                break;
+            }
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
             case AuthenticationType::MAX:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(*type));
