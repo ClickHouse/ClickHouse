@@ -414,7 +414,7 @@ private:
         if (arguments.size() == 1)
         {
             throwIfNullValue(arguments[0]);
-            auto * col = arguments[0].column.get();
+            const auto * col = arguments[0].column.get();
             if (arguments[0].type->isNullable())
             {
                 const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
