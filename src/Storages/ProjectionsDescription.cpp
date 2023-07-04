@@ -14,9 +14,11 @@
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <base/range.h>
 
 
@@ -29,7 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-};
+}
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -89,13 +91,13 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
     if (!projection_definition)
-        throw Exception("Cannot create projection from non ASTProjectionDeclaration AST", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot create projection from non ASTProjectionDeclaration AST");
 
     if (projection_definition->name.empty())
-        throw Exception("Projection must have name in definition.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
     if (!projection_definition->query)
-        throw Exception("QUERY is required for projection", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "QUERY is required for projection");
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
@@ -107,7 +109,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
+        result.query_ast, query_context, storage, {},
+        /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
@@ -119,8 +123,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (select.hasAggregation())
     {
         if (query.orderBy())
-            throw Exception(
-                "When aggregation is used in projection, ORDER BY cannot be specified", ErrorCodes::ILLEGAL_PROJECTION);
+            throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -179,7 +182,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
-    const ASTPtr & partition_columns,
+    ASTPtr partition_columns,
     const Names & minmax_columns,
     const ASTs & primary_key_asts,
     ContextPtr query_context)
@@ -203,7 +206,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
     if (partition_columns && !partition_columns->children.empty())
+    {
+        partition_columns = partition_columns->clone();
+        for (const auto & partition_column : partition_columns->children)
+            KeyDescription::moduloToModuloLegacyRecursive(partition_column);
         select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
+    }
 
     result.definition_ast = select_query;
     result.name = MINMAX_COUNT_PROJECTION_NAME;
@@ -214,7 +222,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     InterpreterSelectQuery select(
         result.query_ast, query_context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
@@ -233,7 +241,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
             result.sample_block_for_keys.insert({nullptr, key.type, key.name});
             auto it = partition_column_name_to_value_index.find(key.name);
             if (it == partition_column_name_to_value_index.end())
-                throw Exception("minmax_count projection can only have keys about partition columns. It's a bug", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "minmax_count projection can only have keys about partition columns. It's a bug");
             result.partition_value_indices.push_back(it->second);
         }
     }
@@ -277,6 +285,8 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                                                                        : QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
     builder.resize(1);
+    // Generate aggregated blocks with rows less or equal than the original block.
+    // There should be only one output block after this transformation.
     builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -284,7 +294,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     Block ret;
     executor.pull(ret);
     if (executor.pull(ret))
-        throw Exception("Projection cannot increase the number of rows in a block. It's a bug", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
     return ret;
 }
 
@@ -321,14 +331,18 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
 bool ProjectionsDescription::has(const String & projection_name) const
 {
-    return map.count(projection_name) > 0;
+    return map.contains(projection_name);
 }
 
 const ProjectionDescription & ProjectionsDescription::get(const String & projection_name) const
 {
     auto it = map.find(projection_name);
     if (it == map.end())
-        throw Exception("There is no projection " + projection_name + " in table", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    {
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    }
 
     return *(it->second);
 }
@@ -339,8 +353,8 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
     {
         if (if_not_exists)
             return;
-        throw Exception(
-            "Cannot add projection " + projection.name + ": projection with this name already exists", ErrorCodes::ILLEGAL_PROJECTION);
+        throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists",
+            projection.name);
     }
 
     auto insert_it = projections.cend();
@@ -369,11 +383,23 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     {
         if (if_exists)
             return;
-        throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
     }
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
+{
+    std::vector<String> names;
+    names.reserve(map.size());
+    for (const auto & pair : map)
+        names.push_back(pair.first);
+    return names;
 }
 
 ExpressionActionsPtr

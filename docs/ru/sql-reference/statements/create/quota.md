@@ -1,6 +1,7 @@
 ---
-toc_priority: 42
-toc_title: "Квота"
+slug: /ru/sql-reference/statements/create/quota
+sidebar_position: 42
+sidebar_label: "Квота"
 ---
 
 # CREATE QUOTA {#create-quota-statement}

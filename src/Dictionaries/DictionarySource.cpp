@@ -1,5 +1,6 @@
 #include "DictionarySource.h"
 #include <Dictionaries/DictionaryHelpers.h>
+#include <Processors/ISource.h>
 
 
 namespace DB
@@ -11,12 +12,12 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-class DictionarySource : public SourceWithProgress
+class DictionarySource : public ISource
 {
 public:
 
     explicit DictionarySource(std::shared_ptr<DictionarySourceCoordinator> coordinator_)
-        : SourceWithProgress(coordinator_->getHeader()), coordinator(std::move(coordinator_))
+        : ISource(coordinator_->getHeader()), coordinator(std::move(coordinator_))
     {
     }
 
@@ -60,8 +61,8 @@ private:
         const auto & attributes_types_to_read = coordinator->getAttributesTypesToRead();
         const auto & attributes_default_values_columns = coordinator->getAttributesDefaultValuesColumns();
 
-        const auto & dictionary = coordinator->getDictionary();
-        auto attributes_columns = dictionary->getColumns(
+        const auto & read_columns_func = coordinator->getReadColumnsFunc();
+        auto attributes_columns = read_columns_func(
             attributes_names_to_read,
             attributes_types_to_read,
             key_columns,

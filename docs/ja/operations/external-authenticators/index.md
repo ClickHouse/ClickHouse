@@ -1,1 +1,0 @@
-../../../en/operations/external-authenticators/index.md

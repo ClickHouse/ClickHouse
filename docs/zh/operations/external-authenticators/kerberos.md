@@ -1,4 +1,8 @@
+---
+slug: /zh/operations/external-authenticators/kerberos
+---
 # Kerberos认证 {#external-authenticators-kerberos} 
+
 现有正确配置的 ClickHouse 用户可以通过 Kerberos 身份验证协议进行身份验证.
 
 目前, Kerberos 只能用作现有用户的外部身份验证器，这些用户在 `users.xml` 或本地访问控制路径中定义.

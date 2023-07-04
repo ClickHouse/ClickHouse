@@ -8,11 +8,43 @@ http
 ====HOST====
 www.example.com
 
+
+
+
+
+
+
+
+
 www.example.com
 127.0.0.1
 www.example.com
 www.example.com
+
+
+
+www.example4.com
+example.com
+example.com
+example.com
 www.example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+
+
+
+www.example.com
+127.0.0.1
+www.example.com
+www.example.com
+
+example2.com
+example3.com
+www.example4.com
 example.com
 example.com
 example.com
@@ -27,6 +59,10 @@ paul:zozo@example.ru
 www.example.com
 www.example.com
 example.com
+foo:foo%@foo.com
+foo:foo%41bar@foo.com
+foo:foo%41%42bar@foo.com
+foo:foo%41bar@foo
 ====DOMAIN====
 com
 
@@ -59,6 +95,14 @@ query=hello world+foo+bar
 query=hello world+foo+bar
 query=hello world+foo+bar
 query=hello world foo+bar
+
+
+\N
+\N
+hello%20world%20foo%2Bbar
+hello+world+foo%2Bbar
+http://paul@127.0.0.1/?query=hello world foo+bar
+http://paul@127.0.0.1/?query=hello world foo+bar
 ====FRAGMENT====
 
 
@@ -74,6 +118,10 @@ query=hello world+foo+bar#a=b
 query=hello world+foo+bar#a=b
 #a=b
 query=hello world foo+bar#a=b
+hello%20world%20foo%2Bbar%23a%3Db
+hello+world+foo%2Bbar%23a%3Db
+http://paul@127.0.0.1/?query=hello world foo+bar#a=b
+http://paul@127.0.0.1/?query=hello world foo+bar#a=b
 ====CUT TO FIRST SIGNIFICANT SUBDOMAIN====
 example.com
 example.com
@@ -86,7 +134,24 @@ example.com
 example.com
 com
 
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+com
+
 ====CUT TO FIRST SIGNIFICANT SUBDOMAIN WITH WWW====
+
+www.com
+example.com
+example.com
+example.com
+example.com
 
 www.com
 example.com

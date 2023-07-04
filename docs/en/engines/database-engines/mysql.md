@@ -1,9 +1,10 @@
 ---
-toc_priority: 30
-toc_title: MySQL
+slug: /en/engines/database-engines/mysql
+sidebar_position: 50
+sidebar_label: MySQL
 ---
 
-# MySQL {#mysql}
+# MySQL
 
 Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
 
@@ -11,9 +12,9 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
--   `RENAME`
--   `CREATE TABLE`
--   `ALTER`
+- `RENAME`
+- `CREATE TABLE`
+- `ALTER`
 
 ## Creating a Database {#creating-a-database}
 
@@ -24,10 +25,10 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
--   `host:port` — MySQL server address.
--   `database` — Remote database name.
--   `user` — MySQL user.
--   `password` — User password.
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Data Types Support {#data_types-support}
 
@@ -59,8 +60,9 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-!!! warning "Warning"
-    By now these variables are stubs and don't correspond to anything.
+:::note
+By now these variables are stubs and don't correspond to anything.
+:::
 
 Example:
 
@@ -97,7 +99,7 @@ mysql> select * from mysql_table;
 Database in ClickHouse, exchanging data with the MySQL server:
 
 ``` sql
-CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
 ```
 
 ``` sql
@@ -146,5 +148,3 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->

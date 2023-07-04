@@ -29,8 +29,7 @@ const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 {
     const auto * col = checkAndGetColumn<ColumnUInt8>(&column);
     if (!checkAndGetColumn<ColumnUInt8>(&column))
-        throw Exception("Bool type can only serialize columns of type UInt8." + column.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only serialize columns of type UInt8.{}", column.getName());
     return col;
 }
 
@@ -38,8 +37,8 @@ ColumnUInt8 * checkAndGetDeserializeColumnType(IColumn & column)
 {
     auto * col =  typeid_cast<ColumnUInt8 *>(&column);
     if (!checkAndGetColumn<ColumnUInt8>(&column))
-        throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only deserialize columns of type UInt8.{}",
+                        column.getName());
     return col;
 }
 
@@ -221,7 +220,7 @@ void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_
 void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
 
     deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
@@ -234,18 +233,20 @@ void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num,
 void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
 {
     if (istr.eof())
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
 
     ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
     bool value = false;
 
-    if (*istr.position() == 't' || *istr.position() == 'f')
+    char first_char = *istr.position();
+    if (first_char == 't' || first_char == 'f')
         readBoolTextWord(value, istr);
-    else if (*istr.position() == '1' || *istr.position() == '0')
+    else if (first_char == '1' || first_char == '0')
         readBoolText(value, istr);
     else
-        throw Exception("Invalid boolean value, should be true/false, 1/0.",
-                        ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL,
+            "Invalid boolean value, should be true/false, 1/0, but it starts with the '{}' character.", first_char);
+
     col->insert(value);
 }
 
@@ -257,9 +258,9 @@ void SerializationBool::serializeTextCSV(const IColumn & column, size_t row_num,
 void SerializationBool::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
 
-    deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\n'; });
+    deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\n' || *buf.position() == '\r'; });
 }
 
 void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -270,7 +271,7 @@ void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num,
 void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
 
     deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
@@ -283,7 +284,7 @@ void SerializationBool::serializeTextQuoted(const IColumn & column, size_t row_n
 void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
 
     auto * col = checkAndGetDeserializeColumnType(column);
 
@@ -321,7 +322,7 @@ void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 void SerializationBool::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
 
     deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof(); });
 }

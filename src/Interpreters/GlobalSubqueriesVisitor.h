@@ -8,8 +8,10 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/TableJoin.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -17,7 +19,11 @@
 #include <Parsers/IAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/typeid_cast.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -25,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 class GlobalSubqueriesMatcher
@@ -34,29 +41,33 @@ public:
     {
         size_t subquery_depth;
         bool is_remote;
-        size_t external_table_id;
+        bool is_explain;
         TemporaryTablesMapping & external_tables;
-        SubqueriesForSets & subqueries_for_sets;
+        PreparedSetsPtr prepared_sets;
         bool & has_global_subqueries;
+        TableJoin * table_join;
 
         Data(
             ContextPtr context_,
             size_t subquery_depth_,
             bool is_remote_,
+            bool is_explain_,
             TemporaryTablesMapping & tables,
-            SubqueriesForSets & subqueries_for_sets_,
-            bool & has_global_subqueries_)
+            PreparedSetsPtr prepared_sets_,
+            bool & has_global_subqueries_,
+            TableJoin * table_join_)
             : WithContext(context_)
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
-            , external_table_id(1)
+            , is_explain(is_explain_)
             , external_tables(tables)
-            , subqueries_for_sets(subqueries_for_sets_)
+            , prepared_sets(prepared_sets_)
             , has_global_subqueries(has_global_subqueries_)
+            , table_join(table_join_)
         {
         }
 
-        void addExternalStorage(ASTPtr & ast, bool set_alias = false)
+        void addExternalStorage(ASTPtr & ast, const Names & required_columns, bool set_alias = false)
         {
             /// With nondistributed queries, creating temporary tables does not make sense.
             if (!is_remote)
@@ -86,54 +97,39 @@ public:
             }
 
             if (!subquery_or_table_name)
-                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
+                throw Exception(ErrorCodes::WRONG_GLOBAL_SUBQUERY, "Global subquery requires subquery or table name");
 
             if (is_table)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
                 auto temporary_table_name = getIdentifierName(subquery_or_table_name);
-                bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
+                bool exists_in_local_map = external_tables.contains(temporary_table_name);
                 bool exists_in_context = static_cast<bool>(getContext()->tryResolveStorageID(
                     StorageID("", temporary_table_name), Context::ResolveExternal));
                 if (exists_in_local_map || exists_in_context)
                     return;
             }
 
-            String external_table_name = subquery_or_table_name->tryGetAlias();
-            if (external_table_name.empty())
+            String alias = subquery_or_table_name->tryGetAlias();
+            String external_table_name;
+            if (alias.empty())
             {
-                /// Generate the name for the external table.
-                external_table_name = "_data" + toString(external_table_id);
-                while (external_tables.count(external_table_name))
-                {
-                    ++external_table_id;
-                    external_table_name = "_data" + toString(external_table_id);
-                }
+                auto hash = subquery_or_table_name->getTreeHash();
+                external_table_name = fmt::format("_data_{}_{}", hash.first, hash.second);
             }
-
-            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, {});
-
-            Block sample = interpreter->getSampleBlock();
-            NamesAndTypesList columns = sample.getNamesAndTypesList();
-
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
-                getContext(),
-                ColumnsDescription{columns},
-                ConstraintsDescription{},
-                nullptr,
-                /*create_for_global_subquery*/ true);
-            StoragePtr external_storage = external_storage_holder->getTable();
+            else
+                external_table_name = alias;
 
             /** We replace the subquery with the name of the temporary table.
                 * It is in this form, the request will go to the remote server.
                 * This temporary table will go to the remote server, and on its side,
                 *  instead of doing a subquery, you just need to read it.
+                *  TODO We can do better than using alias to name external tables
                 */
 
             auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
             if (set_alias)
             {
-                String alias = subquery_or_table_name->tryGetAlias();
                 if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
@@ -151,23 +147,35 @@ public:
             else
                 ast = database_and_table_name;
 
-            external_tables[external_table_name] = external_storage_holder;
+            if (external_tables.contains(external_table_name))
+                return;
 
-            if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, required_columns);
+
+            Block sample = interpreter->getSampleBlock();
+            NamesAndTypesList columns = sample.getNamesAndTypesList();
+
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
+                getContext(),
+                ColumnsDescription{columns},
+                ConstraintsDescription{},
+                nullptr,
+                /*create_for_global_subquery*/ true);
+            StoragePtr external_storage = external_storage_holder->getTable();
+            external_tables.emplace(external_table_name, external_storage_holder);
+
+            auto set_key = database_and_table_name->getTreeHash();
+
+            if (!prepared_sets->findSubquery(set_key))
             {
-                auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
-                auto io = interpreter->execute();
-                io.pipeline.complete(std::move(table_out));
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
+                std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
+                interpreter->buildQueryPlan(*source);
+
+                auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
+                external_storage_holder->future_set = std::move(future_set);
             }
             else
-            {
-                subqueries_for_sets[external_table_name].source = std::make_unique<QueryPlan>();
-                interpreter->buildQueryPlan(*subqueries_for_sets[external_table_name].source);
-                subqueries_for_sets[external_table_name].table = external_storage;
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set is already created for GLOBAL IN");
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
             *  then a new temporary table will be created (for example, _data1),
@@ -192,10 +200,19 @@ public:
     }
 
 private:
+    static bool shouldBeExecutedGlobally(const Data & data)
+    {
+        const Settings & settings = data.getContext()->getSettingsRef();
+        /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
+        return settings.prefer_global_in_and_join || enable_parallel_processing_of_joins;
+    }
+
+
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
+        if ((shouldBeExecutedGlobally(data)
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
@@ -216,7 +233,7 @@ private:
                 return;
             }
 
-            data.addExternalStorage(ast);
+            data.addExternalStorage(ast, {});
             data.has_global_subqueries = true;
         }
     }
@@ -225,10 +242,23 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
-                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || shouldBeExecutedGlobally(data)))
         {
-            data.addExternalStorage(table_elem.table_expression, true);
+            Names required_columns;
+
+            /// Fill required columns for GLOBAL JOIN.
+            /// This code is partial copy-paste from ExpressionAnalyzer.
+            if (data.table_join)
+            {
+                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
+                NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
+                    Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+
+                for (auto & pr : required_columns_with_aliases)
+                    required_columns.push_back(pr.first);
+            }
+
+            data.addExternalStorage(table_elem.table_expression, required_columns, true);
             data.has_global_subqueries = true;
         }
     }

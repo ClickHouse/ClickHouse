@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
     {
-        throw Exception("Method formatImpl is not supported by MySQLParser::ASTDeclareOptions.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTDeclareOptions.");
     }
 };
 

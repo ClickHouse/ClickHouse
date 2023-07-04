@@ -1,20 +1,20 @@
 #pragma once
 
+#include <unordered_set>
+
 #include <AggregateFunctions/AggregateFunctionNull.h>
 
 #include <Columns/ColumnsNumber.h>
 
-#include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <unordered_set>
 
 
 namespace DB
@@ -67,7 +67,7 @@ struct AggregateFunctionIntervalLengthSumData
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
         {
-            std::sort(std::begin(segments), std::end(segments));
+            ::sort(std::begin(segments), std::end(segments));
         }
         else
         {
@@ -76,10 +76,10 @@ struct AggregateFunctionIntervalLengthSumData
             const auto end = std::end(segments);
 
             if (!sorted)
-                std::sort(begin, middle);
+                ::sort(begin, middle);
 
             if (!other.sorted)
-                std::sort(middle, end);
+                ::sort(middle, end);
 
             std::inplace_merge(begin, middle, end);
         }
@@ -89,11 +89,11 @@ struct AggregateFunctionIntervalLengthSumData
 
     void sort()
     {
-        if (!sorted)
-        {
-            std::sort(std::begin(segments), std::end(segments));
-            sorted = true;
-        }
+        if (sorted)
+            return;
+
+        ::sort(std::begin(segments), std::end(segments));
+        sorted = true;
     }
 
     void serialize(WriteBuffer & buf) const
@@ -116,7 +116,7 @@ struct AggregateFunctionIntervalLengthSumData
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", MAX_ARRAY_SIZE);
 
         segments.clear();
         segments.reserve(size);
@@ -176,11 +176,11 @@ public:
     String getName() const override { return "intervalLengthSum"; }
 
     explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {}, createResultType())
     {
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         if constexpr (std::is_floating_point_v<T>)
             return std::make_shared<DataTypeFloat64>();
@@ -195,7 +195,7 @@ public:
         const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<false, false>>(nested_function, arguments, params);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override

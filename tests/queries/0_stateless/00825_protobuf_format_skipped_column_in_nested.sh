@@ -48,7 +48,7 @@ $CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format
 
 # Check the input in the protobuf format (now the table contains the same data twice).
 echo
-$CLICKHOUSE_CLIENT --query "INSERT INTO table_skipped_column_in_nested_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_skipped_column_in_nested:UpdateMessage'" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO table_skipped_column_in_nested_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_skipped_column_in_nested:UpdateMessage' FORMAT Protobuf" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM table_skipped_column_in_nested_00825 ORDER BY unused1"
 
 rm "$BINARY_FILE_PATH"

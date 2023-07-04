@@ -14,14 +14,12 @@ struct ClearableHashMapCell : public ClearableHashTableCell<Key, HashMapCell<Key
         : Base::BaseCell(value_, state), Base::version(state.version) {}
 };
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
 class ClearableHashMap : public HashTable<Key, ClearableHashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>
 {
 public:

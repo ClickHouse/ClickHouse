@@ -1,6 +1,7 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+slug: /ru/engines/table-engines/integrations/mongodb
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
 # MongoDB {#mongodb}
@@ -67,5 +68,3 @@ SELECT COUNT() FROM mongo_table;
 │       4 │
 └─────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/ru/engines/table-engines/integrations/mongodb/) <!--hide-->

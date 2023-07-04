@@ -1,5 +1,5 @@
 #include <Access/Authentication.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
@@ -26,17 +26,22 @@ namespace
         return (Util::stringToDigest(password) == password_plaintext);
     }
 
-    bool checkPasswordDoubleSHA1(const std::string_view & password, const Digest & password_double_sha1)
+    bool checkPasswordDoubleSHA1(std::string_view password, const Digest & password_double_sha1)
     {
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
     }
 
-    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256)
+    bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt)
     {
-        return Util::encodeSHA256(password) == password_sha256;
+        return Util::checkPasswordBcrypt(password, password_bcrypt);
     }
 
-    bool checkPasswordDoubleSHA1MySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_double_sha1)
+    bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
+    {
+        return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
+    }
+
+    bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
     {
         /// scrambled_password = SHA1(password) XOR SHA1(scramble <concat> SHA1(SHA1(password)))
 
@@ -61,7 +66,7 @@ namespace
         return calculated_password_double_sha1 == password_double_sha1;
     }
 
-    bool checkPasswordPlainTextMySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_plaintext)
+    bool checkPasswordPlainTextMySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_plaintext)
     {
         return checkPasswordDoubleSHA1MySQL(scramble, scrambled_password, Util::encodeDoubleSHA1(password_plaintext));
     }
@@ -81,11 +86,15 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -106,9 +115,13 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -126,7 +139,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
-                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary(), auth_data.getSalt());
 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
@@ -137,6 +150,35 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::BCRYPT_PASSWORD:
+                return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::MAX:
+                break;
+        }
+    }
+
+    if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
+    {
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
+            case AuthenticationType::LDAP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
+
             case AuthenticationType::MAX:
                 break;
         }
@@ -145,7 +187,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception("areCredentialsValid(): authentication type " + toString(auth_data.getType()) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "areCredentialsValid(): authentication type {} not supported", toString(auth_data.getType()));
 }
 
 }

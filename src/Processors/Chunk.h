@@ -90,7 +90,7 @@ public:
     bool hasRows() const { return num_rows > 0; }
     bool hasColumns() const { return !columns.empty(); }
     bool empty() const { return !hasRows() && !hasColumns(); }
-    operator bool() const { return !empty(); }
+    explicit operator bool() const { return !empty(); }
 
     void addColumn(ColumnPtr column);
     void addColumn(size_t position, ColumnPtr column);
@@ -101,6 +101,9 @@ public:
 
     std::string dumpStructure() const;
 
+    void append(const Chunk & chunk);
+    void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
+
 private:
     Columns columns;
     UInt64 num_rows = 0;
@@ -110,6 +113,17 @@ private:
 };
 
 using Chunks = std::vector<Chunk>;
+
+/// ChunkOffsets marks offsets of different sub-chunks, which will be used by async inserts.
+class ChunkOffsets : public ChunkInfo
+{
+public:
+    ChunkOffsets() = default;
+    explicit ChunkOffsets(const std::vector<size_t> & offsets_) : offsets(offsets_) {}
+    std::vector<size_t> offsets;
+};
+
+using ChunkOffsetsPtr = std::shared_ptr<ChunkOffsets>;
 
 /// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
 class ChunkMissingValues : public ChunkInfo
@@ -135,6 +149,7 @@ private:
 /// It's needed, when you have to access to the internals of the column,
 /// or when you need to perform operation with two columns
 /// and their structure must be equal (e.g. compareAt).
+void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
 
 }

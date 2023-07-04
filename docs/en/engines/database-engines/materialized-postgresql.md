@@ -1,13 +1,21 @@
 ---
-toc_priority: 30
-toc_title: MaterializedPostgreSQL
+slug: /en/engines/database-engines/materialized-postgresql
+sidebar_label: MaterializedPostgreSQL
+sidebar_position: 60
 ---
 
-# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
-Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on (can be used starting from 22.1). Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+
+:::note
+This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+```sql
+SET allow_experimental_database_materialized_postgresql=1
+```
+:::
 
 ## Creating a Database {#creating-a-database}
 
@@ -18,10 +26,10 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server endpoint.
--   `database` — PostgreSQL database name.
--   `user` — PostgreSQL user.
--   `password` — User password.
+- `host:port` — PostgreSQL server endpoint.
+- `database` — PostgreSQL database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
 
 ## Example of Use {#example-of-use}
 
@@ -46,7 +54,9 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
-Warning: before version 22.1 adding table to replication left unremoved temprorary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in clickhouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. Issue is fixed in 22.1.
+:::warning
+Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
+:::
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
@@ -110,9 +120,9 @@ Warning: for this case dots in table name are not allowed.
 
 2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
--   primary key (by default)
+- primary key (by default)
 
--   index
+- index
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -135,69 +145,57 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-!!! warning "Warning"
-    Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+:::note
+Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+:::
 
 ## Settings {#settings}
 
-1. materialized_postgresql_tables_list {#materialized-postgresql-tables-list}
+### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+    Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
 
-Default value: empty list — means whole PostgreSQL database will be replicated.
+    Default value: empty list — means whole PostgreSQL database will be replicated.
 
-2. materialized_postgresql_schema {#materialized-postgresql-schema}
+### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
-Default value: empty string. (Default schema is used)
+    Default value: empty string. (Default schema is used)
 
-3. materialized_postgresql_schema_list {#materialized-postgresql-schema-list}
+### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
-Default value: empty list. (Default schema is used)
+    Default value: empty list. (Default schema is used)
 
-4. materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
+### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
-Do not use this setting before 22.1 version.
+    Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
-Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+    Possible values:
 
-Possible values:
+    - Positive integer.
 
--   0 — The table is not automatically updated in the background, when schema changes are detected.
--   1 — The table is automatically updated in the background, when schema changes are detected.
+    Default value: `65536`.
 
-Default value: `0`.
+### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
-5. materialized_postgresql_max_block_size {#materialized-postgresql-max-block-size}
+    A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
 
-Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
+### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-Possible values:
+    A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
--   Positive integer.
+    ``` sql
+    CREATE DATABASE database1
+    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
-Default value: `65536`.
+    SELECT * FROM database1.table1;
+    ```
 
-6. materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+    The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
-A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
-
-7. materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
-
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
-
-``` sql
-CREATE DATABASE database1
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
-
-SELECT * FROM database1.table1;
-```
-
-The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
-
-``` sql
-ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
-```
+    ``` sql
+    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+    ```
 
 ## Notes {#notes}
 
@@ -213,53 +211,53 @@ Please note that this should be used only if it is actually needed. If there is 
 
 1. Configure replication slot in PostgreSQL.
 
-```yaml
-apiVersion: "acid.zalan.do/v1"
-kind: postgresql
-metadata:
-  name: acid-demo-cluster
-spec:
-  numberOfInstances: 2
-  postgresql:
-    parameters:
-      wal_level: logical
-  patroni:
-    slots:
-      clickhouse_sync:
-        type: logical
-        database: demodb
-        plugin: pgoutput
-```
+    ```yaml
+    apiVersion: "acid.zalan.do/v1"
+    kind: postgresql
+    metadata:
+      name: acid-demo-cluster
+    spec:
+      numberOfInstances: 2
+      postgresql:
+        parameters:
+          wal_level: logical
+      patroni:
+        slots:
+          clickhouse_sync:
+            type: logical
+            database: demodb
+            plugin: pgoutput
+    ```
 
 2. Wait for replication slot to be ready, then begin a transaction and export the transaction snapshot identifier:
 
-```sql
-BEGIN;
-SELECT pg_export_snapshot();
-```
+    ```sql
+    BEGIN;
+    SELECT pg_export_snapshot();
+    ```
 
 3. In ClickHouse create database:
 
-```sql
-CREATE DATABASE demodb
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-SETTINGS
-  materialized_postgresql_replication_slot = 'clickhouse_sync',
-  materialized_postgresql_snapshot = '0000000A-0000023F-3',
-  materialized_postgresql_tables_list = 'table1,table2,table3';
-```
+    ```sql
+    CREATE DATABASE demodb
+    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+    SETTINGS
+      materialized_postgresql_replication_slot = 'clickhouse_sync',
+      materialized_postgresql_snapshot = '0000000A-0000023F-3',
+      materialized_postgresql_tables_list = 'table1,table2,table3';
+    ```
 
 4. End the PostgreSQL transaction once replication to ClickHouse DB is confirmed. Verify that replication continues after failover:
 
-```bash
-kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
-```
+    ```bash
+    kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
+    ```
 
 ### Required permissions
 
 1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privelege.
+2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
 
 3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
 

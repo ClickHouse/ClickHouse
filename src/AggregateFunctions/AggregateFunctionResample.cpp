@@ -26,9 +26,8 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Incorrect number of arguments for aggregate function with "
-                    + getName() + " suffix",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
@@ -36,9 +35,8 @@ public:
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
-            throw Exception("Incorrect number of parameters for aggregate function with "
-                    + getName() + " suffix",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Incorrect number of parameters for aggregate function with {} suffix", getName());
 
         return Array(params.begin(), params.end() - 3);
     }
@@ -88,10 +86,9 @@ public:
                 params);
         }
 
-        throw Exception(
-            "Illegal types of argument for aggregate function " + getName()
-                + ", the type of the last argument should be native integer or integer-like",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal types of argument for aggregate function {}, the type "
+                        "of the last argument should be native integer or integer-like", getName());
     }
 };
 

@@ -403,12 +403,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->move_destination_type = DataDestinationType::DISK;
                 else if (s_to_volume.ignore(pos))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_table.ignore(pos))
-                {
-                    if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
-                        return false;
-                    command->move_destination_type = DataDestinationType::TABLE;
-                }
                 else if (s_to_shard.ignore(pos))
                 {
                     command->move_destination_type = DataDestinationType::SHARD;
@@ -416,14 +410,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 else
                     return false;
 
-                if (command->move_destination_type != DataDestinationType::TABLE)
-                {
-                    ASTPtr ast_space_name;
-                    if (!parser_string_literal.parse(pos, ast_space_name, expected))
-                        return false;
+                ASTPtr ast_space_name;
+                if (!parser_string_literal.parse(pos, ast_space_name, expected))
+                    return false;
 
-                    command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
-                }
+                command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
             }
             else if (s_move_partition.ignore(pos, expected))
             {
@@ -839,7 +830,6 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     return true;
 }
-
 
 bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

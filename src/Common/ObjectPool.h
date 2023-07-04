@@ -34,7 +34,7 @@ protected:
     {
         SimpleObjectPool<T> * parent;
 
-        Deleter(SimpleObjectPool<T> * parent_ = nullptr) : parent{parent_} {}
+        Deleter(SimpleObjectPool<T> * parent_ = nullptr) : parent{parent_} {} /// NOLINT
 
         void operator()(T * owning_ptr) const
         {
@@ -94,7 +94,7 @@ public:
     template <typename Factory>
     Pointer get(const Key & key, Factory && f)
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         auto it = container.find(key);
         if (container.end() == it)

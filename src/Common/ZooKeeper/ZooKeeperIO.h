@@ -1,4 +1,5 @@
 #pragma once
+
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -8,22 +9,20 @@
 #include <vector>
 #include <array>
 
+
 namespace Coordination
 {
 
 using namespace DB;
 
-void write(size_t x, WriteBuffer & out);
+template <typename T>
+requires is_arithmetic_v<T>
+void write(T x, WriteBuffer & out)
+{
+    writeBinaryBigEndian(x, out);
+}
 
-/// uint64_t != size_t on darwin
-#ifdef __APPLE__
-void write(uint64_t x, WriteBuffer & out);
-#endif
-
-void write(int64_t x, WriteBuffer & out);
-void write(int32_t x, WriteBuffer & out);
 void write(OpNum x, WriteBuffer & out);
-void write(bool x, WriteBuffer & out);
 void write(const std::string & s, WriteBuffer & out);
 void write(const ACL & acl, WriteBuffer & out);
 void write(const Stat & stat, WriteBuffer & out);
@@ -44,15 +43,14 @@ void write(const std::vector<T> & arr, WriteBuffer & out)
         write(elem, out);
 }
 
-void read(size_t & x, ReadBuffer & in);
-#ifdef __APPLE__
-void read(uint64_t & x, ReadBuffer & in);
-#endif
-void read(int64_t & x, ReadBuffer & in);
-void read(int32_t & x, ReadBuffer & in);
+template <typename T>
+requires is_arithmetic_v<T>
+void read(T & x, ReadBuffer & in)
+{
+    readBinaryBigEndian(x, in);
+}
+
 void read(OpNum & x, ReadBuffer & in);
-void read(bool & x, ReadBuffer & in);
-void read(int8_t & x, ReadBuffer & in);
 void read(std::string & s, ReadBuffer & in);
 void read(ACL & acl, ReadBuffer & in);
 void read(Stat & stat, ReadBuffer & in);
@@ -65,7 +63,7 @@ void read(std::array<char, N> & s, ReadBuffer & in)
     read(size, in);
     if (size != N)
         throw Exception("Unexpected array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
-    in.read(s.data(), N);
+    in.readStrict(s.data(), N);
 }
 
 template <typename T>

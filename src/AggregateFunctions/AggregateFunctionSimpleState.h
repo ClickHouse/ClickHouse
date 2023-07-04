@@ -17,36 +17,33 @@ class AggregateFunctionSimpleState final : public IAggregateFunctionHelper<Aggre
 {
 private:
     AggregateFunctionPtr nested_func;
-    DataTypes arguments;
-    Array params;
 
 public:
     AggregateFunctionSimpleState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionSimpleState>(arguments_, params_)
+        : IAggregateFunctionHelper<AggregateFunctionSimpleState>(arguments_, params_, createResultType(nested_, params_))
         , nested_func(nested_)
-        , arguments(arguments_)
-        , params(params_)
     {
     }
 
     String getName() const override { return nested_func->getName() + "SimpleState"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_, const Array & params_)
     {
-        DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(nested_func);
+        DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(nested_);
 
-        // Need to make a clone because it'll be customized.
-        auto storage_type = DataTypeFactory::instance().get(nested_func->getReturnType()->getName());
-
+        // Need to make a clone to avoid recursive reference.
+        auto storage_type_out = DataTypeFactory::instance().get(nested_->getResultType()->getName());
         // Need to make a new function with promoted argument types because SimpleAggregates requires arg_type = return_type.
         AggregateFunctionProperties properties;
         auto function
-            = AggregateFunctionFactory::instance().get(nested_func->getName(), {storage_type}, nested_func->getParameters(), properties);
+            = AggregateFunctionFactory::instance().get(nested_->getName(), {storage_type_out}, nested_->getParameters(), properties);
 
+        // Need to make a clone because it'll be customized.
+        auto storage_type_arg = DataTypeFactory::instance().get(nested_->getResultType()->getName());
         DataTypeCustomNamePtr custom_name
-            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{nested_func->getReturnType()}, params);
-        storage_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
-        return storage_type;
+            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{nested_->getResultType()}, params_);
+        storage_type_arg->setCustomization(std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
+        return storage_type_arg;
     }
 
     bool isVersioned() const override
@@ -59,9 +56,21 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     void create(AggregateDataPtr __restrict place) const override { nested_func->create(place); }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override { nested_func->destroy(place); }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override { nested_func->destroyUpToState(place); }
 
     bool hasTrivialDestructor() const override { return nested_func->hasTrivialDestructor(); }
 

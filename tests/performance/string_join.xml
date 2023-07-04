@@ -1,11 +1,4 @@
 <test>
-
-
-
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-    </preconditions>
-
     <create_query>CREATE TABLE hits_10m_words (word String, UserID UInt64) ENGINE Memory</create_query>
     <create_query>CREATE TABLE strings (short String, long String) ENGINE Memory</create_query>
 

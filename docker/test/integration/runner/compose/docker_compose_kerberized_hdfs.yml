@@ -4,7 +4,7 @@ services:
   kerberizedhdfs1:
     cap_add:
       - DAC_READ_SEARCH
-    image: clickhouse/kerberized-hadoop
+    image: clickhouse/kerberized-hadoop:${DOCKER_KERBERIZED_HADOOP_TAG:-latest}
     hostname: kerberizedhdfs1
     restart: always
     volumes:
@@ -15,8 +15,8 @@ services:
         source: ${KERBERIZED_HDFS_LOGS:-}
         target: /var/log/hadoop-hdfs
     expose:
-      - ${KERBERIZED_HDFS_NAME_PORT}
-      - ${KERBERIZED_HDFS_DATA_PORT}
+      - ${KERBERIZED_HDFS_NAME_PORT:-50070}
+      - ${KERBERIZED_HDFS_DATA_PORT:-1006}
     depends_on:
       - hdfskerberos
     entrypoint: /etc/bootstrap.sh -d

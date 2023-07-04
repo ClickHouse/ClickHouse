@@ -1,6 +1,7 @@
 ---
-toc_priority: 35
-toc_title: DATABASE
+slug: /zh/sql-reference/statements/create/database
+sidebar_position: 35
+sidebar_label: DATABASE
 ---
 
 # CREATE DATABASE {#query-language-create-database}

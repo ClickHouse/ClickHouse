@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -25,24 +26,28 @@ public:
     bool operator() (Array &) const;
     bool operator() (Tuple &) const;
     bool operator() (Map &) const;
+    bool operator() (Object &) const;
     bool operator() (UUID &) const;
+    bool operator() (IPv4 &) const;
+    bool operator() (IPv6 &) const;
     bool operator() (AggregateFunctionStateData &) const;
+    bool operator() (CustomType &) const;
     bool operator() (bool &) const;
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const
     {
-        x += get<DecimalField<T>>(rhs);
+        x += rhs.get<DecimalField<T>>();
         return x.getValue() != T(0);
     }
 
-    template <typename T, typename = std::enable_if_t<is_big_int_v<T>> >
+    template <typename T>
+    requires is_big_int_v<T>
     bool operator() (T & x) const
     {
-        x += rhs.reinterpret<T>();
+        x += applyVisitor(FieldVisitorConvertToNumber<T>(), rhs);
         return x != T(0);
     }
 };
 
 }
-

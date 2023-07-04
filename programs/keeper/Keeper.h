@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/IServer.h>
-#include <daemon/BaseDaemon.h>
+#include <Daemon/BaseDaemon.h>
 
 namespace Poco
 {
@@ -13,6 +13,11 @@ namespace Poco
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// standalone clickhouse-keeper server (replacement for ZooKeeper). Uses the same
 /// config as clickhouse-server. Serves requests on TCP ports with or without
@@ -32,20 +37,23 @@ public:
         return BaseDaemon::logger();
     }
 
-    ContextMutablePtr context() const override
-    {
-        return global_context;
-    }
-
     bool isCancelled() const override
     {
         return BaseDaemon::isCancelled();
+    }
+
+    /// Returns global application's context.
+    ContextMutablePtr context() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fetch context for Keeper");
     }
 
     void defineOptions(Poco::Util::OptionSet & _options) override;
 
 protected:
     void logRevision() const override;
+
+    void handleCustomArguments(const std::string & arg, const std::string & value);
 
     int run() override;
 
@@ -58,8 +66,6 @@ protected:
     std::string getDefaultConfigFileName() const override;
 
 private:
-    ContextMutablePtr global_context;
-
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
     using CreateServerFunc = std::function<void(UInt16)>;

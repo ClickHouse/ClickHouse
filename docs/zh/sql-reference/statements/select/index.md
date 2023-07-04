@@ -1,8 +1,7 @@
 ---
-title: SELECT Query
-toc_folder_title: SELECT
-toc_priority: 33
-toc_title: 综述
+slug: /zh/sql-reference/statements/select/
+sidebar_label: SELECT
+sidebar_position: 33
 ---
 
 # 选择查询 {#select-queries-syntax}

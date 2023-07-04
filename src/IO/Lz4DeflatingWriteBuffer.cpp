@@ -26,7 +26,7 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
          0 /* no dictID */,
          LZ4F_noBlockChecksum},
         compression_level, /* compression level; 0 == default */
-        0, /* autoflush */
+        1, /* autoflush */
         0, /* favor decompression speed */
         {0, 0, 0}, /* reserved, must be set to 0 */
     };
@@ -37,14 +37,10 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
         throw Exception(
             ErrorCodes::LZ4_ENCODER_FAILED,
             "creation of LZ4 compression context failed. LZ4F version: {}",
-            LZ4F_VERSION,
-            ErrorCodes::LZ4_ENCODER_FAILED);
+            LZ4F_VERSION);
 }
 
-Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
-{
-    finalize();
-}
+Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer() = default;
 
 void Lz4DeflatingWriteBuffer::nextImpl()
 {
@@ -125,6 +121,8 @@ void Lz4DeflatingWriteBuffer::nextImpl()
         out->position() = out->buffer().begin();
         throw;
     }
+    out->next();
+    out_capacity = out->buffer().end() - out->position();
 }
 
 void Lz4DeflatingWriteBuffer::finalizeBefore()

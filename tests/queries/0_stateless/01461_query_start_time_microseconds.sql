@@ -23,6 +23,7 @@ WITH (
       ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = 0, 'ok', 'fail'); --
 
+SET log_query_threads = 1;
 SELECT '01461_query_thread_log_query_start_time_milliseconds_test';
 SYSTEM FLUSH LOGS;
 -- assumes that the query_start_time field is already accurate.

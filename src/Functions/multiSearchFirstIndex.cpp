@@ -14,12 +14,11 @@ struct NameMultiSearchFirstIndex
     static constexpr auto name = "multiSearchFirstIndex";
 };
 
-using FunctionMultiSearchFirstIndex
-    = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<NameMultiSearchFirstIndex, PositionCaseSensitiveASCII>>;
+using FunctionMultiSearchFirstIndex = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<NameMultiSearchFirstIndex, PositionCaseSensitiveASCII>>;
 
 }
 
-void registerFunctionMultiSearchFirstIndex(FunctionFactory & factory)
+REGISTER_FUNCTION(MultiSearchFirstIndex)
 {
     factory.registerFunction<FunctionMultiSearchFirstIndex>();
 }

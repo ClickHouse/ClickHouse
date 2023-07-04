@@ -44,27 +44,16 @@ function restart_replicas_loop()
         sleep 0.$RANDOM;
     done
 }
-function restart_thread_1()
-{
-    restart_replicas_loop
-}
-
-function restart_thread_2()
-{
-    restart_replicas_loop
-}
 
 export -f rename_thread_1;
 export -f rename_thread_2;
-export -f restart_thread_1;
-export -f restart_thread_2;
+export -f restart_replicas_loop
 
 TIMEOUT=10
 
 timeout $TIMEOUT bash -c rename_thread_1 2> /dev/null &
 timeout $TIMEOUT bash -c rename_thread_2 2> /dev/null &
-timeout $TIMEOUT bash -c restart_thread_1 2> /dev/null &
-timeout $TIMEOUT bash -c restart_thread_2 2> /dev/null &
+timeout $TIMEOUT bash -c restart_replicas_loop 2> /dev/null &
 
 wait
 

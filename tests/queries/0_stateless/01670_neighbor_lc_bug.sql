@@ -37,7 +37,9 @@ FROM
 (
     SELECT *
     FROM neighbor_test
-    ORDER BY val_string ASC
-) format PrettyCompact;
+    ORDER BY val_string, rowNr
+)
+ORDER BY rowNr, val_string, str_m1, str_p1, val_low, low_m1, low_p1
+format PrettyCompact;
 
 drop table if exists neighbor_test;

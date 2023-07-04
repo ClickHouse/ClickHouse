@@ -2,13 +2,11 @@
 			"value": 4611686018427387904
 			"name": "value",
 			"value": "4611686018427387904"
-value
-value
-Cannot modify 'output_format_json_quote_64bit_integers' setting in readonly mode
+OK
+OK
 			"name": "value",
 			"value": "9223372036854775808"
 			"name": "value",
 			"value": 9223372036854775808
-value
-value
-Cannot modify 'output_format_json_quote_64bit_integers' setting in readonly mode
+OK
+OK

@@ -8,7 +8,7 @@ services:
             MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
             DATADIR: /mysql/
         expose:
-            - ${MYSQL_PORT}
+            - ${MYSQL_PORT:-3306}
         command: --server_id=100 
             --log-bin='mysql-bin-1.log' 
             --default-time-zone='+3:00' 

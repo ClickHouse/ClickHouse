@@ -36,8 +36,6 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
         ASTIdentifier(table_name).formatImpl(settings, state, frame);
     }
-    if (!columns && (!storage || storage->children.empty()))
-        return;
     auto override_frame = frame;
     if (is_standalone)
     {
@@ -93,7 +91,7 @@ ASTPtr ASTTableOverrideList::tryGetTableOverride(const String & name) const
     return children[it->second];
 }
 
-void ASTTableOverrideList::setTableOverride(const String & name, const ASTPtr ast)
+void ASTTableOverrideList::setTableOverride(const String & name, ASTPtr ast)
 {
     auto it = positions.find(name);
     if (it == positions.end())
@@ -122,7 +120,7 @@ void ASTTableOverrideList::removeTableOverride(const String & name)
 
 bool ASTTableOverrideList::hasOverride(const String & name) const
 {
-    return positions.count(name);
+    return positions.contains(name);
 }
 
 void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -1,1 +1,0 @@
-../../../en/faq/general/dbms-naming.md

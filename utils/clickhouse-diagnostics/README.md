@@ -1,3 +1,18 @@
+## Download
+
+Cloning whole repo will take a lot of time and disk space. The following commands will download only this directory.
+
+* Requires Git 2.19
+
+```
+# mkdir chdiag
+# cd chdiag
+# git clone --depth 1 --filter=blob:none --no-checkout https://github.com/ClickHouse/ClickHouse
+# cd ClickHouse
+# git sparse-checkout set utils/clickhouse-diagnostics
+# git checkout master -- utils/clickhouse-diagnostics
+```
+
 ## Installation
 
 ```
@@ -7,7 +22,7 @@ python3 -m pip install -r requirements.txt
 ## Usage
 
 ```
-./clickhouse-diagnostics
+./clickhouse-diagnostics --host localhost --port 8123 --user default --password xxx
 ```
 
 Example output:
@@ -19,7 +34,6 @@ Uptime: **13 minutes and 51 seconds**
 #### ClickHouse configuration
 **result**
 ```XML
-<?xml version="1.0" encoding="utf-8"?>
 <clickhouse>
 	<logger>
 		<level>trace</level>

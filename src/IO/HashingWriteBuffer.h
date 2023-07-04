@@ -17,7 +17,7 @@ class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 public:
     using uint128 = CityHash_v1_0_2::uint128;
 
-    IHashingBuffer(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
+    explicit IHashingBuffer(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : BufferWithOwnMemory<Buffer>(block_size_), block_pos(0), block_size(block_size_), state(0, 0)
     {
     }
@@ -25,7 +25,7 @@ public:
     uint128 getHash()
     {
         if (block_pos)
-            return CityHash_v1_0_2::CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
+            return CityHash_v1_0_2::CityHash128WithSeed(BufferWithOwnMemory<Buffer>::memory.data(), block_pos, state);
         else
             return state;
     }
@@ -66,7 +66,7 @@ private:
     }
 
 public:
-    HashingWriteBuffer(
+    explicit HashingWriteBuffer(
         WriteBuffer & out_,
         size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : IHashingBuffer<DB::WriteBuffer>(block_size_), out(out_)
@@ -75,6 +75,11 @@ public:
         working_buffer = out.buffer();
         pos = working_buffer.begin();
         state = uint128(0, 0);
+    }
+
+    void sync() override
+    {
+        out.sync();
     }
 
     uint128 getHash()

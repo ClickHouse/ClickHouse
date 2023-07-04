@@ -13,7 +13,7 @@ namespace DB
 
 void SerializationDate::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeDateText(DayNum(assert_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr);
+    writeDateText(DayNum(assert_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr, time_zone);
 }
 
 void SerializationDate::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -26,7 +26,7 @@ void SerializationDate::deserializeWholeText(IColumn & column, ReadBuffer & istr
 void SerializationDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     DayNum x;
-    readDateText(x, istr);
+    readDateText(x, istr, time_zone);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
@@ -46,7 +46,7 @@ void SerializationDate::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 {
     DayNum x;
     assertChar('\'', istr);
-    readDateText(x, istr);
+    readDateText(x, istr, time_zone);
     assertChar('\'', istr);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -62,7 +62,7 @@ void SerializationDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
 {
     DayNum x;
     assertChar('"', istr);
-    readDateText(x, istr);
+    readDateText(x, istr, time_zone);
     assertChar('"', istr);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
@@ -76,9 +76,13 @@ void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num,
 
 void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    LocalDate value;
-    readCSV(value, istr);
-    assert_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
+    DayNum value;
+    readCSV(value, istr, time_zone);
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
+}
+
+SerializationDate::SerializationDate(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
+{
 }
 
 }

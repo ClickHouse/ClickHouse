@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <base/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
@@ -27,7 +28,7 @@ void MMapReadBufferFromFileDescriptor::init()
     BufferBase::set(mapped.getData(), length, 0);
 
     size_t page_size = static_cast<size_t>(::getPageSize());
-    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
+    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - (PADDING_FOR_SIMD - 1));
 }
 
 
@@ -84,6 +85,21 @@ off_t MMapReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
     position() = working_buffer.begin() + new_pos;
     return new_pos;
+}
+
+size_t MMapReadBufferFromFileDescriptor::getFileSize()
+{
+    return getSizeFromFileDescriptor(getFD(), getFileName());
+}
+
+size_t MMapReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
+{
+    if (offset >= mapped.getLength())
+        return 0;
+
+    n = std::min(n, mapped.getLength() - offset);
+    memcpy(to, mapped.getData() + offset, n);
+    return n;
 }
 
 }

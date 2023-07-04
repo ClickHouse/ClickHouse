@@ -1,0 +1,6 @@
+a	Nullable(Int64)					
+b	Array(Tuple(c Nullable(Int64), d Nullable(String)))					
+1	[(100,'Q'),(200,'W')]
+0
+0
+0

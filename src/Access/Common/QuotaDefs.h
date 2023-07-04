@@ -13,13 +13,14 @@ enum class QuotaType
 {
     QUERIES,        /// Number of queries.
     QUERY_SELECTS,  /// Number of select queries.
-    QUERY_INSERTS,  /// Number of inserts queries.
+    QUERY_INSERTS,  /// Number of insert queries.
     ERRORS,         /// Number of queries with exceptions.
     RESULT_ROWS,    /// Number of rows returned as result.
     RESULT_BYTES,   /// Number of bytes returned as result.
     READ_ROWS,      /// Number of rows read from tables.
     READ_BYTES,     /// Number of bytes read from tables.
     EXECUTION_TIME, /// Total amount of query execution time in nanoseconds.
+    WRITTEN_BYTES,  /// Number of bytes written to tables.
 
     MAX
 };

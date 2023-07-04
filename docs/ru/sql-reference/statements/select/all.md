@@ -1,5 +1,6 @@
 ---
-toc_title: ALL
+slug: /ru/sql-reference/statements/select/all
+sidebar_label: ALL
 ---
 
 # Секция ALL {#select-all}
@@ -18,4 +19,3 @@ SELECT sum(ALL number) FROM numbers(10);
 ```sql
 SELECT sum(number) FROM numbers(10);
 ```
-

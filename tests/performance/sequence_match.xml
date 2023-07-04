@@ -1,9 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-        <table_exists>test.hits</table_exists>
-    </preconditions>
-
     <!-- Queries with some matching rows -->
     <query>
         SELECT 1 FROM hits_10m_single GROUP BY EventTime HAVING

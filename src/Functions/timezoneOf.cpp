@@ -6,7 +6,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
 
-
 namespace DB
 {
 
@@ -21,7 +20,7 @@ namespace
 
 
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
-  * Example: Europe/Moscow.
+  * Example: Pacific/Pitcairn.
   */
 class FunctionTimezoneOf : public IFunction
 {
@@ -67,11 +66,10 @@ public:
 
 }
 
-void registerFunctionTimezoneOf(FunctionFactory & factory)
+REGISTER_FUNCTION(TimezoneOf)
 {
     factory.registerFunction<FunctionTimezoneOf>();
     factory.registerAlias("timeZoneOf", "timezoneOf");
 }
 
 }
-

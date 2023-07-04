@@ -1,5 +1,5 @@
 <clickhouse>
-
+    <enable_system_unfreeze>true</enable_system_unfreeze>
     <storage_configuration>
         <disks>
             <s31>
@@ -69,6 +69,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>1024</min_bytes_for_wide_part>
         <old_parts_lifetime>1</old_parts_lifetime>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>
@@ -92,4 +93,5 @@
         <cluster>test_cluster</cluster>
     </macros>
 
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

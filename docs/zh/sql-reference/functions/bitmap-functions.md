@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/bitmap-functions
+---
 # 位图函数 {#wei-tu-han-shu}
 
 位图函数用于对两个位图对象进行计算，对于任何一个位图函数，它都将返回一个位图对象，例如and，or，xor，not等等。
@@ -404,5 +407,3 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
     ┌─res─┐
     │   2 │
     └─────┘
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/bitmap_functions/) <!--hide-->

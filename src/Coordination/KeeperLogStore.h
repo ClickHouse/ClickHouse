@@ -4,7 +4,8 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
-#include <base/logger_useful.h>
+#include <Coordination/KeeperContext.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_);
+    KeeperLogStore(LogFileSettings log_file_settings, KeeperContextPtr keeper_context);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
@@ -52,8 +53,16 @@ public:
     /// Call fsync to the stored data
     bool flush() override;
 
+    /// Stop background cleanup thread in change
+    void shutdownChangelog();
+
+    /// Flush logstore and call shutdown of background thread in changelog
+    bool flushChangelogAndShutdown();
+
     /// Current log storage size
     uint64_t size() const;
+
+    uint64_t last_durable_index() override;
 
     /// Flush batch of appended entries
     void end_of_append_batch(uint64_t start_index, uint64_t count) override;
@@ -61,10 +70,12 @@ public:
     /// Get entry with latest config in logstore
     nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
 
+    void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
+
 private:
     mutable std::mutex changelog_lock;
     Poco::Logger * log;
-    Changelog changelog;
+    Changelog changelog TSA_GUARDED_BY(changelog_lock);
 };
 
 }

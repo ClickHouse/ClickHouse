@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Common/PoolBase.h>
+#include <Common/Priority.h>
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -25,16 +27,15 @@ class IConnectionPool : private boost::noncopyable
 public:
     using Entry = PoolBase<Connection>::Entry;
 
-public:
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.
-    virtual Entry get(const ConnectionTimeouts & timeouts,
+    virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
 
-    virtual Int64 getPriority() const { return 1; }
+    virtual Priority getPriority() const { return Priority{1}; }
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -54,12 +55,13 @@ public:
             const String & default_database_,
             const String & user_,
             const String & password_,
+            const String & quota_key_,
             const String & cluster_,
             const String & cluster_secret_,
             const String & client_name_,
             Protocol::Compression compression_,
             Protocol::Secure secure_,
-            Int64 priority_ = 1)
+            Priority priority_ = Priority{1})
        : Base(max_connections_,
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
@@ -67,6 +69,7 @@ public:
         default_database(default_database_),
         user(user_),
         password(password_),
+        quota_key(quota_key_),
         cluster(cluster_),
         cluster_secret(cluster_secret_),
         client_name(client_name_),
@@ -76,7 +79,7 @@ public:
     {
     }
 
-    Entry get(const ConnectionTimeouts & timeouts,
+    Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               const Settings * settings = nullptr,
               bool force_connected = true) override
     {
@@ -101,7 +104,7 @@ public:
         return host + ":" + toString(port);
     }
 
-    Int64 getPriority() const override
+    Priority getPriority() const override
     {
         return priority;
     }
@@ -112,7 +115,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password,
+            default_database, user, password, quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
@@ -123,6 +126,7 @@ private:
     String default_database;
     String user;
     String password;
+    String quota_key;
 
     /// For inter-server authorization
     String cluster;
@@ -131,8 +135,7 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
-    Int64 priority;                    /// priority from <remote_servers>
-
+    Priority priority;                 /// priority from <remote_servers>
 };
 
 /**
@@ -149,12 +152,13 @@ public:
         String default_database;
         String user;
         String password;
+        String quota_key;
         String cluster;
         String cluster_secret;
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
-        Int64 priority;
+        Priority priority;
     };
 
     struct KeyHash
@@ -171,22 +175,24 @@ public:
         String default_database,
         String user,
         String password,
+        String quota_key,
         String cluster,
         String cluster_secret,
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,
-        Int64 priority);
+        Priority priority);
 private:
     mutable std::mutex mutex;
     using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;
-    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pools;
+    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pools TSA_GUARDED_BY(mutex);
 };
 
 inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionPoolFactory::Key & rhs)
 {
     return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
         && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
+        && lhs.quota_key == rhs.quota_key
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
         && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;
 }

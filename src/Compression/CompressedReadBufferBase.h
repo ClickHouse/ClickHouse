@@ -39,6 +39,17 @@ protected:
     /// Returns number of compressed bytes read.
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy);
 
+    /// Read compressed data into compressed_buffer for asynchronous decompression to avoid the situation of "read compressed block across the compressed_in".
+    ///
+    /// Compressed block may not be completely contained in "compressed_in" buffer which means compressed block may be read across the "compressed_in".
+    /// For native LZ4/ZSTD, it has no problem in facing situation above because they are synchronous.
+    /// But for asynchronous decompression, such as QPL deflate, it requires source and target buffer for decompression can not be overwritten until execution complete.
+    ///
+    /// Returns number of compressed bytes read.
+    /// If Returns value > 0, means the address range for current block are maintained in "compressed_in", then asynchronous decompression can be called to boost performance.
+    /// If Returns value == 0, it means current block cannot be decompressed asynchronously.Meanwhile, asynchronous requests for previous blocks should be flushed if any.
+    size_t readCompressedDataBlockForAsynchronous(size_t & size_decompressed, size_t & size_compressed_without_checksum);
+
     /// Decompress into memory pointed by `to`
     void decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
@@ -46,10 +57,18 @@ protected:
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
+    /// Flush all asynchronous decompress request.
+    void flushAsynchronousDecompressRequests() const;
+
+    /// Set decompression mode: Synchronous/Asynchronous/SoftwareFallback.
+    /// The mode is "Synchronous" by default.
+    /// flushAsynchronousDecompressRequests must be called subsequently once set "Asynchronous" mode.
+    void setDecompressMode(ICompressionCodec::CodecMode mode) const;
+
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-    CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);
-    ~CompressedReadBufferBase();
+    explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);
+    virtual ~CompressedReadBufferBase();
 
     /** Disable checksums.
       * For example, may be used when
@@ -60,7 +79,9 @@ public:
         disable_checksum = true;
     }
 
-public:
+    /// Some compressed read buffer can do useful seek operation
+    virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */) {}
+
     CompressionCodecPtr codec;
 };
 

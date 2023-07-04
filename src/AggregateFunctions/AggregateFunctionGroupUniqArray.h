@@ -4,6 +4,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -37,11 +38,11 @@ struct AggregateFunctionGroupUniqArrayData
 
 
 /// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
-template <typename T, typename Tlimit_num_elem>
+template <typename T, typename LimitNumElems>
 class AggregateFunctionGroupUniqArray
-    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T, LimitNumElems>>
 {
-    static constexpr bool limit_num_elems = Tlimit_num_elem::value;
+    static constexpr bool limit_num_elems = LimitNumElems::value;
     UInt64 max_elems;
 
 private:
@@ -50,15 +51,16 @@ private:
 public:
     AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
-          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, parameters_),
+          AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, std::make_shared<DataTypeArray>(argument_type)),
           max_elems(max_elems_) {}
 
-    String getName() const override { return "groupUniqArray"; }
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, const DataTypePtr & result_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
+          AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, result_type_),
+          max_elems(max_elems_) {}
 
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(this->argument_types[0]);
-    }
+
+    String getName() const override { return "groupUniqArray"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -139,30 +141,25 @@ static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
-template <bool is_plain_column = false, typename Tlimit_num_elem = std::false_type>
+template <bool is_plain_column = false, typename LimitNumElems = std::false_type>
 class AggregateFunctionGroupUniqArrayGeneric
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData,
-        AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>
+        AggregateFunctionGroupUniqArrayGeneric<is_plain_column, LimitNumElems>>
 {
     DataTypePtr & input_data_type;
 
-    static constexpr bool limit_num_elems = Tlimit_num_elem::value;
+    static constexpr bool limit_num_elems = LimitNumElems::value;
     UInt64 max_elems;
 
     using State = AggregateFunctionGroupUniqArrayGenericData;
 
 public:
     AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, parameters_)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, LimitNumElems>>({input_data_type_}, parameters_, std::make_shared<DataTypeArray>(input_data_type_))
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(input_data_type);
-    }
 
     bool allocatesMemoryInArena() const override
     {
@@ -185,7 +182,6 @@ public:
         auto & set = this->data(place).value;
         size_t size;
         readVarUInt(size, buf);
-        //TODO: set.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
             set.insert(readStringBinaryInto(*arena, buf));

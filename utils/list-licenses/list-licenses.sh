@@ -1,13 +1,22 @@
 #!/bin/bash
 
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # use GNU versions, their presence is ensured in cmake/tools.cmake
+    GREP_CMD=ggrep
+    FIND_CMD=gfind
+else
+    FIND_CMD=find
+    GREP_CMD=grep
+fi
+
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
+ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
     LIB_NAME=$(basename $LIB)
 
     LIB_LICENSE=$(
-        LC_ALL=C find "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
+        LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
             LC_ALL=C sort | LC_ALL=C awk '
                 BEGIN { IGNORECASE=1; min_depth = 0 }
                 /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
@@ -17,35 +26,50 @@ ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | LC_ALL=C sort | while read L
     if [ -n "$LIB_LICENSE" ]; then
 
         LICENSE_TYPE=$(
-        (grep -q -F 'Apache' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -F 'Apache' "$LIB_LICENSE" &&
          echo "Apache") ||
-        (grep -q -F 'Boost' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -F 'Boost' "$LIB_LICENSE" &&
          echo "Boost") ||
-        (grep -q -i -P 'public\s*domain' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -i -P 'public\s*domain' "$LIB_LICENSE" &&
          echo "Public Domain") ||
-        (grep -q -F 'BSD' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -F 'BSD' "$LIB_LICENSE" &&
          echo "BSD") ||
-        (grep -q -F 'Lesser General Public License' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -F 'Lesser General Public License' "$LIB_LICENSE" &&
          echo "LGPL") ||
-        (grep -q -i -F 'The origin of this software must not be misrepresented' "$LIB_LICENSE" &&
-         grep -q -i -F 'Altered source versions must be plainly marked as such' "$LIB_LICENSE" &&
-         grep -q -i -F 'This notice may not be removed or altered' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -i -F 'The origin of this software must not be misrepresented' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'Altered source versions must be plainly marked as such' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'This notice may not be removed or altered' "$LIB_LICENSE" &&
          echo "zLib") ||
-        (grep -q -i -F 'Permission is hereby granted, free of charge, to any person' "$LIB_LICENSE" &&
-         grep -q -i -F 'The above copyright notice and this permission notice shall be included' "$LIB_LICENSE" &&
-         grep -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -i -F 'This program, "bzip2", the associated library "libbzip2"' "$LIB_LICENSE" &&
+         echo "bzip2") ||
+        (${GREP_CMD} -q -i -F 'Permission is hereby granted, free of charge, to any person' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'The above copyright notice and this permission notice shall be' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
          echo "MIT") ||
-        (grep -q -i -F 'Permission to use, copy, modify, and distribute this software for any purpose' "$LIB_LICENSE" &&
-         grep -q -i -F 'the name of a copyright holder shall not' "$LIB_LICENSE" &&
-         grep -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -F 'PostgreSQL' "$LIB_LICENSE" &&
+         echo "PostgreSQL") ||
+        (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and distribute this software for any purpose' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'the name of a copyright holder shall not' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
          echo "MIT/curl") ||
-        (grep -q -i -F 'Redistributions of source code must retain the above copyright' "$LIB_LICENSE" &&
-         grep -q -i -F 'Redistributions in binary form must reproduce' "$LIB_LICENSE" &&
-         grep -q -i -F 'Neither the name' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -i -F 'OpenLDAP Public License' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'Version 2.8' "$LIB_LICENSE" &&
+         echo "OpenLDAP Version 2.8") ||
+        (${GREP_CMD} -q -i -F 'Redistributions of source code must retain the above copyright' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'Redistributions in binary form must reproduce' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'Neither the name' "$LIB_LICENSE" &&
          echo "BSD 3-clause") ||
-        (grep -q -i -F 'Redistributions of source code must retain the above copyright' "$LIB_LICENSE" &&
-         grep -q -i -F 'Redistributions in binary form must reproduce' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -i -F 'Redistributions of source code must retain the above copyright' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'Redistributions in binary form must reproduce' "$LIB_LICENSE" &&
          echo "BSD 2-clause") ||
+        (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and distribute this software' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'documentation for any purpose and without fee is hereby granted' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'the above copyright notice appear in all copies and that both that copyright' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'notice and this permission notice appear in supporting documentation' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'not be used in advertising or publicity pertaining' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'distribution of the software without specific, written prior permission' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'makes no representations about the suitability of this software' "$LIB_LICENSE" &&
+         echo "HPND") ||
         echo "Unknown")
 
         RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/contrib/!/contrib/!')

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-tsan
-#       ^^^^^^^
+# Tags: no-tsan, no-cpu-aarch64
 # TSan does not supports tracing.
+# trace_log doesn't work on aarch64
 
 # Regression for proper release of Context,
 # via tracking memory of external tables.
@@ -23,7 +23,7 @@ function run_and_check()
     echo "Checking $*"
 
     # Run query with external table (implicit StorageMemory user)
-    $CLICKHOUSE_CURL -sS -F "s=@$tmp_file;" "$CLICKHOUSE_URL&s_structure=key+Int&query=SELECT+count()+FROM+s&memory_profiler_sample_probability=1&query_id=$query_id&$*" -o /dev/null
+    $CLICKHOUSE_CURL -sS -F "s=@$tmp_file;" "$CLICKHOUSE_URL&s_structure=key+Int&query=SELECT+count()+FROM+s&memory_profiler_sample_probability=1&max_untracked_memory=0&query_id=$query_id&$*" -o /dev/null
 
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary @- <<<'SYSTEM FLUSH LOGS'
 

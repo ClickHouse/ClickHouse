@@ -19,7 +19,6 @@ public:
     /// Value is closed in brackets (HOST '127.0.0.1')
     bool second_with_brackets;
 
-public:
     explicit ASTPair(bool second_with_brackets_)
         : second_with_brackets(second_with_brackets_)
     {
@@ -31,7 +30,14 @@ public:
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+    bool hasSecretParts() const override;
+
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&second));
+    }
 };
 
 
@@ -54,7 +60,6 @@ public:
     {
     }
 
-public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;

@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/quotas_usage
+---
 # system.quotas_usage {#system_tables-quotas_usage}
 
 所有用户配额使用情况.
@@ -31,5 +34,3 @@
 ## 另请参阅 {#see-also}
 
 -   [查看配额信息](../../sql-reference/statements/show.md#show-quota-statement)
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/quotas_usage) <!--hide-->

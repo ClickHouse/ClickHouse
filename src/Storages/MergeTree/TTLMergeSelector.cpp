@@ -11,14 +11,14 @@ namespace DB
 
 const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
 {
-    const MergeTreeData::DataPartPtr & part = *static_cast<const MergeTreeData::DataPartPtr *>(part_info.data);
+    const MergeTreeData::DataPartPtr & part = part_info.getDataPartPtr();
     return part->info.partition_id;
 }
 
 
 IMergeSelector::PartsRange ITTLMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge)
 {
     using Iterator = IMergeSelector::PartsRange::const_iterator;
     Iterator best_begin;
@@ -90,8 +90,11 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         ++best_end;
     }
 
-    const auto & best_partition_id = getPartitionIdForPart(best_partition.front());
-    merge_due_times[best_partition_id] = current_time + merge_cooldown_time;
+    if (!dry_run)
+    {
+        const auto & best_partition_id = getPartitionIdForPart(best_partition.front());
+        merge_due_times[best_partition_id] = current_time + merge_cooldown_time;
+    }
 
     return PartsRange(best_begin, best_end);
 }

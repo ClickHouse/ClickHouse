@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 set -e
 
@@ -11,7 +12,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "DROP TABLE IF EXISTS test; CREATE TABLE
 
 function thread_select {
     while true; do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
+        $CLICKHOUSE_CLIENT --local_filesystem_read_method pread --query "SELECT * FROM test FORMAT Null"
         sleep 0.0$RANDOM
     done
 }

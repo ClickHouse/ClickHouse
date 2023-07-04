@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include <base/sort.h>
+
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
 
@@ -41,8 +43,9 @@ struct QuantileLevels
         if (params.empty())
         {
             if (require_at_least_one_param)
-                throw Exception("Aggregate function for calculation of multiple quantiles require at least one parameter",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Aggregate function for calculation "
+                                "of multiple quantiles require at least one parameter");
 
             /// If levels are not specified, default is 0.5 (median).
             levels.push_back(0.5);
@@ -59,12 +62,12 @@ struct QuantileLevels
             levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
 
             if (isNaN(levels[i]) || levels[i] < 0 || levels[i] > 1)
-                throw Exception("Quantile level is out of range [0..1]", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Quantile level is out of range [0..1]");
 
             permutation[i] = i;
         }
 
-        std::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
+        ::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
     }
 };
 

@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <cstddef>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -19,7 +19,7 @@ class IColumn;
 class IDataTypeCustomName
 {
 public:
-    virtual ~IDataTypeCustomName() {}
+    virtual ~IDataTypeCustomName() = default;
 
     virtual String getName() const = 0;
 };
@@ -33,7 +33,7 @@ struct DataTypeCustomDesc
     DataTypeCustomNamePtr name;
     SerializationPtr serialization;
 
-    DataTypeCustomDesc(
+    explicit DataTypeCustomDesc(
         DataTypeCustomNamePtr name_,
         SerializationPtr serialization_ = nullptr)
     : name(std::move(name_))
@@ -49,7 +49,7 @@ class DataTypeCustomFixedName : public IDataTypeCustomName
 private:
     String name;
 public:
-    DataTypeCustomFixedName(String name_) : name(name_) {}
+    explicit DataTypeCustomFixedName(String name_) : name(name_) {}
     String getName() const override { return name; }
 };
 

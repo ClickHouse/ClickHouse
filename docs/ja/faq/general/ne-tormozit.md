@@ -1,1 +1,0 @@
-../../../en/faq/general/ne-tormozit.md

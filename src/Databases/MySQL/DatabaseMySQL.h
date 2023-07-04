@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
@@ -9,8 +9,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
 
@@ -44,7 +44,7 @@ public:
         const String & metadata_path,
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
-        std::unique_ptr<ConnectionMySQLSettings> settings_,
+        std::unique_ptr<MySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
         bool attach);
 
@@ -76,13 +76,13 @@ public:
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
+    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
@@ -93,7 +93,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
-    std::unique_ptr<ConnectionMySQLSettings> database_settings;
+    std::unique_ptr<MySQLSettings> mysql_settings;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;
@@ -109,15 +109,15 @@ private:
 
     void cleanOutdatedTables();
 
-    void fetchTablesIntoLocalCache(ContextPtr context) const;
+    void fetchTablesIntoLocalCache(ContextPtr context) const TSA_REQUIRES(mutex);
 
     std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
 
     std::map<String, ColumnsDescription> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
 
-    void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const;
+    void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const TSA_REQUIRES(mutex);
 
-    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const;
+    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
 
     ThreadFromGlobalPool thread;
 };

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Common/Exception.h>
 #include <base/types.h>
 
@@ -14,7 +14,6 @@ namespace ErrorCodes
 
 class Credentials;
 class ExternalAuthenticators;
-
 
 /// TODO: Try to move this checking to Credentials.
 struct Authentication

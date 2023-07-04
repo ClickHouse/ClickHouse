@@ -8,8 +8,8 @@ namespace DB
 {
 
 CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
-    const Block & header_, WriteBuffer & out_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_, bool with_names_, bool with_types_)
-    : IRowOutputFormat(header_, out_, params_)
+    const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_)
+    : IRowOutputFormat(header_, out_)
     , with_names(with_names_)
     , with_types(with_types_)
     , format_settings(format_settings_)
@@ -84,13 +84,17 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
             const FormatSettings & settings)
         {
-            return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, params, settings, with_names, with_types);
+            return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, settings, with_names, with_types);
         });
 
         factory.markOutputFormatSupportsParallelFormatting(format_name);
+
+        factory.registerAppendSupportChecker(format_name, [](const FormatSettings & settings)
+        {
+            return settings.custom.result_after_delimiter.empty();
+        });
     };
 
     registerWithNamesAndTypes("CustomSeparated", register_func);

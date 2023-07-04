@@ -1,7 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MSGPACK
 
@@ -15,10 +14,10 @@
 namespace DB
 {
 
-class MsgPackRowOutputFormat : public IRowOutputFormat
+class MsgPackRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_);
+    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "MsgPackRowOutputFormat"; }
 
@@ -28,6 +27,7 @@ private:
     void serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num);
 
     msgpack::packer<DB::WriteBuffer> packer;
+    const FormatSettings format_settings;
 };
 
 }

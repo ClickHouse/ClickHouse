@@ -170,7 +170,7 @@ CREATE TABLE 02183_range_dictionary_source_table
 )
 ENGINE = TinyLog;
 
-INSERT INTO 02183_range_dictionary_source_table VALUES(1, 0, 1);
+INSERT INTO 02183_range_dictionary_source_table VALUES(0, 0, 1);
 
 DROP DICTIONARY IF EXISTS 02183_range_dictionary;
 CREATE DICTIONARY 02183_range_dictionary
@@ -185,7 +185,10 @@ LAYOUT(RANGE_HASHED())
 RANGE(MIN start MAX end)
 LIFETIME(0);
 
-SELECT * FROM 02183_range_dictionary; -- {serverError 1}
+SELECT 'RangeHashedDictionary';
+SELECT * FROM 02183_range_dictionary;
+SELECT dictHas('02183_range_dictionary', 0, 0);
+SELECT dictHas('02183_range_dictionary', 0, 2);
 
 DROP DICTIONARY 02183_range_dictionary;
 DROP TABLE 02183_range_dictionary_source_table;

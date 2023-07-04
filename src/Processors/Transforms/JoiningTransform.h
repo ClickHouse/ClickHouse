@@ -9,6 +9,8 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class NotJoinedBlocks;
+class IBlocksStream;
+using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -39,16 +41,21 @@ public:
     using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
     JoiningTransform(
-        Block input_header,
+        const Block & input_header,
+        const Block & output_header,
         JoinPtr join_,
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
         FinishCounterPtr finish_counter_ = nullptr);
 
+    ~JoiningTransform() override;
+
     String getName() const override { return "JoiningTransform"; }
 
     static Block transformHeader(Block header, const JoinPtr & join);
+
+    OutputPort & getFinishedSignal();
 
     Status prepare() override;
     void work() override;
@@ -75,7 +82,7 @@ private:
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
-    std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
+    IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);
@@ -101,6 +108,57 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+};
+
+
+class DelayedBlocksTask : public ChunkInfo
+{
+public:
+
+    explicit DelayedBlocksTask() : finished(true) {}
+    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_) : delayed_blocks(std::move(delayed_blocks_)) {}
+
+    IBlocksStreamPtr delayed_blocks = nullptr;
+
+    bool finished = false;
+};
+
+using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
+
+
+/// Reads delayed joined blocks from Join
+class DelayedJoinedBlocksTransform : public IProcessor
+{
+public:
+    explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
+
+    String getName() const override { return "DelayedJoinedBlocksTransform"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    JoinPtr join;
+
+    IBlocksStreamPtr delayed_blocks = nullptr;
+    bool finished = false;
+};
+
+class DelayedJoinedBlocksWorkerTransform : public IProcessor
+{
+public:
+    explicit DelayedJoinedBlocksWorkerTransform(Block output_header);
+
+    String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    DelayedBlocksTaskPtr task;
+    Chunk output_chunk;
+
+    bool finished = false;
 };
 
 }

@@ -53,7 +53,7 @@ void BlockInfo::read(ReadBuffer & in)
 
         #undef READ_FIELD
             default:
-                throw Exception("Unknown BlockInfo field number: " + toString(field_num), ErrorCodes::UNKNOWN_BLOCK_INFO_FIELD);
+                throw Exception(ErrorCodes::UNKNOWN_BLOCK_INFO_FIELD, "Unknown BlockInfo field number: {}", field_num);
         }
     }
 }
@@ -63,6 +63,13 @@ void BlockMissingValues::setBit(size_t column_idx, size_t row_idx)
     RowsBitMask & mask = rows_mask_by_column_id[column_idx];
     mask.resize(row_idx + 1);
     mask[row_idx] = true;
+}
+
+void BlockMissingValues::setBits(size_t column_idx, size_t rows)
+{
+    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
+    mask.resize(rows);
+    std::fill(mask.begin(), mask.end(), true);
 }
 
 const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(size_t column_idx) const

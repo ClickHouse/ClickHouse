@@ -39,10 +39,13 @@ struct MergeMutateSelectedEntry
     FutureMergedMutatedPartPtr future_part;
     CurrentlyMergingPartsTaggerPtr tagger;
     MutationCommandsConstPtr commands;
-    MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_, MutationCommandsConstPtr commands_)
+    MergeTreeTransactionPtr txn;
+    MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
+                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR)
         : future_part(future_part_)
         , tagger(std::move(tagger_))
         , commands(commands_)
+        , txn(txn_)
     {}
 };
 

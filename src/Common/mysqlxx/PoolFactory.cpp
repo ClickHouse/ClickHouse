@@ -23,12 +23,6 @@ PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned defa
     return get(Poco::Util::Application::instance().config(), config_name, default_connections, max_connections, max_tries);
 }
 
-/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
-static bool startsWith(const std::string & s, const char * prefix)
-{
-    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
-}
-
 static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
         const std::string & config_name)
 {
@@ -55,7 +49,7 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
         for (const auto & replica_config_key : replica_keys)
         {
             /// There could be another elements in the same level in configuration file, like "user", "port"...
-            if (startsWith(replica_config_key, "replica"))
+            if (replica_config_key.starts_with("replica"))
             {
                 std::string replica_name = config_name + "." + replica_config_key;
                 std::string tmp_host = config.getString(replica_name + ".host", host);
@@ -76,7 +70,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
         const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
 {
 
-    std::lock_guard<std::mutex> lock(impl->mutex);
+    std::lock_guard lock(impl->mutex);
     if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
     {
         return *(entry->second);
@@ -106,7 +100,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
 
 void PoolFactory::reset()
 {
-    std::lock_guard<std::mutex> lock(impl->mutex);
+    std::lock_guard lock(impl->mutex);
     impl->pools.clear();
     impl->pools_by_ids.clear();
 }

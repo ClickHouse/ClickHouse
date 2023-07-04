@@ -193,4 +193,133 @@
         <execute_direct>0</execute_direct>
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json_unnamed_args_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_unnamed_args.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_json_unnamed_args_pool_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_unnamed_args.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json_partially_named_args_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_partially_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_json_partially_named_args_pool_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_partially_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json_named_args_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_json_named_args_pool_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_nullable_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>Nullable(UInt64)</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_nullable.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_nullable_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>Nullable(UInt64)</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_nullable.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_parameter.py {test_parameter:UInt64}</command>
+    </function>
+
 </functions>

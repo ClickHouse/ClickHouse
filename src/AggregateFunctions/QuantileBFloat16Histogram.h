@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/bit_cast.h>
+#include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <IO/ReadBuffer.h>
@@ -103,13 +103,13 @@ private:
     /// Take the most significant 16 bits of the floating point number.
     BFloat16 toBFloat16(const Value & x) const
     {
-        return bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
+        return std::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
     }
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     Float32 toFloat32(const BFloat16 & x) const
     {
-        return bit_cast<Float32>(x << 16);
+        return std::bit_cast<Float32>(x << 16);
     }
 
     using Pair = PairNoInit<Float32, Weight>;
@@ -134,7 +134,7 @@ private:
             ++arr_it;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 threshold = std::ceil(sum_weight * level);
         Float64 accumulated = 0;
@@ -144,10 +144,10 @@ private:
             accumulated += p->second;
 
             if (accumulated >= threshold)
-                return p->first;
+                return static_cast<T>(p->first);
         }
 
-        return array[size - 1].first;
+        return static_cast<T>(array[size - 1].first);
     }
 
     template <typename T>
@@ -175,7 +175,7 @@ private:
             ++arr_it;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         size_t level_index = 0;
         Float64 accumulated = 0;
@@ -187,7 +187,7 @@ private:
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = p->first;
+                result[indices[level_index]] = static_cast<T>(p->first);
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -199,7 +199,7 @@ private:
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = array[size - 1].first;
+            result[indices[level_index]] = static_cast<T>(array[size - 1].first);
             ++level_index;
         }
     }

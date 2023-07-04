@@ -50,12 +50,19 @@ struct StorageInMemoryMetadata
 
     String comment;
 
+    /// Version of metadata. Managed properly by ReplicatedMergeTree only
+    /// (zero-initialization is important)
+    int32_t metadata_version = 0;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
-    /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
+
+    /// NOTE: Thread unsafe part. You should not modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
 
@@ -74,15 +81,6 @@ struct StorageInMemoryMetadata
     /// Sets projections
     void setProjections(ProjectionsDescription projections_);
 
-    /// Set partition key for storage (methods below, are just wrappers for this struct).
-    void setPartitionKey(const KeyDescription & partition_key_);
-    /// Set sorting key for storage (methods below, are just wrappers for this struct).
-    void setSortingKey(const KeyDescription & sorting_key_);
-    /// Set primary key for storage (methods below, are just wrappers for this struct).
-    void setPrimaryKey(const KeyDescription & primary_key_);
-    /// Set sampling key for storage (methods below, are just wrappers for this struct).
-    void setSamplingKey(const KeyDescription & sampling_key_);
-
     /// Set common table TTLs
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
@@ -95,6 +93,11 @@ struct StorageInMemoryMetadata
 
     /// Set SELECT query for (Materialized)View
     void setSelectQuery(const SelectQueryDescription & select_);
+
+    /// Set version of metadata.
+    void setMetadataVersion(int32_t metadata_version_);
+    /// Get copy of current metadata with metadata_version_
+    StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -144,12 +147,18 @@ struct StorageInMemoryMetadata
     TTLDescriptions getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
 
-    /// Returns columns, which will be needed to calculate dependencies (skip
-    /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const;
+    /// Returns columns, which will be needed to calculate dependencies (skip indices, projections,
+    /// TTL expressions) if we update @updated_columns set of columns.
+    ColumnDependencies getColumnDependencies(
+        const NameSet & updated_columns,
+        bool include_ttl_target,
+        const std::function<bool(const String & file_name)> & has_indice_or_projection) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
+
+    /// Block with ordinary + ephemeral.
+    Block getSampleBlockInsertable() const;
 
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
@@ -159,13 +168,6 @@ struct StorageInMemoryMetadata
     /// Storage metadata.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
-
-    /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
-    /// to be explicitly specified, because they are part of Storage type, not
-    /// Storage metadata. StorageID required only for more clear exception
-    /// message.
-    Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
@@ -228,9 +230,8 @@ struct StorageInMemoryMetadata
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
 
-    /// Verify that all the requested names are in the table and are set correctly:
-    /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
+    /// Get version of metadata
+    int32_t getMetadataVersion() const { return metadata_version; }
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;
@@ -246,5 +247,7 @@ struct StorageInMemoryMetadata
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
+
+String listOfColumns(const NamesAndTypesList & available_columns);
 
 }

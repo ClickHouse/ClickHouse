@@ -11,5 +11,6 @@ alter table enum_alter_issue detach partition id 'all';
 alter table enum_alter_issue modify column a Enum8('one' = 1, 'two' = 2, 'three' = 3);
 insert into enum_alter_issue values ('one', 1), ('two', 1);
 
-alter table enum_alter_issue attach partition id 'all'; -- {serverError TYPE_MISMATCH}
+alter table enum_alter_issue attach partition id 'all';
+select * from enum_alter_issue;
 drop table enum_alter_issue;

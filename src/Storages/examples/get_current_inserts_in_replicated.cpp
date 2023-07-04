@@ -29,7 +29,7 @@ try
     auto config = processor.loadConfig().configuration;
     String zookeeper_path = argv[2];
 
-    auto zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper", nullptr);
+    auto zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, zkutil::getZooKeeperConfigName(*config), nullptr);
 
     std::unordered_map<String, std::set<Int64>> current_inserts;
 
@@ -85,7 +85,7 @@ try
         for (BlockInfo & block : block_infos)
         {
             Coordination::GetResponse resp = block.contents_future.get();
-            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.count(resp.data))
+            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.contains(resp.data))
             {
                 ++total_count;
                 current_inserts[block.partition].insert(block.number);

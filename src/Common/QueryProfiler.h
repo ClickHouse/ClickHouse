@@ -5,7 +5,7 @@
 #include <signal.h>
 #include <time.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 
 namespace Poco
@@ -27,21 +27,41 @@ namespace DB
   * Destructor tries to unset timer and restore previous signal handler.
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
+
+#if USE_UNWIND
+class Timer
+{
+public:
+    Timer();
+    Timer(const Timer &) = delete;
+    Timer & operator = (const Timer &) = delete;
+    ~Timer();
+
+    void createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal);
+    void set(UInt32 period);
+    void stop();
+    void cleanup();
+
+private:
+    Poco::Logger * log;
+    std::optional<timer_t> timer_id;
+};
+#endif
+
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_);
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
     ~QueryProfilerBase();
 
 private:
-    void tryCleanup();
+    void cleanup();
 
     Poco::Logger * log;
 
 #if USE_UNWIND
-    /// Timer id from timer_create(2)
-    std::optional<timer_t> timer_id;
+    inline static thread_local Timer timer = Timer();
 #endif
 
     /// Pause signal to interrupt threads to get traces
@@ -52,7 +72,7 @@ private:
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
-    QueryProfilerReal(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerReal(UInt64 thread_id, UInt32 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };
@@ -61,7 +81,7 @@ public:
 class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
 {
 public:
-    QueryProfilerCPU(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerCPU(UInt64 thread_id, UInt32 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

@@ -16,11 +16,6 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
-#if defined(__GNUC__)
-    /// GCC mistakenly warns about the names in enum class.
-    #pragma GCC diagnostic ignored "-Wshadow"
-#endif
-
 namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
@@ -67,6 +62,7 @@ struct DictionaryAttribute final
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
+    const bool bidirectional;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;
@@ -84,12 +80,12 @@ struct DictionaryAttributeType
 template <typename F>
 constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
+    static_for<AttributeUnderlyingType>([type, my_func = std::forward<F>(func)](auto other)
     {
         if (type == other)
-            func(DictionaryAttributeType<other>{});
+            my_func(DictionaryAttributeType<other>{});
     });
-};
+}
 
 struct DictionarySpecialAttribute final
 {
@@ -126,6 +122,7 @@ struct DictionaryStructure final
     DataTypes getKeyTypes() const;
     void validateKeyTypes(const DataTypes & key_types) const;
 
+    bool hasAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
 

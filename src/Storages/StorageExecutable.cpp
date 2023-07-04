@@ -1,21 +1,20 @@
 #include <Storages/StorageExecutable.h>
 
 #include <filesystem>
+#include <unistd.h>
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <Common/ShellCommand.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>
 
-#include <IO/ReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -23,6 +22,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -103,14 +104,15 @@ StorageExecutable::StorageExecutable(
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
 }
 
-Pipe StorageExecutable::read(
-    const Names & /*column_names*/,
-    const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+void StorageExecutable::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*threads*/)
+    size_t /*threads*/)
 {
     auto & script_name = settings.script_name;
 
@@ -123,26 +125,34 @@ Pipe StorageExecutable::read(
             script_name,
             user_scripts_path);
 
-    if (!std::filesystem::exists(std::filesystem::path(script_path)))
+    if (!FS::exists(script_path))
          throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Executable file {} does not exist inside user scripts folder {}",
             script_name,
             user_scripts_path);
 
+    if (!FS::canExecute(script_path))
+         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Executable file {} is not executable inside user scripts folder {}",
+            script_name,
+            user_scripts_path);
+
     Pipes inputs;
+    QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
     for (auto & input_query : input_queries)
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        inputs.emplace_back(QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline()));
+        auto builder = interpreter.buildQueryPipeline();
+        inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
     /// For executable pool we read data from input streams and convert it to single blocks streams.
     if (settings.is_executable_pool)
         transformToSingleBlockSources(inputs);
 
-    auto sample_block = metadata_snapshot->getSampleBlock();
+    auto sample_block = storage_snapshot->metadata->getSampleBlock();
 
     ShellCommandSourceConfiguration configuration;
     configuration.max_block_size = max_block_size;
@@ -153,7 +163,9 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    return coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    auto pipe = coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+    query_plan.addResources(std::move(resources));
 }
 
 void registerStorageExecutable(StorageFactory & factory)
@@ -169,22 +181,27 @@ void registerStorageExecutable(StorageFactory & factory)
         for (size_t i = 0; i < 2; ++i)
             args.engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[i], local_context);
 
-        auto scipt_name_with_arguments_value = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args[0], "script_name_with_arguments_value");
 
         std::vector<String> script_name_with_arguments;
-        boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
+        boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];
         script_name_with_arguments.erase(script_name_with_arguments.begin());
-        auto format = args.engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
         std::vector<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
+            if (args.engine_args[i]->children.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "StorageExecutable argument \"{}\" is invalid query",
+                    args.engine_args[i]->formatForErrorMessage());
+
             ASTPtr query = args.engine_args[i]->children.at(0);
             if (!query->as<ASTSelectWithUnionQuery>())
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument is invalid input query {}",
+                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument \"{}\" is invalid input query",
                     query->formatForErrorMessage());
 
             input_queries.emplace_back(std::move(query));
@@ -213,7 +230,7 @@ void registerStorageExecutable(StorageFactory & factory)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return StorageExecutable::create(args.table_id, format, settings, input_queries, columns, constraints);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
     };
 
     StorageFactory::StorageFeatures storage_features;
@@ -230,5 +247,5 @@ void registerStorageExecutable(StorageFactory & factory)
     }, storage_features);
 }
 
-};
+}
 

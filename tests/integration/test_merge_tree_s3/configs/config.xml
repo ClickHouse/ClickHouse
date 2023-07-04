@@ -1,20 +1,12 @@
-<?xml version="1.0"?>
 <clickhouse>
-    <tcp_port>9000</tcp_port>
-    <listen_host>127.0.0.1</listen_host>
+    <s3>
+        <broken_s3>
+            <endpoint>http://resolver:8083/root/data/</endpoint>
+            <retry_attempts>0</retry_attempts>
+            <request_timeout_ms>20000</request_timeout_ms>
+        </broken_s3>
+    </s3>
 
-    <openSSL>
-        <client>
-            <cacheSessions>true</cacheSessions>
-            <verificationMode>none</verificationMode>
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
-        </client>
-    </openSSL>
-
-    <max_concurrent_queries>500</max_concurrent_queries>
-    <mark_cache_size>5368709120</mark_cache_size>
-    <path>./clickhouse/</path>
-    <users_config>users.xml</users_config>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

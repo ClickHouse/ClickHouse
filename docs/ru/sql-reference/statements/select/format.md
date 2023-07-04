@@ -1,5 +1,6 @@
 ---
-toc_title: FORMAT
+slug: /ru/sql-reference/statements/select/format
+sidebar_label: FORMAT
 ---
 
 # Секция FORMAT {#format-clause}

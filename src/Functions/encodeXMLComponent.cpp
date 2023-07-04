@@ -51,7 +51,7 @@ namespace
 
         [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
         {
-            throw Exception("Function encodeXML cannot work with FixedString argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function encodeXML cannot work with FixedString argument");
         }
 
     private:
@@ -137,7 +137,7 @@ namespace
 
 }
 
-void registerFunctionEncodeXMLComponent(FunctionFactory & factory)
+REGISTER_FUNCTION(EncodeXMLComponent)
 {
     factory.registerFunction<FunctionEncodeXMLComponent>();
 }

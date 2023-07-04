@@ -29,10 +29,6 @@ auto getTypeName(const ValueType &)
     {
         return "DateTime64WithScale";
     }
-    else
-    {
-        static_assert("unsupported ValueType");
-    }
 }
 
 std::ostream & dump_datetime(std::ostream & ostr, const DayNum & d)
@@ -53,10 +49,10 @@ std::ostream & dump_datetime(std::ostream & ostr, const DateTime64WithScale & dt
 template <typename ValueType>
 struct DateTimeToStringParamTestCase
 {
-    const char* description;
+    const char * description;
     const ValueType input;
-    const char* expected;
-    const char* timezone = "UTC";
+    const char * expected;
+    const char * timezone = "UTC";
 };
 
 template <typename T>
@@ -104,10 +100,6 @@ public:
         else if constexpr (std::is_same_v<ValueType, DateTime64WithScale>)
         {
             writeDateTimeText(input.value, input.scale, out, DateLUT::instance(timezone_name));
-        }
-        else
-        {
-            static_assert("unsupported ValueType");
         }
 
         ASSERT_EQ(expected, out.str());

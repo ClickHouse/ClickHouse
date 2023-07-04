@@ -9,3 +9,5 @@ CREATE TABLE test_array(resources_host Array(LowCardinality(String))) ENGINE = M
 insert into test_array values (['a']);
 SELECT arrayMap(i -> [resources_host[i]], arrayEnumerate(resources_host)) FROM test_array;
 drop table if exists test_array;
+
+SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), []);

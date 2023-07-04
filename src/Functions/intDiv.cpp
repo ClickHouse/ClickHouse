@@ -55,9 +55,6 @@ struct DivideIntegralByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
         if (unlikely(is_signed_v<B> && b == -1))
         {
@@ -75,10 +72,8 @@ struct DivideIntegralByConstantImpl
             return;
         }
 
-#pragma GCC diagnostic pop
-
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         divideImpl(a_pos, b, c_pos, size);
     }
@@ -126,7 +121,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, I
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
 using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
 
-void registerFunctionIntDiv(FunctionFactory & factory)
+REGISTER_FUNCTION(IntDiv)
 {
     factory.registerFunction<FunctionIntDiv>();
 }

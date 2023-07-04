@@ -2,6 +2,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
+#include <Core/SettingsEnums.h>
+#include <Parsers/SelectUnionMode.h>
 
 
 namespace DB
@@ -9,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int EXPECTED_ALL_OR_DISTINCT;
 }
 
 /*
@@ -27,9 +30,9 @@ void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
         visit(*select_union, data);
 }
 
-void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data &)
+void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data & data)
 {
-    const auto & union_modes = ast.list_of_modes;
+    auto union_modes = std::move(ast.list_of_modes);
 
     if (union_modes.empty())
         return;
@@ -46,14 +49,37 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
     selects.pop_back();
     SelectUnionModes modes;
 
-    for (const auto & mode : union_modes)
+    for (auto & mode : union_modes)
     {
+        /// Rewrite intersect / except mode
+        if (mode == SelectUnionMode::EXCEPT_DEFAULT)
+        {
+            if (data.except_default_mode == SetOperationMode::ALL)
+                mode = SelectUnionMode::EXCEPT_ALL;
+            else if (data.except_default_mode == SetOperationMode::DISTINCT)
+                mode = SelectUnionMode::EXCEPT_DISTINCT;
+            else
+                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                    "Expected ALL or DISTINCT in EXCEPT query, because setting (except_default_mode) is empty");
+        }
+        else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
+        {
+            if (data.intersect_default_mode == SetOperationMode::ALL)
+                mode = SelectUnionMode::INTERSECT_ALL;
+            else if (data.intersect_default_mode == SetOperationMode::DISTINCT)
+                mode = SelectUnionMode::INTERSECT_DISTINCT;
+            else
+                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                    "Expected ALL or DISTINCT in INTERSECT query, because setting (intersect_default_mode) is empty");
+        }
+
         switch (mode)
         {
-            case SelectUnionMode::EXCEPT:
+            case SelectUnionMode::EXCEPT_ALL:
+            case SelectUnionMode::EXCEPT_DISTINCT:
             {
                 auto left = std::make_shared<ASTSelectWithUnionQuery>();
-                left->union_mode = SelectUnionMode::ALL;
+                left->union_mode = mode == SelectUnionMode::EXCEPT_ALL ? SelectUnionMode::UNION_ALL : SelectUnionMode::UNION_DISTINCT;
 
                 left->list_of_selects = std::make_shared<ASTExpressionList>();
                 left->children.push_back(left->list_of_selects);
@@ -66,17 +92,22 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 selects.pop_back();
 
                 auto except_node = std::make_shared<ASTSelectIntersectExceptQuery>();
-                except_node->final_operator = ASTSelectIntersectExceptQuery::Operator::EXCEPT;
+                except_node->final_operator = mode == SelectUnionMode::EXCEPT_ALL
+                    ? ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL
+                    : ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT;
                 except_node->children = {left, right};
 
                 children = {except_node};
                 break;
             }
-            case SelectUnionMode::INTERSECT:
+            case SelectUnionMode::INTERSECT_ALL:
+            case SelectUnionMode::INTERSECT_DISTINCT:
             {
                 bool from_except = false;
                 const auto * except_ast = typeid_cast<const ASTSelectIntersectExceptQuery *>(children.back().get());
-                if (except_ast && (except_ast->final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT))
+                if (except_ast
+                    && (except_ast->final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL
+                        || except_ast->final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT))
                     from_except = true;
 
                 ASTPtr left;
@@ -94,7 +125,9 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 selects.pop_back();
 
                 auto intersect_node = std::make_shared<ASTSelectIntersectExceptQuery>();
-                intersect_node->final_operator = ASTSelectIntersectExceptQuery::Operator::INTERSECT;
+                intersect_node->final_operator = mode == SelectUnionMode::INTERSECT_ALL
+                    ? ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL
+                    : ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT;
                 intersect_node->children = {left, right};
 
                 if (from_except)
@@ -122,7 +155,6 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
         children.emplace_back(std::move(right));
     }
 
-    ast.union_mode = SelectUnionMode::Unspecified;
     ast.list_of_selects->children = std::move(children);
     ast.list_of_modes = std::move(modes);
 }

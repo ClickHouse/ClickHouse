@@ -5,6 +5,7 @@
 #include <climits>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <base/types.h>
+#include <base/sort.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -21,6 +22,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -66,7 +68,7 @@ private:
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
+    explicit ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
         : max_sample_size{max_sample_size_}
     {
     }
@@ -83,7 +85,7 @@ public:
         if (isNaN(v))
             return;
 
-        UInt32 hash = intHash64(determinator);
+        UInt32 hash = static_cast<UInt32>(intHash64(determinator));
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
@@ -94,6 +96,11 @@ public:
         return total_values;
     }
 
+    bool empty() const
+    {
+        return samples.empty();
+    }
+
     T quantileNearest(double level)
     {
         if (samples.empty())
@@ -102,7 +109,7 @@ public:
         sortIfNeeded();
 
         double index = level * (samples.size() - 1);
-        size_t int_index = static_cast<size_t>(index + 0.5);
+        size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index].first;
     }
@@ -150,30 +157,30 @@ public:
     void read(DB::ReadBuffer & buf)
     {
         size_t size = 0;
-        DB::readIntBinary<size_t>(size, buf);
-        DB::readIntBinary<size_t>(total_values, buf);
+        readBinaryLittleEndian(size, buf);
+        readBinaryLittleEndian(total_values, buf);
 
         /// Compatibility with old versions.
         if (size > total_values)
             size = total_values;
 
+        static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
+        if (unlikely(size > MAX_RESERVOIR_SIZE))
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
+
         samples.resize(size);
         for (size_t i = 0; i < size; ++i)
-            DB::readPODBinary(samples[i], buf);
+            readBinaryLittleEndian(samples[i], buf);
 
         sorted = false;
     }
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-
     void write(DB::WriteBuffer & buf) const
     {
-        size_t size = samples.size();
-        DB::writeIntBinary<size_t>(size, buf);
-        DB::writeIntBinary<size_t>(total_values, buf);
+        const size_t size = samples.size();
+        writeBinaryLittleEndian(size, buf);
+        writeBinaryLittleEndian(total_values, buf);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -183,18 +190,14 @@ public:
             /// Here we ensure that padding is zero without changing the protocol.
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
-
             Element elem;
             memset(&elem, 0, sizeof(elem));
             elem = samples[i];
 
-            DB::writePODBinary(elem, buf);
+            DB::transformEndianness<std::endian::little>(elem);
+            DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
         }
     }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
@@ -238,7 +241,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);
@@ -258,7 +261,9 @@ private:
     {
         if (sorted)
             return;
-        std::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+        /// In order to provide deterministic result we must sort by value and hash
+        ::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs < rhs; });
         sorted = true;
     }
 

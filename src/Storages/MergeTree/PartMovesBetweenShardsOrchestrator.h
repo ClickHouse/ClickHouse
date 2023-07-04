@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <base/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
@@ -63,7 +62,7 @@ public:
         };
 
         EntryState(): value(TODO) {}
-        EntryState(Value value_): value(value_) {}
+        EntryState(Value value_): value(value_) {} /// NOLINT
 
         Value value;
 
@@ -84,7 +83,7 @@ public:
                 case CANCELLED: return "CANCELLED";
             }
 
-            throw Exception("Unknown EntryState: " + DB::toString<int>(value), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown EntryState: {}", DB::toString<int>(value));
         }
 
         static EntryState::Value fromString(String in)
@@ -100,7 +99,7 @@ public:
             else if (in == "REMOVE_UUID_PIN") return REMOVE_UUID_PIN;
             else if (in == "DONE") return DONE;
             else if (in == "CANCELLED") return CANCELLED;
-            else throw Exception("Unknown state: " + in, ErrorCodes::LOGICAL_ERROR);
+            else throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state: {}", in);
         }
     };
 
@@ -173,7 +172,6 @@ private:
     void removePins(const Entry & entry, zkutil::ZooKeeperPtr zk);
     void syncStateFromZK();
 
-private:
     StorageReplicatedMergeTree & storage;
 
     String zookeeper_path;

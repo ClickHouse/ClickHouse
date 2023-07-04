@@ -2,6 +2,7 @@
 
 #include <Common/NamePrompter.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -14,8 +15,6 @@ namespace DB
 {
 
 class Context;
-class ASTCreateQuery;
-class ASTStorage;
 struct StorageID;
 
 
@@ -59,6 +58,7 @@ public:
         bool supports_skipping_indices = false;
         bool supports_projections = false;
         bool supports_sort_order = false;
+        /// See also IStorage::supportsTTL()
         bool supports_ttl = false;
         /// See also IStorage::supportsReplication()
         bool supports_replication = false;

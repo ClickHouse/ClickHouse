@@ -1,21 +1,23 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 #if USE_CAPNP
 
-#include <Processors/Formats/IRowOutputFormat.h>
-#include <Formats/FormatSchemaInfo.h>
-#include <Formats/CapnProtoUtils.h>
-#include <capnp/schema.h>
-#include <capnp/dynamic.h>
-#include <kj/io.h>
+#    include <Formats/CapnProtoSchema.h>
+#    include <Formats/CapnProtoSerializer.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Processors/Formats/IRowOutputFormat.h>
+#    include <capnp/dynamic.h>
+#    include <capnp/schema.h>
+#    include <kj/io.h>
 
 namespace DB
 {
+
 class CapnProtoOutputStream : public kj::OutputStream
 {
 public:
-    CapnProtoOutputStream(WriteBuffer & out_);
+    explicit CapnProtoOutputStream(WriteBuffer & out_);
 
     void write(const void * buffer, size_t size) override;
 
@@ -23,13 +25,12 @@ private:
     WriteBuffer & out;
 };
 
-class CapnProtoRowOutputFormat : public IRowOutputFormat
+class CapnProtoRowOutputFormat final : public IRowOutputFormat
 {
 public:
     CapnProtoRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSchemaInfo & info,
         const FormatSettings & format_settings_);
 
@@ -44,8 +45,9 @@ private:
     DataTypes column_types;
     capnp::StructSchema schema;
     std::unique_ptr<CapnProtoOutputStream> output_stream;
-    const FormatSettings format_settings;
     CapnProtoSchemaParser schema_parser;
+    std::unique_ptr<CapnProtoSerializer> serializer;
+
 };
 
 }

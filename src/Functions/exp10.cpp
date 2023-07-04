@@ -12,7 +12,7 @@ using FunctionExp10 = FunctionMathUnary<UnaryFunctionVectorized<Exp10Name, preci
 
 }
 
-void registerFunctionExp10(FunctionFactory & factory)
+REGISTER_FUNCTION(Exp10)
 {
     factory.registerFunction<FunctionExp10>();
 }

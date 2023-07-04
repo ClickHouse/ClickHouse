@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <Common/VariableContext.h>
 
 /// To be able to temporarily stop memory tracking from current thread.
@@ -10,9 +11,12 @@ private:
     static thread_local VariableContext level;
 
     VariableContext previous_level;
-public:
+
     /// level_ - block in level and above
-    explicit MemoryTrackerBlockerInThread(VariableContext level_ = VariableContext::User);
+    explicit MemoryTrackerBlockerInThread(VariableContext level_);
+
+public:
+    explicit MemoryTrackerBlockerInThread();
     ~MemoryTrackerBlockerInThread();
 
     MemoryTrackerBlockerInThread(const MemoryTrackerBlockerInThread &) = delete;
@@ -22,4 +26,6 @@ public:
     {
         return counter > 0 && current_level >= level;
     }
+
+    friend class MemoryTracker;
 };

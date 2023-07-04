@@ -136,7 +136,7 @@ struct HalfIntervals
     MarkRanges convertToMarkRangesFinal()
     {
         MarkRanges result;
-        std::move(intervals.begin(), intervals.end(), std::back_inserter(result));
+        std::copy(intervals.begin(), intervals.end(), std::back_inserter(result));
         return result;
     }
 

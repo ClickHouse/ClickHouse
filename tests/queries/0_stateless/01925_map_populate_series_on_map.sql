@@ -6,7 +6,7 @@ create table map_test engine=TinyLog() as (select (number + 1) as n, map(1, 1, n
 select mapPopulateSeries(m) from map_test;
 select mapPopulateSeries(m, toUInt64(3)) from map_test;
 select mapPopulateSeries(m, toUInt64(10)) from map_test;
-select mapPopulateSeries(m, 1000) from map_test; -- { serverError 43 }
+select mapPopulateSeries(m, 10) from map_test;
 select mapPopulateSeries(m, n) from map_test;
 
 drop table map_test;

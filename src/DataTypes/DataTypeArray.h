@@ -17,7 +17,7 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeArray(const DataTypePtr & nested_);
+    explicit DataTypeArray(const DataTypePtr & nested_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
@@ -29,6 +29,10 @@ public:
     const char * getFamilyName() const override
     {
         return "Array";
+    }
+    String getSQLCompatibleName() const override
+    {
+        return "TEXT";
     }
 
     bool canBeInsideNullable() const override
@@ -48,6 +52,7 @@ public:
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {

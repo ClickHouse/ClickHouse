@@ -22,15 +22,14 @@ using Strings = std::vector<String>;
 class ActiveDataPartSet
 {
 public:
-    ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
+    explicit ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
-    ActiveDataPartSet(const ActiveDataPartSet & other)
-        : format_version(other.format_version)
-        , part_info_to_name(other.part_info_to_name)
-    {}
+    ActiveDataPartSet(const ActiveDataPartSet & other) = default;
 
-    ActiveDataPartSet(ActiveDataPartSet && other) noexcept { swap(other); }
+    ActiveDataPartSet & operator=(const ActiveDataPartSet & other) = default;
+
+    ActiveDataPartSet(ActiveDataPartSet && other) noexcept = default;
 
     void swap(ActiveDataPartSet & other) noexcept
     {
@@ -38,19 +37,11 @@ public:
         std::swap(part_info_to_name, other.part_info_to_name);
     }
 
-    ActiveDataPartSet & operator=(const ActiveDataPartSet & other)
-    {
-        if (&other != this)
-        {
-            ActiveDataPartSet tmp(other);
-            swap(tmp);
-        }
-        return *this;
-    }
-
     /// Returns true if the part was actually added. If out_replaced_parts != nullptr, it will contain
     /// parts that were replaced from the set by the newly added part.
     bool add(const String & name, Strings * out_replaced_parts = nullptr);
+    bool add(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts = nullptr);
+    bool add(const MergeTreePartInfo & part_info, Strings * out_replaced_parts = nullptr);
 
     bool remove(const MergeTreePartInfo & part_info)
     {
@@ -94,6 +85,7 @@ public:
 
     /// Returns parts in ascending order of the partition_id and block number.
     Strings getParts() const;
+    std::vector<MergeTreePartInfo> getPartInfos() const;
 
     size_t size() const;
 

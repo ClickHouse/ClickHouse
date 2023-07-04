@@ -13,6 +13,9 @@ namespace DB
 
 class ASTFunction;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
 struct WindowFunctionDescription
 {
     std::string column_name;
@@ -27,7 +30,7 @@ struct WindowFunctionDescription
 
 struct WindowFrame
 {
-    enum class FrameType { Rows, Groups, Range };
+    enum class FrameType { ROWS, GROUPS, RANGE };
     enum class BoundaryType { Unbounded, Current, Offset };
 
     // This flag signifies that the frame properties were not set explicitly by
@@ -35,7 +38,7 @@ struct WindowFrame
     // for the default frame of RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
     bool is_default = true;
 
-    FrameType type = FrameType::Range;
+    FrameType type = FrameType::RANGE;
 
     // UNBOUNDED FOLLOWING for the frame end is forbidden by the standard, but for
     // uniformity the begin_preceding still has to be set to true for UNBOUNDED
@@ -90,11 +93,13 @@ struct WindowDescription
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
 
+    std::vector<ActionsDAGPtr> partition_by_actions;
+    std::vector<ActionsDAGPtr> order_by_actions;
+
     WindowFrame frame;
 
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
-
 
     std::string dump() const;
 

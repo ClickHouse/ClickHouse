@@ -1,7 +1,9 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSelectQuery.h>
 
 #include <iostream>
 
@@ -32,14 +34,24 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
     auto mode_to_str = [&](auto mode)
     {
-        if (mode == SelectUnionMode::ALL)
+        if (mode == SelectUnionMode::UNION_DEFAULT)
+            return "UNION";
+        else if (mode == SelectUnionMode::UNION_ALL)
             return "UNION ALL";
-        else if (mode == SelectUnionMode::DISTINCT)
+        else if (mode == SelectUnionMode::UNION_DISTINCT)
             return "UNION DISTINCT";
-        else if (mode == SelectUnionMode::INTERSECT)
-            return "INTERSECT";
-        else if (mode == SelectUnionMode::EXCEPT)
+        else if (mode == SelectUnionMode::EXCEPT_DEFAULT)
             return "EXCEPT";
+        else if (mode == SelectUnionMode::EXCEPT_ALL)
+            return "EXCEPT ALL";
+        else if (mode == SelectUnionMode::EXCEPT_DISTINCT)
+            return "EXCEPT DISTINCT";
+        else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
+            return "INTERSECT";
+        else if (mode == SelectUnionMode::INTERSECT_ALL)
+            return "INTERSECT ALL";
+        else if (mode == SelectUnionMode::INTERSECT_DISTINCT)
+            return "INTERSECT DISTINCT";
         return "";
     };
 
@@ -77,8 +89,29 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
 bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
-    return set_of_modes.contains(SelectUnionMode::DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT)
-        || set_of_modes.contains(SelectUnionMode::EXCEPT);
+    return set_of_modes.contains(SelectUnionMode::UNION_DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT_DISTINCT)
+        || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
+}
+
+bool ASTSelectWithUnionQuery::hasQueryParameters() const
+{
+    if (!has_query_parameters.has_value())
+    {
+        for (const auto & child : list_of_selects->children)
+        {
+            if (auto * select_node = child->as<ASTSelectQuery>())
+            {
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
+            }
+        }
+        has_query_parameters = false;
+    }
+
+    return  has_query_parameters.value();
 }
 
 }

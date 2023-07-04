@@ -12,6 +12,7 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+class IBackupEntry;
 
 /// Mutation entry in /mutations path in zookeeper. This record contains information about blocks
 /// in patitions. We will mutatate all parts with left number less than this numbers.
@@ -40,6 +41,9 @@ struct ReplicatedMergeTreeMutationEntry
     using BlockNumbersType = std::map<String, Int64>;
     BlockNumbersType block_numbers;
 
+    /// List of partitions that do not have relevant uncommitted blocks to mutate
+    mutable std::unordered_set<String> checked_partitions_cache;
+
     /// Mutation commands which will give to MUTATE_PART entries
     MutationCommands commands;
 
@@ -48,6 +52,10 @@ struct ReplicatedMergeTreeMutationEntry
     int alter_version = -1;
 
     bool isAlterMutation() const { return alter_version != -1; }
+
+    std::shared_ptr<const IBackupEntry> backup() const;
+
+    String getBlockNumbersForLogs() const;
 };
 
 using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;

@@ -1,6 +1,10 @@
-set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/snappy")
+set (SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/snappy")
 
-set (SNAPPY_IS_BIG_ENDIAN 0)
+if (ARCH_S390X)
+    set (SNAPPY_IS_BIG_ENDIAN 1)
+else ()
+    set (SNAPPY_IS_BIG_ENDIAN 0)
+endif()
 
 set (HAVE_BYTESWAP_H 1)
 set (HAVE_SYS_MMAN_H 1)

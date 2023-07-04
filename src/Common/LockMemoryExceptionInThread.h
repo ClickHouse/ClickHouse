@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <Common/VariableContext.h>
 
 /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
