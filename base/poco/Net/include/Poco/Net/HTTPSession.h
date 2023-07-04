@@ -192,7 +192,7 @@ namespace Net
         HTTPSession & operator=(const HTTPSession &);
 
         StreamSocket _socket;
-        char * _pBuffer;
+        std::unique_ptr<char[]> _pBuffer;
         char * _pCurrent;
         char * _pEnd;
         bool _keepAlive;
