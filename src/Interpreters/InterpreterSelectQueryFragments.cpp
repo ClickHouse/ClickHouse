@@ -2077,7 +2077,6 @@ static std::shared_ptr<MergingAggregatedStep> executeMergeAggregatedImpl(
     const DataStream & data_stream,
     bool overflow_row,
     bool final,
-    bool is_remote_storage,
     bool has_grouping_sets,
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
@@ -2111,7 +2110,7 @@ static std::shared_ptr<MergingAggregatedStep> executeMergeAggregatedImpl(
         params,
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings.distributed_aggregation_memory_efficient && is_remote_storage && !has_grouping_sets,
+        settings.distributed_aggregation_memory_efficient && !has_grouping_sets,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         should_produce_results_in_order_of_bucket_number,
@@ -2189,7 +2188,6 @@ void InterpreterSelectQueryFragments::addEmptySourceToQueryPlan(
                 query_plan.getCurrentDataStream(),
                 query_info.projection->aggregate_overflow_row,
                 query_info.projection->aggregate_final,
-                false,
                 false,
                 context_->getSettingsRef(),
                 query_info.projection->aggregation_keys,
@@ -2888,13 +2886,11 @@ std::shared_ptr<MergingAggregatedStep> InterpreterSelectQueryFragments::executeM
         = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
 
     const bool should_produce_results_in_order_of_bucket_number = true;
-    const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
 
     return executeMergeAggregatedImpl(
         output_stream,
         overflow_row,
         final,
-        storage && (storage->isRemote() || parallel_replicas_from_merge_tree),
         has_grouping_sets,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
