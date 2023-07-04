@@ -50,8 +50,8 @@ FROM (
             NULL AS packed,
             NULL AS null,
             'primary' AS index_type,
-            NULL AS comment,
-            NULL AS index_comment,
+            '' AS comment,
+            '' AS index_comment,
             'YES' AS visible,
             primary_key AS expression
         FROM system.tables
@@ -71,8 +71,8 @@ FROM (
             NULL AS packed,
             NULL AS null,
             type AS index_type,
-            NULL AS comment,
-            NULL AS index_comment,
+            '' AS comment,
+            '' AS index_comment,
             'YES' AS visible,
             expr AS expression
         FROM system.data_skipping_indices
