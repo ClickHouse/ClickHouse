@@ -624,7 +624,7 @@ def test_table_override(started_cluster):
     time.sleep(5)
     query = f"select * from {materialized_database}.{table_name} order by key"
     expected = instance.query(f"select * from {table_name} order by key")
-    instance.query(f"drop table {table_name} no delay")
+    instance.query(f"drop table {table_name} sync")
     assert_eq_with_retry(instance, query, expected)
 
 

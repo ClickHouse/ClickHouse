@@ -6,7 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
-
+#include <Databases/removeWhereConditionPlaceholder.h>
 
 namespace DB
 {
@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr std::string_view CONDITION_PLACEHOLDER_TO_REPLACE_VALUE = "{condition}";
 
 ExternalQueryBuilder::ExternalQueryBuilder(
     const DictionaryStructure & dict_struct_,
@@ -82,23 +81,8 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
         writeChar(';', out);
         return out.str();
     }
-    else
-    {
-        /** In case UPDATE_FIELD is specified in {condition} for dictionary that must load all data.
-          * Replace {condition} with true_condition for initial dictionary load.
-          * For next dictionary loads {condition} will be updated with UPDATE_FIELD.
-          */
-        static constexpr auto true_condition = "(1 = 1)";
-        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-        if (condition_position != std::string::npos)
-        {
-            auto query_copy = query;
-            query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), true_condition);
-            return query_copy;
-        }
 
-        return query;
-    }
+    return removeWhereConditionPlaceholder(query);
 }
 
 void ExternalQueryBuilder::composeLoadAllQuery(WriteBuffer & out) const

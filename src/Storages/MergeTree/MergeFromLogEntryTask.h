@@ -3,6 +3,8 @@
 #include <memory>
 #include <utility>
 
+#include <pcg_random.hpp>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -22,7 +24,7 @@ public:
         StorageReplicatedMergeTree & storage_,
         IExecutableTask::TaskResultCallback & task_result_callback_);
 
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() override { return priority; }
 
 protected:
     /// Both return false if we can't execute merge.
@@ -44,9 +46,10 @@ private:
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
 
-    UInt64 priority{0};
+    Priority priority;
 
     MergeTaskPtr merge_task;
+    pcg64 rng;
 };
 
 

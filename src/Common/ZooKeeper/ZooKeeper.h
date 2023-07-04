@@ -15,6 +15,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/thread_local_rng.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 #include <random>
 
@@ -49,7 +50,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    Int64 priority = 0;
+    Priority priority;
     UInt64 random = 0;
 
     void randomize()
@@ -215,7 +216,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    DB::KeeperApiVersion getApiVersion() const;
+    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const;
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -236,6 +237,8 @@ public:
     /// Creates all non-existent ancestors of the given path with empty contents.
     /// Does not create the node itself.
     void createAncestors(const std::string & path);
+
+    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
 
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
@@ -521,9 +524,14 @@ public:
 
     void setServerCompletelyStarted();
 
-private:
-    friend class EphemeralNodeHolder;
+    String getConnectedZooKeeperHost() const { return connected_zk_host; }
+    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
+    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
+    UInt64 getConnectedTime() const { return connected_time; }
 
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
+
+private:
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
@@ -549,7 +557,7 @@ private:
     template <typename TResponse, bool try_multi, typename TIter>
     MultiReadResponses<TResponse, try_multi> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
     {
-        if (getApiVersion() >= DB::KeeperApiVersion::WITH_MULTI_READ)
+        if (isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
         {
             Coordination::Requests requests;
             for (auto it = start; it != end; ++it)
@@ -585,6 +593,11 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
+
+    String connected_zk_host;
+    UInt16 connected_zk_port;
+    size_t connected_zk_index;
+    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 
@@ -677,7 +690,7 @@ String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 template <typename Client>
 void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
 {
-    if (client.getApiVersion() >= DB::KeeperApiVersion::WITH_CHECK_NOT_EXISTS)
+    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
     {
         auto request = std::make_shared<Coordination::CheckRequest>();
         request->path = path;
