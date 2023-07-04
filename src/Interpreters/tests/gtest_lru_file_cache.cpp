@@ -22,6 +22,8 @@
 
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 
 namespace fs = std::filesystem;
@@ -475,7 +477,7 @@ TEST_F(FileCacheTest, get)
                 }
                 cv.notify_one();
 
-                file_segment2.wait(file_segment2.range().left);
+                file_segment2.wait(file_segment2.range().right);
                 file_segment2.complete();
                 ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
             });
@@ -542,8 +544,8 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().left);
-                ASSERT_TRUE(file_segment2.state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
-                ASSERT_TRUE(file_segment2.getOrSetDownloader() == DB::FileSegment::getCallerId());
+                ASSERT_EQ(file_segment2.state(), DB::FileSegment::State::EMPTY);
+                ASSERT_EQ(file_segment2.getOrSetDownloader(), DB::FileSegment::getCallerId());
                 download(file_segment2);
             });
 
@@ -861,4 +863,79 @@ TEST_F(FileCacheTest, temporaryData)
     /// Some segments reserved by `some_data_holder` was eviced by temporary data
     ASSERT_LE(file_cache.getUsedCacheSize(), size_used_before_temporary_data);
     ASSERT_LE(file_cache.getFileSegmentsNum(), segments_used_before_temporary_data);
+}
+
+TEST_F(FileCacheTest, CachedReadBuffer)
+{
+    DB::ThreadStatus thread_status;
+
+    /// To work with cache need query_id and query context.
+    std::string query_id = "query_id";
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    DB::CurrentThread::QueryScope query_scope_holder(query_context);
+
+    DB::FileCacheSettings settings;
+    settings.base_path = cache_base_path;
+    settings.max_file_segment_size = 5;
+    settings.max_size = 30;
+    settings.max_elements = 10;
+    settings.boundary_alignment = 1;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+
+    std::string file_path = fs::current_path() / "test";
+    auto read_buffer_creator = [&]()
+    {
+        return createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt);
+    };
+
+    auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+    std::string s(30, '*');
+    wb->write(s.data(), s.size());
+    wb->next();
+    wb->finalize();
+
+    auto cache = std::make_shared<DB::FileCache>(settings);
+    cache->initialize();
+    auto key = cache->createKeyForPath(file_path);
+
+    {
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, read_buffer_creator, read_settings, "test", s.size(), false, false, std::nullopt, nullptr);
+
+        WriteBufferFromOwnString result;
+        copyData(*cached_buffer, result);
+        ASSERT_EQ(result.str(), s);
+
+        assertEqual(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29) });
+    }
+
+    {
+        ReadSettings modified_settings{read_settings};
+        modified_settings.local_fs_buffer_size = 10;
+        modified_settings.remote_fs_buffer_size = 10;
+
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, read_buffer_creator, modified_settings, "test", s.size(), false, false, std::nullopt, nullptr);
+
+        cached_buffer->next();
+        assertEqual(cache->dumpQueue(), { Range(5, 9), Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4) });
+
+        cached_buffer->position() = cached_buffer->buffer().end();
+        cached_buffer->next();
+        assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9) });
+    }
 }

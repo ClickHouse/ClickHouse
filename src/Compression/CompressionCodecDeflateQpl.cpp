@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
     // loop all configured workqueue size to get maximum job number.
     accfg_ctx * ctx_ptr = nullptr;
     auto ctx_status = accfg_new(&ctx_ptr);
+    SCOPE_EXIT({ accfg_unref(ctx_ptr); });
     if (ctx_status == 0)
     {
         auto * dev_ptr = accfg_device_get_first(ctx_ptr);
