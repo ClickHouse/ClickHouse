@@ -46,11 +46,11 @@ VolumeJBOD::VolumeJBOD(
         for (const auto & disk : disks)
         {
             auto size = disk->getTotalSpace();
-            sizes.push_back(*size);
             if (size)
                 sum_size += *size;
             else
                 break;
+            sizes.push_back(*size);
         }
         if (sizes.size() == disks.size())
         {
