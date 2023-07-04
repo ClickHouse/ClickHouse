@@ -120,10 +120,12 @@
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
-            "docker/test/stateless",
-            "docker/test/integration/base",
             "docker/test/fuzzer",
-            "docker/test/keeper-jepsen"
+            "docker/test/integration/base",
+            "docker/test/keeper-jepsen",
+            "docker/test/server-jepsen",
+            "docker/test/sqllogic",
+            "docker/test/stateless"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -137,6 +139,10 @@
     },
     "docker/test/keeper-jepsen": {
         "name": "clickhouse/keeper-jepsen-test",
+        "dependent": []
+    },
+    "docker/test/server-jepsen": {
+        "name": "clickhouse/server-jepsen-test",
         "dependent": []
     },
     "docker/test/install/deb": {
