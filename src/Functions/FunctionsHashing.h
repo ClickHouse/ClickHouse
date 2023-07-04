@@ -81,7 +81,7 @@ namespace impl
 
     static SipHashKey parseSipHashKey(const ColumnWithTypeAndName & key)
     {
-        SipHashKey ret;
+        SipHashKey ret{};
 
         const auto * tuple = checkAndGetColumn<ColumnTuple>(key.column.get());
         if (!tuple)
@@ -89,6 +89,9 @@ namespace impl
 
         if (tuple->tupleSize() != 2)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+
+        if (tuple->empty())
+            return ret;
 
         if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
             ret.key0 = key0col->get64(0);
