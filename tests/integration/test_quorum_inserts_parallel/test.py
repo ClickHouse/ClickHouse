@@ -27,7 +27,7 @@ def started_cluster():
 
 
 def test_parallel_quorum_actually_parallel(started_cluster):
-    settings = {"insert_quorum": "3", "insert_quorum_parallel": "1"}
+    settings = {"insert_quorum": "3", "insert_quorum_parallel": "1", "function_sleep_max_microseconds_per_block": "0"}
     for i, node in enumerate([node1, node2, node3]):
         node.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '{num}') ORDER BY tuple()".format(
