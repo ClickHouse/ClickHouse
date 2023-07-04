@@ -49,8 +49,8 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
-        " Reference: " + getHexUIntLowercase(expected_checksum.first) + getHexUIntLowercase(expected_checksum.second)
-        + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
+        " Reference: " + getHexUIntLowercase(expected_checksum)
+        + ". Actual: " + getHexUIntLowercase(calculated_checksum)
         + ". Size of compressed block: " + toString(size);
 
     const char * message_hardware_failure = "This is most likely due to hardware failure. "
@@ -95,8 +95,8 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
-    size_t difference = std::popcount(expected_checksum.first ^ calculated_checksum.first)
-        + std::popcount(expected_checksum.second ^ calculated_checksum.second);
+    size_t difference = std::popcount(expected_checksum.low64 ^ calculated_checksum.low64)
+        + std::popcount(expected_checksum.high64 ^ calculated_checksum.high64);
 
     if (difference == 1)
     {
@@ -194,8 +194,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         Checksum checksum;
         ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
-        readBinaryLittleEndian(checksum.first, checksum_in);
-        readBinaryLittleEndian(checksum.second, checksum_in);
+        readBinaryLittleEndian(checksum.low64, checksum_in);
+        readBinaryLittleEndian(checksum.high64, checksum_in);
 
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
     }
@@ -238,8 +238,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         {
             Checksum checksum;
             ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
-            readBinaryLittleEndian(checksum.first, checksum_in);
-            readBinaryLittleEndian(checksum.second, checksum_in);
+            readBinaryLittleEndian(checksum.low64, checksum_in);
+            readBinaryLittleEndian(checksum.high64, checksum_in);
 
             validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
         }

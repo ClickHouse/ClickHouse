@@ -12,7 +12,10 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query "CREATE DATABA
 
 function thread1()
 {
-    while true; do $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE test_01320.r;"; done
+    while true; do
+        $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x;
+        DROP TABLE test_01320.r;" 2>&1 | grep -F "Code:" | grep -v "UNKNOWN_DATABASE"
+    done
 }
 
 function thread2()

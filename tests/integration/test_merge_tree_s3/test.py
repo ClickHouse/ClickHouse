@@ -336,9 +336,7 @@ def test_attach_detach_partition(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
