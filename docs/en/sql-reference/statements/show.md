@@ -286,21 +286,21 @@ equivalent. If no database is specified, the query assumes the current database 
 The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
 
 The statement produces a result table with the following structure:
-- table - The name of the table (String)
+- table - The name of the table. (String)
 - non_unique - Always `1` as ClickHouse does not support uniqueness constraints. (UInt8)
-- key_name - The name of the index, `PRIMARY` if the index is a primary key index (String)
-- seq_in_index - Currently unused
-- column_name - Currently unused
-- collation - The sorting of the column in the index, `A` if ascending, `D` if descending, `NULL` if unsorted (Nullable(String))
+- key_name - The name of the index, `PRIMARY` if the index is a primary key index. (String)
+- seq_in_index - Currently always `1`. (In MySQL, this field denotes the position of the column in a non-functional index.) (UInt8)
+- column_name - Currently always `` (empty string), also see field `expression`. (In MySQL, this field denotes the name of the column in a non-functional index.) (String)
+- collation - The sorting of the column in the index: `A` if ascending, `D` if descending, `NULL` if unsorted. (Nullable(String))
 - cardinality - An estimation of the index cardinality (number of unique values in the index). Currently always 0. (UInt64)
-- sub_part - Always `NULL` because ClickHouse does not support index prefixes like MySQL (Nullable(String))
-- packed - Always `NULL` because ClickHouse does not support packed (prefix-compressed) indexes like MySQL (Nullable(String))
+- sub_part - Always `NULL` because ClickHouse does not support index prefixes like MySQL. (Nullable(String))
+- packed - Always `NULL` because ClickHouse does not support packed indexes (like MySQL). (Nullable(String))
 - null - Currently unused
 - index_type - The index type, e.g. `PRIMARY`, `MINMAX`, `BLOOM_FILTER` etc. (String)
-- comment - Additional information about the index, currently always `` (empty string) (String)
-- index_comment - `` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field like in MySQL (String)
-- visible - If the index is visible to the optimizer, always `YES` (String)
-- expression - The index expression (String)
+- comment - Additional information about the index, currently always `` (empty string). (String)
+- index_comment - `` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field (like in MySQL). (String)
+- visible - If the index is visible to the optimizer, always `YES`. (String)
+- expression - The index expression. (In MySQL this field is only used for functional-indexes.) (String)
 
 **Examples**
 
@@ -314,11 +314,11 @@ Result:
 
 ``` text
 ┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
-│ tbl   │          1 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
-│ tbl   │          1 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
-│ tbl   │          1 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
-│ tbl   │          1 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │ c, a       │
-│ tbl   │          1 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
+│ tbl   │          1 │ blf_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          1 │ mm1_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          1 │ mm2_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          1 │ PRIMARY  │ 1            │             │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │ c, a       │
+│ tbl   │          1 │ set_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
 └───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
 ```
 
