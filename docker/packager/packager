@@ -254,7 +254,7 @@ def parse_env_variables(
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
     if debug_build:
-        result.append("BUILD_TYPE=DEBUG")
+        result.append("BUILD_TYPE=Debug")
     else:
         result.append("BUILD_TYPE=None")
 
