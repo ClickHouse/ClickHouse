@@ -734,11 +734,11 @@ struct ToYearImpl
 
         const DateLUTImpl & date_lut = DateLUT::instance();
 
-        auto start_time = date_lut.makeDateTime(year, 1, 1, 0, 0, 0);
+        auto start_time = date_lut.makeDayNum(year, 1, 1);
         auto end_time = date_lut.addYears(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
+            return {std::make_pair(Field(Int32(start_time)), Field(Int32(end_time)))};
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
@@ -1412,11 +1412,11 @@ struct ToYYYYMMImpl
 
         const DateLUTImpl & date_lut = DateLUT::instance();
 
-        auto start_time = date_lut.makeDateTime(year, month, 1, 0, 0, 0);
+        auto start_time = date_lut.makeDayNum(year, month, 1);
         auto end_time = date_lut.addMonths(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
+            return {std::make_pair(Field(Int32(start_time)), Field(Int32(end_time)))};
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
