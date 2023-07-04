@@ -1,3 +1,4 @@
+#include "Storages/System/StorageSystemKeywords.h"
 #include "config.h"
 
 #include <Databases/IDatabase.h>
@@ -151,6 +152,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
     attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache");
 #endif
+    attach<StorageSystemKeywords>(context, system_database, "keywords");
 }
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)

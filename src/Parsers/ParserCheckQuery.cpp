@@ -11,8 +11,8 @@ namespace DB
 
 bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_check_table("CHECK TABLE");
-    ParserKeyword s_partition("PARTITION");
+    ParserKeyword s_check_table(Keyword::CHECK_TABLE);
+    ParserKeyword s_partition(Keyword::PARTITION);
     ParserToken s_dot(TokenType::Dot);
 
     ParserPartition partition_parser;

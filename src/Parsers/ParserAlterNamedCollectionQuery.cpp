@@ -11,9 +11,9 @@ namespace DB
 
 bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_alter("ALTER");
-    ParserKeyword s_collection("NAMED COLLECTION");
-    ParserKeyword s_delete("DELETE");
+    ParserKeyword s_alter(Keyword::ALTER);
+    ParserKeyword s_collection(Keyword::NAMED_COLLECTION);
+    ParserKeyword s_delete(Keyword::DELETE);
 
     ParserIdentifier name_p;
     ParserSetQuery set_p;
@@ -35,7 +35,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     if (!name_p.parse(pos, collection_name, expected))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::ON).ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;

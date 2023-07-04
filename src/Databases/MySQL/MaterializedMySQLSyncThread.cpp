@@ -163,30 +163,30 @@ static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
     Expected expected;
     ASTPtr res;
     ASTPtr table;
-    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
+    if (ParserKeyword(Keyword::CREATE_TEMPORARY_TABLE).ignore(pos, expected) || ParserKeyword(Keyword::CREATE_TABLE).ignore(pos, expected))
     {
-        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
+        ParserKeyword(Keyword::IF_NOT_EXISTS).ignore(pos, expected);
         if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
             parse_failed = true;
     }
-    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::ALTER_TABLE).ignore(pos, expected))
     {
         if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
             parse_failed = true;
     }
-    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::DROP_TABLE).ignore(pos, expected) || ParserKeyword(Keyword::DROP_TEMPORARY_TABLE).ignore(pos, expected))
     {
-        ParserKeyword("IF EXISTS").ignore(pos, expected);
+        ParserKeyword(Keyword::IF_EXISTS).ignore(pos, expected);
         if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
             parse_failed = true;
     }
-    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::TRUNCATE).ignore(pos, expected))
     {
-        ParserKeyword("TABLE").ignore(pos, expected);
+        ParserKeyword(Keyword::TABLE).ignore(pos, expected);
         if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
             parse_failed = true;
     }
-    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::RENAME_TABLE).ignore(pos, expected))
     {
         if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
             parse_failed = true;

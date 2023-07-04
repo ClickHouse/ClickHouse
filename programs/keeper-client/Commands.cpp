@@ -1,6 +1,7 @@
 
 #include "Commands.h"
 #include "KeeperClient.h"
+#include "Parsers/CommonParsers.h"
 
 
 namespace DB
@@ -93,13 +94,13 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
     int mode = zkutil::CreateMode::Persistent;
 
-    if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
         mode = zkutil::CreateMode::Persistent;
-    else if (ParserKeyword{"EPHEMERAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
         mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword{"EPHEMERAL SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
     node->args.push_back(mode);

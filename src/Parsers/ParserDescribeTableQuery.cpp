@@ -13,9 +13,9 @@ namespace DB
 
 bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_describe("DESCRIBE");
-    ParserKeyword s_desc("DESC");
-    ParserKeyword s_table("TABLE");
+    ParserKeyword s_describe(Keyword::DESCRIBE);
+    ParserKeyword s_desc(Keyword::DESC);
+    ParserKeyword s_table(Keyword::TABLE);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
 

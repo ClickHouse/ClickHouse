@@ -36,6 +36,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include "Parsers/CommonParsers.h"
 
 
 namespace DB
@@ -81,7 +82,7 @@ namespace
             if (!storage_p.parse(pos, storage, expected))
                 return false;
 
-            ParserKeyword s_comment("COMMENT");
+            ParserKeyword s_comment(Keyword::COMMENT);
             ParserStringLiteral string_literal_parser;
             ASTPtr comment;
 
