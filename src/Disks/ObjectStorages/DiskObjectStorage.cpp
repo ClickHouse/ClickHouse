@@ -11,7 +11,6 @@
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -530,24 +529,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         threadpool_size);
 }
 
-void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
-{
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
-}
-
-NameSet DiskObjectStorage::getCacheLayersNames() const
-{
-    NameSet cache_layers;
-    auto current_object_storage = object_storage;
-    while (current_object_storage->supportsCache())
-    {
-        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
-        cache_layers.insert(cached_object_storage->getCacheConfigName());
-        current_object_storage = cached_object_storage->getWrappedObjectStorage();
-    }
-    return cache_layers;
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
@@ -596,7 +577,8 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 {
     LOG_TEST(log, "Write file: {}", path);
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
+    transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
+    transaction->commit();
 }
 
 void DiskObjectStorage::applyNewSettings(

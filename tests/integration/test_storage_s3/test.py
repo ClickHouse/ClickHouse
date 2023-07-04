@@ -1011,7 +1011,7 @@ def test_seekable_formats(started_cluster):
     )
 
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M', max_download_threads=1"
     )
     assert int(result) == 1500000
 
@@ -1713,3 +1713,70 @@ def test_s3_list_objects_failure(started_cluster):
 
         assert ei.value.returncode == 243
         assert "Could not list objects" in ei.value.stderr
+
+
+def test_skip_empty_files(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files1.parquet', TSVRaw) select * from numbers(0) settings s3_truncate_on_insert=1"
+    )
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files2.parquet') select * from numbers(1) settings s3_truncate_on_insert=1"
+    )
+
+    def test(engine, setting):
+        instance.query_and_get_error(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files1.parquet') settings {setting}=0"
+        )
+
+        instance.query_and_get_error(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files1.parquet', auto, 'number UINt64') settings {setting}=0"
+        )
+
+        instance.query_and_get_error(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files1.parquet') settings {setting}=1"
+        )
+
+        res = instance.query(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files1.parquet', auto, 'number UInt64') settings {setting}=1"
+        )
+
+        assert len(res) == 0
+
+        instance.query_and_get_error(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{1,2}}.parquet') settings {setting}=0"
+        )
+
+        instance.query_and_get_error(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{1,2}}.parquet', auto, 'number UInt64') settings {setting}=0"
+        )
+
+        res = instance.query(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{1,2}}.parquet') settings {setting}=1"
+        )
+
+        assert int(res) == 0
+
+        res = instance.query(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{1,2}}.parquet', auto, 'number UInt64') settings {setting}=1"
+        )
+
+        assert int(res) == 0
+
+    test("s3", "s3_skip_empty_files")
+    test("url", "engine_url_skip_empty_files")
+
+    res = instance.query(
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{1|2}}.parquet') settings engine_url_skip_empty_files=1"
+    )
+
+    assert int(res) == 0
+
+    res = instance.query(
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/skip_empty_files{{11|1|22}}.parquet', auto, 'number UInt64') settings engine_url_skip_empty_files=1"
+    )
+
+    assert len(res.strip()) == 0

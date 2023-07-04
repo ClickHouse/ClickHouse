@@ -5,6 +5,7 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
 
 namespace DB
@@ -28,6 +29,14 @@ void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
+
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix) const
+{
+    RelativePathsWithMetadata files;
+    listObjects(path_prefix, files, 0);
+
+    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
+}
 
 std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {

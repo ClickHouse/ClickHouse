@@ -683,20 +683,35 @@ try
     });
 #endif
 
-    IOThreadPool::initialize(
+    getIOThreadPool().initialize(
         server_settings.max_io_thread_pool_size,
         server_settings.max_io_thread_pool_free_size,
         server_settings.io_thread_pool_queue_size);
 
-    BackupsIOThreadPool::initialize(
+    getBackupsIOThreadPool().initialize(
         server_settings.max_backups_io_thread_pool_size,
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
-    OutdatedPartsLoadingThreadPool::initialize(
+    getActivePartsLoadingThreadPool().initialize(
+        server_settings.max_active_parts_loading_thread_pool_size,
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_active_parts_loading_thread_pool_size);
+
+    getOutdatedPartsLoadingThreadPool().initialize(
         server_settings.max_outdated_parts_loading_thread_pool_size,
-        0, // We don't need any threads one all the parts will be loaded
+        0, // We don't need any threads once all the parts will be loaded
         server_settings.max_outdated_parts_loading_thread_pool_size);
+
+    /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+    getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+        server_settings.max_active_parts_loading_thread_pool_size
+    );
+
+    getPartsCleaningThreadPool().initialize(
+        server_settings.max_parts_cleaning_thread_pool_size,
+        0, // We don't need any threads one all the parts will be deleted
+        server_settings.max_parts_cleaning_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -945,8 +960,8 @@ try
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
-    DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
+    DateLUT::serverTimezoneInstance();
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings.tmp_policy.value.empty())
@@ -1225,6 +1240,36 @@ try
             global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+
+            getIOThreadPool().reloadConfiguration(
+                server_settings.max_io_thread_pool_size,
+                server_settings.max_io_thread_pool_free_size,
+                server_settings.io_thread_pool_queue_size);
+
+            getBackupsIOThreadPool().reloadConfiguration(
+                server_settings.max_backups_io_thread_pool_size,
+                server_settings.max_backups_io_thread_pool_free_size,
+                server_settings.backups_io_thread_pool_queue_size);
+
+            getActivePartsLoadingThreadPool().reloadConfiguration(
+                server_settings.max_active_parts_loading_thread_pool_size,
+                0, // We don't need any threads once all the parts will be loaded
+                server_settings.max_active_parts_loading_thread_pool_size);
+
+            getOutdatedPartsLoadingThreadPool().reloadConfiguration(
+                server_settings.max_outdated_parts_loading_thread_pool_size,
+                0, // We don't need any threads once all the parts will be loaded
+                server_settings.max_outdated_parts_loading_thread_pool_size);
+
+            /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+            getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+                server_settings.max_active_parts_loading_thread_pool_size
+            );
+
+            getPartsCleaningThreadPool().reloadConfiguration(
+                server_settings.max_parts_cleaning_thread_pool_size,
+                0, // We don't need any threads one all the parts will be deleted
+                server_settings.max_parts_cleaning_thread_pool_size);
 
             if (config->has("resources"))
             {
@@ -1660,7 +1705,6 @@ try
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-
         async_metrics.start();
 
         {

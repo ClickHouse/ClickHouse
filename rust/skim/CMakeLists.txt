@@ -14,11 +14,6 @@ if (OS_FREEBSD)
     return()
 endif()
 
-if (SANITIZE STREQUAL "memory")
-    message(STATUS "skim is disabled under memory sanitizer, because the interop is not instrumented properly")
-    return()
-endif()
-
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
 # -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'

@@ -36,6 +36,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 
     Columns set_elements;
     for (auto & set_element : prepared_set->getSetElements())
+
         set_elements.emplace_back(set_element->convertToFullColumnIfConst());
 
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
@@ -310,13 +311,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
-            ConstSetPtr prepared_set = rhs_argument.tryGetPreparedSet();
-
-            if (prepared_set && prepared_set->hasExplicitSetElements())
+            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
             {
-                const auto prepared_info = getPreparedSetInfo(prepared_set);
-                if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
-                    maybe_useful = true;
+                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+                {
+                    if (prepared_set->hasExplicitSetElements())
+                    {
+                        const auto prepared_info = getPreparedSetInfo(prepared_set);
+                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                            maybe_useful = true;
+                    }
+                }
             }
         }
         else if (function_name == "equals" ||

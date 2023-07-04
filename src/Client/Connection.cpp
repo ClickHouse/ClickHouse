@@ -138,11 +138,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                         socket->impl()->error(err); // Throws an exception
 
                     socket->setBlocking(true);
-
-#if USE_SSL
-                    if (static_cast<bool>(secure))
-                        static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->completeHandshake();
-#endif
                 }
                 else
                 {
@@ -593,7 +588,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1027,6 +1022,11 @@ Packet Connection::receivePacket()
                 res.block = receiveProfileEvents();
                 return res;
 
+            case Protocol::Server::TimezoneUpdate:
+                readStringBinary(server_timezone, *in);
+                res.server_timezone = server_timezone;
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -1175,16 +1175,12 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    ParallelReadRequest request;
-    request.deserialize(*in);
-    return request;
+    return ParallelReadRequest::deserialize(*in);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
+    return InitialAllRangesAnnouncement::deserialize(*in);
 }
 
 

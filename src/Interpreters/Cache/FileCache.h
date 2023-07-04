@@ -86,6 +86,9 @@ public:
     /// Remove files by `key`. Removes files which might be used at the moment.
     void removeKeyIfExists(const Key & key);
 
+    /// Removes files by `path`. Removes files which might be used at the moment.
+    void removePathIfExists(const String & path);
+
     /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
 
@@ -125,15 +128,16 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
-    CacheGuard::Lock lockCache() { return cache_guard.lock(); }
+    CacheGuard::Lock lockCache() const;
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     const size_t max_file_segment_size;
-    const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
     const size_t delayed_cleanup_interval_ms;
+    const size_t boundary_alignment;
+    const size_t background_download_threads;
 
     Poco::Logger * log;
 
@@ -178,9 +182,9 @@ private:
      */
     BackgroundSchedulePool::TaskHolder cleanup_task;
 
-    void assertInitialized() const;
+    std::vector<ThreadFromGlobalPool> download_threads;
 
-    size_t boundary_alignment;
+    void assertInitialized() const;
 
     void assertCacheCorrectness();
 

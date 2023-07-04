@@ -26,6 +26,7 @@ AlertManager
 Alexey
 AnyEvent
 AppleClang
+Approximative
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -468,6 +469,7 @@ MSan
 MVCC
 MacBook
 MacOS
+MapState
 MarkCacheBytes
 MarkCacheFiles
 MarksLoaderThreads
@@ -771,6 +773,7 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
+SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
@@ -1005,6 +1008,7 @@ anyLast
 anyheavy
 anylast
 appendTrailingCharIfAbsent
+approximative
 argMax
 argMin
 argmax
@@ -1081,6 +1085,7 @@ avgweighted
 avro
 avx
 aws
+azureBlobStorage
 backend
 backoff
 backticks
@@ -1342,6 +1347,7 @@ detectLanguageUnknown
 determinator
 deterministically
 dictGet
+dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
@@ -1758,6 +1764,7 @@ misconfiguration
 mispredictions
 mmap
 mmapped
+modularization
 moduloOrZero
 mongodb
 monthName
@@ -1931,6 +1938,7 @@ prefertch
 prefetch
 prefetchsize
 preloaded
+prem
 prepend
 prepended
 prepends
@@ -2042,6 +2050,7 @@ reconnection
 recurse
 redash
 reddit
+redis
 redisstreams
 refcounter
 regexpExtract
@@ -2128,6 +2137,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+serverTimeZone
+serverTimezone
 serverUUID
 sessionCacheSize
 sessionIdContext
@@ -2159,6 +2170,7 @@ snowflakeToDateTime
 socketcache
 soundex
 sparkbar
+sparkBar
 sparsehash
 speedscope
 splitByChar
@@ -2252,6 +2264,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2418,6 +2431,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unintuitive
 uniq
 uniqCombined
 uniqExact
@@ -2445,6 +2459,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime

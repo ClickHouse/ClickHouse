@@ -402,34 +402,6 @@ struct SipHash128ReferenceImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct SipHash128ReferenceKeyedImpl
-{
-    static constexpr auto name = "sipHash128ReferenceKeyed";
-    using ReturnType = UInt128;
-    using Key = impl::SipHashKey;
-
-    static Key parseKey(const ColumnWithTypeAndName & key) { return impl::parseSipHashKey(key); }
-
-    static UInt128 applyKeyed(const Key & key, const char * begin, size_t size)
-    {
-        return sipHash128ReferenceKeyed(key.key0, key.key1, begin, size);
-    }
-
-    static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
-    {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
-        UInt128 hashes[] = {h1, h2};
-        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
 
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
@@ -816,12 +788,7 @@ struct ImplBLAKE3
 #else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-#    if defined(MEMORY_SANITIZER)
-            auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
-            __msan_unpoison(out_char_data, length);
-#    else
-            auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
-#    endif
+        auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
         if (err_msg != nullptr)
         {
             auto err_st = std::string(err_msg);
@@ -1742,7 +1709,6 @@ using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key>;
 using FunctionSipHash128Reference = FunctionAnyHash<SipHash128ReferenceImpl>;
-using FunctionSipHash128ReferenceKeyed = FunctionAnyHash<SipHash128ReferenceKeyedImpl, true, SipHash128ReferenceKeyedImpl::Key>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
