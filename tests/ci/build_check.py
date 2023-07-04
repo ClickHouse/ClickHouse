@@ -45,7 +45,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
         return False
     if build_config["sanitizer"] != "":
         return True
-    if build_config["build_type"] != "":
+    if build_config["debug_build"]:
         return True
     return False
 
@@ -66,8 +66,8 @@ def get_packager_cmd(
         f"--package-type={package_type} --compiler={comp}"
     )
 
-    if build_config["build_type"]:
-        cmd += f" --build-type={build_config['build_type']}"
+    if build_config["debug_build"]:
+        cmd += " --debug-build"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
     if build_config["tidy"] == "enable":
