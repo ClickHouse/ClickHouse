@@ -51,7 +51,7 @@ IVolume::IVolume(
 
 std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const
 {
-    std::optional<UInt64> res = 0;
+    std::optional<UInt64> res;
     for (const auto & disk : disks)
         res = std::max(res, disk->getUnreservedSpace());
     return res;
