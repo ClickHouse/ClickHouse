@@ -3351,6 +3351,17 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
+    if (entry.source_replica.empty())
+    {
+        auto part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting});
+        if (part && part->was_removed_as_broken)
+        {
+            disable_reason = fmt::format("Not executing fetch of part {} because we still have broken part with that name. "
+                                         "Waiting for the broken part to be removed first.", entry.new_part_name);
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -3731,23 +3742,44 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 {
     auto zookeeper = getZooKeeper();
 
+    DataPartPtr broken_part;
+    auto outdate_broken_part = [this, &broken_part]()
+    {
+        if (broken_part)
+            return;
+        DataPartsLock lock = lockParts();
+        if (broken_part->getState() == DataPartState::Active)
+            removePartsFromWorkingSet(NO_TRANSACTION_RAW, {broken_part}, true, &lock);
+    };
+
     /// We don't know exactly what happened to broken part
     /// and we are going to remove all covered log entries.
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getVisibleDataPartsVectorInPartition(getContext(), broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated},
+                                                                         broken_part_info.partition_id);
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
             continue;
 
-        /// Broken part itself either already moved to detached or does not exist.
-        assert(broken_part_info != part->info);
-        part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+        if (broken_part_info == part->info)
+        {
+            chassert(!broken_part);
+            chassert(!storage_init);
+            part->was_removed_as_broken = true;
+            part->makeCloneInDetached("broken", getInMemoryMetadataPtr());
+            broken_part = part;
+        }
+        else
+        {
+            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+        }
     }
 
     ThreadFuzzer::maybeInjectSleep();
+    ThreadFuzzer::maybeInjectMemoryLimitException();
 
     /// It's possible that queue contains entries covered by part_name.
     /// For example, we had GET_PART all_1_42_5 and MUTATE_PART all_1_42_5_63,
@@ -3762,6 +3794,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     queue.removePartProducingOpsInRange(zookeeper, broken_part_info, /* covering_entry= */ {});
 
     ThreadFuzzer::maybeInjectSleep();
+    ThreadFuzzer::maybeInjectMemoryLimitException();
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -3780,7 +3813,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             /// but we are going to remove it from /parts and add to queue again.
             Coordination::Stat is_lost_stat;
             String is_lost_value = zookeeper->get(replica_path + "/is_lost", &is_lost_stat);
-            assert(is_lost_value == "0");
+            chassert(is_lost_value == "0");
             ops.emplace_back(zkutil::makeSetRequest(replica_path + "/is_lost", is_lost_value, is_lost_stat.version));
 
             part_create_time = stat.ctime / 1000;
@@ -3802,12 +3835,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
             if (merge_pred.isGoingToBeDropped(broken_part_info))
             {
-                LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it, removing it from ZooKeeper", part_name);
-
-                /// But we have to remove it from ZooKeeper because broken parts are not removed from ZK during Outdated parts cleanup
-                /// There's a chance that DROP_RANGE will remove it, but only if it was not already removed by cleanup thread
-                if (exists_in_zookeeper)
-                    removePartsFromZooKeeperWithRetries({part_name});
+                LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it", part_name);
+                outdate_broken_part();
                 return;
             }
 
@@ -3836,10 +3865,11 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
         zkutil::KeeperMultiException::check(rc, ops, results);
 
-        String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
-        log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-        queue.insert(zookeeper, log_entry);
-        break;
+        /// Make the part outdated after creating the log entry.
+        /// Otherwise, if we failed to create the entry, cleanup thread could remove the part from ZooKeeper (leading to diverged replicas)
+        outdate_broken_part();
+        queue_updating_task->schedule();
+        return;
     }
 }
 
@@ -6841,10 +6871,10 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKee
     {
         /// Broken part can be removed from zk by removePartAndEnqueueFetch(...) only.
         /// Removal without enqueueing a fetch leads to intersecting parts.
-        if (part->is_duplicate || part->outdated_because_broken)
+        if (part->is_duplicate || part->is_unexpected_local_part)
         {
-            LOG_WARNING(log, "Will not remove part {} from ZooKeeper (is_duplicate: {}, outdated_because_broken: {})",
-                        part->name, part->is_duplicate, part->outdated_because_broken);
+            LOG_WARNING(log, "Will not remove part {} from ZooKeeper (is_duplicate: {}, is_unexpected_local_part: {})",
+                        part->name, part->is_duplicate, part->is_unexpected_local_part);
             parts_to_delete_only_from_filesystem.emplace_back(part);
         }
         else
@@ -8189,7 +8219,7 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
         {
             try
             {
-                results.push_back(part_check_thread.checkPart(part->name));
+                results.push_back(part_check_thread.checkPartAndFix(part->name));
             }
             catch (const Exception & ex)
             {
