@@ -354,24 +354,13 @@ ZooKeeper::ZooKeeper(
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-        initFeatureFlags();
-        keeper_feature_flags.logFlags(log);
+        initApiVersion();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
     catch (...)
     {
         tryLogCurrentException(log, "Failed to connect to ZooKeeper");
-
-        try
-        {
-            requests_queue.finish();
-            socket.shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
 
         send_thread.join();
         receive_thread.join();
@@ -444,8 +433,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                connected_zk_address = node.address;
-
                 break;
             }
             catch (...)
@@ -461,8 +448,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
-
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
@@ -1100,64 +1085,41 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
-    return keeper_feature_flags.isEnabled(feature_flag);
+    return keeper_api_version;
 }
 
-void ZooKeeper::initFeatureFlags()
+void ZooKeeper::initApiVersion()
 {
-    const auto try_get = [&](const std::string & path, const std::string & description) -> std::optional<std::string>
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
     {
-        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-        auto future = promise->get_future();
-
-        auto callback = [promise](const Coordination::GetResponse & response) mutable
-        {
-            promise->set_value(response);
-        };
-
-        get(path, std::move(callback), {});
-        if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
-
-        auto response = future.get();
-
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            LOG_TRACE(log, "Failed to get {}", description);
-            return std::nullopt;
-        }
-        else if (response.error != Coordination::Error::ZOK)
-        {
-            throw Exception(response.error, "Failed to get {}", description);
-        }
-
-        return std::move(response.data);
+        promise->set_value(response);
     };
 
-    if (auto feature_flags = try_get(keeper_api_feature_flags_path, "feature flags"); feature_flags.has_value())
+    get(keeper_api_version_path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
-        keeper_feature_flags.setFeatureFlags(std::move(*feature_flags));
+        LOG_TRACE(log, "Failed to get API version: timeout");
         return;
     }
 
-    auto keeper_api_version_string = try_get(keeper_api_version_path, "API version");
+    auto response = future.get();
 
-    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
-
-    if (!keeper_api_version_string.has_value())
+    if (response.error != Coordination::Error::ZOK)
     {
-        LOG_TRACE(log, "API version not found, assuming {}", keeper_api_version);
+        LOG_TRACE(log, "Failed to get API version");
         return;
     }
 
-    DB::ReadBufferFromOwnString buf(*keeper_api_version_string);
     uint8_t keeper_version{0};
+    DB::ReadBufferFromOwnString buf(response.data);
     DB::readIntText(keeper_version, buf);
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
-    keeper_feature_flags.fromApiVersion(keeper_api_version);
 }
 
 
@@ -1277,7 +1239,7 @@ void ZooKeeper::list(
     WatchCallback watch)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-    if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+    if (keeper_api_version < Coordination::KeeperApiVersion::WITH_FILTERED_LIST)
     {
         if (list_request_type != ListRequestType::ALL)
             throw Exception(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
@@ -1342,7 +1304,7 @@ void ZooKeeper::multi(
 {
     ZooKeeperMultiRequest request(requests, default_acls);
 
-    if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+    if (request.getOpNum() == OpNum::MultiRead && keeper_api_version < Coordination::KeeperApiVersion::WITH_MULTI_READ)
             throw Exception(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
     RequestInfo request_info;

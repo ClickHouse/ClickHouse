@@ -56,13 +56,11 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS mutations_cleaner_r2 SYNC"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutations_cleaner', 'r1') ORDER BY x SETTINGS \
     finished_mutations_to_keep = 2,
     cleanup_delay_period = 1,
-    cleanup_delay_period_random_add = 0,
-    cleanup_thread_preferred_points_per_iteration=0"
+    cleanup_delay_period_random_add = 0"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutations_cleaner', 'r2') ORDER BY x SETTINGS \
     finished_mutations_to_keep = 2,
     cleanup_delay_period = 1,
-    cleanup_delay_period_random_add = 0,
-    cleanup_thread_preferred_points_per_iteration=0"
+    cleanup_delay_period_random_add = 0"
 
 # Insert some data
 ${CLICKHOUSE_CLIENT} --insert_keeper_fault_injection_probability=0 --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2), (3), (4), (5)"

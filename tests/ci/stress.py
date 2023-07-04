@@ -20,7 +20,6 @@ def get_options(i, upgrade_check):
             '''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
         )
         client_options.append("allow_experimental_database_replicated=1")
-        client_options.append("enable_deflate_qpl_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -46,6 +45,7 @@ def get_options(i, upgrade_check):
             client_options.append("max_rows_in_join=1000")
 
     if i > 0 and random.random() < 1 / 3:
+        client_options.append("allow_experimental_query_cache=1")
         client_options.append("use_query_cache=1")
 
     if i % 5 == 1:

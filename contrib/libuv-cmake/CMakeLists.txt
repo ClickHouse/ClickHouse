@@ -1,7 +1,7 @@
 # This file is a modified version of contrib/libuv/CMakeLists.txt
 
-set (SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/libuv")
-set (BINARY_DIR "${PROJECT_BINARY_DIR}/contrib/libuv")
+set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/libuv")
+set (BINARY_DIR "${CMAKE_BINARY_DIR}/contrib/libuv")
 
 set(uv_sources
     src/fs-poll.c

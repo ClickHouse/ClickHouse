@@ -38,8 +38,8 @@ void CompressedWriteBuffer::nextImpl()
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
 
-        writeBinaryLittleEndian(checksum.low64, out);
-        writeBinaryLittleEndian(checksum.high64, out);
+        writeBinaryLittleEndian(checksum.first, out);
+        writeBinaryLittleEndian(checksum.second, out);
 
         out.position() += compressed_size;
     }
@@ -50,8 +50,8 @@ void CompressedWriteBuffer::nextImpl()
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
 
-        writeBinaryLittleEndian(checksum.low64, out);
-        writeBinaryLittleEndian(checksum.high64, out);
+        writeBinaryLittleEndian(checksum.first, out);
+        writeBinaryLittleEndian(checksum.second, out);
 
         out.write(compressed_buffer.data(), compressed_size);
     }

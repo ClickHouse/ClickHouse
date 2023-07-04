@@ -1,5 +1,5 @@
 select where x < 10
-optimize_move_to_prewhere = 0, optimize_use_projections = 0
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
 0	4294967295
 1	4294967294
 2	4294967293
@@ -10,7 +10,7 @@ optimize_move_to_prewhere = 0, optimize_use_projections = 0
 7	4294967288
 8	4294967287
 9	4294967286
-optimize_move_to_prewhere = 0, optimize_use_projections = 1
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1
 0	4294967295
 1	4294967294
 2	4294967293
@@ -21,7 +21,7 @@ optimize_move_to_prewhere = 0, optimize_use_projections = 1
 7	4294967288
 8	4294967287
 9	4294967286
-optimize_move_to_prewhere = 1, optimize_use_projections = 0
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
 0	4294967295
 1	4294967294
 2	4294967293
@@ -32,7 +32,7 @@ optimize_move_to_prewhere = 1, optimize_use_projections = 0
 7	4294967288
 8	4294967287
 9	4294967286
-optimize_move_to_prewhere = 1, optimize_use_projections = 1
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 0	4294967295
 1	4294967294
 2	4294967293
@@ -43,16 +43,16 @@ optimize_move_to_prewhere = 1, optimize_use_projections = 1
 7	4294967288
 8	4294967287
 9	4294967286
-optimize_move_to_prewhere = 0, optimize_use_projections = 0
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
 		"rows_read": 100,
-optimize_move_to_prewhere = 0, optimize_use_projections = 1
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1
 		"rows_read": 100,
-optimize_move_to_prewhere = 1, optimize_use_projections = 0
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
 		"rows_read": 100,
-optimize_move_to_prewhere = 1, optimize_use_projections = 1
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 		"rows_read": 100,
 select where y > 4294967286
-optimize_move_to_prewhere = 0, optimize_use_projections = 0
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
 0	4294967295
 1	4294967294
 2	4294967293
@@ -62,7 +62,7 @@ optimize_move_to_prewhere = 0, optimize_use_projections = 0
 6	4294967289
 7	4294967288
 8	4294967287
-optimize_move_to_prewhere = 0, optimize_use_projections = 1
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1
 0	4294967295
 1	4294967294
 2	4294967293
@@ -72,7 +72,7 @@ optimize_move_to_prewhere = 0, optimize_use_projections = 1
 6	4294967289
 7	4294967288
 8	4294967287
-optimize_move_to_prewhere = 1, optimize_use_projections = 0
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
 0	4294967295
 1	4294967294
 2	4294967293
@@ -82,7 +82,7 @@ optimize_move_to_prewhere = 1, optimize_use_projections = 0
 6	4294967289
 7	4294967288
 8	4294967287
-optimize_move_to_prewhere = 1, optimize_use_projections = 1
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 0	4294967295
 1	4294967294
 2	4294967293
@@ -92,12 +92,12 @@ optimize_move_to_prewhere = 1, optimize_use_projections = 1
 6	4294967289
 7	4294967288
 8	4294967287
-optimize_move_to_prewhere = 0, optimize_use_projections = 0
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
 		"rows_read": 100,
-optimize_move_to_prewhere = 0, optimize_use_projections = 1
+optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1
 		"rows_read": 100,
-optimize_move_to_prewhere = 1, optimize_use_projections = 0
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
 		"rows_read": 100,
-optimize_move_to_prewhere = 1, optimize_use_projections = 1
+optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 		"rows_read": 100,
 50

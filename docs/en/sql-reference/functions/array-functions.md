@@ -140,7 +140,7 @@ range([start, ] end [, step])
 
 **Implementation details**
 
-- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
+- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments's.
 - An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
 
 **Examples**
@@ -230,14 +230,12 @@ hasAll(set, subset)
 **Arguments**
 
 - `set` – Array of any type with a set of elements.
-- `subset` – Array of any type that shares a common supertype with `set` containing elements that should be tested to be a subset of `set`.
+- `subset` – Array of any type with elements that should be tested to be a subset of `set`.
 
 **Return values**
 
 - `1`, if `set` contains all of the elements from `subset`.
 - `0`, otherwise.
-
-Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share a common supertype.
 
 **Peculiar properties**
 
@@ -255,7 +253,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 `SELECT hasAll(['a', 'b'], ['a'])` returns 1.
 
-`SELECT hasAll([1], ['a'])` raises a `NO_COMMON_TYPE` exception.
+`SELECT hasAll([1], ['a'])` returns 0.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
@@ -270,14 +268,12 @@ hasAny(array1, array2)
 **Arguments**
 
 - `array1` – Array of any type with a set of elements.
-- `array2` – Array of any type that shares a common supertype with `array1`.
+- `array2` – Array of any type with a set of elements.
 
 **Return values**
 
 - `1`, if `array1` and `array2` have one similar element at least.
 - `0`, otherwise.
-
-Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
 
 **Peculiar properties**
 
@@ -292,7 +288,7 @@ Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not sh
 
 `SELECT hasAny([-128, 1., 512], [1])` returns `1`.
 
-`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` raises a `NO_COMMON_TYPE` exception.
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
 
@@ -322,8 +318,6 @@ For Example:
 - `1`, if `array1` contains `array2`.
 - `0`, otherwise.
 
-Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
-
 **Peculiar properties**
 
 - The function will return `1` if `array2` is empty.
@@ -345,9 +339,6 @@ Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not sh
 `SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
 
 `SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
-i
-`SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])` raises a `NO_COMMON_TYPE` exception.
-
 
 ## indexOf(arr, x)
 
@@ -1245,7 +1236,7 @@ arrayAUC(arr_scores, arr_labels)
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
-- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
 **Returned value**
 

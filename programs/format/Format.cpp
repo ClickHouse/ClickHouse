@@ -151,7 +151,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
             obfuscateQueries(query, out, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
-            out.finalize();
         }
         else
         {
@@ -176,7 +175,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOStream res_buf(std::cout, 4096);
                         formatAST(*res, res_buf, hilite, oneline);
-                        res_buf.finalize();
+                        res_buf.next();
                         if (multiple)
                             std::cout << "\n;\n";
                         std::cout << std::endl;
@@ -200,7 +199,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                             res_cout.write(*s_pos++);
                         }
 
-                        res_cout.finalize();
+                        res_cout.next();
                         if (multiple)
                             std::cout << " \\\n;\n";
                         std::cout << std::endl;

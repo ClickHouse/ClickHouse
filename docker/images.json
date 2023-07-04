@@ -141,10 +141,6 @@
         "name": "clickhouse/keeper-jepsen-test",
         "dependent": []
     },
-    "docker/test/server-jepsen": {
-        "name": "clickhouse/server-jepsen-test",
-        "dependent": []
-    },
     "docker/test/install/deb": {
         "name": "clickhouse/install-deb-test",
         "dependent": []

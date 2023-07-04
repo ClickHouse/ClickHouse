@@ -43,7 +43,7 @@ private:
 
     bool nextImpl() override;
 
-    void prefetch(Priority priority) override;
+    void prefetch(int64_t priority) override;
 
 public:
     explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);

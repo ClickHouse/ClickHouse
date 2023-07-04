@@ -1,6 +1,5 @@
 ---
 slug: /en/engines/table-engines/integrations/hudi
-sidebar_position: 86
 sidebar_label: Hudi
 ---
 

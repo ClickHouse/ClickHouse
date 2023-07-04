@@ -81,13 +81,13 @@
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Sources/NullSource.h>
@@ -145,6 +145,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
+    extern const int ILLEGAL_FINAL;
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
@@ -153,6 +154,7 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
 namespace ActionLocks
@@ -643,11 +645,269 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
         metadata_snapshot->getColumns(),
         [](const auto & shard_num_and_columns) -> const auto & { return shard_num_and_columns.second; });
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
 namespace
 {
+
+/// Visitor that collect column source to columns mapping from query and all subqueries
+class CollectColumnSourceToColumnsVisitor : public InDepthQueryTreeVisitor<CollectColumnSourceToColumnsVisitor>
+{
+public:
+    struct Columns
+    {
+        NameSet column_names;
+        NamesAndTypes columns;
+
+        void addColumn(NameAndTypePair column)
+        {
+            if (column_names.contains(column.name))
+                return;
+
+            column_names.insert(column.name);
+            columns.push_back(std::move(column));
+        }
+    };
+
+    const std::unordered_map<QueryTreeNodePtr, Columns> & getColumnSourceToColumns() const
+    {
+        return column_source_to_columns;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source)
+            return;
+
+        auto it = column_source_to_columns.find(column_source);
+        if (it == column_source_to_columns.end())
+        {
+            auto [insert_it, _] = column_source_to_columns.emplace(column_source, Columns());
+            it = insert_it;
+        }
+
+        it->second.addColumn(column_node->getColumn());
+    }
+
+private:
+    std::unordered_map<QueryTreeNodePtr, Columns> column_source_to_columns;
+};
+
+/** Visitor that rewrites IN and JOINs in query and all subqueries according to distributed_product_mode and
+  * prefer_global_in_and_join settings.
+  *
+  * Additionally collects GLOBAL JOIN and GLOBAL IN query nodes.
+  *
+  * If distributed_product_mode = deny, then visitor throws exception if there are multiple distributed tables.
+  * If distributed_product_mode = local, then visitor collects replacement map for tables that must be replaced
+  * with local tables.
+  * If distributed_product_mode = global or prefer_global_in_and_join setting is true, then visitor rewrites JOINs and IN functions that
+  * contain distributed tables to GLOBAL JOINs and GLOBAL IN functions.
+  * If distributed_product_mode = allow, then visitor does not rewrite query if there are multiple distributed tables.
+  */
+class DistributedProductModeRewriteInJoinVisitor : public InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
+    using Base::Base;
+
+    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_)
+        : Base(context_)
+    {}
+
+    struct InFunctionOrJoin
+    {
+        QueryTreeNodePtr query_node;
+        size_t subquery_depth = 0;
+    };
+
+    const std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> & getReplacementMap() const
+    {
+        return replacement_map;
+    }
+
+    const std::vector<InFunctionOrJoin> & getGlobalInOrJoinNodes() const
+    {
+        return global_in_or_join_nodes;
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        auto * function_node = parent->as<FunctionNode>();
+        if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
+            return false;
+
+        auto * join_node = parent->as<JoinNode>();
+        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpression() == child)
+            return false;
+
+        return true;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        auto * join_node = node->as<JoinNode>();
+
+        if ((function_node && isNameOfGlobalInFunction(function_node->getFunctionName())) ||
+            (join_node && join_node->getLocality() == JoinLocality::Global))
+        {
+            InFunctionOrJoin in_function_or_join_entry;
+            in_function_or_join_entry.query_node = node;
+            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
+            global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
+            return;
+        }
+
+        if ((function_node && isNameOfLocalInFunction(function_node->getFunctionName())) ||
+            (join_node && join_node->getLocality() != JoinLocality::Global))
+        {
+            InFunctionOrJoin in_function_or_join_entry;
+            in_function_or_join_entry.query_node = node;
+            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
+            in_function_or_join_stack.push_back(in_function_or_join_entry);
+            return;
+        }
+
+        if (node->getNodeType() == QueryTreeNodeType::TABLE)
+            tryRewriteTableNodeIfNeeded(node);
+    }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
+            in_function_or_join_stack.pop_back();
+    }
+
+private:
+    void tryRewriteTableNodeIfNeeded(const QueryTreeNodePtr & table_node)
+    {
+        const auto & table_node_typed = table_node->as<TableNode &>();
+        const auto * distributed_storage = typeid_cast<const StorageDistributed *>(table_node_typed.getStorage().get());
+        if (!distributed_storage)
+            return;
+
+        bool distributed_valid_for_rewrite = distributed_storage->getShardCount() >= 2;
+        if (!distributed_valid_for_rewrite)
+            return;
+
+        auto distributed_product_mode = getSettings().distributed_product_mode;
+
+        if (distributed_product_mode == DistributedProductMode::LOCAL)
+        {
+            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
+                distributed_storage->getRemoteTableName()};
+            auto resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+            const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
+            auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
+            auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+            replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
+        }
+        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings().prefer_global_in_and_join) &&
+            !in_function_or_join_stack.empty())
+        {
+            auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
+
+            if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
+            {
+                auto global_in_function_name = getGlobalInFunctionNameForLocalInFunctionName(in_function_to_modify->getFunctionName());
+                auto global_in_function_resolver = FunctionFactory::instance().get(global_in_function_name, getContext());
+                in_function_to_modify->resolveAsFunction(global_in_function_resolver->build(in_function_to_modify->getArgumentColumns()));
+            }
+            else if (auto * join_node_to_modify = in_or_join_node_to_modify->as<JoinNode>())
+            {
+                join_node_to_modify->setLocality(JoinLocality::Global);
+            }
+
+            global_in_or_join_nodes.push_back(in_function_or_join_stack.back());
+        }
+        else if (distributed_product_mode == DistributedProductMode::ALLOW)
+        {
+            return;
+        }
+        else if (distributed_product_mode == DistributedProductMode::DENY)
+        {
+            throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
+                "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
+                "You may rewrite query to use local tables "
+                "in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.");
+        }
+    }
+
+    std::vector<InFunctionOrJoin> in_function_or_join_stack;
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    std::vector<InFunctionOrJoin> global_in_or_join_nodes;
+};
+
+/** Execute subquery node and put result in mutable context temporary table.
+  * Returns table node that is initialized with temporary table storage.
+  */
+QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
+    ContextMutablePtr & mutable_context,
+    size_t subquery_depth)
+{
+    auto subquery_hash = subquery_node->getTreeHash();
+    String temporary_table_name = fmt::format("_data_{}_{}", subquery_hash.first, subquery_hash.second);
+
+    const auto & external_tables = mutable_context->getExternalTables();
+    auto external_table_it = external_tables.find(temporary_table_name);
+    if (external_table_it != external_tables.end())
+    {
+        auto temporary_table_expression_node = std::make_shared<TableNode>(external_table_it->second, mutable_context);
+        temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
+        return temporary_table_expression_node;
+    }
+
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
+    auto context_copy = Context::createCopy(mutable_context);
+    updateContextForSubqueryExecution(context_copy);
+
+    InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
+    auto & query_plan = interpreter.getQueryPlan();
+
+    auto sample_block_with_unique_names = query_plan.getCurrentDataStream().header;
+    makeUniqueColumnNamesInBlock(sample_block_with_unique_names);
+
+    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentDataStream().header))
+    {
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            sample_block_with_unique_names.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+        auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
+        query_plan.addStep(std::move(converting_step));
+    }
+
+    Block sample = interpreter.getSampleBlock();
+    NamesAndTypesList columns = sample.getNamesAndTypesList();
+
+    auto external_storage_holder = TemporaryTableHolder(
+        mutable_context,
+        ColumnsDescription{columns},
+        ConstraintsDescription{},
+        nullptr /*query*/,
+        true /*create_for_global_subquery*/);
+
+    StoragePtr external_storage = external_storage_holder.getTable();
+    auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
+    temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
+
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context);
+    auto io = interpreter.execute();
+    io.pipeline.complete(std::move(table_out));
+    CompletedPipelineExecutor executor(io.pipeline);
+    executor.execute();
+
+    mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
+
+    return temporary_table_expression_node;
+}
 
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
@@ -684,14 +944,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
     else
     {
-        auto resolved_remote_storage_id = remote_storage_id;
-        // In case of cross-replication we don't know what database is used for the table.
-        // `storage_id.hasDatabase()` can return false only on the initiator node.
-        // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-        if (remote_storage_id.hasDatabase())
-            resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
-
-        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns(), distributed_storage_snapshot->object_columns);
+        auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
@@ -704,7 +958,79 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
-    return buildQueryTreeForShard(query_info, query_tree_to_modify);
+    CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
+    collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
+
+    const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
+
+    DistributedProductModeRewriteInJoinVisitor visitor(query_info.planner_context->getQueryContext());
+    visitor.visit(query_tree_to_modify);
+
+    auto replacement_map = visitor.getReplacementMap();
+    const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
+
+    for (const auto & global_in_or_join_node : global_in_or_join_nodes)
+    {
+        if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
+        {
+            auto join_right_table_expression = join_node->getRightTableExpression();
+            auto join_right_table_expression_node_type = join_right_table_expression->getNodeType();
+
+            QueryTreeNodePtr subquery_node;
+
+            if (join_right_table_expression_node_type == QueryTreeNodeType::QUERY ||
+                join_right_table_expression_node_type == QueryTreeNodeType::UNION)
+            {
+                subquery_node = join_right_table_expression;
+            }
+            else if (join_right_table_expression_node_type == QueryTreeNodeType::TABLE ||
+                join_right_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+            {
+                const auto & columns = column_source_to_columns.at(join_right_table_expression).columns;
+                subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns,
+                    join_right_table_expression,
+                    planner_context->getQueryContext());
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expected JOIN right table expression to be table, table function, query or union node. Actual {}",
+                    join_right_table_expression->formatASTForErrorMessage());
+            }
+
+            auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
+                planner_context->getMutableQueryContext(),
+                global_in_or_join_node.subquery_depth);
+            temporary_table_expression_node->setAlias(join_right_table_expression->getAlias());
+            replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
+            continue;
+        }
+        else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
+        {
+            auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
+            auto in_function_node_type = in_function_subquery_node->getNodeType();
+            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+                continue;
+
+            auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
+                planner_context->getMutableQueryContext(),
+                global_in_or_join_node.subquery_depth);
+            in_function_subquery_node = std::move(temporary_table_expression_node);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Expected global IN or JOIN query node. Actual {}",
+                global_in_or_join_node.query_node->formatASTForErrorMessage());
+        }
+    }
+
+    if (!replacement_map.empty())
+        query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
+
+    removeGroupingFunctionSpecializations(query_tree_to_modify);
+
+    return query_tree_to_modify;
 }
 
 }
@@ -719,6 +1045,10 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
+    const auto * select_query = query_info.query->as<ASTSelectQuery>();
+    if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
+        throw Exception(ErrorCodes::ILLEGAL_FINAL, "Final modifier is not allowed together with parallel reading from replicas feature");
+
     Block header;
     ASTPtr query_ast;
 
@@ -732,8 +1062,9 @@ void StorageDistributed::read(
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
     }
     else
     {
@@ -784,10 +1115,10 @@ void StorageDistributed::read(
             }
 
             additional_shard_filter_generator =
-                [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
+                [&, custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    shard_count, shard_num - 1, my_custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+                    shard_count, shard_num - 1, custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
             };
         }
     }
@@ -806,10 +1137,17 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
+
+    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
+    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync && !settings.insert_shard_id)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage {} must have own data directory to enable asynchronous inserts",
+                        getName());
+    }
 
     auto shard_num = cluster->getLocalShardCount() + cluster->getRemoteShardCount();
 
@@ -1648,9 +1986,9 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.monitor_split_batch_on_failure.changed)
             distributed_settings.monitor_split_batch_on_failure = context->getSettingsRef().distributed_directory_monitor_split_batch_on_failure;
         if (!distributed_settings.monitor_sleep_time_ms.changed)
-            distributed_settings.monitor_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+            distributed_settings.monitor_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_sleep_time_ms);
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
-            distributed_settings.monitor_max_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms;
+            distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
 
         return std::make_shared<StorageDistributed>(
             args.table_id,

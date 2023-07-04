@@ -59,16 +59,12 @@ def process_test_log(log_path, broken_tests):
 
                 total += 1
                 if TIMEOUT_SIGN in line:
-                    if test_name in broken_tests:
-                        success += 1
-                        test_results.append((test_name, "BROKEN", test_time, []))
-                    else:
-                        failed += 1
-                        test_results.append((test_name, "Timeout", test_time, []))
+                    failed += 1
+                    test_results.append((test_name, "Timeout", test_time, []))
                 elif FAIL_SIGN in line:
                     if test_name in broken_tests:
                         success += 1
-                        test_results.append((test_name, "BROKEN", test_time, []))
+                        test_results.append((test_name, "OK", test_time, []))
                     else:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
@@ -80,13 +76,15 @@ def process_test_log(log_path, broken_tests):
                     test_results.append((test_name, "SKIPPED", test_time, []))
                 else:
                     if OK_SIGN in line and test_name in broken_tests:
-                        skipped += 1
+                        failed += 1
                         test_results.append(
                             (
                                 test_name,
-                                "NOT_FAILED",
+                                "FAIL",
                                 test_time,
-                                ["This test passed. Update analyzer_tech_debt.txt.\n"],
+                                [
+                                    "Test is expected to fail! Please, update broken_tests.txt!\n"
+                                ],
                             )
                         )
                     else:
@@ -205,7 +203,7 @@ if __name__ == "__main__":
     parser.add_argument("--in-results-dir", default="/test_output/")
     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
-    parser.add_argument("--broken-tests", default="/analyzer_tech_debt.txt")
+    parser.add_argument("--broken-tests", default="/broken_tests.txt")
     args = parser.parse_args()
 
     broken_tests = list()

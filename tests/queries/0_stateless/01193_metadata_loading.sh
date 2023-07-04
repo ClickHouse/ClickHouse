@@ -5,14 +5,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Check that attaching a database with a large number of tables is not too slow.
 # it is the worst way of making performance test, nevertheless it can detect significant slowdown and some other issues, that usually found by stress test
 
 db="test_01193_$RANDOM"
 tables=1000
 threads=10
 count_multiplier=1
-max_time_ms=1500
+max_time_ms=1000
 
 debug_or_sanitizer_build=$($CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%' OR hasThreadFuzzer()")
 
@@ -42,15 +41,13 @@ wait
 $CLICKHOUSE_CLIENT -q "CREATE TABLE $db.table_merge (i UInt64, d Date, s String, n Nested(i UInt8, f Float32)) ENGINE=Merge('$db', '^table_')"
 $CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM merge('$db', '^table_9') GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
-for i in {1..50}; do
+for i in {1..5}; do
   $CLICKHOUSE_CLIENT -q "DETACH DATABASE $db"
-  $CLICKHOUSE_CLIENT --query_profiler_real_time_period_ns=100000000 --query_profiler_cpu_time_period_ns=100000000 -q "ATTACH DATABASE $db" --query_id="$db-$i";
+  $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $db" --query_id="$db-$i";
 done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
-durations=$($CLICKHOUSE_CLIENT -q "SELECT groupArray(query_duration_ms) FROM system.query_log WHERE current_database = currentDatabase() AND query_id LIKE '$db-%' AND type=2")
-$CLICKHOUSE_CLIENT -q "SELECT 'durations', '$db', $durations FORMAT Null"
-$CLICKHOUSE_CLIENT -q "SELECT if(quantile(0.5)(arrayJoin($durations)) < $max_time_ms, 'ok', toString($durations))"
+$CLICKHOUSE_CLIENT -q "SELECT if(quantile(0.5)(query_duration_ms) < $max_time_ms, 'ok', toString(groupArray(query_duration_ms))) FROM system.query_log WHERE current_database = currentDatabase() AND query_id LIKE '$db-%' AND type=2"
 
 $CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 

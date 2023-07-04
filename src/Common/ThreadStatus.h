@@ -37,6 +37,7 @@ class QueryThreadLog;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
+class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
@@ -290,7 +291,6 @@ public:
     void flushUntrackedMemory();
 
 private:
-    void applyGlobalSettings();
     void applyQuerySettings();
 
     void initPerformanceCounters();

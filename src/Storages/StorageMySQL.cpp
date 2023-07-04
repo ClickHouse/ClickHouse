@@ -21,7 +21,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Databases/MySQL/FetchTablesColumnsList.h>
 
 
 namespace DB
@@ -31,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_TABLE;
 }
 
 static String backQuoteMySQL(const String & x)
@@ -67,36 +65,12 @@ StorageMySQL::StorageMySQL(
     , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-
-    if (columns_.empty())
-    {
-        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
-        storage_metadata.setColumns(columns);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
-ColumnsDescription StorageMySQL::getTableStructureFromData(
-    mysqlxx::PoolWithFailover & pool_,
-    const String & database,
-    const String & table,
-    const ContextPtr & context_)
-{
-    const auto & settings = context_->getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings.mysql_datatypes_support_level);
-
-    const auto columns = tables_and_columns.find(table);
-    if (columns == tables_and_columns.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
-                        (database.empty() ? "" : (backQuote(database) + "." + backQuote(table))));
-
-    return columns->second;
-}
 
 Pipe StorageMySQL::read(
     const Names & column_names_,
@@ -252,7 +226,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     return std::make_shared<StorageMySQLSink>(
         *this,
@@ -380,7 +354,6 @@ void registerStorageMySQL(StorageFactory & factory)
     },
     {
         .supports_settings = true,
-        .supports_schema_inference = true,
         .source_access_type = AccessType::MYSQL,
     });
 }

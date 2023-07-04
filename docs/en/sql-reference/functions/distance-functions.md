@@ -237,43 +237,6 @@ Result:
 └────────────────────────────┘
 ```
 
-## L2SquaredDistance
-
-Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
-
-**Syntax**
-
-```sql
-L2SquaredDistance(vector1, vector2)
-```
-
-Alias: `distanceL2Squared`.
-
-**Arguments**
-
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-
-**Returned value**
-
-Type: [Float](../../sql-reference/data-types/float.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
-```
-
-Result:
-
-```response
-┌─L2SquaredDistance([1, 2, 3], [0, 0, 0])─┐
-│                                      14 │
-└─────────────────────────────────────────┘
-```
-
 ## LinfDistance
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
@@ -524,7 +487,7 @@ cosineDistance(vector1, vector2)
 
 **Returned value**
 
-- Cosine of the angle between two vectors subtracted from one.
+- Cosine of the angle between two vectors substracted from one.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 

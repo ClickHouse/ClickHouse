@@ -29,8 +29,7 @@ def create_table(cluster, table_name, additional_settings=None):
         SETTINGS
             storage_policy='hdfs',
             old_parts_lifetime=0,
-            index_granularity=512,
-            temporary_directories_lifetime=1
+            index_granularity=512
         """.format(
         table_name
     )
@@ -225,10 +224,7 @@ def test_attach_detach_partition(cluster):
     wait_for_delete_empty_parts(node, "hdfs_test")
     wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_hdfs_objects(
-        cluster,
-        FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION,
+        cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE hdfs_test ATTACH PARTITION '2020-01-03'")
@@ -359,14 +355,7 @@ def test_move_replace_partition_to_another_table(cluster):
 
     # Number of objects in HDFS should be unchanged.
     hdfs_objects = fs.listdir("/clickhouse")
-    for obj in hdfs_objects:
-        print("Object in HDFS after move", obj)
-    wait_for_delete_hdfs_objects(
-        cluster,
-        FILES_OVERHEAD * 2
-        + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
-    )
+    assert len(hdfs_objects) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
 
     # Add new partitions to source table, but with different values and replace them from copied table.
     node.query(
@@ -381,15 +370,7 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
     hdfs_objects = fs.listdir("/clickhouse")
-    for obj in hdfs_objects:
-        print("Object in HDFS after insert", obj)
-
-    wait_for_delete_hdfs_objects(
-        cluster,
-        FILES_OVERHEAD * 2
-        + FILES_OVERHEAD_PER_PART_WIDE * 6
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
-    )
+    assert len(hdfs_objects) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6
 
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-03' FROM hdfs_clone")
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-05' FROM hdfs_clone")
@@ -400,25 +381,13 @@ def test_move_replace_partition_to_another_table(cluster):
 
     # Wait for outdated partitions deletion.
     wait_for_delete_hdfs_objects(
-        cluster,
-        FILES_OVERHEAD * 2
-        + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        cluster, FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
     )
 
-    node.query("DROP TABLE hdfs_clone SYNC")
+    node.query("DROP TABLE hdfs_clone NO DELAY")
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
     # Data should remain in hdfs
     hdfs_objects = fs.listdir("/clickhouse")
-
-    for obj in hdfs_objects:
-        print("Object in HDFS after drop", obj)
-
-    wait_for_delete_hdfs_objects(
-        cluster,
-        FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
-    )
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
