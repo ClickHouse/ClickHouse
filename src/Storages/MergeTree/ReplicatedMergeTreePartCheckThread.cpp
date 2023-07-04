@@ -472,8 +472,8 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
             /// Part is not in ZooKeeper and not on disk (so there's nothing to detach or remove from ZooKeeper).
             /// Probably we cannot execute some entry from the replication queue (so don't need to enqueue another one).
             /// Either all replicas having the part are not active, or the part is lost forever.
-            bool is_lost = searchForMissingPartOnOtherReplicas(part_name);
-            if (is_lost)
+            bool found_something = searchForMissingPartOnOtherReplicas(part_name);
+            if (!found_something)
                 onPartIsLostForever(part_name);
 
             break;
