@@ -89,38 +89,6 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash64Keyed
-
-Same as [sipHash64](#hash_functions-siphash64) but additionally takes an explicit key argument instead of using a fixed key.
-
-**Syntax**
-
-```sql
-sipHash64Keyed((k0, k1), par1,...)
-```
-
-**Arguments**
-
-Same as [sipHash64](#hash_functions-siphash64), but the first argument is a tuple of two UInt64 values representing the key.
-
-**Returned value**
-
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
-
-**Example**
-
-Query:
-
-```sql
-SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
-```
-
-```response
-┌─────────────SipHash─┬─type───┐
-│ 8017656310194184311 │ UInt64 │
-└─────────────────────┴────────┘
-```
-
 ## sipHash128
 
 Like [sipHash64](#hash_functions-siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
@@ -159,46 +127,6 @@ Result:
 ┌─hex(sipHash128('foo', '', 3))────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
-```
-
-## sipHash128Keyed
-
-Same as [sipHash128](#hash_functions-siphash128) but additionally takes an explicit key argument instead of using a fixed key.
-
-:::note
-This 128-bit variant differs from the reference implementation and it's weaker.
-This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [sipHash128ReferenceKeyed](#hash_functions-siphash128referencekeyed).
-:::
-
-**Syntax**
-
-```sql
-sipHash128Keyed((k0, k1), par1,...)
-```
-
-**Arguments**
-
-Same as [sipHash128](#hash_functions-siphash128), but the first argument is a tuple of two UInt64 values representing the key.
-
-**Returned value**
-
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
-```
-
-Result:
-
-```response
-┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
-│ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
-└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## sipHash128Reference

@@ -12,9 +12,7 @@ namespace DB
 REGISTER_FUNCTION(Hashing)
 {
     factory.registerFunction<FunctionSipHash64>();
-    factory.registerFunction<FunctionSipHash64Keyed>();
     factory.registerFunction<FunctionSipHash128>();
-    factory.registerFunction<FunctionSipHash128Keyed>();
     factory.registerFunction<FunctionSipHash128Reference>(FunctionDocumentation{
         .description="Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.",
         .examples{{"hash", "SELECT hex(sipHash128Reference('foo', '\\x01', 3))", ""}},
