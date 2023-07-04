@@ -340,6 +340,15 @@ public:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
+    void addLastSentPart(const MergeTreePartInfo & info);
+    std::deque<MergeTreePartInfo> getLastSentParts() const
+    {
+        std::lock_guard lock(last_sent_parts_mutex);
+        return last_sent_parts;
+    }
+
+    void waitForUniquePartsToBeFetchedByOtherReplicas(size_t wait_ms);
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -444,9 +453,14 @@ private:
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     std::atomic<bool> shutdown_called {false};
-    std::atomic<bool> flush_called {false};
+
+    static constexpr size_t LAST_SENT_PARS_WINDOW_SIZE = 1000;
+    std::mutex last_sent_parts_mutex;
+    std::condition_variable last_sent_parts_cv;
+    std::deque<MergeTreePartInfo> last_sent_parts;
 
     /// Threads.
+    ///
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
@@ -697,6 +711,7 @@ private:
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
+    static std::vector<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.

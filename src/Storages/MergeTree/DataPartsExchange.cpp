@@ -203,6 +203,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             sendPartFromMemory(part, out, send_projections);
         else
             sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
+
+        data.addLastSentPart(part->name);
     }
     catch (const NetException &)
     {
