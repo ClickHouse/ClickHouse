@@ -293,7 +293,7 @@ The statement produces a result table with the following structure:
 - packed - Currently unused
 - null - Currently unused
 - index_type - The index type, e.g. `PRIMARY`, `MINMAX`, `BLOOM_FILTER` etc. (String)
-- comment - `` additional information about the index, currently always `` (empty string) (String)
+- comment - Additional information about the index, currently always `` (empty string) (String)
 - index_comment - `` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field like in MySQL (String)
 - visible - If the index is visible to the optimizer, always `YES` (String)
 - expression - The index expression (String)
