@@ -19,6 +19,7 @@
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -166,7 +167,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
-    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
 
     /// Write data
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/rounding-functions
-sidebar_position: 45
+sidebar_position: 155
 sidebar_label: Rounding
 ---
 
@@ -38,11 +38,11 @@ round(expression [, decimal_places])
 
 **Arguments**
 
--   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
--   `decimal-places` — An integer value.
-    -   If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
-    -   If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
-    -   If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
+- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
+- `decimal-places` — An integer value.
+    - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
+    - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
+    - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
 
 **Returned value:**
 
@@ -101,27 +101,27 @@ round(3.65, 1) = 3.6
 
 **See Also**
 
--   [roundBankers](#roundbankers)
+- [roundBankers](#roundbankers)
 
 ## roundBankers
 
 Rounds a number to a specified decimal position.
 
--   If the rounding number is halfway between two numbers, the function uses banker’s rounding.
+- If the rounding number is halfway between two numbers, the function uses banker’s rounding.
 
         Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
 
         It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 
--   In other cases, the function rounds numbers to the nearest integer.
+- In other cases, the function rounds numbers to the nearest integer.
 
 Using banker’s rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
 
 For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
--   No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
--   Banker’s rounding: 2 + 2 + 4 + 4 = 12.
--   Rounding to the nearest integer: 2 + 3 + 4 + 5 = 14.
+- No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
+- Banker’s rounding: 2 + 2 + 4 + 4 = 12.
+- Rounding to the nearest integer: 2 + 3 + 4 + 5 = 14.
 
 **Syntax**
 
@@ -131,11 +131,11 @@ roundBankers(expression [, decimal_places])
 
 **Arguments**
 
--   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
--   `decimal-places` — Decimal places. An integer number.
-    -   `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
-    -   `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
-    -   `decimal-places = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
+- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
+- `decimal-places` — Decimal places. An integer number.
+    - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
+    - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
+    - `decimal-places = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
 
 **Returned value**
 
@@ -182,7 +182,7 @@ roundBankers(10.755, 2) = 10.76
 
 **See Also**
 
--   [round](#rounding_functions-round)
+- [round](#rounding_functions-round)
 
 ## roundToExp2(num)
 
@@ -194,7 +194,14 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 ## roundAge(num)
 
-Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. 
+Accepts a number. If the number is
+- smaller than 1, it returns 0,
+- between 1 and 17, it returns 17,
+- between 18 and 24, it returns 18,
+- between 25 and 34, it returns 25,
+- between 35 and 44, it returns 35,
+- between 45 and 54, it returns 45,
+- larger than 55, it returns 55.
 
 ## roundDown(num, arr)
 

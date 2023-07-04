@@ -74,7 +74,9 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
-    String query = transformQueryForExternalDatabase(query_info,
+    String query = transformQueryForExternalDatabase(
+        query_info,
+        column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
@@ -114,7 +116,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     bridge_helper->startBridgeSync();
 

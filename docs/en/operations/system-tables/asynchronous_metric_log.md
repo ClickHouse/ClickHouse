@@ -7,11 +7,11 @@ Contains the historical values for `system.asynchronous_metrics`, which are save
 
 Columns:
 
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
--   `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--   `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
 **Example**
 

@@ -13,6 +13,7 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
+#include <bit>
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
@@ -20,6 +21,7 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <Common/Exception.h>
+
 
 namespace DB
 {
@@ -29,15 +31,13 @@ namespace ErrorCodes
 }
 }
 
-#define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
-
 #define SIPROUND                                                  \
     do                                                            \
     {                                                             \
-        v0 += v1; v1 = ROTL(v1, 13); v1 ^= v0; v0 = ROTL(v0, 32); \
-        v2 += v3; v3 = ROTL(v3, 16); v3 ^= v2;                    \
-        v0 += v3; v3 = ROTL(v3, 21); v3 ^= v0;                    \
-        v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); \
+        v0 += v1; v1 = std::rotl(v1, 13); v1 ^= v0; v0 = std::rotl(v0, 32); \
+        v2 += v3; v3 = std::rotl(v3, 16); v3 ^= v2;                    \
+        v0 += v3; v3 = std::rotl(v3, 21); v3 ^= v0;                    \
+        v2 += v1; v1 = std::rotl(v1, 17); v1 ^= v2; v2 = std::rotl(v2, 32); \
     } while(0)
 
 /// Define macro CURRENT_BYTES_IDX for building index used in current_bytes array
@@ -136,7 +136,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = unalignedLoadLE<UInt64>(data);
+            current_word = unalignedLoadLittleEndian<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -164,7 +164,16 @@ public:
     template <typename T>
     ALWAYS_INLINE void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            T rev_x = x;
+            char *start = reinterpret_cast<char *>(&rev_x);
+            char *end = start + sizeof(T);
+            std::reverse(start, end);
+            update(reinterpret_cast<const char *>(&rev_x), sizeof(rev_x)); /// NOLINT
+        }
+        else
+            update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
     ALWAYS_INLINE void update(const std::string & x)
@@ -233,14 +242,16 @@ public:
         SIPROUND;
         SIPROUND;
         auto hi = v0 ^ v1 ^ v2 ^ v3;
+
         if constexpr (std::endian::native == std::endian::big)
         {
-            lo = __builtin_bswap64(lo);
-            hi = __builtin_bswap64(hi);
+            lo = std::byteswap(lo);
+            hi = std::byteswap(hi);
             auto tmp = hi;
             hi = lo;
             lo = tmp;
         }
+
         UInt128 res = hi;
         res <<= 64;
         res |= lo;

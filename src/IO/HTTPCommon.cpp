@@ -7,8 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
-#include <Poco/Version.h>
-
 #include "config.h"
 
 #if USE_SSL
@@ -70,7 +68,8 @@ namespace
         if (https)
         {
 #if USE_SSL
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
+            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
+            /// For more information about SNI, see the https://en.wikipedia.org/wiki/Server_Name_Indication
             auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
             if (resolve_host)
                 https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
@@ -98,12 +97,14 @@ namespace
     private:
         const std::string host;
         const UInt16 port;
-        bool https;
+        const bool https;
         const String proxy_host;
         const UInt16 proxy_port;
-        bool proxy_https;
-        bool resolve_host;
+        const bool proxy_https;
+        const bool resolve_host;
+
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
+
         ObjectPtr allocObject() override
         {
             auto session = makeHTTPSessionImpl(host, port, https, true, resolve_host);
@@ -123,14 +124,14 @@ namespace
 
     public:
         SingleEndpointHTTPSessionPool(
-                const std::string & host_,
-                UInt16 port_,
-                bool https_,
-                const std::string & proxy_host_,
-                UInt16 proxy_port_,
-                bool proxy_https_,
-                size_t max_pool_size_,
-                bool resolve_host_ = true)
+            const std::string & host_,
+            UInt16 port_,
+            bool https_,
+            const std::string & proxy_host_,
+            UInt16 proxy_port_,
+            bool proxy_https_,
+            size_t max_pool_size_,
+            bool resolve_host_ = true)
             : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)
@@ -183,6 +184,24 @@ namespace
 
         std::mutex mutex;
         std::unordered_map<Key, PoolPtr, Hasher> endpoints_pool;
+
+        void updateHostIfIpChanged(Entry & session, const String & new_ip)
+        {
+            const auto old_ip = session->getResolvedHost().empty() ? session->getHost() : session->getResolvedHost();
+
+            if (new_ip != old_ip)
+            {
+                session->reset();
+                if (session->getResolvedHost().empty())
+                {
+                    session->setHost(new_ip);
+                }
+                else
+                {
+                    session->setResolvedHost(new_ip);
+                }
+            }
+        }
 
     protected:
         HTTPSessionPool() = default;
@@ -238,13 +257,7 @@ namespace
 
                     if (resolve_host)
                     {
-                        /// Host can change IP
-                        const auto ip = DNSResolver::instance().resolveHost(host).toString();
-                        if (ip != session->getHost())
-                        {
-                            session->reset();
-                            session->setHost(ip);
-                        }
+                        updateHostIfIpChanged(session, DNSResolver::instance().resolveHost(host).toString());
                     }
                 }
                 /// Reset the message, once it has been printed,

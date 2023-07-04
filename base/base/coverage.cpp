@@ -2,6 +2,8 @@
 
 #if WITH_COVERAGE
 
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+
 #    include <mutex>
 #    include <unistd.h>
 

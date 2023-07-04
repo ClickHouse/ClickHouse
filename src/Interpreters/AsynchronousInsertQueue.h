@@ -90,7 +90,7 @@ private:
         struct Entry
         {
         public:
-            const String bytes;
+            String bytes;
             const String query_id;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;

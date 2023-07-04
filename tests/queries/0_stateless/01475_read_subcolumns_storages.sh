@@ -12,7 +12,6 @@ create_query="CREATE TABLE subcolumns(n Nullable(UInt32), a1 Array(UInt32),\
 
 # "StripeLog"
 declare -a ENGINES=("Log" "TinyLog" "Memory" \
-    "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_compact_part='10M'" \
     "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part='10M'" \
     "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0")
 

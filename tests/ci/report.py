@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists()
+            assert file.exists(), file
             self.log_files.append(file)
 
 
@@ -243,6 +243,7 @@ class BuildResult:
     sanitizer: str
     status: str
     elapsed_seconds: int
+    comment: str
 
 
 BuildResults = List[BuildResult]
@@ -262,23 +263,26 @@ class ReportColorTheme:
 ColorTheme = Tuple[str, str, str]
 
 
-def _format_header(header, branch_name, branch_url=None):
-    result = " ".join([w.capitalize() for w in header.split(" ")])
+def _format_header(
+    header: str, branch_name: str, branch_url: Optional[str] = None
+) -> str:
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
     result = result.replace("Clickhouse", "ClickHouse")
     result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
-        result = "ClickHouse " + result
-    result += " for "
+        result = f"ClickHouse {result}"
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result = f'{result} for <a href="{branch_url}">{branch_name}</a>'
     else:
-        result += branch_name
+        result = f"{result} for {branch_name}"
     return result
 
 
 def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
     ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
+    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout", "NOT_FAILED")
 
     if colortheme is None:
         colortheme = ReportColorTheme.default
@@ -345,8 +349,8 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = "<tr>"
-            is_fail = test_result.status in ("FAIL", "FLAKY")
-            if is_fail and test_result.raw_logs is not None:
+            has_error = test_result.status in ("FAIL", "FLAKY", "NOT_FAILED")
+            if has_error and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_result.name + "</td>"
             colspan += 1
@@ -354,7 +358,7 @@ def create_test_html_report(
 
             # Allow to quickly scroll to the first failure.
             fail_id = ""
-            if is_fail:
+            if has_error:
                 num_fails = num_fails + 1
                 fail_id = f'id="fail{num_fails}" '
 
@@ -367,6 +371,7 @@ def create_test_html_report(
                 colspan += 1
 
             if test_result.log_urls is not None:
+                has_log_urls = True
                 test_logs_html = "<br>".join(
                     [_get_html_url(url) for url in test_result.log_urls]
                 )
@@ -448,6 +453,7 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Build log</th>
 <th>Build time</th>
 <th class="artifacts">Artifacts</th>
+<th>Comment</th>
 </tr>
 {rows}
 </table>
@@ -473,7 +479,7 @@ def create_build_html_report(
     commit_url: str,
 ) -> str:
     rows = ""
-    for (build_result, build_log_url, artifact_urls) in zip(
+    for build_result, build_log_url, artifact_urls in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"
@@ -514,6 +520,8 @@ def create_build_html_report(
             if links:
                 links = links[: -len(link_separator)]
             row += f"<td>{links}</td>"
+
+        row += f"<td>{build_result.comment}</td>"
 
         row += "</tr>"
         rows += row

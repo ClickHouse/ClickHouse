@@ -42,7 +42,7 @@ def copy_keys(instance, keys_file_name):
 
 
 def create_table():
-    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
     node1.query(
         """
         CREATE TABLE tbl ON CLUSTER 'cluster' (

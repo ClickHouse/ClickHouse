@@ -69,11 +69,6 @@ if (USE_MUSL)
     target_compile_definitions(cxx PUBLIC -D_LIBCPP_HAS_MUSL_LIBC=1)
 endif ()
 
-# Override the deduced attribute support that causes error.
-if (OS_DARWIN AND COMPILER_GCC)
-    add_compile_definitions(_LIBCPP_INIT_PRIORITY_MAX)
-endif ()
-
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
 # Third party library may have substandard code.
@@ -83,11 +78,6 @@ target_compile_options(cxx PRIVATE -w)
 target_compile_definitions(cxx PUBLIC -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 
 target_link_libraries(cxx PUBLIC cxxabi)
-
-# For __udivmodti4, __divmodti4.
-if (OS_DARWIN AND COMPILER_GCC)
-    target_link_libraries(cxx PRIVATE gcc)
-endif ()
 
 install(
     TARGETS cxx

@@ -6,7 +6,6 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/logger_useful.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -29,12 +28,12 @@ public:
     template <typename... TArgs>
     explicit HandlingRuleHTTPHandlerFactory(TArgs &&... args)
     {
-        creator = [args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
+        creator = [my_args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
         {
             return std::apply([&](auto && ... endpoint_args)
             {
                 return std::make_unique<TEndpoint>(std::forward<decltype(endpoint_args)>(endpoint_args)...);
-            }, std::move(args));
+            }, std::move(my_args));
         };
     }
 

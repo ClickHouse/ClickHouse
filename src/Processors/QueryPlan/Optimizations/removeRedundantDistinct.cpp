@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -63,61 +64,36 @@ namespace
         return non_const_columns;
     }
 
-    const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
-    {
-        /// find alias in output
-        const ActionsDAG::Node * output_alias = nullptr;
-        for (const auto * node : actions->getOutputs())
-        {
-            if (node->result_name == output_name)
-            {
-                output_alias = node;
-                break;
-            }
-        }
-        if (!output_alias)
-        {
-            logDebug("getOriginalNodeForOutputAlias: no output alias found", output_name);
-            return nullptr;
-        }
-
-        /// find original(non alias) node it refers to
-        const ActionsDAG::Node * node = output_alias;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            chassert(!node->children.empty());
-            node = node->children.front();
-        }
-        if (node && node->type != ActionsDAG::ActionType::INPUT)
-            return nullptr;
-
-        return node;
-    }
-
     bool compareAggregationKeysWithDistinctColumns(
         const Names & aggregation_keys, const DistinctColumns & distinct_columns, const ActionsDAGPtr & path_actions)
     {
         logDebug("aggregation_keys", aggregation_keys);
         logDebug("aggregation_keys size", aggregation_keys.size());
         logDebug("distinct_columns size", distinct_columns.size());
-        if (aggregation_keys.size() != distinct_columns.size())
-            return false;
 
-        /// compare columns of two DISTINCTs
+        std::set<std::string_view> original_distinct_columns;
+        FindOriginalNodeForOutputName original_node_finder(path_actions);
         for (const auto & column : distinct_columns)
         {
             logDebug("distinct column name", column);
-            const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
+            const auto * alias_node = original_node_finder.find(String(column));
             if (!alias_node)
             {
-                logDebug("original name for alias is not found for", column);
-                return false;
+                logDebug("original name for alias is not found", column);
+                original_distinct_columns.insert(column);
             }
-
-            logDebug("alias result name", alias_node->result_name);
-            if (std::find(cbegin(aggregation_keys), cend(aggregation_keys), alias_node->result_name) == aggregation_keys.cend())
+            else
             {
-                logDebug("alias result name is not found in aggregation keys", alias_node->result_name);
+                logDebug("alias result name", alias_node->result_name);
+                original_distinct_columns.insert(alias_node->result_name);
+            }
+        }
+        /// if aggregation keys are part of distinct columns then rows already distinct
+        for (const auto & key : aggregation_keys)
+        {
+            if (!original_distinct_columns.contains(key))
+            {
+                logDebug("aggregation key NOT found: {}", key);
                 return false;
             }
         }
@@ -176,7 +152,7 @@ namespace
         while (!node->children.empty())
         {
             const IQueryPlanStep * current_step = node->step.get();
-            if (typeid_cast<const AggregatingStep *>(current_step))
+            if (typeid_cast<const AggregatingStep *>(current_step) || typeid_cast<const MergingAggregatedStep *>(current_step))
             {
                 aggregation_before_distinct = current_step;
                 break;
@@ -208,6 +184,9 @@ namespace
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
                 return compareAggregationKeysWithDistinctColumns(aggregating_step->getParams().keys, distinct_columns, actions);
+            else if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
+                     merging_aggregated_step)
+                return compareAggregationKeysWithDistinctColumns(merging_aggregated_step->getParams().keys, distinct_columns, actions);
         }
 
         return false;
@@ -264,9 +243,10 @@ namespace
             logActionsDAG("distinct pass: merged DAG", path_actions);
 
             /// compare columns of two DISTINCTs
+            FindOriginalNodeForOutputName original_node_finder(path_actions);
             for (const auto & column : distinct_columns)
             {
-                const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
+                const auto * alias_node = original_node_finder.find(String(column));
                 if (!alias_node)
                     return false;
 

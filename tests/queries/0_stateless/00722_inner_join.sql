@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS one;

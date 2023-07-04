@@ -1,6 +1,11 @@
 #pragma once
 #include <base/defines.h>
+#include <base/types.h>
 #include <fmt/format.h>
+#include <mutex>
+#include <unordered_map>
+#include <Poco/Logger.h>
+#include <Poco/Message.h>
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
@@ -156,3 +161,59 @@ struct CheckArgsNumHelperImpl
 
 template <typename... Args> using CheckArgsNumHelper = CheckArgsNumHelperImpl<std::type_identity_t<Args>...>;
 template <typename... Args> void formatStringCheckArgsNum(CheckArgsNumHelper<Args...>, Args &&...) {}
+
+
+/// This wrapper helps to avoid too frequent and noisy log messages.
+/// For each pair (logger_name, format_string) it remembers when such a message was logged the last time.
+/// The message will not be logged again if less than min_interval_s seconds passed since the previously logged message.
+class LogFrequencyLimiterIml
+{
+    /// Hash(logger_name, format_string) -> (last_logged_time_s, skipped_messages_count)
+    static std::unordered_map<UInt64, std::pair<time_t, size_t>> logged_messages;
+    static time_t last_cleanup;
+    static std::mutex mutex;
+
+    Poco::Logger * logger;
+    time_t min_interval_s;
+public:
+    LogFrequencyLimiterIml(Poco::Logger * logger_, time_t min_interval_s_) : logger(logger_), min_interval_s(min_interval_s_) {}
+
+    LogFrequencyLimiterIml & operator -> () { return *this; }
+    bool is(Poco::Message::Priority priority) { return logger->is(priority); }
+    LogFrequencyLimiterIml * getChannel() {return this; }
+    const String & name() const { return logger->name(); }
+
+    void log(Poco::Message & message);
+
+    /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
+    static void cleanup(time_t too_old_threshold_s = 600);
+
+    Poco::Logger * getLogger() { return logger; }
+};
+
+/// This wrapper is useful to save formatted message into a String before sending it to a logger
+class LogToStrImpl
+{
+    String & out_str;
+    Poco::Logger * logger;
+    std::unique_ptr<LogFrequencyLimiterIml> maybe_nested;
+    bool propagate_to_actual_log = true;
+public:
+    LogToStrImpl(String & out_str_, Poco::Logger * logger_) : out_str(out_str_), logger(logger_) {}
+    LogToStrImpl(String & out_str_, std::unique_ptr<LogFrequencyLimiterIml> && maybe_nested_)
+        : out_str(out_str_), logger(maybe_nested_->getLogger()), maybe_nested(std::move(maybe_nested_)) {}
+    LogToStrImpl & operator -> () { return *this; }
+    bool is(Poco::Message::Priority priority) { propagate_to_actual_log &= logger->is(priority); return true; }
+    LogToStrImpl * getChannel() {return this; }
+    const String & name() const { return logger->name(); }
+    void log(Poco::Message & message)
+    {
+        out_str = message.getText();
+        if (!propagate_to_actual_log)
+            return;
+        if (maybe_nested)
+            maybe_nested->log(message);
+        else if (auto * channel = logger->getChannel())
+            channel->log(message);
+    }
+};

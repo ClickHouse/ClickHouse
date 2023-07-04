@@ -5,13 +5,13 @@ import os
 import uuid
 import json
 
-CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
-CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT_TCP', '900000'))
-CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'default')
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+
 
 def writeVarUInt(x, ba):
     for _ in range(0, 9):
-
         byte = x & 0x7F
         if x > 0x7F:
             byte |= 0x80
@@ -24,12 +24,12 @@ def writeVarUInt(x, ba):
 
 
 def writeStringBinary(s, ba):
-    b = bytes(s, 'utf-8')
+    b = bytes(s, "utf-8")
     writeVarUInt(len(s), ba)
     ba.extend(b)
 
 
-def readStrict(s, size = 1):
+def readStrict(s, size=1):
     res = bytearray()
     while size:
         cur = s.recv(size)
@@ -48,17 +48,22 @@ def readUInt(s, size=1):
         val += res[i] << (i * 8)
     return val
 
+
 def readUInt8(s):
     return readUInt(s)
+
 
 def readUInt16(s):
     return readUInt(s, 2)
 
+
 def readUInt32(s):
     return readUInt(s, 4)
 
+
 def readUInt64(s):
     return readUInt(s, 8)
+
 
 def readVarUInt(s):
     x = 0
@@ -75,25 +80,25 @@ def readVarUInt(s):
 def readStringBinary(s):
     size = readVarUInt(s)
     s = readStrict(s, size)
-    return s.decode('utf-8')
+    return s.decode("utf-8")
 
 
 def sendHello(s):
     ba = bytearray()
-    writeVarUInt(0, ba) # Hello
-    writeStringBinary('simple native protocol', ba)
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary("simple native protocol", ba)
     writeVarUInt(21, ba)
     writeVarUInt(9, ba)
     writeVarUInt(54449, ba)
-    writeStringBinary(CLICKHOUSE_DATABASE, ba) # database
-    writeStringBinary('default', ba) # user
-    writeStringBinary('', ba) # pwd
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # pwd
     s.sendall(ba)
 
 
 def receiveHello(s):
     p_type = readVarUInt(s)
-    assert (p_type == 0) # Hello
+    assert p_type == 0  # Hello
     server_name = readStringBinary(s)
     # print("Server name: ", server_name)
     server_version_major = readVarUInt(s)
@@ -111,65 +116,65 @@ def receiveHello(s):
 
 
 def serializeClientInfo(ba, query_id):
-    writeStringBinary('default', ba) # initial_user
-    writeStringBinary(query_id, ba) # initial_query_id
-    writeStringBinary('127.0.0.1:9000', ba) # initial_address
-    ba.extend([0] * 8) # initial_query_start_time_microseconds
-    ba.append(1) # TCP
-    writeStringBinary('os_user', ba) # os_user
-    writeStringBinary('client_hostname', ba) # client_hostname
-    writeStringBinary('client_name', ba) # client_name
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds
+    ba.append(1)  # TCP
+    writeStringBinary("os_user", ba)  # os_user
+    writeStringBinary("client_hostname", ba)  # client_hostname
+    writeStringBinary("client_name", ba)  # client_name
     writeVarUInt(21, ba)
     writeVarUInt(9, ba)
     writeVarUInt(54449, ba)
-    writeStringBinary('', ba) # quota_key
-    writeVarUInt(0, ba) # distributed_depth
-    writeVarUInt(1, ba) # client_version_patch
-    ba.append(0) # No telemetry
+    writeStringBinary("", ba)  # quota_key
+    writeVarUInt(0, ba)  # distributed_depth
+    writeVarUInt(1, ba)  # client_version_patch
+    ba.append(0)  # No telemetry
 
 
 def sendQuery(s, query):
     ba = bytearray()
     query_id = uuid.uuid4().hex
-    writeVarUInt(1, ba) # query
+    writeVarUInt(1, ba)  # query
     writeStringBinary(query_id, ba)
 
-    ba.append(1) # INITIAL_QUERY
+    ba.append(1)  # INITIAL_QUERY
 
     # client info
     serializeClientInfo(ba, query_id)
 
-    writeStringBinary('', ba) # No settings
-    writeStringBinary('', ba) # No interserver secret
-    writeVarUInt(2, ba) # Stage - Complete
-    ba.append(0) # No compression
-    writeStringBinary(query, ba) # query, finally
+    writeStringBinary("", ba)  # No settings
+    writeStringBinary("", ba)  # No interserver secret
+    writeVarUInt(2, ba)  # Stage - Complete
+    ba.append(0)  # No compression
+    writeStringBinary(query, ba)  # query, finally
     s.sendall(ba)
 
 
 def serializeBlockInfo(ba):
-    writeVarUInt(1, ba) # 1
-    ba.append(0) # is_overflows
-    writeVarUInt(2, ba) # 2
-    writeVarUInt(0, ba) # 0
-    ba.extend([0] * 4) # bucket_num
+    writeVarUInt(1, ba)  # 1
+    ba.append(0)  # is_overflows
+    writeVarUInt(2, ba)  # 2
+    writeVarUInt(0, ba)  # 0
+    ba.extend([0] * 4)  # bucket_num
 
 
 def sendEmptyBlock(s):
     ba = bytearray()
-    writeVarUInt(2, ba) # Data
-    writeStringBinary('', ba)
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
     serializeBlockInfo(ba)
-    writeVarUInt(0, ba) # rows
-    writeVarUInt(0, ba) # columns
+    writeVarUInt(0, ba)  # rows
+    writeVarUInt(0, ba)  # columns
     s.sendall(ba)
 
 
 def assertPacket(packet, expected):
-    assert(packet == expected), packet
+    assert packet == expected, packet
 
 
-class Progress():
+class Progress:
     def __init__(self):
         # NOTE: this is done in ctor to initialize __dict__
         self.read_rows = 0
@@ -198,11 +203,12 @@ class Progress():
 
     def __bool__(self):
         return (
-            self.read_rows > 0 or
-            self.read_bytes > 0 or
-            self.total_rows_to_read > 0 or
-            self.written_rows > 0 or
-            self.written_bytes > 0)
+            self.read_rows > 0
+            or self.read_bytes > 0
+            or self.total_rows_to_read > 0
+            or self.written_rows > 0
+            or self.written_bytes > 0
+        )
 
 
 def readProgress(s):
@@ -219,13 +225,14 @@ def readProgress(s):
     progress.readPacket(s)
     return progress
 
+
 def readException(s):
     code = readUInt32(s)
     name = readStringBinary(s)
     text = readStringBinary(s)
-    readStringBinary(s) # trace
-    assertPacket(readUInt8(s), 0) # has_nested
-    return "code {}: {}".format(code, text.replace('DB::Exception:', ''))
+    readStringBinary(s)  # trace
+    assertPacket(readUInt8(s), 0)  # has_nested
+    return "code {}: {}".format(code, text.replace("DB::Exception:", ""))
 
 
 def main():
@@ -236,7 +243,10 @@ def main():
         receiveHello(s)
         # For 1 second sleep and 1000ms of interactive_delay we definitelly should have non zero progress packet.
         # NOTE: interactive_delay=0 cannot be used since in this case CompletedPipelineExecutor will not call cancelled callback.
-        sendQuery(s, "insert into function null('_ Int') select sleep(1) from numbers(2) settings max_block_size=1, interactive_delay=1000")
+        sendQuery(
+            s,
+            "insert into function null('_ Int') select sleep(1) from numbers(2) settings max_block_size=1, interactive_delay=1000",
+        )
 
         # external tables
         sendEmptyBlock(s)

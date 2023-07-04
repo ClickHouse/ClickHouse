@@ -13,7 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wold-style-cast"
 
 
 namespace DB

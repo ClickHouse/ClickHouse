@@ -30,6 +30,7 @@ public:
         UInt64 server_revision_,
         bool skip_unknown_columns_ = false,
         bool null_as_default_ = false,
+        bool allow_types_conversion_ = false,
         BlockMissingValues * block_missing_values_ = nullptr);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
@@ -51,6 +52,7 @@ private:
     UInt64 server_revision;
     bool skip_unknown_columns = false;
     bool null_as_default = false;
+    bool allow_types_conversion = false;
     BlockMissingValues * block_missing_values = nullptr;
 
     bool use_index = false;

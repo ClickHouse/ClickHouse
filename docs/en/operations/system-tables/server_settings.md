@@ -8,12 +8,12 @@ Currently, the table shows only settings from the first layer of `config.xml` an
 
 Columns:
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — Server setting name.
--   `value` ([String](../../sql-reference/data-types/string.md)) — Server setting value.
--   `default` ([String](../../sql-reference/data-types/string.md)) — Server setting default value.
--   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting was specified in `config.xml`
--   `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
--   `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Server setting name.
+- `value` ([String](../../sql-reference/data-types/string.md)) — Server setting value.
+- `default` ([String](../../sql-reference/data-types/string.md)) — Server setting default value.
+- `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting was specified in `config.xml`
+- `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
+- `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
 
 **Example**
 
@@ -47,6 +47,6 @@ SELECT * FROM system.server_settings WHERE changed AND name='max_thread_pool_siz
 
 **See also**
 
--   [Settings](../../operations/system-tables/settings.md)
--   [Configuration Files](../../operations/configuration-files.md)
--   [Server Settings](../../operations/server-configuration-parameters/settings.md)
+- [Settings](../../operations/system-tables/settings.md)
+- [Configuration Files](../../operations/configuration-files.md)
+- [Server Settings](../../operations/server-configuration-parameters/settings.md)

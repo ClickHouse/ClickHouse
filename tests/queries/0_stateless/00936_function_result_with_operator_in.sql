@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer = 1;
 SET force_primary_key = 1;
 
 DROP TABLE IF EXISTS samples;
@@ -23,8 +22,8 @@ SELECT 'a' IN splitByChar('c', 'abcdef');
 
 SELECT 'errors:';
 -- non-constant expressions in the right side of IN
-SELECT count() FROM samples WHERE 1 IN range(samples.value); -- { serverError 1 }
-SELECT count() FROM samples WHERE 1 IN range(rand() % 1000); -- { serverError 1 }
+SELECT count() FROM samples WHERE 1 IN range(samples.value); -- { serverError 1, 47 }
+SELECT count() FROM samples WHERE 1 IN range(rand() % 1000); -- { serverError 1, 36 }
 
 -- index is not used
 SELECT count() FROM samples WHERE value IN range(3); -- { serverError 277 }

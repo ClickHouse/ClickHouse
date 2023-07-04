@@ -32,17 +32,17 @@ std::vector<String> AsyncBlockIDsCache::getChildren()
     auto zookeeper = storage.getZooKeeper();
 
     auto watch_callback = [last_time = this->last_updatetime.load()
-                           , update_min_interval = this->update_min_interval
-                           , task = task->shared_from_this()](const Coordination::WatchResponse &)
+                           , my_update_min_interval = this->update_min_interval
+                           , my_task = task->shared_from_this()](const Coordination::WatchResponse &)
     {
         auto now = std::chrono::steady_clock::now();
-        if (now - last_time < update_min_interval)
+        if (now - last_time < my_update_min_interval)
         {
-            std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(update_min_interval - (now - last_time));
-            task->scheduleAfter(sleep_time.count());
+            std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(my_update_min_interval - (now - last_time));
+            my_task->scheduleAfter(sleep_time.count());
         }
         else
-            task->schedule();
+            my_task->schedule();
     };
     std::vector<String> children;
     Coordination::Stat stat;

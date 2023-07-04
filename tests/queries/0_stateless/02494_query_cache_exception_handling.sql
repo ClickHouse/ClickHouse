@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET allow_experimental_query_cache = true;
-
 SYSTEM DROP QUERY CACHE;
 
 -- If an exception is thrown during query execution, no entry must be created in the query cache

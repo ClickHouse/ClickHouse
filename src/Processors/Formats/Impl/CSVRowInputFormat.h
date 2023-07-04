@@ -75,6 +75,7 @@ public:
     std::vector<String> readRow() { return readRowImpl<false>(); }
     std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
+    bool checkForSuffix() override;
 
     template <bool is_header>
     std::vector<String> readRowImpl();

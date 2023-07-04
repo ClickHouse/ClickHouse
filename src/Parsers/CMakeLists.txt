@@ -22,3 +22,7 @@ endif()
 if (ENABLE_FUZZING)
     add_subdirectory(fuzzers)
 endif()
+
+if (ENABLE_TESTS)
+    add_subdirectory(HiliteComparator)
+endif ()

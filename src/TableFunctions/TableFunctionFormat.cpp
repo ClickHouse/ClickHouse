@@ -96,9 +96,9 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-static const Documentation format_table_function_documentation =
+static const FunctionDocumentation format_table_function_documentation =
 {
-    R"(
+    .description=R"(
 Extracts table structure from data and parses it according to specified input format.
 Syntax: `format(format_name, data)`.
 Parameters:
@@ -106,7 +106,7 @@ Parameters:
     - `data ` - String literal or constant expression that returns a string containing data in specified format.
 Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
 )",
-    Documentation::Examples
+    .examples
     {
         {
             "First example",
@@ -131,7 +131,7 @@ Result:
 │ 124 │ World │
 └─────┴───────┘
 ```
-)"
+)", ""
         },
         {
             "Second example",
@@ -154,10 +154,10 @@ Result:
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-)"
+)", ""
         },
     },
-    Documentation::Categories{"format", "table-functions"}
+    .categories{"format", "table-functions"}
 };
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)

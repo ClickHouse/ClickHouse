@@ -1,5 +1,6 @@
 #include <Analyzer/IdentifierNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -58,7 +59,7 @@ QueryTreeNodePtr IdentifierNode::cloneImpl() const
     return std::make_shared<IdentifierNode>(identifier);
 }
 
-ASTPtr IdentifierNode::toASTImpl() const
+ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
     return std::make_shared<ASTIdentifier>(std::move(identifier_parts));

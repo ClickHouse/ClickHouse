@@ -137,7 +137,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     static constexpr size_t sort_expression_child_index = 0;

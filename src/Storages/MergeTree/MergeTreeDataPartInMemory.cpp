@@ -36,12 +36,14 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const MarkRanges & mark_ranges,
     UncompressedCache * /* uncompressed_cache */,
     MarkCache * /* mark_cache */,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & /* avg_value_size_hints */,
     const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
+
     return std::make_unique<MergeTreeReaderInMemory>(
         read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
@@ -73,7 +75,7 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     new_data_part_storage->beginTransaction();
 
     new_data_part->uuid = uuid;
-    new_data_part->setColumns(columns, {});
+    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->partition.value = partition.value;
     new_data_part->minmax_idx = minmax_idx;
 
@@ -104,7 +106,7 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
                 .build();
 
             new_projection_part->is_temp = false; // clean up will be done on parent part
-            new_projection_part->setColumns(projection->getColumns(), {});
+            new_projection_part->setColumns(projection->getColumns(), {}, metadata_snapshot->getMetadataVersion());
 
             auto new_projection_part_storage = new_projection_part->getDataPartStoragePtr();
             if (new_projection_part_storage->exists())

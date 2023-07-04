@@ -83,7 +83,6 @@ public:
     template <typename Iterator>
     NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
 
-
     void readText(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;
 
@@ -102,6 +101,9 @@ public:
 
     Names getNames() const;
     DataTypes getTypes() const;
+
+    /// Remove columns which names are not in the `names`.
+    void filterColumns(const NameSet & names);
 
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const NameSet & names) const;

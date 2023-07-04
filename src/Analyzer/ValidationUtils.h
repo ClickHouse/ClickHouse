@@ -5,9 +5,12 @@
 namespace DB
 {
 
-struct ValidationParams
+/// Validate PREWHERE, WHERE, HAVING in query node
+void validateFilters(const QueryTreeNodePtr & query_node);
+
+struct AggregatesValidationParams
 {
-    bool group_by_use_nulls;
+    bool group_by_use_nulls = false;
 };
 
 /** Validate aggregates in query node.
@@ -20,7 +23,7 @@ struct ValidationParams
   * PROJECTION.
   * 5. Throws exception if there is GROUPING SETS or ROLLUP or CUBE or WITH TOTALS without aggregation.
   */
-void validateAggregates(const QueryTreeNodePtr & query_node, ValidationParams params);
+void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -30,5 +33,12 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     int exception_code,
     std::string_view exception_function_name,
     std::string_view exception_place_message);
+
+/** Validate tree size. If size of tree is greater than max size throws exception.
+  * Additionally for each node in tree, update node to tree size map.
+  */
+void validateTreeSize(const QueryTreeNodePtr & node,
+    size_t max_size,
+    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
 
 }

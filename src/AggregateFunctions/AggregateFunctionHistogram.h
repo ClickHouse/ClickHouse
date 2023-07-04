@@ -2,7 +2,6 @@
 
 #include <base/sort.h>
 
-#include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
 #include <Columns/ColumnVector.h>
@@ -29,6 +28,7 @@
 namespace DB
 {
 struct Settings;
+class Arena;
 
 namespace ErrorCodes
 {
@@ -292,6 +292,10 @@ public:
         readVarUInt(size, buf);
         if (size > max_bins * 2)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many bins");
+        static constexpr size_t max_size = 1_GiB;
+        if (size > max_size)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size in histogram (maximum: {})", max_size);
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }

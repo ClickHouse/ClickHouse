@@ -137,7 +137,7 @@ namespace
 
         auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
         auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
-        if (!info || !info->is_local)
+        if (!info || !info->is_local || info->table_name.table.empty())
             return;
 
         auto * source_list = dictionary.source->elements->as<ASTExpressionList>();

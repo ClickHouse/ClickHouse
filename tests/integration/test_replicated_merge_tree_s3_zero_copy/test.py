@@ -19,6 +19,7 @@ def cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/storage_conf.xml"],
+            user_configs=["configs/config.d/users.xml"],
             macros={"replica": "1"},
             with_minio=True,
             with_zookeeper=True,
@@ -26,12 +27,14 @@ def cluster():
         cluster.add_instance(
             "node2",
             main_configs=["configs/config.d/storage_conf.xml"],
+            user_configs=["configs/config.d/users.xml"],
             macros={"replica": "2"},
             with_zookeeper=True,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/config.d/storage_conf.xml"],
+            user_configs=["configs/config.d/users.xml"],
             macros={"replica": "3"},
             with_zookeeper=True,
         )
@@ -47,8 +50,18 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
-FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
+FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
+FILES_OVERHEAD_METADATA_VERSION = 1
+FILES_OVERHEAD_PER_PART_WIDE = (
+    FILES_OVERHEAD_PER_COLUMN * 3
+    + 2
+    + 6
+    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
+    + FILES_OVERHEAD_METADATA_VERSION
+)
+FILES_OVERHEAD_PER_PART_COMPACT = (
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
+)
 
 
 def random_string(length):
@@ -64,7 +77,7 @@ def generate_values(date_str, count, sign=1):
 
 def create_table(cluster, additional_settings=None):
     create_table_statement = """
-        CREATE TABLE s3_test ON CLUSTER cluster(
+        CREATE TABLE s3_test ON CLUSTER cluster (
             dt Date,
             id Int64,
             data String,
@@ -85,7 +98,8 @@ def create_table(cluster, additional_settings=None):
 def drop_table(cluster):
     yield
     for node in list(cluster.instances.values()):
-        node.query("DROP TABLE IF EXISTS s3_test")
+        node.query("DROP TABLE IF EXISTS s3_test SYNC")
+        node.query("DROP TABLE IF EXISTS test_drop_table SYNC")
 
     minio = cluster.minio_client
     # Remove extra objects to prevent tests cascade failing
@@ -192,12 +206,19 @@ def test_drop_table(cluster):
         "create table if not exists test_drop_table (n int) engine=ReplicatedMergeTree('/test/drop_table', '1') "
         "order by n partition by n % 99 settings storage_policy='s3'"
     )
+
+    # A table may get stuck in readonly mode if zk connection was lost during CREATE
+    node.query("detach table test_drop_table sync")
+    node.query("attach table test_drop_table")
+
     node.query_with_retry(
         "system sync replica test_drop_table",
-        settings={"receive_timeout": 10},
-        retry_count=5,
+        settings={"receive_timeout": 5},
+        sleep_time=5,
+        retry_count=10,
     )
-    node2.query("drop table test_drop_table")
+    node2.query("drop table test_drop_table sync")
     assert "1000\t499500\n" == node.query(
         "select count(n), sum(n) from test_drop_table"
     )
+    node.query("drop table test_drop_table sync")

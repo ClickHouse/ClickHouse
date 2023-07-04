@@ -108,9 +108,6 @@ select left_table.id,val_left, val_middle, val_right from left_table
 ORDER BY left_table.id, val_left, val_middle, val_right;
 1	c	a	c
 1	c	b	c
--- no distributed tests because it is not currently supported:
--- JOIN with remote storages is unsupported.
-
 -- Quite exotic with Merge engine
 DROP TABLE IF EXISTS table_to_merge_a;
 DROP TABLE IF EXISTS table_to_merge_b;

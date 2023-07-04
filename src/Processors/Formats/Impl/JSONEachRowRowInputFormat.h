@@ -71,11 +71,10 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
-    NameMap name_map;
+    Block::NameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<NameMap::LookupResult> prev_positions;
+    std::vector<Block::NameMap::const_iterator> prev_positions;
 
     bool allow_new_rows = true;
 
