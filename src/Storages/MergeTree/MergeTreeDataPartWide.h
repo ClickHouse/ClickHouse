@@ -54,6 +54,8 @@ public:
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
+    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
+
 protected:
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
