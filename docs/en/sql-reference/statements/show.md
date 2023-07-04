@@ -289,8 +289,8 @@ The statement produces a result table with the following structure:
 - table - The name of the table. (String)
 - non_unique - Always `1` as ClickHouse does not support uniqueness constraints. (UInt8)
 - key_name - The name of the index, `PRIMARY` if the index is a primary key index. (String)
-- seq_in_index - Currently always `1`. (In MySQL, this field denotes the position of the column in a non-functional index.) (UInt8)
-- column_name - Currently always `` (empty string), also see field `expression`. (In MySQL, this field denotes the name of the column in a non-functional index.) (String)
+- column_name - For a primary key index, the name of the column. For a data skipping index: '' (empty string), see field "expression". (String)
+- seq_in_index - For a primary key index, the position of the column starting from `1`. For a data skipping index: always `1`. (UInt8)
 - collation - The sorting of the column in the index: `A` if ascending, `D` if descending, `NULL` if unsorted. (Nullable(String))
 - cardinality - An estimation of the index cardinality (number of unique values in the index). Currently always 0. (UInt64)
 - sub_part - Always `NULL` because ClickHouse does not support index prefixes like MySQL. (Nullable(String))
@@ -300,7 +300,7 @@ The statement produces a result table with the following structure:
 - comment - Additional information about the index, currently always `` (empty string). (String)
 - index_comment - `` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field (like in MySQL). (String)
 - visible - If the index is visible to the optimizer, always `YES`. (String)
-- expression - The index expression. (In MySQL this field is only used for functional-indexes.) (String)
+- expression - For a data skipping index, the index expression. For a primary key index: '' (empty string). (String)
 
 **Examples**
 
@@ -313,13 +313,14 @@ SHOW INDEX FROM 'tbl'
 Result:
 
 ``` text
-┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
-│ tbl   │          1 │ blf_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
-│ tbl   │          1 │ mm1_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
-│ tbl   │          1 │ mm2_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
-│ tbl   │          1 │ PRIMARY  │ 1            │             │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │ c, a       │
-│ tbl   │          1 │ set_idx  │ 1            │             │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
-└───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
+┌─table─┬─non_unique─┬─key_name─┬─column_name─┬─seq_in_index─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
+│ tbl   │          1 │ blf_idx  │ 1           │ 1            │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          1 │ mm1_idx  │ 1           │ 1            │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          1 │ mm2_idx  │ 1           │ 1            │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          1 │ PRIMARY  │ c           │ 1            │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ PRIMARY  │ a           │ 2            │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ set_idx  │ 1           │ 1            │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
+└───────┴────────────┴──────────┴─────────────┴──────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
 ```
 
 **See also**
