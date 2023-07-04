@@ -57,14 +57,14 @@ namespace DB
             {
                 if constexpr (nullOnErrors)
                 {
-                    const GregorianDate gd(vec_from[i]);
-                    (*vec_null_map_to)[i] = gd.tryWrite(write_buffer);
+                    GregorianDate gd;
+                    (*vec_null_map_to)[i] = !(gd.tryInit(vec_from[i]) && gd.tryWrite(write_buffer));
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    const GregorianDate gd(vec_from[i]);
+                    GregorianDate gd(vec_from[i]);
                     gd.write(write_buffer);
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();

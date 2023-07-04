@@ -78,22 +78,13 @@ namespace DB
 
                 if constexpr (nullOnErrors)
                 {
-                    try
-                    {
-                        const GregorianDate date(read_buffer);
-                        vec_to[i] = static_cast<typename ToDataType::FieldType>(date.toModifiedJulianDay());
-                        vec_null_map_to[i] = false;
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE)
-                        {
-                            vec_to[i] = static_cast<Int32>(0);
-                            vec_null_map_to[i] = true;
-                        }
-                        else
-                            throw;
-                    }
+                    GregorianDate date;
+
+                    int64_t res = 0;
+                    bool success = date.tryInit(read_buffer) && date.tryToModifiedJulianDay(res);
+
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(res);
+                    vec_null_map_to[i] = !success;
                 }
                 else
                 {
