@@ -790,7 +790,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
                 WriteBufferFromOStream cerr_buf(std::cerr, 4096);
                 fuzz_base->dumpTree(cerr_buf);
-                cerr_buf.next();
+                cerr_buf.finalize();
 
                 fmt::print(
                     stderr,
@@ -928,7 +928,7 @@ bool Client::processWithFuzzing(const String & full_query)
         std::cout << std::endl;
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
-        ast_buf.next();
+        ast_buf.finalize();
         if (const auto * insert = query->as<ASTInsertQuery>())
         {
             /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
