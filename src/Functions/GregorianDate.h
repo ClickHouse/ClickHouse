@@ -13,10 +13,18 @@ class WriteBuffer;
 class GregorianDate
 {
 public:
+    GregorianDate() {}
+
+    void init(ReadBuffer & in);
+    bool tryInit(ReadBuffer & in);
+
     /** Construct from date in text form 'YYYY-MM-DD' by reading from
       * ReadBuffer.
       */
     explicit GregorianDate(ReadBuffer & in);
+
+    void init(int64_t modified_julian_day);
+    bool tryInit(int64_t modified_julian_day);
 
     /** Construct from Modified Julian Day. The type T is an
       * integral type which should be at least 32 bits wide, and
@@ -29,6 +37,7 @@ public:
       * signed.
       */
     int64_t toModifiedJulianDay() const;
+    bool tryToModifiedJulianDay(int64_t & res) const;
 
     /** Write the date in text form 'YYYY-MM-DD' to a buffer.
       */
@@ -75,6 +84,14 @@ private:
 class OrdinalDate
 {
 public:
+    OrdinalDate() {}
+
+    void init(int32_t year, uint16_t day_of_year);
+    bool tryInit(int32_t year, uint16_t day_of_year);
+
+    void init(int64_t modified_julian_day);
+    bool tryInit(int64_t modified_julian_day);
+
     OrdinalDate(int32_t year, uint16_t day_of_year);
 
     /** Construct from Modified Julian Day. The type T is an

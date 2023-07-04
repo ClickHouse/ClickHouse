@@ -1,7 +1,6 @@
 #include <Functions/GregorianDate.h>
 
 #include <Common/Exception.h>
-#include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -19,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace gd
+namespace
 {
     static inline constexpr bool is_leap_year(int32_t year)
     {
@@ -93,47 +92,127 @@ namespace gd
         else
             return c - '0';
     }
+
+    static inline bool tryReadDigit(ReadBuffer & in, char & c)
+    {
+        if (in.read(c) && c >= '0' && c <= '9')
+        {
+            c -= '0';
+            return true;
+        }
+
+        return false;
+    }
+}
+
+void GregorianDate::init(ReadBuffer & in)
+{
+    year_ = readDigit(in) * 1000
+          + readDigit(in) * 100
+          + readDigit(in) * 10
+          + readDigit(in);
+
+    assertChar('-', in);
+
+    month_ = readDigit(in) * 10
+           + readDigit(in);
+
+    assertChar('-', in);
+
+    day_of_month_ = readDigit(in) * 10
+                + readDigit(in);
+
+    assertEOF(in);
+
+    if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > monthLength(is_leap_year(year_), month_))
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date");
+}
+
+bool GregorianDate::tryInit(ReadBuffer & in)
+{
+    char c[8];
+
+    if (   !tryReadDigit(in, c[0])
+        || !tryReadDigit(in, c[1])
+        || !tryReadDigit(in, c[2])
+        || !tryReadDigit(in, c[3])
+        || !checkChar('-', in)
+        || !tryReadDigit(in, c[4])
+        || !tryReadDigit(in, c[5])
+        || !checkChar('-', in)
+        || !tryReadDigit(in, c[6])
+        || !tryReadDigit(in, c[7])
+        || !in.eof())
+    {
+        return false;
+    }
+
+    year_ = c[0] * 1000 + c[1] * 100 + c[2] * 10 + c[3];
+    month_ = c[4] * 10 + c[5];
+    day_of_month_ = c[6] * 10 + c[7];
+
+    if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > monthLength(is_leap_year(year_), month_))
+        return false;
+
+    return true;
 }
 
 GregorianDate::GregorianDate(ReadBuffer & in)
 {
-    year_ = gd::readDigit(in) * 1000
-          + gd::readDigit(in) * 100
-          + gd::readDigit(in) * 10
-          + gd::readDigit(in);
+    init(in);
+}
 
-    assertChar('-', in);
+void GregorianDate::init(int64_t modified_julian_day)
+{
+    const OrdinalDate ord(modified_julian_day);
+    const MonthDay md(is_leap_year(ord.year()), ord.dayOfYear());
 
-    month_ = gd::readDigit(in) * 10
-           + gd::readDigit(in);
+    year_  = ord.year();
+    month_ = md.month();
+    day_of_month_ = md.dayOfMonth();
+}
 
-    assertChar('-', in);
+bool GregorianDate::tryInit(int64_t modified_julian_day)
+{
+    OrdinalDate ord;
+    if (!ord.tryInit(modified_julian_day))
+        return false;
 
-    day_of_month_ = gd::readDigit(in) * 10
-                + gd::readDigit(in);
+    MonthDay md(is_leap_year(ord.year()), ord.dayOfYear());
 
-    assertEOF(in);
+    year_  = ord.year();
+    month_ = md.month();
+    day_of_month_ = md.dayOfMonth();
 
-    if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > gd::monthLength(gd::is_leap_year(year_), month_))
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date");
+    return true;
 }
 
 GregorianDate::GregorianDate(int64_t modified_julian_day)
 {
-    const OrdinalDate ord(modified_julian_day);
-    const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
-
-    year_       = ord.year();
-    month_      = md.month();
-    day_of_month_ = md.dayOfMonth();
+    init(modified_julian_day);
 }
 
 int64_t GregorianDate::toModifiedJulianDay() const
 {
     const MonthDay md(month_, day_of_month_);
-    const auto day_of_year = md.dayOfYear(gd::is_leap_year(year_));
+
+    const auto day_of_year = md.dayOfYear(is_leap_year(year_));
+
     const OrdinalDate ord(year_, day_of_year);
     return ord.toModifiedJulianDay();
+}
+
+bool GregorianDate::tryToModifiedJulianDay(int64_t & res) const
+{
+    const MonthDay md(month_, day_of_month_);
+    const auto day_of_year = md.dayOfYear(is_leap_year(year_));
+    OrdinalDate ord;
+
+    if (!ord.tryInit(year_, day_of_year))
+        return false;
+
+    res = ord.toModifiedJulianDay();
+    return true;
 }
 
 template <typename ReturnType>
@@ -178,51 +257,76 @@ std::string GregorianDate::toString() const
     return buf.str();
 }
 
-OrdinalDate::OrdinalDate(int32_t year, uint16_t day_of_year)
-    : year_(year)
-    , day_of_year_(day_of_year)
+void OrdinalDate::init(int32_t year, uint16_t day_of_year)
 {
-    if (day_of_year < 1 || day_of_year > (gd::is_leap_year(year) ? 366 : 365))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ordinal date: {}-{}", toString(year), toString(day_of_year));
-    }
+    year_ = year;
+    day_of_year_ = day_of_year;
+
+    if (day_of_year < 1 || day_of_year > (is_leap_year(year) ? 366 : 365))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ordinal date: {}-{}", year, day_of_year);
 }
 
-OrdinalDate::OrdinalDate(int64_t modified_julian_day)
+bool OrdinalDate::tryInit(int32_t year, uint16_t day_of_year)
+{
+    year_ = year;
+    day_of_year_ = day_of_year;
+
+    return !(day_of_year < 1 || day_of_year > (is_leap_year(year) ? 366 : 365));
+}
+
+void OrdinalDate::init(int64_t modified_julian_day)
+{
+    if (!tryInit(modified_julian_day))
+        throw Exception(
+            ErrorCodes::CANNOT_FORMAT_DATETIME,
+            "Value cannot be represented as date because it's out of range");
+}
+
+bool OrdinalDate::tryInit(int64_t modified_julian_day)
 {
     /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
 
     if (modified_julian_day < -678941)
-        throw Exception(
-            ErrorCodes::CANNOT_FORMAT_DATETIME,
-            "Value cannot be represented as date because it's out of range");
+        return false;
 
     if (modified_julian_day > 2973119)
-        throw Exception(
-            ErrorCodes::CANNOT_FORMAT_DATETIME,
-            "Value cannot be represented as date because it's out of range");
+        return false;
 
     const auto a         = modified_julian_day + 678575;
-    const auto quad_cent = gd::div(a, 146097);
-    const auto b         = gd::mod(a, 146097);
-    const auto cent      = gd::min(gd::div(b, 36524), 3);
+    const auto quad_cent = div(a, 146097);
+    const auto b         = mod(a, 146097);
+    const auto cent      = min(div(b, 36524), 3);
     const auto c         = b - cent * 36524;
-    const auto quad      = gd::div(c, 1461);
-    const auto d         = gd::mod(c, 1461);
-    const auto y         = gd::min(gd::div(d, 365), 3);
+    const auto quad      = div(c, 1461);
+    const auto d         = mod(c, 1461);
+    const auto y         = min(div(d, 365), 3);
 
     day_of_year_ = d - y * 365 + 1;
     year_ = static_cast<int32_t>(quad_cent * 400 + cent * 100 + quad * 4 + y + 1);
+
+    return true;
+}
+
+
+OrdinalDate::OrdinalDate(int32_t year, uint16_t day_of_year)
+{
+    init(year, day_of_year);
+}
+
+OrdinalDate::OrdinalDate(int64_t modified_julian_day)
+{
+    init(modified_julian_day);
 }
 
 int64_t OrdinalDate::toModifiedJulianDay() const noexcept
 {
     const auto y = year_ - 1;
+
     return day_of_year_
         + 365 * y
-        + gd::div(y, 4)
-        - gd::div(y, 100)
-        + gd::div(y, 400)
+        + div(y, 4)
+        - div(y, 100)
+        + div(y, 400)
         - 678576;
 }
 
@@ -246,7 +350,7 @@ MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
     uint16_t d = day_of_year;
     while (true)
     {
-        const auto len = gd::monthLength(is_leap_year, month_);
+        const auto len = monthLength(is_leap_year, month_);
         if (d <= len)
             break;
         ++month_;
@@ -257,7 +361,7 @@ MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
 
 uint16_t MonthDay::dayOfYear(bool is_leap_year) const
 {
-    if (day_of_month_ < 1 || day_of_month_ > gd::monthLength(is_leap_year, month_))
+    if (day_of_month_ < 1 || day_of_month_ > monthLength(is_leap_year, month_))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of month: {}{}-{}",
             (is_leap_year ? "leap, " : "non-leap, "), month_, day_of_month_);
