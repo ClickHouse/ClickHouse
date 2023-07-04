@@ -1,6 +1,6 @@
 #include "IMergeTreeDataPart.h"
-#include "Storages/MergeTree/IDataPartStorage.h"
-#include "base/types.h"
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <base/types.h>
 
 #include <optional>
 #include <boost/algorithm/string/join.hpp>
