@@ -272,6 +272,10 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 
 Displays a list of primary and data skipping indexes of a table.
 
+This statement mostly exists for compatibility with MySQL. System tables [system.tables](../../operations/system-tables/tables.md) (for
+primary keys) and [system.data_skipping_indices](../../operations/system-tables/data_skipping_indices.md) (for data skipping indices)
+provide equivalent information but in a fashion more native to ClickHouse.
+
 ```sql
 SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
