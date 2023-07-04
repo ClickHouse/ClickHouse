@@ -623,8 +623,6 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
-    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "");
-
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
