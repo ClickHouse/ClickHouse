@@ -10,7 +10,7 @@ CI_CONFIG = {
     "build_config": {
         "package_release": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
             "static_binary_name": "amd64",
@@ -21,7 +21,7 @@ CI_CONFIG = {
         },
         "coverity": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
             "tidy": "disable",
@@ -31,7 +31,7 @@ CI_CONFIG = {
         },
         "package_aarch64": {
             "compiler": "clang-16-aarch64",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
             "static_binary_name": "aarch64",
@@ -42,7 +42,7 @@ CI_CONFIG = {
         },
         "package_asan": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
             "tidy": "disable",
@@ -51,7 +51,7 @@ CI_CONFIG = {
         },
         "package_ubsan": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
             "tidy": "disable",
@@ -60,7 +60,7 @@ CI_CONFIG = {
         },
         "package_tsan": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
             "tidy": "disable",
@@ -69,7 +69,7 @@ CI_CONFIG = {
         },
         "package_msan": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
             "tidy": "disable",
@@ -78,7 +78,7 @@ CI_CONFIG = {
         },
         "package_debug": {
             "compiler": "clang-16",
-            "debug_build": True,
+            "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
             "tidy": "disable",
@@ -87,7 +87,7 @@ CI_CONFIG = {
         },
         "binary_release": {
             "compiler": "clang-16",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "tidy": "disable",
@@ -96,7 +96,7 @@ CI_CONFIG = {
         },
         "binary_tidy": {
             "compiler": "clang-16",
-            "debug_build": True,
+            "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "debug-amd64",
@@ -106,7 +106,7 @@ CI_CONFIG = {
         },
         "binary_darwin": {
             "compiler": "clang-16-darwin",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos",
@@ -116,7 +116,7 @@ CI_CONFIG = {
         },
         "binary_aarch64": {
             "compiler": "clang-16-aarch64",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "tidy": "disable",
@@ -125,7 +125,7 @@ CI_CONFIG = {
         },
         "binary_aarch64_v80compat": {
             "compiler": "clang-16-aarch64-v80compat",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "aarch64v80compat",
@@ -135,7 +135,7 @@ CI_CONFIG = {
         },
         "binary_freebsd": {
             "compiler": "clang-16-freebsd",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "freebsd",
@@ -145,7 +145,7 @@ CI_CONFIG = {
         },
         "binary_darwin_aarch64": {
             "compiler": "clang-16-darwin-aarch64",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos-aarch64",
@@ -155,7 +155,7 @@ CI_CONFIG = {
         },
         "binary_ppc64le": {
             "compiler": "clang-16-ppc64le",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "powerpc64le",
@@ -165,7 +165,7 @@ CI_CONFIG = {
         },
         "binary_amd64_compat": {
             "compiler": "clang-16-amd64-compat",
-            "debug_build": False,
+            "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "amd64compat",
