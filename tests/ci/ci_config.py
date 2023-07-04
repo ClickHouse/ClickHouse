@@ -174,7 +174,7 @@ CI_CONFIG = {
             "comment": "SSE2-only build",
         },
         "binary_riscv64": {
-            "compiler": "clang-14-riscv64",
+            "compiler": "clang-16-riscv64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
