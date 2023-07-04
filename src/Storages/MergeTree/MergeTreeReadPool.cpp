@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/RequestResponse.h>
 
 
 namespace ProfileEvents
@@ -433,8 +434,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)
 
     if (buffered_ranges.empty())
     {
-        auto result = extension.callback(ParallelReadRequest{
-            .replica_num = extension.number_of_current_replica, .min_number_of_marks = min_marks_for_concurrent_read * threads});
+        auto result = extension.callback(ParallelReadRequest(
+            CoordinationMode::Default,
+            extension.number_of_current_replica,
+            min_marks_for_concurrent_read * threads,
+            /// For Default coordination mode we don't need to pass part names.
+            RangesInDataPartsDescription{}));
 
         if (!result || result->finish)
         {
@@ -529,12 +534,12 @@ MarkRanges MergeTreeInOrderReadPoolParallelReplicas::getNewTask(RangesInDataPart
     if (no_more_tasks)
         return {};
 
-    auto response = extension.callback(ParallelReadRequest{
-        .mode = mode,
-        .replica_num = extension.number_of_current_replica,
-        .min_number_of_marks = min_marks_for_concurrent_read * request.size(),
-        .description = request,
-    });
+    auto response = extension.callback(ParallelReadRequest(
+        mode,
+        extension.number_of_current_replica,
+        min_marks_for_concurrent_read * request.size(),
+        request
+    ));
 
     if (!response || response->description.empty() || response->finish)
     {
