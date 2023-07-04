@@ -4023,22 +4023,15 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
 }
 
 
-void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part_to_detach, const String & prefix)
+void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    if (prefix.empty())
-        LOG_INFO(log, "Cloning part {} to {} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    else
-        LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), prefix, part_to_detach->name);
-
-    part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
+    LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
+    part_to_detach->makeCloneInDetached("unexpected", getInMemoryMetadataPtr());
 
     DataPartsLock lock = lockParts();
+    part_to_detach->is_unexpected_local_part = true;
     if (part_to_detach->getState() == DataPartState::Active)
-    {
-        part_to_detach->outdated_because_broken = true;
         removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true, &lock);
-    }
 }
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
@@ -4677,24 +4670,24 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return res;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states) const
 {
     auto lock = lockParts();
     return getPartIfExistsUnlocked(part_info, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states) const
 {
     auto lock = lockParts();
     return getPartIfExistsUnlocked(part_name, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const
 {
     return getPartIfExistsUnlocked(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states, acquired_lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & /* acquired_lock */)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & /* acquired_lock */) const
 {
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())

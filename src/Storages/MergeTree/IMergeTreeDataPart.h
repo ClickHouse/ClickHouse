@@ -242,9 +242,11 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
-    /// Indicated that the part was marked Outdated because it's broken, not because it's actually outdated
-    /// See outdateBrokenPartAndCloneToDetached(...)
-    mutable bool outdated_because_broken = false;
+    /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
+    mutable bool is_unexpected_local_part = false;
+
+    /// Indicates that the part was detached and marked Outdated because it's broken
+    mutable std::atomic_bool was_removed_as_broken = false;
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
