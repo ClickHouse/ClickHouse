@@ -206,14 +206,17 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
             auto txt_checksum_it = checksums_txt_files.find(file_name);
-            if (txt_checksum_it == checksums_txt_files.end() || txt_checksum_it->second.uncompressed_size == 0 || !file_name.contains(".cmrk"))
+            if ((txt_checksum_it != checksums_txt_files.end() && txt_checksum_it->second.uncompressed_size != 0)
+                || file_name.contains(".cmrk")
+                || file_name.ends_with(".cidx"))
+            {
+                /// If we have both compressed and uncompressed in txt or its .cmrk(2/3) or .cidx, then calculate them
+                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+            }
+            else
             {
                 /// The file is not compressed.
                 checksum_file(file_name);
-            }
-            else /// If we have both compressed and uncompressed in txt or its .cmrk(2/3), then calculate them
-            {
-                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             }
         }
     }
