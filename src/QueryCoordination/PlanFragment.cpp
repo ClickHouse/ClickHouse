@@ -280,7 +280,7 @@ QueryPipelineBuilderPtr PlanFragment::buildQueryPipeline(
         all_nodes.insert(&node);
     }
 
-    while (!stack.empty() && all_nodes.contains(stack.top().node))
+    while (!stack.empty())
     {
         auto & frame = stack.top();
 
@@ -302,7 +302,10 @@ QueryPipelineBuilderPtr PlanFragment::buildQueryPipeline(
             stack.pop();
         }
         else
-            stack.push(Frame{.node = frame.node->children[next_child]});
+        {
+            if (all_nodes.contains(frame.node->children[next_child]))
+                stack.push(Frame{.node = frame.node->children[next_child]});
+        }
     }
 
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
@@ -483,7 +486,7 @@ void PlanFragment::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & 
         all_nodes.insert(&node);
     }
 
-    while (!stack.empty() && all_nodes.contains(stack.top().node))
+    while (!stack.empty())
     {
         auto & frame = stack.top();
 
@@ -496,7 +499,9 @@ void PlanFragment::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & 
 
         if (frame.next_child < frame.node->children.size())
         {
-            stack.push(Frame{frame.node->children[frame.next_child]});
+            if (all_nodes.contains(frame.node->children[frame.next_child]))
+                stack.push(Frame{frame.node->children[frame.next_child]});
+
             ++frame.next_child;
         }
         else

@@ -1250,13 +1250,14 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlan
         return {};
     }
 
+    auto * sort_step = dynamic_cast<SortingStep *>(step.get());
+
     /// Create a new fragment for a sort-merging exchange.
     PlanFragmentPtr merge_fragment = createParentFragment(childFragment, DataPartition{.type = PartitionType::UNPARTITIONED});
     auto * exchange_node = merge_fragment->getRootNode(); /// exchange node
 
-    const auto & query = getSelectQuery();
-    SortDescription sort_description = getSortDescription(query, context);
-    const UInt64 limit = getLimitForSorting(query, context);
+    const SortDescription & sort_description = sort_step->getSortDescription();
+    const UInt64 limit = sort_step->getLimit();
     const auto max_block_size = context->getSettingsRef().max_block_size;
     const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
 
