@@ -255,15 +255,18 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
-        cluster = std::make_shared<Cluster>(
-            context->getSettingsRef(),
-            names,
+        ClusterConnectionParameters params{
             username,
             password,
-            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+            static_cast<UInt16>(secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
             treat_local_as_remote,
             treat_local_port_as_remote,
-            secure);
+            secure,
+            /* priority= */ Priority{1},
+            /* cluster_name= */ "",
+            /* password= */ ""
+        };
+        cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
     }
 
     if (!remote_table_function_ptr && table.empty())

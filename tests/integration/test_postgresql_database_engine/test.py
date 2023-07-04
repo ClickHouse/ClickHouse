@@ -330,7 +330,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query(
         """
         DROP DATABASE postgres_database;
-        CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, use_tables_cache=1);
+        CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, use_table_cache=1);
         """
     )
     assert (
