@@ -4,7 +4,9 @@
 #include <map>
 #include <iostream>
 #include <iomanip>
+#include <memory>
 #include <optional>
+#include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -307,7 +309,7 @@ int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    MainThreadStatus::getInstance();
+    auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
@@ -319,6 +321,14 @@ try
 
     processConfig();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+
+    {
+        // All that just to set DB::CurrentThread::get().getGlobalContext()
+        // which is required for client timezone (pushed from server) to work.
+        auto thread_group = std::make_shared<ThreadGroup>();
+        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
+        thread_status.attachToGroup(thread_group, false);
+    }
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -780,7 +790,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
                 WriteBufferFromOStream cerr_buf(std::cerr, 4096);
                 fuzz_base->dumpTree(cerr_buf);
-                cerr_buf.next();
+                cerr_buf.finalize();
 
                 fmt::print(
                     stderr,
@@ -918,7 +928,7 @@ bool Client::processWithFuzzing(const String & full_query)
         std::cout << std::endl;
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
-        ast_buf.next();
+        ast_buf.finalize();
         if (const auto * insert = query->as<ASTInsertQuery>())
         {
             /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it

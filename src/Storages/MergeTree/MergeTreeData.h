@@ -533,6 +533,10 @@ public:
 
     size_t getActivePartsCount() const;
 
+    size_t getOutdatedPartsCount() const;
+
+    size_t getNumberOfOutdatedPartsWithExpiredRemovalTime() const;
+
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
     std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const;
@@ -824,21 +828,10 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    struct HardlinkedFiles
-    {
-        /// Shared table uuid where hardlinks live
-        std::string source_table_shared_id;
-        /// Hardlinked from part
-        std::string source_part_name;
-        /// Hardlinked files list
-        NameSet hardlinks_from_source_part;
-    };
-
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
-        bool copy_instead_of_hardlink, const NameSet & files_to_copy_instead_of_hardlinks);
+        const IDataPartStorage::ClonePartParams & params);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -1508,6 +1501,8 @@ private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
+
+    mutable std::atomic<size_t> total_outdated_parts_count = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
