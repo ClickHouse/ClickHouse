@@ -34,6 +34,20 @@ $CLICKHOUSE_CLIENT --query "
       SELECT number, 3 AS p FROM numbers(10_000_000, 8_000_000)
 "
 
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE test_parallel_replicas_automatic_count_right_side
+    (
+        number Int64,
+        value Int64
+    )
+    ENGINE=MergeTree()
+      ORDER BY number
+      SETTINGS index_granularity = 8192  -- Don't randomize it to avoid flakiness
+    AS
+      SELECT number, number % 2 AS v FROM numbers(1_000_000)
+"
+
+
 function run_query_with_pure_parallel_replicas () {
     # $1 -> query_id
     # $2 -> min rows per replica
@@ -127,6 +141,16 @@ run_query_with_pure_parallel_replicas "${query_id_base}_4_10M" 10000000 "$limit_
 run_query_with_pure_parallel_replicas "${query_id_base}_4_1M" 1000000 "$limit_agg_table_query"
 run_query_with_pure_parallel_replicas "${query_id_base}_4_500k" 500000 "$limit_agg_table_query"
 
+#### JOIN (left side 10M, right side 1M)
+#### As the right side of the JOIN is a table, ideally it shouldn't be executed with parallel replicas and instead passed as is to the replicas
+#### so each of them executes the join with the assigned granules of the left table, but that's not implemented yet
+#### https://github.com/ClickHouse/ClickHouse/issues/49301#issuecomment-1619897920
+simple_join_query="SELECT sum(value) FROM test_parallel_replicas_automatic_count INNER JOIN test_parallel_replicas_automatic_count_right_side USING number format Null"
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_0" 0 "$simple_join_query" # 3 replicas for the right side first, 3 replicas for the left
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_10M" 10000000 "$simple_join_query" # Right: 0. Left: 0
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_5M" 5000000 "$simple_join_query" # Right: 0. Left: 2
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_1M" 1000000 "$simple_join_query" # Right: 1->0. Left: 10->3
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_300k" 400000 "$simple_join_query" # Right: 2. Left: 3
 
 #### Custom key parallel replicas: Not implemented
 #whole_table_query="SELECT sum(number) FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_parallel_replicas_automatic_count) format Null"
