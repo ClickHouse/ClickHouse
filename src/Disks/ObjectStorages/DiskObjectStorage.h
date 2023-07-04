@@ -51,7 +51,10 @@ public:
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
-    const std::string & getCacheName() const override { return object_storage->getCacheName(); }
+    const std::string & getCacheBasePath() const override
+    {
+        return object_storage->getCacheBasePath();
+    }
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -149,8 +152,11 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    Strings getBlobPath(const String & path) const override;
-    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+    void writeFileUsingCustomWriteObject(
+        const String & path,
+        WriteMode mode,
+        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+            custom_write_object_function) override;
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
@@ -181,22 +187,21 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
+    /// Add a cache layer.
+    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// There can be any number of cache layers:
+    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
+    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+    FileCachePtr getCache() const;
+
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-    /// Add a cache layer.
-    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
-    /// There can be any number of cache layers:
-    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
-
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
-#endif
 
     static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
 

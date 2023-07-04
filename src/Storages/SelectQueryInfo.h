@@ -251,7 +251,6 @@ struct SelectQueryInfo
     bool is_projection_query = false;
     bool merge_tree_empty_result = false;
     bool settings_limit_offset_done = false;
-    bool is_internal = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 
@@ -265,7 +264,5 @@ struct SelectQueryInfo
     {
         return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
     }
-
-    bool isFinal() const;
 };
 }

@@ -59,10 +59,6 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
-# it contains some new settings, but we can safely remove it
-rm /etc/clickhouse-server/config.d/merge_tree.xml
-rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
-
 start
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
@@ -86,10 +82,6 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
-
-# it contains some new settings, but we can safely remove it
-rm /etc/clickhouse-server/config.d/merge_tree.xml
-rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
 
@@ -119,13 +111,6 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
-
-# Just in case previous version left some garbage in zk
-sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
-  | sed "s|>1<|>0<|g" \
-  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
-
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
@@ -189,7 +174,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Authentication failed" \
            -e "Cannot flush" \
            -e "Container already exists" \
-           -e "doesn't have metadata version on disk" \
     clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \

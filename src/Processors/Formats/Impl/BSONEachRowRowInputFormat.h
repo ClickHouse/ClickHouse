@@ -91,7 +91,7 @@ private:
     Block::NameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<Block::NameMap::const_iterator> prev_positions;
+    std::vector<Block::NameMap::LookupResult> prev_positions;
 
     DataTypes types;
 

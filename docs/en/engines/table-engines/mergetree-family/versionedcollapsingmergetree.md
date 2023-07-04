@@ -8,8 +8,8 @@ sidebar_label:  VersionedCollapsingMergeTree
 
 This engine:
 
-- Allows quick writing of object states that are continually changing.
-- Deletes old object states in the background. This significantly reduces the volume of storage.
+-   Allows quick writing of object states that are continually changing.
+-   Deletes old object states in the background. This significantly reduces the volume of storage.
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
@@ -73,11 +73,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
 
-- `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
     Column Data Type — `Int8`.
 
-- `version` — Name of the column with the version of the object state.
+-   `version` — Name of the column with the version of the object state.
 
     The column data type should be `UInt*`.
 

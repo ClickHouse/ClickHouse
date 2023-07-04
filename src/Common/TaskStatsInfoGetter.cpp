@@ -9,7 +9,6 @@
 
 #include "hasLinuxCapability.h"
 #include <base/unaligned.h>
-#include <base/getThreadId.h>
 #include <Common/logger_useful.h>
 
 #include <cerrno>
@@ -203,12 +202,10 @@ bool checkPermissionsImpl()
     /// Check that we can successfully initialize TaskStatsInfoGetter.
     /// It will ask about family id through Netlink.
     /// On some LXC containers we have capability but we still cannot use Netlink.
-    /// There is an evidence that Linux fedora-riscv 6.1.22 gives something strange instead of the expected result.
 
     try
     {
-        ::taskstats stats{};
-        TaskStatsInfoGetter().getStat(stats, static_cast<pid_t>(getThreadId()));
+        TaskStatsInfoGetter();
     }
     catch (const Exception & e)
     {

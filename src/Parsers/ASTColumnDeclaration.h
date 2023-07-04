@@ -16,7 +16,7 @@ public:
     std::optional<bool> null_modifier;
     String default_specifier;
     ASTPtr default_expression;
-    bool ephemeral_default = false;
+    bool ephemeral_default;
     ASTPtr comment;
     ASTPtr codec;
     ASTPtr ttl;

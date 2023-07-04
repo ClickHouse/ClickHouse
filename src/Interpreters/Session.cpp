@@ -107,7 +107,7 @@ public:
         if (it == sessions.end())
         {
             if (throw_if_not_found)
-                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
+                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session not found.");
 
             /// Create a new session from current context.
             auto context = Context::createCopy(global_context);
@@ -129,7 +129,7 @@ public:
             LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
-                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session is locked by a concurrent client.");
             return {session, false};
         }
     }

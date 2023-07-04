@@ -8,7 +8,7 @@ title: DELETE Statement
 ---
 
 ``` sql
-DELETE FROM [db.]table [ON CLUSTER cluster] WHERE expr
+DELETE FROM [db.]table [ON CLUSTER cluster] [WHERE expr]
 ```
 
 `DELETE FROM` removes rows from the table `[db.]table` that match the expression `expr`. The deleted rows are marked as deleted immediately and will be automatically filtered out of all subsequent queries. Cleanup of data happens asynchronously in the background. This feature is only available for the MergeTree table engine family.
@@ -55,10 +55,3 @@ With the described implementation now we can see what can negatively affect 'DEL
 - Table having a very large number of data parts
 - Having a lot of data in Compact parts—in a Compact part, all columns are stored in one file.
 
-:::note
-Currently, Lightweight delete does not work for tables with projection as rows in projection may be affected and require the projection to be rebuilt. Rebuilding projection makes the deletion not lightweight, so this is not supported. 
-:::
-
-## Related content
-
-- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
