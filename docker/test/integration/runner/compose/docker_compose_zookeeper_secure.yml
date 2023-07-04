@@ -12,7 +12,7 @@ services:
         command: ["zkServer.sh", "start-foreground"]
         entrypoint: /zookeeper-ssl-entrypoint.sh
         volumes:
-            - type:  bind
+            - type: bind
               source: /misc/zookeeper-ssl-entrypoint.sh
               target: /zookeeper-ssl-entrypoint.sh
             - type: bind
@@ -37,7 +37,7 @@ services:
         command: ["zkServer.sh", "start-foreground"]
         entrypoint: /zookeeper-ssl-entrypoint.sh
         volumes:
-            - type:  bind
+            - type: bind
               source: /misc/zookeeper-ssl-entrypoint.sh
               target: /zookeeper-ssl-entrypoint.sh
             - type: bind
@@ -61,7 +61,7 @@ services:
         command: ["zkServer.sh", "start-foreground"]
         entrypoint: /zookeeper-ssl-entrypoint.sh
         volumes:
-            - type:  bind
+            - type: bind
               source: /misc/zookeeper-ssl-entrypoint.sh
               target: /zookeeper-ssl-entrypoint.sh
             - type: bind

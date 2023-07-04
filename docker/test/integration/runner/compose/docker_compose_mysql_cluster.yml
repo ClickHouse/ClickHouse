@@ -9,10 +9,10 @@ services:
             DATADIR: /mysql/
         expose:
             - ${MYSQL_CLUSTER_PORT:-3306}
-        command: --server_id=100 
-            --log-bin='mysql-bin-2.log' 
-            --default-time-zone='+3:00' 
-            --gtid-mode="ON" 
+        command: --server_id=100
+            --log-bin='mysql-bin-2.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
             --log-error=/mysql/2_error.log
@@ -31,10 +31,10 @@ services:
             DATADIR: /mysql/
         expose:
             - ${MYSQL_CLUSTER_PORT:-3306}
-        command: --server_id=100 
-            --log-bin='mysql-bin-3.log' 
-            --default-time-zone='+3:00' 
-            --gtid-mode="ON" 
+        command: --server_id=100
+            --log-bin='mysql-bin-3.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
             --log-error=/mysql/3_error.log
@@ -53,10 +53,10 @@ services:
             DATADIR: /mysql/
         expose:
             - ${MYSQL_CLUSTER_PORT:-3306}
-        command: --server_id=100 
-            --log-bin='mysql-bin-4.log' 
-            --default-time-zone='+3:00' 
-            --gtid-mode="ON" 
+        command: --server_id=100
+            --log-bin='mysql-bin-4.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
             --log-error=/mysql/4_error.log
