@@ -1061,17 +1061,6 @@ Default value: 1.
 
 ## Arrow format settings {#arrow-format-settings}
 
-### input_format_arrow_import_nested {#input_format_arrow_import_nested}
-
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
-
-Possible values:
-
-- 0 — Data can not be inserted into `Nested` columns as an array of structs.
-- 1 — Data can be inserted into `Nested` columns as an array of structs.
-
-Default value: `0`.
-
 ### input_format_arrow_case_insensitive_column_matching {#input_format_arrow_case_insensitive_column_matching}
 
 Ignore case when matching Arrow column names with ClickHouse column names.
@@ -1121,17 +1110,6 @@ Default value: `none`.
 
 ## ORC format settings {#orc-format-settings}
 
-### input_format_orc_import_nested {#input_format_orc_import_nested}
-
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
-
-Possible values:
-
-- 0 — Data can not be inserted into `Nested` columns as an array of structs.
-- 1 — Data can be inserted into `Nested` columns as an array of structs.
-
-Default value: `0`.
-
 ### input_format_orc_row_batch_size {#input_format_orc_row_batch_size}
 
 Batch size when reading ORC stripes.
@@ -1169,17 +1147,6 @@ Compression method used in output ORC format. Supported codecs: `lz4`, `snappy`,
 Default value: `none`.
 
 ## Parquet format settings {#parquet-format-settings}
-
-### input_format_parquet_import_nested {#input_format_parquet_import_nested}
-
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
-
-Possible values:
-
-- 0 — Data can not be inserted into `Nested` columns as an array of structs.
-- 1 — Data can be inserted into `Nested` columns as an array of structs.
-
-Default value: `0`.
 
 ### input_format_parquet_case_insensitive_column_matching {#input_format_parquet_case_insensitive_column_matching}
 
