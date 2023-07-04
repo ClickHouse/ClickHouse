@@ -282,7 +282,7 @@ Chain buildPushingToViewsChain(
         auto * original_thread = current_thread;
         SCOPE_EXIT({ current_thread = original_thread; });
 
-        std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
+        std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
         /// Copy of a ThreadStatus should be internal.
         view_thread_status_ptr->setInternalThread();
         view_thread_status_ptr->attachToGroup(running_group);
