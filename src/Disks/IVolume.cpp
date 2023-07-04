@@ -53,7 +53,14 @@ std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const
 {
     std::optional<UInt64> res;
     for (const auto & disk : disks)
-        res = std::max(res, disk->getUnreservedSpace());
+    {
+        auto disk_unreserved_space = disk->getUnreservedSpace();
+        if (!disk_unreserved_space)
+            return std::nullopt; /// There is at least one unlimited disk.
+
+        if (!res || *disk_unreserved_space > *res)
+            res = disk_unreserved_space;
+    }
     return res;
 }
 
