@@ -70,7 +70,7 @@ def get_failed_report(
     message = f"{job_name} failed"
     build_result = BuildResult(
         compiler="unknown",
-        build_type="unknown",
+        debug_build=False,
         sanitizer="unknown",
         status=message,
         elapsed_seconds=0,
@@ -85,7 +85,7 @@ def process_report(
     build_config = build_report["build_config"]
     build_result = BuildResult(
         compiler=build_config["compiler"],
-        build_type=build_config["build_type"],
+        debug_build=build_config["debug_build"],
         sanitizer=build_config["sanitizer"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
