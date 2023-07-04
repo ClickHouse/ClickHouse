@@ -159,7 +159,7 @@ void SystemLogBase<LogElement>::flush(bool force)
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::notifyFlush(bool force) { notifyFlushImpl(force ); }
+void SystemLogBase<LogElement>::notifyFlush(bool force) { notifyFlushImpl(force); }
 
 template <typename LogElement>
 uint64_t SystemLogBase<LogElement>::notifyFlushImpl(bool force)
