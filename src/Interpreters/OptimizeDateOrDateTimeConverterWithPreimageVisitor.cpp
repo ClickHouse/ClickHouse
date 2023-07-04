@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include "base/DayNum.h"
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTIdentifier.h>
@@ -37,20 +38,18 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
     const DateLUTImpl & date_lut = DateLUT::instance();
 
     const String & column_name = column.name;
-    String start_date_or_date_time;
-    String end_date_or_date_time;
 
-    if (isDateOrDate32(column.type.get()))
+    auto start_date = range.first.get<Int64>();
+    auto end_date = range.second.get<Int64>();
+    String start_date_or_date_time = date_lut.dateToString(ExtendedDayNum(static_cast<Int32>(start_date)));
+    String end_date_or_date_time = date_lut.dateToString(ExtendedDayNum(static_cast<Int32>(end_date)));
+
+    if (isDateTime(column.type.get()) || isDateTime64(column.type.get()))
     {
-        start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
+        start_date_or_date_time += " 00:00:00";
+        end_date_or_date_time += " 00:00:00";
     }
-    else if (isDateTime(column.type.get()) || isDateTime64(column.type.get()))
-    {
-        start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
-    }
-    else [[unlikely]] return {};
+    else if (!isDateOrDate32(column.type.get())) return {};
 
     if (comparator == "equals")
     {

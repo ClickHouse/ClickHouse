@@ -11,6 +11,10 @@
 
 #include "config.h"
 
+#if USE_EMBEDDED_COMPILER
+#    include <Core/ValuesWithType.h>
+#endif
+
 #include <memory>
 
 /// This file contains user interface for functions.
