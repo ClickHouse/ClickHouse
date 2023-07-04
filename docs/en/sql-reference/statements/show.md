@@ -292,7 +292,7 @@ The statement produces a result table with the following structure:
 - sub_part - Currently unused
 - packed - Currently unused
 - null - Currently unused
-- index_type - The index type, e.g. `primary`, `minmax`, `bloom_filter` etc. (String)
+- index_type - The index type, e.g. `PRIMARY`, `MINMAX`, `BLOOM_FILTER` etc. (String)
 - comment - `` additional information about the index, currently always `` (empty string) (String)
 - index_comment - `` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field like in MySQL (String)
 - visible - If the index is visible to the optimizer, always `YES` (String)
@@ -310,11 +310,11 @@ Result:
 
 ``` text
 ┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
-│ tbl   │          0 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ bloom_filter │         │               │ YES     │ d, b       │
-│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │         │               │ YES     │ a, c, d    │
-│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │         │               │ YES     │ c, d, e    │
-│ tbl   │          0 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ primary      │         │               │ YES     │ c, a       │
-│ tbl   │          0 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ set          │         │               │ YES     │ e          │
+│ tbl   │          0 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          0 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │ c, a       │
+│ tbl   │          0 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
 └───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
 ```
 
