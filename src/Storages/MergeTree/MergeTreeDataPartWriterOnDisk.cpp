@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-
 #include <utility>
 #include "IO/WriteBufferFromFileDecorator.h"
 
@@ -13,17 +13,22 @@ namespace ErrorCodes
 
 void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
-    compressed_hashing.next();
-    compressor.next();
-    plain_hashing.next();
+    /// Here the main goal is to do preFinalize calls for plain_file and marks_file
+    /// Before that all hashing and compression buffers have to be finalized
+    /// Otherwise some data might stuck in the buffers above plain_file and marks_file
+    /// Also the order is important
+
+    compressed_hashing.finalize();
+    compressor.finalize();
+    plain_hashing.finalize();
 
     if (compress_marks)
     {
-        marks_compressed_hashing.next();
-        marks_compressor.next();
+        marks_compressed_hashing.finalize();
+        marks_compressor.finalize();
     }
 
-    marks_hashing.next();
+    marks_hashing.finalize();
 
     plain_file->preFinalize();
     marks_file->preFinalize();
@@ -112,7 +117,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compress_primary_key(settings.compress_primary_key)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
-        throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
     if (!data_part->getDataPartStorage().exists())
         data_part->getDataPartStorage().createDirectories();
@@ -134,13 +140,18 @@ static size_t computeIndexGranularityImpl(
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
+
     if (!can_use_adaptive_index_granularity)
+    {
         index_granularity_for_block = fixed_index_granularity_rows;
+    }
     else
     {
         size_t block_size_in_memory = block.bytes();
         if (blocks_are_granules)
+        {
             index_granularity_for_block = rows_in_block;
+        }
         else if (block_size_in_memory >= index_granularity_bytes)
         {
             size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
@@ -152,11 +163,17 @@ static size_t computeIndexGranularityImpl(
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
-    if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
+
+    /// We should be less or equal than fixed index granularity.
+    /// But if block size is a granule size then do not adjust it.
+    /// Granularity greater than fixed granularity might come from compact part.
+    if (!blocks_are_granules)
+        index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
+
+    /// Very rare case when index granularity bytes less than single row.
+    if (index_granularity_for_block == 0)
         index_granularity_for_block = 1;
 
-    /// We should be less or equal than fixed index granularity
-    index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
     return index_granularity_for_block;
 }
 
@@ -196,19 +213,26 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-    for (const auto & index_helper : skip_indices)
+    for (const auto & skip_index : skip_indices)
     {
-        String stream_name = index_helper->getFileName();
+        String stream_name = skip_index->getFileName();
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
                         data_part->getDataPartStoragePtr(),
-                        stream_name, index_helper->getSerializedFileExtension(),
+                        stream_name, skip_index->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         marks_compression_codec, settings.marks_compress_block_size,
                         settings.query_write_settings));
-        skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
+
+        GinIndexStorePtr store = nullptr;
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
+        {
+            store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
+            gin_index_stores[stream_name] = store;
+        }
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -264,6 +288,16 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         auto & stream = *skip_indices_streams[i];
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
+        GinIndexStorePtr store;
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+        {
+            String stream_name = index_helper->getFileName();
+            auto it = gin_index_stores.find(stream_name);
+            if (it == gin_index_stores.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index '{}' does not exist", stream_name);
+            store = it->second;
+        }
+
         for (const auto & granule : granules_to_write)
         {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
@@ -274,7 +308,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
+                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store);
 
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
@@ -318,9 +352,12 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         }
 
         if (compress_primary_key)
-            index_source_hashing_stream->next();
+        {
+            index_source_hashing_stream->finalize();
+            index_compressor_stream->finalize();
+        }
 
-        index_file_hashing_stream->next();
+        index_file_hashing_stream->finalize();
 
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         if (compress_primary_key)
@@ -359,6 +396,18 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
+
+        /// Register additional files written only by the inverted index. Required because otherwise DROP TABLE complains about unknown
+        /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
+        /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_indices[i]) != nullptr)
+        {
+            String filename_without_extension = skip_indices[i]->getFileName();
+            checksums.files[filename_without_extension + ".gin_dict"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + ".gin_post"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + ".gin_seg"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + ".gin_sid"] = MergeTreeDataPartChecksums::Checksum();
+        }
     }
 
     for (auto & stream : skip_indices_streams)
@@ -376,7 +425,9 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         if (sync)
             stream->sync();
     }
-
+    for (auto & store: gin_index_stores)
+        store.second->finalize();
+    gin_index_stores.clear();
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
     skip_index_accumulated_marks.clear();

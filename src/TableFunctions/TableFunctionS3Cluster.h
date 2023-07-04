@@ -5,7 +5,9 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <TableFunctions/TableFunctionS3.h>
+#include <TableFunctions/ITableFunctionCluster.h>
+#include <Storages/StorageS3Cluster.h>
 
 
 namespace DB
@@ -14,27 +16,36 @@ namespace DB
 class Context;
 
 /**
- * s3cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+ * s3cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure, compression_method)
  * A table function, which allows to process many files from S3 on a specific cluster
- * On initiator it creates a connection to _all_ nodes in cluster, discloses asterics
+ * On initiator it creates a connection to _all_ nodes in cluster, discloses asterisks
  * in S3 file path and dispatch each file dynamically.
  * On worker node it asks initiator about next task to process, processes it.
  * This is repeated until the tasks are finished.
  */
-class TableFunctionS3Cluster : public ITableFunction
+class TableFunctionS3Cluster : public ITableFunctionCluster<TableFunctionS3>
 {
 public:
     static constexpr auto name = "s3Cluster";
-    std::string getName() const override
+    static constexpr auto signature = " - cluster, url\n"
+                                      " - cluster, url, format\n"
+                                      " - cluster, url, format, structure\n"
+                                      " - cluster, url, access_key_id, secret_access_key\n"
+                                      " - cluster, url, format, structure, compression_method\n"
+                                      " - cluster, url, access_key_id, secret_access_key, format\n"
+                                      " - cluster, url, access_key_id, secret_access_key, format, structure\n"
+                                      " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method\n"
+                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+
+    String getName() const override
     {
         return name;
     }
 
-    bool hasStaticStructure() const override { return configuration.structure != "auto"; }
-
-    bool needStructureHint() const override { return configuration.structure == "auto"; }
-
-    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+    String getSignature() const override
+    {
+        return signature;
+    }
 
 protected:
     StoragePtr executeImpl(
@@ -44,14 +55,6 @@ protected:
         ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "S3Cluster"; }
-
-    AccessType getSourceAccessType() const override { return AccessType::S3; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr) const override;
-    void parseArguments(const ASTPtr &, ContextPtr) override;
-
-    StorageS3ClusterConfiguration configuration;
-    ColumnsDescription structure_hint;
 };
 
 }

@@ -4,7 +4,6 @@
 #include <type_traits>
 #include <utility>
 #include "defines.h"
-#include "TypePair.h"
 
 /// General-purpose typelist. Easy on compilation times as it does not use recursion.
 template <typename ...Args>
@@ -28,7 +27,7 @@ namespace TypeListUtils /// In some contexts it's more handy to use functions in
     constexpr Root<Args...> changeRoot(TypeList<Args...>) { return {}; }
 
     template <typename F, typename ...Args>
-    constexpr void forEach(TypeList<Args...>, F && f) { (std::forward<F>(f)(Id<Args>{}), ...); }
+    constexpr void forEach(TypeList<Args...>, F && f) { (std::forward<F>(f)(TypeList<Args>{}), ...); }
 }
 
 template <typename TypeListLeft, typename TypeListRight>

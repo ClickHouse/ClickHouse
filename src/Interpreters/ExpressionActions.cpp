@@ -67,7 +67,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), std::to_string(settings.max_temporary_columns));
+                        actions_dag->dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -536,9 +536,9 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                 if (column.column && !isColumnConst(*column.column))
                     list_of_non_const_columns << "\n" << column.name;
 
-            throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
-                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
+            throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
+                "Too many temporary non-const columns:{}. Maximum: {}",
+                list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
         }
     }
 }
@@ -575,7 +575,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
         {
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
-                throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
 
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
@@ -584,6 +584,12 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             {
                 /// Do not execute function if it's result is already known.
                 res_column.column = action.node->column->cloneResized(num_rows);
+                /// But still need to remove unused arguments.
+                for (const auto & argument : action.arguments)
+                {
+                    if (!argument.needed_later)
+                        columns[argument.pos] = {};
+                }
                 break;
             }
 
@@ -620,9 +626,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(array_join_key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
-                throw Exception("ARRAY JOIN of not array: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", action.node->result_name);
 
             for (auto & column : columns)
                 if (column.column)
@@ -635,7 +641,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
-            res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
+            res_column.type = getArrayJoinDataType(array_join_key.type)->getNestedType();
             res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
@@ -790,10 +796,10 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
-    String res;
+    NameAndTypePair result;
 
     for (const auto & column : columns)
     {
@@ -807,14 +813,14 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
         if (!min_size || size < *min_size)
         {
             min_size = size;
-            res = column.name;
+            result = column;
         }
     }
 
     if (!min_size)
-        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
 
-    return res;
+    return result;
 }
 
 std::string ExpressionActions::dumpActions() const
@@ -840,6 +846,23 @@ std::string ExpressionActions::dumpActions() const
     ss << "\n";
 
     return ss.str();
+}
+
+void ExpressionActions::describeActions(WriteBuffer & out, std::string_view prefix) const
+{
+    bool first = true;
+
+    for (const auto & action : actions)
+    {
+        out << prefix << (first ? "Actions: " : "         ");
+        out << action.toString() << '\n';
+        first = false;
+    }
+
+    out << prefix << "Positions:";
+    for (const auto & pos : result_positions)
+        out << ' ' << pos;
+    out << '\n';
 }
 
 JSONBuilder::ItemPtr ExpressionActions::toTree() const
@@ -913,14 +936,12 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         for (const auto & action : actions)
         {
             if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
-            {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
-                {
-                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
-                        return true;
-                }
-            }
+                    if (auto future_set = column_set->getData())
+                        if (auto set = future_set->get())
+                            if (set->getTotalRowCount() == 0)
+                                return true;
         }
     }
 
@@ -930,7 +951,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {
     if (steps.empty())
-        throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add action to empty ExpressionActionsChain");
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
@@ -1008,7 +1029,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
 
         if (array_join->columns.contains(column.name))
         {
-            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;
@@ -1088,12 +1109,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
 ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
 }
 
 const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
 }
 
 }

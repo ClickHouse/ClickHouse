@@ -62,6 +62,9 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+int mainEntryClickHouseKeeperClient(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
@@ -132,6 +135,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
@@ -345,7 +351,7 @@ struct Checker
 ;
 
 
-#if !defined(DISABLE_HARMFUL_ENV_VAR_CHECK) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -433,7 +439,6 @@ extern "C"
 }
 #endif
 
-
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -457,7 +462,7 @@ int main(int argc_, char ** argv_)
     /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
-#if !defined(DISABLE_HARMFUL_ENV_VAR_CHECK) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
 

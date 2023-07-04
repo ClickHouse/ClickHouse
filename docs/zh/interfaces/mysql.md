@@ -44,5 +44,3 @@ mysql>
 -   不支持prepared queries
 
 -   某些数据类型以字符串形式发送
-
-[原始文章](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->

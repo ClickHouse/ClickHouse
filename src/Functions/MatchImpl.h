@@ -4,8 +4,9 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
-#include "Regexps.h"
+#include <Functions/Regexps.h>
 
 #include "config.h"
 #include <re2_st/re2.h>
@@ -22,9 +23,10 @@ namespace ErrorCodes
 namespace impl
 {
 
-/// Is the [I]LIKE expression reduced to finding a substring in a string?
+/// Is the [I]LIKE expression equivalent to a substring search?
 inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 {
+    /// TODO: ignore multiple leading or trailing %
     if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
         return false;
 
@@ -44,9 +46,25 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
             case '\\':
                 ++pos;
                 if (pos == end)
+                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
                     return false;
                 else
-                    res += *pos;
+                {
+                    switch (*pos)
+                    {
+                        /// Known LIKE escape sequences:
+                        case '%':
+                        case '_':
+                        case '\\':
+                            res += *pos;
+                            break;
+                        /// For all other escape sequences, the backslash loses its special meaning
+                        default:
+                            res += '\\';
+                            res += *pos;
+                            break;
+                    }
+                }
                 break;
             default:
                 res += *pos;
@@ -108,8 +126,12 @@ struct MatchImpl
         const ColumnString::Offsets & haystack_offsets,
         const String & needle,
         [[maybe_unused]] const ColumnPtr & start_pos_,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
+        assert(!res_null);
+
         const size_t haystack_size = haystack_offsets.size();
 
         assert(haystack_size == res.size());
@@ -117,6 +139,16 @@ struct MatchImpl
 
         if (haystack_offsets.empty())
             return;
+
+        /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
+        /// - col [not] [i]like '%' / '%%'
+        /// - match(col, '.*')
+        if ((is_like && (needle == "%" or needle == "%%")) || (!is_like && (needle == ".*" || needle == ".*?")))
+        {
+            for (auto & x : res)
+                x = !negate;
+            return;
+        }
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
@@ -258,14 +290,28 @@ struct MatchImpl
         const ColumnString::Chars & haystack,
         size_t N,
         const String & needle,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
+        assert(!res_null);
+
         const size_t haystack_size = haystack.size() / N;
 
         assert(haystack_size == res.size());
 
         if (haystack.empty())
             return;
+
+        /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
+        /// - col [not] [i]like '%' / '%%'
+        /// - match(col, '.*')
+        if ((is_like && (needle == "%" or needle == "%%")) || (!is_like && (needle == ".*" || needle == ".*?")))
+        {
+            for (auto & x : res)
+                x = !negate;
+            return;
+        }
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
@@ -417,8 +463,12 @@ struct MatchImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
+        assert(!res_null);
+
         const size_t haystack_size = haystack_offsets.size();
 
         assert(haystack_size == needle_offset.size());
@@ -522,8 +572,12 @@ struct MatchImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
+        assert(!res_null);
+
         const size_t haystack_size = haystack.size()/N;
 
         assert(haystack_size == needle_offset.size());

@@ -25,7 +25,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -53,7 +52,8 @@ class ProcessListEntry;
 struct QueryStatusInfo
 {
     String query;
-    double elapsed_seconds;
+    IAST::QueryKind query_kind{};
+    UInt64 elapsed_microseconds;
     size_t read_rows;
     size_t read_bytes;
     size_t total_rows;
@@ -86,7 +86,7 @@ protected:
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
-    ThreadGroupStatusPtr thread_group;
+    ThreadGroupPtr thread_group;
 
     Stopwatch watch;
 
@@ -119,8 +119,22 @@ protected:
 
     mutable std::mutex executors_mutex;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    struct ExecutorHolder
+    {
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+
+        void cancel();
+
+        void remove();
+
+        PipelineExecutor * executor;
+        std::mutex mutex;
+    };
+
+    using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
+
+    /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {
@@ -135,22 +149,23 @@ protected:
 
     OvercommitTracker * global_overcommit_tracker = nullptr;
 
-    IAST::QueryKind query_kind;
+    /// This is used to control the maximum number of SELECT or INSERT queries.
+    IAST::QueryKind query_kind{};
 
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
 
 public:
-
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        ThreadGroupStatusPtr && thread_group_,
-        IAST::QueryKind query_kind_
-        );
+        ThreadGroupPtr && thread_group_,
+        IAST::QueryKind query_kind_,
+        const Settings & query_settings_,
+        UInt64 watch_start_nanoseconds);
 
     ~QueryStatus();
 
@@ -176,11 +191,6 @@ public:
         if (!thread_group)
             return nullptr;
         return &thread_group->memory_tracker;
-    }
-
-    IAST::QueryKind getQueryKind() const
-    {
-        return query_kind;
     }
 
     bool updateProgressIn(const Progress & value)
@@ -221,6 +231,9 @@ public:
     bool checkTimeLimit();
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
+
+    /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
+    UInt64 getQueryCPUStartTime() { return watch.getStart(); }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -382,7 +395,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context);
+    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }

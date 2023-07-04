@@ -63,4 +63,3 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 ```
 
 For distributed query processing, the temporary tables are sent to all the remote servers.
-

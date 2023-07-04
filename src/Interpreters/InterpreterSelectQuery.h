@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Access/EnabledRowPolicies.h>
 #include <Core/QueryProcessingStage.h>
@@ -122,16 +123,6 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    /// This is tiny crutch to support reading from localhost replica during distributed query
-    /// Replica need to talk to the initiator through a connection to ask for a next task
-    /// but there will be no connection if we create Interpreter explicitly.
-    /// The other problem is that context is copied inside Interpreter's constructor
-    /// And with this method we can change the internals of cloned one
-    void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
-
-    /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo(size_t replica_num, size_t replica_count);
-
     FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
     RowPolicyFilterPtr getRowPolicyFilter() const;
@@ -140,6 +131,8 @@ public:
 
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
+
+    static bool isQueryWithFinal(const SelectQueryInfo & info);
 
 private:
     InterpreterSelectQuery(
@@ -194,6 +187,8 @@ private:
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
+    bool autoFinalOnQuery(ASTSelectQuery & select_query);
+    std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
 
     enum class Modificator
     {
@@ -223,6 +218,9 @@ private:
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
+
+    /// For "per replica" filter when multiple replicas are used
+    FilterDAGInfoPtr parallel_replicas_custom_filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 

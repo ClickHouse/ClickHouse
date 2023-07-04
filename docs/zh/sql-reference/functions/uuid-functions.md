@@ -21,13 +21,13 @@ UUID类型的值。
 
 此示例演示如何在表中创建UUID类型的列，并对其写入数据。
 
-``` sql
-:) CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+```sql
+CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+INSERT INTO t_uuid SELECT generateUUIDv4()
+SELECT * FROM t_uuid
+```
 
-:) INSERT INTO t_uuid SELECT generateUUIDv4()
-
-:) SELECT * FROM t_uuid
-
+```response
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
@@ -47,9 +47,11 @@ UUID类型的值
 
 **使用示例**
 
-``` sql
-:) SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+```sql
+SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+```
 
+```response
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
@@ -70,10 +72,12 @@ UUIDStringToNum(String)
 **使用示例**
 
 ``` sql
-:) SELECT
+SELECT
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid) AS bytes
+```
 
+```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -97,7 +101,8 @@ UUIDNumToString(FixedString(16))
 SELECT
     'a/<@];!~p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
-
+```
+```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘
@@ -106,5 +111,3 @@ SELECT
 ## 另请参阅 {#ling-qing-can-yue}
 
 -   [dictgetuid](ext-dict-functions.md)
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/uuid_function/) <!--hide-->

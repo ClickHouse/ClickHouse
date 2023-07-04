@@ -1,6 +1,7 @@
+from pathlib import Path
+from typing import Dict, List, Optional
 import os
 import logging
-import ast
 
 from env_helper import (
     GITHUB_JOB_URL,
@@ -8,34 +9,35 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
 )
-from report import ReportColorTheme, create_test_html_report
+from report import ReportColorTheme, TestResults, create_test_html_report
+from s3_helper import S3Helper
 
 
 def process_logs(
-    s3_client, additional_logs, s3_path_prefix, test_results, with_raw_logs
-):
+    s3_client: S3Helper,
+    additional_logs: List[str],
+    s3_path_prefix: str,
+    test_results: TestResults,
+) -> List[str]:
     logging.info("Upload files to s3 %s", additional_logs)
 
-    processed_logs = {}  # type: ignore
+    processed_logs = {}  # type: Dict[Path, str]
     # Firstly convert paths of logs from test_results to urls to s3.
     for test_result in test_results:
-        if len(test_result) <= 3 or with_raw_logs:
+        if test_result.log_files is None:
             continue
 
         # Convert from string repr of list to list.
-        test_log_paths = ast.literal_eval(test_result[3])
-        test_log_urls = []
-        for log_path in test_log_paths:
-            if log_path in processed_logs:
-                test_log_urls.append(processed_logs[log_path])
-            elif log_path:
+        test_result.log_urls = []
+        for path in test_result.log_files:
+            if path in processed_logs:
+                test_result.log_urls.append(processed_logs[path])
+            elif path:
                 url = s3_client.upload_test_report_to_s3(
-                    log_path, s3_path_prefix + "/" + os.path.basename(log_path)
+                    path.as_posix(), s3_path_prefix + "/" + path.name
                 )
-                test_log_urls.append(url)
-                processed_logs[log_path] = url
-
-        test_result[3] = test_log_urls
+                test_result.log_urls.append(url)
+                processed_logs[path] = url
 
     additional_urls = []
     for log_path in additional_logs:
@@ -50,21 +52,25 @@ def process_logs(
 
 
 def upload_results(
-    s3_client,
-    pr_number,
-    commit_sha,
-    test_results,
-    additional_files,
-    check_name,
-    with_raw_logs=True,
-    statuscolors=None,
-):
-    s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(
-        " ", "_"
-    ).replace("(", "_").replace(")", "_").replace(",", "_")
+    s3_client: S3Helper,
+    pr_number: int,
+    commit_sha: str,
+    test_results: TestResults,
+    additional_files: List[str],
+    check_name: str,
+    additional_urls: Optional[List[str]] = None,
+) -> str:
+    normalized_check_name = check_name.lower()
+    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_")):
+        normalized_check_name = normalized_check_name.replace(*r)
+
+    # Preserve additional_urls to not modify the original one
+    original_additional_urls = additional_urls or []
+    s3_path_prefix = f"{pr_number}/{commit_sha}/{normalized_check_name}"
     additional_urls = process_logs(
-        s3_client, additional_files, s3_path_prefix, test_results, with_raw_logs
+        s3_client, additional_files, s3_path_prefix, test_results
     )
+    additional_urls.extend(original_additional_urls)
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"
@@ -74,8 +80,7 @@ def upload_results(
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{commit_sha}"
 
     if additional_urls:
-        raw_log_url = additional_urls[0]
-        additional_urls.pop(0)
+        raw_log_url = additional_urls.pop(0)
     else:
         raw_log_url = GITHUB_JOB_URL()
 
@@ -93,7 +98,6 @@ def upload_results(
         branch_name,
         commit_url,
         additional_urls,
-        with_raw_logs,
         statuscolors=statuscolors,
     )
     with open("report.html", "w", encoding="utf-8") as f:

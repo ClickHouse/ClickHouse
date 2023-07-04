@@ -157,7 +157,7 @@ public:
             });
         }
 
-        return arena.size() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
+        return arena.allocatedBytes() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
     }
 
 private:
@@ -557,6 +557,8 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
+            ContainerType<IPv4>,
+            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>,
             ContainerType<Field>> attribute_container;

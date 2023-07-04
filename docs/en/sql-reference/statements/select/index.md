@@ -4,7 +4,7 @@ sidebar_position: 32
 sidebar_label: SELECT
 ---
 
-# SELECT Query 
+# SELECT Query
 
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
@@ -34,24 +34,24 @@ All clauses are optional, except for the required list of expressions immediatel
 
 Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
 
--   [WITH clause](../../../sql-reference/statements/select/with.md)
--   [SELECT clause](#select-clause)
--   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
--   [FROM clause](../../../sql-reference/statements/select/from.md)
--   [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
--   [JOIN clause](../../../sql-reference/statements/select/join.md)
--   [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
--   [WHERE clause](../../../sql-reference/statements/select/where.md)
--   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
--   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
--   [HAVING clause](../../../sql-reference/statements/select/having)
--   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
--   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
--   [UNION clause](../../../sql-reference/statements/select/union.md)
--   [INTERSECT clause](../../../sql-reference/statements/select/intersect.md)
--   [EXCEPT clause](../../../sql-reference/statements/select/except.md)
--   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
--   [FORMAT clause](../../../sql-reference/statements/select/format.md)
+- [WITH clause](../../../sql-reference/statements/select/with.md)
+- [SELECT clause](#select-clause)
+- [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
+- [FROM clause](../../../sql-reference/statements/select/from.md)
+- [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
+- [JOIN clause](../../../sql-reference/statements/select/join.md)
+- [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
+- [WHERE clause](../../../sql-reference/statements/select/where.md)
+- [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
+- [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
+- [HAVING clause](../../../sql-reference/statements/select/having.md)
+- [LIMIT clause](../../../sql-reference/statements/select/limit.md)
+- [OFFSET clause](../../../sql-reference/statements/select/offset.md)
+- [UNION clause](../../../sql-reference/statements/select/union.md)
+- [INTERSECT clause](../../../sql-reference/statements/select/intersect.md)
+- [EXCEPT clause](../../../sql-reference/statements/select/except.md)
+- [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
+- [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
 ## SELECT Clause
 
@@ -123,11 +123,11 @@ Columns that matched the `COLUMNS` expression can have different data types. If 
 
 You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:
 
--   When creating a table dump.
--   For tables containing just a few columns, such as system tables.
--   For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
--   When there is strong filtration on a small number of columns using `PREWHERE`.
--   In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
+- When creating a table dump.
+- For tables containing just a few columns, such as system tables.
+- For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
+- When there is strong filtration on a small number of columns using `PREWHERE`.
+- In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
 
 In all other cases, we do not recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
@@ -151,17 +151,17 @@ The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional argume
 
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM. Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified:
 
--   `max_memory_usage`
--   `max_rows_to_group_by`
--   `max_rows_to_sort`
--   `max_rows_in_distinct`
--   `max_bytes_in_distinct`
--   `max_rows_in_set`
--   `max_bytes_in_set`
--   `max_rows_in_join`
--   `max_bytes_in_join`
--   `max_bytes_before_external_sort`
--   `max_bytes_before_external_group_by`
+- `max_memory_usage`
+- `max_rows_to_group_by`
+- `max_rows_to_sort`
+- `max_rows_in_distinct`
+- `max_bytes_in_distinct`
+- `max_rows_in_set`
+- `max_bytes_in_set`
+- `max_rows_in_join`
+- `max_bytes_in_join`
+- `max_bytes_before_external_sort`
+- `max_bytes_before_external_group_by`
 
 For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
@@ -282,5 +282,3 @@ Other ways to make settings see [here](../../../operations/settings/index.md).
 ``` sql
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/)<!--hide-->

@@ -40,6 +40,18 @@ public:
             this->out.next();
     }
 
+    void finalizeBuffers() override
+    {
+        if (validating_ostr)
+            validating_ostr->finalize();
+    }
+
+    void resetFormatterImpl() override
+    {
+        validating_ostr = std::make_unique<WriteBufferValidUTF8>(this->out);
+        ostr = validating_ostr.get();
+    }
+
 protected:
     /// Point to validating_ostr or out from IOutputFormat, should be used in derived classes instead of out.
     WriteBuffer * ostr;
@@ -50,7 +62,7 @@ private:
 };
 
 using OutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IOutputFormat>;
-using RowOutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IRowOutputFormat, const IRowOutputFormat::Params &>;
+using RowOutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IRowOutputFormat>;
 
 }
 

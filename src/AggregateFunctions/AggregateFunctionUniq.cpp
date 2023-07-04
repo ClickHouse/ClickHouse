@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <Core/Settings.h>
 
@@ -36,8 +37,8 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
     assertNoParameters(name, params);
 
     if (argument_types.empty())
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for aggregate function {}", name);
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 
@@ -60,6 +61,10 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
             return std::make_shared<AggregateFunctionUniq<String, Data>>(argument_types);
         else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>(argument_types);
+        else if (which.isIPv4())
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv4::FieldType, Data>>(argument_types);
+        else if (which.isIPv6())
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data>>(argument_types);
         else if (which.isTuple())
         {
             if (use_exact_hash_function)
@@ -83,8 +88,8 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
     assertNoParameters(name, params);
 
     if (argument_types.empty())
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for aggregate function {}", name);
 
     /// We use exact hash function if the user wants it;
     /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.
@@ -109,6 +114,10 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
             return std::make_shared<AggregateFunctionUniq<String, Data<String, is_able_to_parallelize_merge>>>(argument_types);
         else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isIPv4())
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv4::FieldType, Data<DataTypeIPv4::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isIPv6())
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data<DataTypeIPv6::FieldType, is_able_to_parallelize_merge>>>(argument_types);
         else if (which.isTuple())
         {
             if (use_exact_hash_function)

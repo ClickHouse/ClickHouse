@@ -14,8 +14,18 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
+    set(RUSTFLAGS "[]")
+    set(RUST_CARGO_BUILD_STD "")
+    # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
+    if (SANITIZE STREQUAL "memory")
+        set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
+        set(RUSTFLAGS "[\"-Zsanitizer=memory\", \"-Zsanitizer-memory-track-origins\"]")
+    endif()
+
     message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
     message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
+    message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
+    message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
     # NOTE: requires RW access for the source dir
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml.in" "${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml" @ONLY)
@@ -34,10 +44,47 @@ function(clickhouse_import_crate)
     else()
         set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
     endif()
-    # NOTE: we may use LTO for rust too
 
-    corrosion_import_crate(NO_STD ${ARGN})
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+        set(profile "")
+    else()
+        if (ENABLE_THINLTO)
+            set(profile "release-thinlto")
+        else()
+            set(profile "release")
+        endif()
+    endif()
+
+    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
 endfunction()
 
-add_subdirectory (BLAKE3)
-add_subdirectory (skim)
+# Add crate from the build directory.
+#
+# Our crates has configuration files:
+# - config for cargo (see config.toml.in)
+# - and possibly config for build (build.rs.in)
+#
+# And to avoid overlaps different builds for one source directory, crate will
+# be copied from source directory to the binary directory.
+file(COPY ".cargo" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+function(add_rust_subdirectory src)
+    set(dst "${CMAKE_CURRENT_BINARY_DIR}/${src}")
+    message(STATUS "Copy ${src} to ${dst}")
+    file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+        PATTERN target EXCLUDE)
+    add_subdirectory("${dst}" "${dst}")
+
+    # cmake -E copy* do now know how to exclude files
+    # but we need to exclude "target" folder from copying, if someone or semantic
+    # completion created it.
+    add_custom_target(${src}-update ALL
+        COMMAND ${CMAKE_COMMAND}
+            -DFROM=${src}
+            -DTO=${CMAKE_CURRENT_BINARY_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/copy_exclude.cmake"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VERBATIM)
+endfunction()
+
+add_rust_subdirectory (BLAKE3)
+add_rust_subdirectory (skim)

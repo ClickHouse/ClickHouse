@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Storages/HeaderCollection.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/HTTPHeaderEntries.h>
 
 #include <string>
 #include <optional>
@@ -11,15 +12,13 @@
 #if USE_AWS_S3
 
 #include <base/types.h>
-#include <aws/core/Aws.h>
-#include <aws/core/client/ClientConfiguration.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/S3Errors.h>
-#include <Poco/URI.h>
-
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 
+#include <IO/S3/URI.h>
+
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Errors.h>
 
 namespace DB
 {
@@ -60,84 +59,6 @@ private:
 };
 }
 
-
-namespace DB::S3
-{
-
-class ClientFactory
-{
-public:
-    ~ClientFactory();
-
-    static ClientFactory & instance();
-
-    std::unique_ptr<Aws::S3::S3Client> create(
-        const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & server_side_encryption_customer_key_base64,
-        HeaderCollection headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request);
-
-    PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects,
-        bool enable_s3_requests_logging,
-        bool for_disk_s3,
-        const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler);
-
-private:
-    ClientFactory();
-
-    Aws::SDKOptions aws_options;
-    std::atomic<bool> s3_requests_logging_enabled;
-};
-
-/**
- * Represents S3 URI.
- *
- * The following patterns are allowed:
- * s3://bucket/key
- * http(s)://endpoint/bucket/key
- */
-struct URI
-{
-    Poco::URI uri;
-    // Custom endpoint if URI scheme is not S3.
-    String endpoint;
-    String bucket;
-    String key;
-    String version_id;
-    String storage_name;
-
-    bool is_virtual_hosted_style;
-
-    explicit URI(const std::string & uri_);
-
-    static void validateBucket(const String & bucket, const Poco::URI & uri);
-};
-
-struct ObjectInfo
-{
-    size_t size = 0;
-    time_t last_modification_time = 0;
-};
-
-bool isNotFoundError(Aws::S3::S3Errors error);
-
-Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
-
-S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
-
-size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
-
-bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
-
-}
 #endif
 
 namespace Poco::Util
@@ -148,6 +69,10 @@ namespace Poco::Util
 namespace DB::S3
 {
 
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
 struct AuthSettings
 {
     static AuthSettings loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
@@ -156,11 +81,14 @@ struct AuthSettings
     std::string secret_access_key;
     std::string region;
     std::string server_side_encryption_customer_key_base64;
+    ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
 
-    HeaderCollection headers;
+    HTTPHeaderEntries headers;
 
     std::optional<bool> use_environment_credentials;
     std::optional<bool> use_insecure_imds_request;
+    std::optional<uint64_t> expiration_window_seconds;
+    std::optional<bool> no_sign_request;
 
     bool operator==(const AuthSettings & other) const = default;
 

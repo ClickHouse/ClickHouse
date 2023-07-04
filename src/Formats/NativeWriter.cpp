@@ -34,7 +34,7 @@ NativeWriter::NativeWriter(
     {
         ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
         if (!ostr_concrete)
-            throw Exception("When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.");
     }
 }
 
@@ -55,7 +55,7 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0; //-V1048
+    settings.low_cardinality_max_dictionary_size = 0;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
@@ -64,8 +64,10 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
 }
 
 
-void NativeWriter::write(const Block & block)
+size_t NativeWriter::write(const Block & block)
 {
+    size_t written_before = ostr.count();
+
     /// Additional information about the block.
     if (client_revision > 0)
         block.info.write(ostr);
@@ -161,6 +163,10 @@ void NativeWriter::write(const Block & block)
 
     if (index)
         index->blocks.emplace_back(std::move(index_block));
+
+    size_t written_after = ostr.count();
+    size_t written_size = written_after - written_before;
+    return written_size;
 }
 
 }

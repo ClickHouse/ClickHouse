@@ -33,5 +33,3 @@ slug: /zh/operations/system-tables/row_policies
 ## 另请参阅 {#see-also}
 
 -   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/row_policies) <!--hide-->

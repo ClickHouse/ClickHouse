@@ -95,4 +95,3 @@ FROM system.numbers
 ## Смотрите также {#smotrite-takzhe}
 
 -   [Табличная функция JDBC](../../../engines/table-engines/integrations/jdbc.md).
-

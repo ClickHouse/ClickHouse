@@ -8,7 +8,7 @@ CREATE TABLE minmax_compact
 ) ENGINE = MergeTree()
 PARTITION BY i32
 ORDER BY u64
-SETTINGS index_granularity = 2, min_rows_for_wide_part = 1000000;
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_rows_for_wide_part = 1000000;
 
 INSERT INTO minmax_compact VALUES (0, 2, 1), (1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1), (5, 2, 1), (6, 1, 2), (7, 1, 2), (8, 1, 2), (9, 1, 2);
 

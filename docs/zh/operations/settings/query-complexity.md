@@ -255,6 +255,3 @@ Possible values:
 -   0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
-
-
-[原始文章](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->

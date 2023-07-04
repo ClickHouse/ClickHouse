@@ -281,10 +281,6 @@ We also track test coverage but only for functional tests and only for clickhous
 
 There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
 
-## Testflows
-
-[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
-
 ## Test Automation {#test-automation}
 
 We run tests with [GitHub Actions](https://github.com/features/actions).
@@ -293,5 +289,3 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
-
-[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/Throttler_fwd.h>
+#include <Common/ProfileEvents.h>
 
 #include <mutex>
 #include <memory>
 #include <base/sleep.h>
+#include <base/types.h>
 #include <atomic>
 
 namespace DB
@@ -32,7 +34,16 @@ public:
               const std::shared_ptr<Throttler> & parent_ = nullptr);
 
     /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
-    void add(size_t amount);
+    /// Returns duration of sleep in nanoseconds (to distinguish sleeping on different kinds of throttlers for metrics)
+    UInt64 add(size_t amount);
+
+    UInt64 add(size_t amount, ProfileEvents::Event event_amount, ProfileEvents::Event event_sleep_us)
+    {
+        UInt64 sleep_ns = add(amount);
+        ProfileEvents::increment(event_amount, amount);
+        ProfileEvents::increment(event_sleep_us, sleep_ns / 1000UL);
+        return sleep_ns;
+    }
 
     /// Not thread safe
     void setParent(const std::shared_ptr<Throttler> & parent_)
@@ -50,12 +61,12 @@ private:
     size_t count{0};
     const size_t max_speed{0}; /// in tokens per second.
     const size_t max_burst{0}; /// in tokens.
-    const uint64_t limit{0}; /// 0 - not limited.
+    const UInt64 limit{0}; /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     std::mutex mutex;
-    std::atomic<uint64_t> accumulated_sleep{0}; // Accumulated sleep time over all waiting threads
+    std::atomic<UInt64> accumulated_sleep{0}; // Accumulated sleep time over all waiting threads
     double tokens{0}; /// Amount of tokens available in token bucket. Updated in `add` method.
-    uint64_t prev_ns{0}; /// Previous `add` call time (in nanoseconds).
+    UInt64 prev_ns{0}; /// Previous `add` call time (in nanoseconds).
 
     /// Used to implement a hierarchy of throttlers
     std::shared_ptr<Throttler> parent;

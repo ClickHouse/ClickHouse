@@ -62,7 +62,7 @@ private:
     {
         auto [array_join_expression_list, _] = node.arrayJoinExpressionList();
         if (!array_join_expression_list)
-            throw Exception("Logical error: no ARRAY JOIN", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no ARRAY JOIN");
 
         std::vector<ASTPtr *> out;
         out.reserve(array_join_expression_list->children.size());
@@ -73,10 +73,10 @@ private:
             const String nested_table_alias = ast->getAliasOrColumnName();
 
             if (nested_table_alias == nested_table_name && !ast->as<ASTIdentifier>())
-                throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
+                throw Exception(ErrorCodes::ALIAS_REQUIRED, "No alias for non-trivial value in ARRAY JOIN: {}", nested_table_name);
 
             if (data.array_join_alias_to_name.count(nested_table_alias) || data.aliases.count(nested_table_alias))
-                throw Exception("Duplicate alias in ARRAY JOIN: " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS, "Duplicate alias in ARRAY JOIN: {}", nested_table_alias);
 
             data.array_join_alias_to_name[nested_table_alias] = nested_table_name;
             data.array_join_name_to_alias[nested_table_name] = nested_table_alias;

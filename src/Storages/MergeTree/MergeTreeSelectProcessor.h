@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -19,7 +20,8 @@ public:
     MergeTreeSelectAlgorithm(
         const MergeTreeData & storage,
         const StorageSnapshotPtr & storage_snapshot_,
-        const MergeTreeData::DataPartPtr & owned_data_part,
+        const MergeTreeData::DataPartPtr & owned_data_part_,
+        const AlterConversionsPtr & alter_conversions_,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
@@ -27,12 +29,12 @@ public:
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
-        ExpressionActionsSettings actions_settings,
+        const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings,
+        MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
-        bool has_limit_below_one_block_ = false,
-        std::optional<ParallelReadingExtension> extension_ = {});
+        bool has_limit_below_one_block_ = false);
 
     ~MergeTreeSelectAlgorithm() override;
 
@@ -53,6 +55,9 @@ protected:
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
 
+    /// Alter converversionss that should be applied on-fly for part.
+    AlterConversionsPtr alter_conversions;
+
     /// Cache getSampleBlock call, which might be heavy.
     Block sample_block;
 
@@ -63,6 +68,9 @@ protected:
     /// If true, every task will be created only with one range.
     /// It reduces amount of read data for queries with small LIMIT.
     bool has_limit_below_one_block = false;
+
+    /// Pool for reading in order
+    MergeTreeInOrderReadPoolParallelReplicasPtr pool;
 
     size_t total_rows = 0;
 };

@@ -103,13 +103,13 @@ void DatabaseMaterializedMySQL::renameTable(ContextPtr context_, const String & 
     checkIsInternalQuery(context_, "RENAME TABLE");
 
     if (exchange)
-        throw Exception("MaterializedMySQL database does not support EXCHANGE TABLE.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support EXCHANGE TABLE.");
 
     if (dictionary)
-        throw Exception("MaterializedMySQL database does not support RENAME DICTIONARY.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support RENAME DICTIONARY.");
 
     if (to_database.getDatabaseName() != DatabaseAtomic::getDatabaseName())
-        throw Exception("Cannot rename with other database for MaterializedMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for MaterializedMySQL database.");
 
     DatabaseAtomic::renameTable(context_, name, *this, to_name, exchange, dictionary);
 }

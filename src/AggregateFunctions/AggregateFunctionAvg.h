@@ -10,6 +10,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -83,10 +84,20 @@ public:
     using Fraction = AvgFraction<Numerator, Denominator>;
 
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_,
-        UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
-        : Base(argument_types_, {}), num_scale(num_scale_), denom_scale(denom_scale_) {}
+                                      UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, createResultType())
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    AggregateFunctionAvgBase(const DataTypes & argument_types_, const DataTypePtr & result_type_,
+                             UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, result_type_)
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
+
+    DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -135,8 +146,8 @@ public:
         for (const auto & argument : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument);
 
-        auto return_type = getReturnType();
-        can_be_compiled &= canBeNativeType(*return_type);
+        const auto & result_type = this->getResultType();
+        can_be_compiled &= canBeNativeType(*result_type);
 
         return can_be_compiled;
     }
@@ -187,8 +198,8 @@ public:
         auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
 
-        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, b.getDoubleTy());
-        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, b.getDoubleTy());
+        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, this->getResultType());
+        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
 
         return b.CreateFDiv(double_numerator, double_denominator);
     }
@@ -297,7 +308,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -305,7 +316,7 @@ public:
 
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
-        auto * value_cast_to_numerator = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
+        auto * value_cast_to_numerator = nativeCast(b, arguments[0], toNativeDataType<Numerator>());
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
         b.CreateStore(numerator_result_value, numerator_ptr);
 

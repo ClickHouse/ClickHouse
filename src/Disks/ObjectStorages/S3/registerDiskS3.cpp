@@ -8,21 +8,19 @@
 
 #if USE_AWS_S3
 
-#include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 
-#include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
-#include <IO/S3Common.h>
 
-#include <Storages/StorageS3Settings.h>
 #include <Core/ServerUUID.h>
+#include <Common/Macros.h>
 
 
 namespace DB
@@ -86,10 +84,10 @@ public:
 private:
     static String getServerUUID()
     {
-        DB::UUID server_uuid = DB::ServerUUID::get();
-        if (server_uuid == DB::UUIDHelpers::Nil)
+        UUID server_uuid = ServerUUID::get();
+        if (server_uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-        return DB::toString(server_uuid);
+        return toString(server_uuid);
     }
 };
 
@@ -104,7 +102,8 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        S3::URI uri(config.getString(config_prefix + ".endpoint"));
+        String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+        S3::URI uri(endpoint);
 
         if (uri.key.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
@@ -165,9 +164,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
         s3disk->startup(context, skip_access_check);
 
-        std::shared_ptr<IDisk> disk_result = s3disk;
-
-        return std::make_shared<DiskRestartProxy>(disk_result);
+        return s3disk;
     };
     factory.registerDiskType("s3", creator);
     factory.registerDiskType("s3_plain", creator);
@@ -177,6 +174,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
 #else
 
-void registerDiskS3(DiskFactory &, bool /* global_skip_access_check */) {}
+void registerDiskS3(DB::DiskFactory &, bool /* global_skip_access_check */) {}
 
 #endif

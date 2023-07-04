@@ -7,7 +7,7 @@ QUERY id: 0
         ARGUMENTS
           LIST id: 3, nodes: 1
             CONSTANT id: 4, constant_value: Tuple_(\'\'), constant_value_type: Tuple(String)
-              EXPRESSION 
+              EXPRESSION
                 FUNCTION id: 5, function_name: tuple, function_type: ordinary, result_type: Tuple(String)
                   ARGUMENTS
                     LIST id: 6, nodes: 1

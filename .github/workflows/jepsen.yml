@@ -19,12 +19,10 @@ jobs:
           TEMP_PATH=${{runner.temp}}/keeper_jepsen
           REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
         with:
+          clear-repository: true
           fetch-depth: 0
       - name: Jepsen Test
         run: |
@@ -50,12 +48,10 @@ jobs:
   #         TEMP_PATH=${{runner.temp}}/server_jepsen
   #         REPO_COPY=${{runner.temp}}/server_jepsen/ClickHouse
   #         EOF
-  #     - name: Clear repository
-  #       run: |
-  #         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
   #     - name: Check out repository code
-  #       uses: actions/checkout@v2
+  #       uses: ClickHouse/checkout@v1
   #       with:
+  #         clear-repository: true
   #         fetch-depth: 0
   #     - name: Jepsen Test
   #       run: |

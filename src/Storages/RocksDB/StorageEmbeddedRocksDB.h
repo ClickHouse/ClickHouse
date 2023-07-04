@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
@@ -48,7 +48,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
@@ -80,11 +80,13 @@ public:
         const std::vector<std::string> & keys,
         PaddedPODArray<UInt8> * out_null_map) const;
 
+    bool supportsDelete() const override { return true; }
+
 private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
-    mutable std::shared_mutex rocksdb_ptr_mx;
+    mutable SharedMutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;

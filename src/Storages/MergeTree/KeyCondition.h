@@ -19,7 +19,7 @@ namespace DB
 class ASTFunction;
 class Context;
 class IFunction;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
@@ -286,9 +286,6 @@ public:
 
     bool alwaysFalse() const;
 
-    /// Get the maximum number of the key element used in the condition.
-    size_t getMaxKeyColumn() const;
-
     bool hasMonotonicFunctionsChain() const;
 
     /// Impose an additional condition: the value in the column `column` must be in the range `range`.
@@ -296,6 +293,9 @@ public:
     bool addCondition(const String & column, const Range & range);
 
     String toString() const;
+
+    /// Get the key indices of key names used in the condition.
+    const std::vector<size_t> & getKeyIndices() const { return key_indices; }
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -421,12 +421,13 @@ private:
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     bool transformConstantWithValidFunctions(
+        ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
+        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
@@ -477,6 +478,8 @@ private:
     RPN rpn;
 
     ColumnIndices key_columns;
+    std::vector<size_t> key_indices;
+
     /// Expression which is used for key condition.
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.

@@ -18,16 +18,11 @@ class IInputFormat : public ISource
 {
 protected:
 
-    /// Skip GCC warning: ‘maybe_unused’ attribute ignored
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wattributes"
-
-    ReadBuffer * in [[maybe_unused]];
-
-#pragma GCC diagnostic pop
+    ReadBuffer * in [[maybe_unused]] = nullptr;
 
 public:
-    IInputFormat(Block header, ReadBuffer & in_);
+    // ReadBuffer can be nullptr for random-access formats.
+    IInputFormat(Block header, ReadBuffer * in_);
 
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
@@ -38,7 +33,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    const ReadBuffer & getReadBuffer() const { return *in; }
+    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
     virtual const BlockMissingValues & getMissingValues() const
     {
@@ -57,6 +52,8 @@ public:
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
+
+    virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
 protected:
     ColumnMappingPtr column_mapping{};

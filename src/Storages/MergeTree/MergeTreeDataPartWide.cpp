@@ -17,16 +17,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-MergeTreeDataPartWide::MergeTreeDataPartWide(
-       MergeTreeData & storage_,
-        const String & name_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Wide, parent_part_)
-{
-}
-
 MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
@@ -43,11 +33,12 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
         read_info, columns_to_read,
         metadata_snapshot, uncompressed_cache,
@@ -160,7 +151,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     if (columns.empty())
-        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(columns.front()));
 }
@@ -207,7 +198,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     if (!checksums.files.contains(bin_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {} file checksum for column {} in part ",
+                            "No {} file checksum for column {} in part {}",
                             bin_file_name, name_type.name, getDataPartStorage().getFullPath());
                 });
             }
@@ -269,6 +260,18 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     return res;
 }
 
+std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const String & column_name) const
+{
+    try
+    {
+        return getDataPartStorage().getFileLastModified(column_name + DATA_FILE_EXTENSION).epochTime();
+    }
+    catch (const fs::filesystem_error &)
+    {
+        return {};
+    }
+}
+
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
@@ -302,7 +305,8 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Column {} has rows count {} according to size in memory "
-                    "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
+                    "and size of single value, but data part {} has {} rows",
+                    backQuote(column.name), rows_in_column, name, rows_count);
             }
         }
 #endif

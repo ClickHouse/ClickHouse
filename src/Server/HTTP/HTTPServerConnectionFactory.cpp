@@ -16,4 +16,9 @@ Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(c
     return new HTTPServerConnection(context, tcp_server, socket, params, factory);
 }
 
+Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data)
+{
+    return new HTTPServerConnection(context, tcp_server, socket, params, factory, stack_data.forwarded_for);
+}
+
 }

@@ -20,5 +20,3 @@ slug: /zh/operations/system-tables/role-grants
 - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示 `granted_role` 是否是具有 [ADMIN OPTION](../../sql-reference/statements/grant.md#admin-option-privilege) 特权的角色的标志. 参考值:
     -   1 — 该角色具有 `ADMIN OPTION` 权限.
     -   0 — 该角色不具有  `ADMIN OPTION` 权限.
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/role-grants) <!--hide-->

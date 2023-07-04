@@ -32,6 +32,12 @@ struct BackupSettings
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;
 
+    /// Whether the BACKUP command should decrypt files stored on encrypted disks.
+    bool decrypt_files_from_encrypted_disks = false;
+
+    /// Whether the BACKUP will omit similar files (within one backup only).
+    bool deduplicate_files = true;
+
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
     size_t shard_num = 0;
@@ -51,10 +57,6 @@ struct BackupSettings
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
     std::vector<Strings> cluster_host_ids;
-
-    /// Internal, should not be specified by user.
-    /// Path in Zookeeper used to coordinate a distributed backup created by BACKUP ON CLUSTER.
-    String coordination_zk_path;
 
     /// Internal, should not be specified by user.
     /// UUID of the backup. If it's not set it will be generated randomly.

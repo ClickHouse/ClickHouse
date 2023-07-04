@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <functional>
 
@@ -60,6 +61,10 @@ namespace
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<String>>(argument_types, params);
             else if (which.isUUID())
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(argument_types, params);
+            else if (which.isIPv4())
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv4::FieldType>>(argument_types, params);
+            else if (which.isIPv6())
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv6::FieldType>>(argument_types, params);
             else if (which.isTuple())
             {
                 if (use_exact_hash_function)
@@ -95,19 +100,19 @@ namespace
         if (!params.empty())
         {
             if (params.size() != 1)
-                throw Exception(
-                    "Aggregate function " + name + " requires one parameter or less.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one parameter or less.",
+                    name);
 
             UInt64 precision_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
             // This range is hardcoded below
             if (precision_param > 20 || precision_param < 12)
-                throw Exception(
-                    "Parameter for aggregate function " + name + " is out of range: [12, 20].", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Parameter for aggregate function {} is out of range: [12, 20].",
+                    name);
             precision = precision_param;
         }
 
         if (argument_types.empty())
-            throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments for aggregate function {}", name);
 
         switch (precision)
         {

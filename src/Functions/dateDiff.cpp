@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/IntervalKind.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
 namespace
 {
 
+template <bool is_diff>
 class DateDiffImpl
 {
 public:
@@ -165,8 +167,92 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        return static_cast<Int64>(transform_y.execute(y, timezone_y))
+        if constexpr (is_diff)
+            return static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        else
+        {
+            auto res = static_cast<Int64>(transform_y.execute(y, timezone_y))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x));
+            DateLUTImpl::DateTimeComponents a_comp;
+            DateLUTImpl::DateTimeComponents b_comp;
+            Int64 adjust_value;
+            auto x_seconds = TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            auto y_seconds = TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+            if (x_seconds <= y_seconds)
+            {
+                a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+                b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+                adjust_value = -1;
+            }
+            else
+            {
+                a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+                b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+                adjust_value = 1;
+            }
+
+            if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((a_comp.date.month > b_comp.date.month)
+                    || ((a_comp.date.month == b_comp.date.month) && ((a_comp.date.day > b_comp.date.day)
+                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
+                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
+                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second))))
+                    )))))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
+            {
+                auto x_month_in_quarter = (a_comp.date.month - 1) % 3;
+                auto y_month_in_quarter = (b_comp.date.month - 1) % 3;
+                if ((x_month_in_quarter > y_month_in_quarter)
+                    || ((x_month_in_quarter == y_month_in_quarter) && ((a_comp.date.day > b_comp.date.day)
+                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
+                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
+                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second))))
+                    )))))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((a_comp.date.day > b_comp.date.day)
+                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
+                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
+                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second))))
+                    )))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
+            {
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
+                if ((x_day_of_week > y_day_of_week)
+                    || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
+                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
+                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second)))))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((a_comp.time.hour > b_comp.time.hour)
+                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
+                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second)))))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeHourNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((a_comp.time.minute > b_comp.time.minute)
+                    || ((a_comp.time.minute == b_comp.time.minute) && (a_comp.time.second > b_comp.time.second)))
+                    res += adjust_value;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
+            {
+                if (a_comp.time.second > b_comp.time.second)
+                    res += adjust_value;
+            }
+            return res;
+        }
     }
 
     template <typename T>
@@ -193,7 +279,8 @@ private:
 
 
 /** dateDiff('unit', t1, t2, [timezone])
-  * t1 and t2 can be Date or DateTime
+  * age('unit', t1, t2, [timezone])
+  * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
   * If timezone is specified, it applied to both arguments.
   * If not, timezones from datatypes t1 and t2 are used.
@@ -201,10 +288,11 @@ private:
   *
   * Timezone matters because days can have different length.
   */
+template <bool is_relative>
 class FunctionDateDiff : public IFunction
 {
 public:
-    static constexpr auto name = "dateDiff";
+    static constexpr auto name = is_relative ? "dateDiff" : "age";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
@@ -270,21 +358,21 @@ public:
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
-            impl.dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "quarter" || unit == "qq" || unit == "q")
-            impl.dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "month" || unit == "mm" || unit == "m")
-            impl.dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "week" || unit == "wk" || unit == "ww")
-            impl.dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
-            impl.dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "hour" || unit == "hh" || unit == "h")
-            impl.dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
-            impl.dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "second" || unit == "ss" || unit == "s")
-            impl.dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);
@@ -292,7 +380,7 @@ public:
         return res;
     }
 private:
-    DateDiffImpl impl{name};
+    DateDiffImpl<is_relative> impl{name};
 };
 
 
@@ -318,9 +406,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), arguments.size());
 
         if (!isDate(arguments[0]) && !isDate32(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -352,28 +440,38 @@ public:
         return res;
     }
 private:
-    DateDiffImpl impl{name};
+    DateDiffImpl<true> impl{name};
 };
 
 }
 
 REGISTER_FUNCTION(DateDiff)
 {
-    factory.registerFunction<FunctionDateDiff>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
 }
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    factory.registerFunction<FunctionTimeDiff>({R"(
+    factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
 Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
 It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
 
 Example:
 [example:typical]
 )",
-    Documentation::Examples{
-        {"typical", "SELECT timeDiff(UTCTimestamp(), now());"}},
-    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+    .examples{
+        {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
+    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+}
+
+REGISTER_FUNCTION(Age)
+{
+    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

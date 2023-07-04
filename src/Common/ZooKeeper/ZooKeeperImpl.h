@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -125,6 +126,8 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
+
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback);
@@ -179,7 +182,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() override;
+    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -197,13 +200,27 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
+    void setServerCompletelyStarted();
+
+    const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
+
 private:
     ACLs default_acls;
+    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
 
+    /// Fault injection
+    void maybeInjectSendFault();
+    void maybeInjectRecvFault();
+    void maybeInjectSendSleep();
+    void maybeInjectRecvSleep();
+    void setupFaultDistributions();
+    std::atomic_flag inject_setup = ATOMIC_FLAG_INIT;
     std::optional<std::bernoulli_distribution> send_inject_fault;
     std::optional<std::bernoulli_distribution> recv_inject_fault;
+    std::optional<std::bernoulli_distribution> send_inject_sleep;
+    std::optional<std::bernoulli_distribution> recv_inject_sleep;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
@@ -244,8 +261,30 @@ private:
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    ThreadFromGlobalPool send_thread;
-    ThreadFromGlobalPool receive_thread;
+    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
+    class ThreadReference
+    {
+    public:
+        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        {
+            std::lock_guard<std::mutex> l(lock);
+            thread = std::move(thread_);
+            return *this;
+        }
+
+        void join()
+        {
+            std::lock_guard<std::mutex> l(lock);
+            if (thread.joinable())
+                thread.join();
+        }
+    private:
+        std::mutex lock;
+        ThreadFromGlobalPool thread;
+    };
+
+    ThreadReference send_thread;
+    ThreadReference receive_thread;
 
     Poco::Logger * log;
 
@@ -276,12 +315,12 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
-    void initApiVersion();
+    void initFeatureFlags();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
+    DB::KeeperFeatureFlags keeper_feature_flags;
 };
 
 }

@@ -31,14 +31,17 @@ namespace
     {
         String key = "backups.allowed_disk";
         if (!config.has(key))
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "The 'backups.allowed_disk' configuration parameter is not set, cannot use 'Disk' backup engine");
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "The 'backups.allowed_disk' configuration parameter "
+                            "is not set, cannot use 'Disk' backup engine");
 
         size_t counter = 0;
         while (config.getString(key) != disk_name)
         {
             key = "backups.allowed_disk[" + std::to_string(++counter) + "]";
             if (!config.has(key))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Disk '{}' is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
         }
     }
 
@@ -51,7 +54,8 @@ namespace
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
         if (!path_ok)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} to backup must be inside the specified disk {}", quoteString(path.c_str()), quoteString(disk_name));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' to backup must be inside the specified disk '{}'",
+                            quoteString(path.c_str()), quoteString(disk_name));
     }
 
     /// Checks that a path specified as parameters of File() is valid.
@@ -118,9 +122,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             if (args.size() != 1)
             {
-                throw Exception(
-                    "Backup engine 'File' requires 1 argument (path)",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
             }
 
             path = args[0].safeGet<String>();
@@ -132,9 +134,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             if (args.size() != 2)
             {
-                throw Exception(
-                    "Backup engine 'Disk' requires 2 arguments (disk_name, path)",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Disk' requires 2 arguments (disk_name, path)");
             }
 
             String disk_name = args[0].safeGet<String>();
@@ -169,19 +169,28 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupReader> reader;
             if (engine_name == "File")
-                reader = std::make_shared<BackupReaderFile>(path);
+                reader = std::make_shared<BackupReaderFile>(path, params.context);
             else
-                reader = std::make_shared<BackupReaderDisk>(disk, path);
+                reader = std::make_shared<BackupReaderDisk>(disk, path, params.context);
             return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
         }
         else
         {
             std::shared_ptr<IBackupWriter> writer;
             if (engine_name == "File")
-                writer = std::make_shared<BackupWriterFile>(path);
+                writer = std::make_shared<BackupWriterFile>(path, params.context);
             else
-                writer = std::make_shared<BackupWriterDisk>(disk, path);
-            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, writer, params.context, params.is_internal_backup, params.backup_coordination, params.backup_uuid);
+                writer = std::make_shared<BackupWriterDisk>(disk, path, params.context);
+            return std::make_unique<BackupImpl>(
+                backup_name_for_logging,
+                archive_params,
+                params.base_backup_info,
+                writer,
+                params.context,
+                params.is_internal_backup,
+                params.backup_coordination,
+                params.backup_uuid,
+                params.deduplicate_files);
         }
     };
 

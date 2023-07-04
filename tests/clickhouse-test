@@ -3,6 +3,7 @@
 # pylint: disable=too-many-return-statements
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
+# pylint: disable=anomalous-backslash-in-string
 
 import enum
 from queue import Full
@@ -10,6 +11,7 @@ import shutil
 import sys
 import os
 import os.path
+import platform
 import signal
 import re
 import copy
@@ -70,6 +72,18 @@ def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
+# First and last lines of the log
+def trim_for_log(s):
+    if not s:
+        return s
+    lines = s.splitlines()
+    if len(lines) > 10000:
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
+        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
+    else:
+        return "\n".join(lines)
+
+
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
         self.message = message
@@ -82,7 +96,13 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None
+    base_args,
+    query,
+    timeout=30,
+    settings=None,
+    default_format=None,
+    max_http_retries=5,
+    retry_error_codes=False,
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -105,30 +125,64 @@ def clickhouse_execute_http(
         "http_connection_timeout": timeout,
         "http_receive_timeout": timeout,
         "http_send_timeout": timeout,
+        "output_format_parallel_formatting": 0,
     }
     if settings is not None:
         params.update(settings)
     if default_format is not None:
         params["default_format"] = default_format
 
-    client.request(
-        "POST",
-        f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
-    )
-    res = client.getresponse()
-    data = res.read()
+    for i in range(max_http_retries):
+        try:
+            client.request(
+                "POST",
+                f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+            )
+            res = client.getresponse()
+            data = res.read()
+            if res.status == 200 or (not retry_error_codes):
+                break
+        except Exception as ex:
+            if i == max_http_retries - 1:
+                raise ex
+            client.close()
+            sleep(i + 1)
+
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
 
     return data
 
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None):
-    return clickhouse_execute_http(base_args, query, timeout, settings).strip()
+def clickhouse_execute(
+    base_args,
+    query,
+    timeout=30,
+    settings=None,
+    max_http_retries=5,
+    retry_error_codes=False,
+):
+    return clickhouse_execute_http(
+        base_args,
+        query,
+        timeout,
+        settings,
+        max_http_retries=max_http_retries,
+        retry_error_codes=retry_error_codes,
+    ).strip()
 
 
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
-    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow")
+def clickhouse_execute_json(
+    base_args, query, timeout=60, settings=None, max_http_retries=5
+):
+    data = clickhouse_execute_http(
+        base_args,
+        query,
+        timeout,
+        settings,
+        "JSONEachRow",
+        max_http_retries=max_http_retries,
+    )
     if not data:
         return None
     rows = []
@@ -222,18 +276,54 @@ def need_retry(args, stdout, stderr, total_time):
     )
 
 
-def get_processlist(args):
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            """
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE query NOT LIKE '%system.processes%'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+def get_processlist_with_stacktraces(args):
+    try:
+        if args.replicated_database:
+            return clickhouse_execute(
+                args,
+                """
+            SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
+            -- NOTE: view() here to do JOIN on shards, instead of initiator
+            FROM clusterAllReplicas('test_cluster_database_replicated', view(
+                SELECT
+                    p.*,
+                    arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
+                        x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                        s.trace), '\n') AS stacktrace
+                    )) AS stacktraces
+                FROM system.processes p
+                JOIN system.stack_trace s USING (query_id)
+                WHERE query NOT LIKE '%system.processes%'
+                GROUP BY p.*
+            ))
+            ORDER BY elapsed DESC FORMAT Vertical
+            """,
+                settings={
+                    "allow_introspection_functions": 1,
+                },
+            )
+        else:
+            return clickhouse_execute(
+                args,
+                """
+            SELECT
+                p.*,
+                arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
+                    x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                    s.trace), '\n') AS stacktrace
+                )) AS stacktraces
+            FROM system.processes p
+            JOIN system.stack_trace s USING (query_id)
+            WHERE query NOT LIKE '%system.processes%'
+            GROUP BY p.*
+            ORDER BY elapsed DESC FORMAT Vertical
+            """,
+                settings={
+                    "allow_introspection_functions": 1,
+                },
+            )
+    except Exception as e:
+        return "Failed to get processlist: " + str(e)
 
 
 def get_transactions_list(args):
@@ -250,9 +340,28 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+def kill_gdb_if_any():
+    # Check if we have running gdb.
+    code = subprocess.call("pidof gdb", shell=True)
+    if code != 0:
+        return
+
+    for i in range(5):
+        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
+        if code != 0:
+            sleep(i)
+        else:
+            break
+
+
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
+        # We could attach gdb to clickhouse-server before running some tests
+        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
+        # We should kill existing gdb if any before starting new one.
+        kill_gdb_if_any()
+
         cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
@@ -378,7 +487,7 @@ class FailureReason(enum.Enum):
     SERVER_DIED = "server died"
     EXIT_CODE = "return code: "
     STDERR = "having stderror: "
-    EXCEPTION = "having having exception in stdout: "
+    EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
@@ -393,13 +502,29 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
-    STRESS = "stress"
     BUILD = "not running for current build"
-    BACKWARD_INCOMPATIBLE = "test is backward incompatible"
+    NO_UPGRADE_CHECK = "not running for upgrade check"
+    NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
     INTERNAL_ERROR = "Test internal error: "
+
+
+def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
+    def gen():
+        tmp = random.random()
+        if tmp <= always_on_prob:
+            return min_val
+        if tmp <= always_on_prob + always_off_prob:
+            return max_val
+
+        if isinstance(min_val, int) and isinstance(max_val, int):
+            return random.randint(min_val, max_val)
+        else:
+            return random.uniform(min_val, max_val)
+
+    return gen
 
 
 class SettingsRandomizer:
@@ -407,16 +532,10 @@ class SettingsRandomizer:
         "max_insert_threads": lambda: 0
         if random.random() < 0.5
         else random.randint(1, 16),
-        "group_by_two_level_threshold": lambda: 1
-        if random.random() < 0.1
-        else 2**60
-        if random.random() < 0.11
-        else 100000,
-        "group_by_two_level_threshold_bytes": lambda: 1
-        if random.random() < 0.1
-        else 2**60
-        if random.random() < 0.11
-        else 50000000,
+        "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
+        "group_by_two_level_threshold_bytes": threshold_generator(
+            0.2, 0.2, 1, 50000000
+        ),
         "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
@@ -430,40 +549,110 @@ class SettingsRandomizer:
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
+        "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
+        "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
+        "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
         "use_uncompressed_cache": lambda: random.randint(0, 1),
-        "min_bytes_to_use_direct_io": lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 1024 * 1024 * 1024),
-        "min_bytes_to_use_mmap_io": lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 1024 * 1024 * 1024),
+        "min_bytes_to_use_direct_io": threshold_generator(
+            0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "min_bytes_to_use_mmap_io": threshold_generator(
+            0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
         "local_filesystem_read_method": lambda: random.choice(
-            ["read", "pread", "mmap", "pread_threadpool"]
+            # Allow to use uring only when running on Linux
+            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
+            if platform.system().lower() == "linux"
+            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "compile_expressions": lambda: random.randint(0, 1),
+        "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
+            0, 1
+        ),
+        "filesystem_prefetch_max_memory_usage": lambda: random.choice(
+            ["32Mi", "64Mi", "128Mi"]
+        ),
+        "filesystem_prefetches_limit": lambda: random.choice(
+            [0, 10]
+        ),  # 0 means unlimited (but anyway limited by prefetch_max_memory_usage)
+        "filesystem_prefetch_min_bytes_for_single_read_task": lambda: random.choice(
+            ["1Mi", "8Mi", "16Mi"]
+        ),
+        "filesystem_prefetch_step_marks": lambda: random.choice(
+            [0, 50]
+        ),  # 0 means 'auto'
+        "filesystem_prefetch_step_bytes": lambda: random.choice(
+            [0, "100Mi"]
+        ),  # 0 means 'auto'
+        # "compile_expressions": lambda: random.randint(0, 1), - this setting has a bug: https://github.com/ClickHouse/ClickHouse/issues/51264
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
-        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(0, 1),
+        "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
+        "http_wait_end_of_query": lambda: random.random() > 0.5,
+        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
+            0, 1
+        ),
     }
 
     @staticmethod
-    def get_random_settings():
+    def get_random_settings(args):
         random_settings = []
+        is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
-            random_settings.append(f"{setting}={generator()}")
+            if (
+                is_debug
+                and setting == "allow_prefetched_read_pool_for_remote_filesystem"
+            ):
+                random_settings.append(f"{setting}=0")
+            else:
+                random_settings.append(f"{setting}={generator()}")
+        return random_settings
+
+
+class MergeTreeSettingsRandomizer:
+    settings = {
+        "ratio_of_defaults_for_sparse_serialization": threshold_generator(
+            0.3, 0.5, 0.0, 1.0
+        ),
+        "prefer_fetch_merged_part_size_threshold": threshold_generator(
+            0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "vertical_merge_algorithm_min_rows_to_activate": threshold_generator(
+            0.4, 0.4, 1, 1000000
+        ),
+        "vertical_merge_algorithm_min_columns_to_activate": threshold_generator(
+            0.4, 0.4, 1, 100
+        ),
+        "allow_vertical_merges_from_compact_to_wide_parts": lambda: random.randint(
+            0, 1
+        ),
+        "min_merge_bytes_to_use_direct_io": threshold_generator(
+            0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
+        "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
+        "index_granularity": lambda: random.randint(1, 65536),
+        "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
+        "compress_marks": lambda: random.randint(0, 1),
+        "compress_primary_key": lambda: random.randint(0, 1),
+        "marks_compress_block_size": lambda: random.randint(8000, 100000),
+        "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
+    }
+
+    @staticmethod
+    def get_random_settings(args):
+        random_settings = []
+        for setting, generator in MergeTreeSettingsRandomizer.settings.items():
+            if setting not in args.changed_merge_tree_settings:
+                random_settings.append(f"{setting}={generator()}")
         return random_settings
 
 
@@ -545,7 +734,9 @@ class TestCase:
 
             clickhouse_execute(
                 args,
-                "CREATE DATABASE " + database + get_db_engine(testcase_args, database),
+                "CREATE DATABASE IF NOT EXISTS "
+                + database
+                + get_db_engine(testcase_args, database),
                 settings=get_create_database_settings(args, testcase_args),
             )
 
@@ -571,41 +762,48 @@ class TestCase:
 
         return testcase_args
 
-    def cli_random_settings(self) -> str:
-        return " ".join([f"--{setting}" for setting in self.random_settings])
+    @staticmethod
+    def cli_format_settings(settings_list) -> str:
+        return " ".join([f"--{setting}" for setting in settings_list])
 
-    def add_random_settings(self, args, client_options):
-        if self.tags and "no-random-settings" in self.tags:
-            return client_options
-        if args.no_random_settings:
-            return client_options
+    def has_show_create_table_in_test(self):
+        return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
-        if len(self.base_url_params) == 0:
-            os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
-        else:
-            os.environ["CLICKHOUSE_URL_PARAMS"] = (
-                self.base_url_params + "&" + "&".join(self.random_settings)
+    def add_random_settings(self, client_options):
+        new_options = ""
+        if self.randomize_settings:
+            if len(self.base_url_params) == 0:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
+            else:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                    self.base_url_params + "&" + "&".join(self.random_settings)
+                )
+
+            new_options += f" {self.cli_format_settings(self.random_settings)}"
+
+        if self.randomize_merge_tree_settings:
+            new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.merge_tree_random_settings)}"
+
+        if new_options != "":
+            new_options += " --allow_repeated_settings"
+
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                self.base_client_options + new_options + " "
             )
 
-        new_options = f" --allow_repeated_settings {self.cli_random_settings()}"
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-            self.base_client_options + new_options + " "
-        )
         return client_options + new_options
 
     def remove_random_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
         os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
 
-    def add_info_about_settings(self, args, description):
-        if self.tags and "no-random-settings" in self.tags:
-            return description
-        if args.no_random_settings:
-            return description
+    def add_info_about_settings(self, description):
+        if self.randomize_settings:
+            description += f"\nSettings used in the test: {self.cli_format_settings(self.random_settings)}"
+        if self.randomize_merge_tree_settings:
+            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.merge_tree_random_settings)}"
 
-        return (
-            f"{description}\nSettings used in the test: {self.cli_random_settings()}\n"
-        )
+        return description + "\n"
 
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case  # case file name
@@ -629,46 +827,45 @@ class TestCase:
         self.testcase_args = None
         self.runs_count = 0
 
-        self.random_settings = SettingsRandomizer.get_random_settings()
+        has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
+
+        self.randomize_settings = not (
+            args.no_random_settings or has_no_random_settings_tag
+        )
+
+        has_no_random_merge_tree_settings_tag = (
+            self.tags and "no-random-merge-tree-settings" in self.tags
+        )
+
+        # If test contains SHOW CREATE TABLE do not
+        # randomize merge tree settings, because
+        # they will be added to table definition and test will fail
+        self.randomize_merge_tree_settings = not (
+            args.no_random_merge_tree_settings
+            or has_no_random_settings_tag
+            or has_no_random_merge_tree_settings_tag
+            or self.has_show_create_table_in_test()
+        )
+
+        if self.randomize_settings:
+            self.random_settings = SettingsRandomizer.get_random_settings(args)
+
+        if self.randomize_merge_tree_settings:
+            self.merge_tree_random_settings = (
+                MergeTreeSettingsRandomizer.get_random_settings(args)
+            )
+
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
             if "CLICKHOUSE_URL_PARAMS" in os.environ
             else ""
         )
+
         self.base_client_options = (
             os.environ["CLICKHOUSE_CLIENT_OPT"]
             if "CLICKHOUSE_CLIENT_OPT" in os.environ
             else ""
         )
-
-    # Check if test contains tag "no-backward-compatibility-check" and we should skip it
-    def check_backward_incompatible_tag(self) -> bool:
-        for tag in self.tags:
-            if tag.startswith("no-backward-compatibility-check"):
-                split = tag.split(":")
-
-                # If version is not specified in tag, always skip this test.
-                if len(split) == 1:
-                    return True
-                version_from_tag = split[1]
-
-                # Check if extracted string from tag is a real ClickHouse version, if not - always skip test.
-                if re.match(VERSION_PATTERN, version_from_tag) is None:
-                    return True
-
-                server_version = str(
-                    clickhouse_execute(args, "SELECT version()").decode()
-                )
-                # If server version is less or equal from the version specified in tag, we should skip this test.
-                version_from_tag_split = list(map(int, version_from_tag.split(".")))
-                server_version_split = list(map(int, server_version.split(".")))
-                if (
-                    server_version_split[: len(version_from_tag_split)]
-                    <= version_from_tag_split
-                ):
-                    return True
-
-        return False
 
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
@@ -682,6 +879,9 @@ class TestCase:
             and not args.disabled
         ):
             return FailureReason.DISABLED
+
+        elif "no-parallel-replicas" in tags and args.no_parallel_replicas:
+            return FailureReason.NO_PARALLEL_REPLICAS
 
         elif args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP
@@ -717,16 +917,14 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif (
-            args.backward_compatibility_check and self.check_backward_incompatible_tag()
+        # TODO: remove checking "no-upgrade-check" after 23.1
+        elif args.upgrade_check and (
+            "no-upgrade-check" in tags or "no-upgrade-check" in tags
         ):
-            return FailureReason.BACKWARD_INCOMPATIBLE
+            return FailureReason.NO_UPGRADE_CHECK
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
-
-        elif tags and ("no-stress" in tags) and args.stress:
-            return FailureReason.STRESS
 
         elif tags:
             for build_flag in args.build_flags:
@@ -743,6 +941,8 @@ class TestCase:
         self, proc, stdout: str, stderr: str, debug_log: str, total_time: float
     ):
         description = ""
+
+        debug_log = trim_for_log(debug_log)
 
         if proc:
             if proc.returncode is None:
@@ -792,9 +992,10 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += "\n".join(
-                        open(self.stdout_file).read().splitlines()[:100]
-                    )
+                    with open(self.stdout_file, "rb") as f:
+                        description += trim_for_log(
+                            f.read().decode("utf-8", errors="ignore")
+                        )
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"
@@ -803,8 +1004,12 @@ class TestCase:
                 )
 
         if stderr:
-            description += "\n{}\n".format("\n".join(stderr.splitlines()[:100]))
-            description += f"\nstdout:\n{stdout}\n"
+            description += "\n"
+            description += trim_for_log(stderr)
+            description += "\n"
+            description += "\nstdout:\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -817,7 +1022,9 @@ class TestCase:
             )
 
         if "Exception" in stdout:
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -863,12 +1070,13 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
+                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "r")
+                file = open(self.stdout_file, "rb")
                 diff += str(file.read())
                 file.close()
                 diff += "==================="
@@ -886,7 +1094,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > 60
+            and total_time > 120
             and "long" not in self.tags
         ):
             if debug_log:
@@ -936,7 +1144,11 @@ class TestCase:
     @staticmethod
     def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
-        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
+        clickhouse_execute(
+            args,
+            f"SELECT 'Running test {suite}/{case} from pid={pid}'",
+            retry_error_codes=True,
+        )
 
     def run_single_test(
         self, server_logs_level, client_options
@@ -961,10 +1173,7 @@ class TestCase:
 
         # >> append to stderr (but not stdout since it is not used there),
         # because there are also output of per test database creation
-        if not args.database:
-            pattern = "{test} > {stdout} 2> {stderr}"
-        else:
-            pattern = "{test} > {stdout} 2> {stderr}"
+        pattern = "{test} > {stdout} 2> {stderr}"
 
         if self.ext == ".sql":
             pattern = (
@@ -1001,18 +1210,28 @@ class TestCase:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
+            drop_database_query = "DROP DATABASE IF EXISTS " + database
+            if args.replicated_database:
+                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+
             try:
-                drop_database_query = "DROP DATABASE " + database
-                if args.replicated_database:
-                    drop_database_query += " ON CLUSTER test_cluster_database_replicated"
-                clickhouse_execute(
-                    args,
-                    drop_database_query,
-                    timeout=seconds_left,
-                    settings={
-                        "log_comment": args.testcase_basename,
-                    },
-                )
+                # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
+                for _ in range(1, 60):
+                    try:
+                        clickhouse_execute(
+                            args,
+                            drop_database_query,
+                            timeout=seconds_left,
+                            settings={
+                                "log_comment": args.testcase_basename,
+                            },
+                        )
+                    except HTTPError as e:
+                        if need_retry(args, e.message, e.message, 0):
+                            continue
+                        raise
+                    break
+
             except socket.timeout:
                 total_time = (datetime.now() - start_time).total_seconds()
                 return (
@@ -1073,7 +1292,7 @@ class TestCase:
             self.testcase_args = self.configure_testcase_args(
                 args, self.case_file, suite.suite_tmp_path
             )
-            client_options = self.add_random_settings(args, client_options)
+            client_options = self.add_random_settings(client_options)
             proc, stdout, stderr, debug_log, total_time = self.run_single_test(
                 server_logs_level, client_options
             )
@@ -1082,10 +1301,11 @@ class TestCase:
                 proc, stdout, stderr, debug_log, total_time
             )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
+            # to avoid breaking CSV parser
+            result.description = result.description.replace("\0", "")
+
             if result.status == TestStatus.FAIL:
-                result.description = self.add_info_about_settings(
-                    args, result.description
-                )
+                result.description = self.add_info_about_settings(result.description)
             return result
         except KeyboardInterrupt as e:
             raise e
@@ -1096,17 +1316,17 @@ class TestCase:
                 FailureReason.INTERNAL_QUERY_FAIL,
                 0.0,
                 self.add_info_about_settings(
-                    args, self.get_description_from_exception_info(sys.exc_info())
+                    self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
-        except (ConnectionRefusedError, ConnectionResetError):
+        except (ConnectionError, http.client.ImproperConnectionState):
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
                 FailureReason.SERVER_DIED,
                 0.0,
                 self.add_info_about_settings(
-                    args, self.get_description_from_exception_info(sys.exc_info())
+                    self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
         except Exception:
@@ -1200,7 +1420,7 @@ class TestSuite:
                 line = line.strip()
                 if line and not is_shebang(line):
                     return line
-            return ''
+            return ""
 
         def load_tags_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
@@ -1521,12 +1741,15 @@ def check_server_started(args):
     retry_count = args.server_check_retries
     while retry_count > 0:
         try:
-            clickhouse_execute(args, "SELECT 1")
+            clickhouse_execute(args, "SELECT 1", max_http_retries=1)
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionRefusedError, ConnectionResetError):
-            print(".", end="")
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
@@ -1535,7 +1758,12 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", str(e))
+            print(
+                "\nUexpected exception, will not retry: ",
+                type(e).__name__,
+                ": ",
+                str(e),
+            )
             break
 
     print("\nAll connection tries failed")
@@ -1609,6 +1837,19 @@ def collect_build_flags(args):
         result.append(f"cpu-{system_processor.decode().lower()}")
 
     return result
+
+
+def collect_changed_merge_tree_settings(args):
+    changed_settings = (
+        clickhouse_execute(
+            args,
+            "SELECT name FROM system.merge_tree_settings WHERE changed",
+        )
+        .strip()
+        .splitlines()
+    )
+
+    return list(map(lambda s: s.decode(), changed_settings))
 
 
 def check_table_column(args, database, table, column):
@@ -1724,7 +1965,7 @@ def removesuffix(text, *suffixes):
     return text
 
 
-def reportCoverageFor(args, what, query, permissive = False):
+def reportCoverageFor(args, what, query, permissive=False):
     value = clickhouse_execute(args, query).decode()
 
     if value != "":
@@ -1737,10 +1978,13 @@ def reportCoverageFor(args, what, query, permissive = False):
 
 
 def reportCoverage(args):
-    return reportCoverageFor(
-        args,
-        "functions",
-        """
+    clickhouse_execute(args, "SYSTEM FLUSH LOGS")
+
+    return (
+        reportCoverageFor(
+            args,
+            "functions",
+            """
             SELECT name
             FROM system.functions
             WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
@@ -1750,11 +1994,12 @@ def reportCoverage(args):
                 )
             ORDER BY name
         """,
-        True
-    ) and reportCoverageFor(
-        args,
-        "aggregate functions",
-        """
+            True,
+        )
+        and reportCoverageFor(
+            args,
+            "aggregate functions",
+            """
             SELECT name
             FROM system.functions
             WHERE is_aggregate AND origin = 'System' AND alias_to = ''
@@ -1763,11 +2008,12 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_aggregate_functions) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
-    ) and reportCoverageFor(
-        args,
-        "aggregate function combinators",
-        """
+        """,
+        )
+        and reportCoverageFor(
+            args,
+            "aggregate function combinators",
+            """
             SELECT name
             FROM system.aggregate_function_combinators
             WHERE NOT is_internal
@@ -1776,11 +2022,12 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_aggregate_function_combinators) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
-    ) and reportCoverageFor(
-        args,
-        "data type families",
-        """
+        """,
+        )
+        and reportCoverageFor(
+            args,
+            "data type families",
+            """
             SELECT name
             FROM system.data_type_families
             WHERE alias_to = '' AND name NOT LIKE 'Interval%'
@@ -1789,8 +2036,127 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_data_type_families) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
+        """,
+        )
     )
+
+
+def reportLogStats(args):
+    clickhouse_execute(args, "SYSTEM FLUSH LOGS")
+
+    query = """
+        WITH
+            240 AS mins,
+            (
+                SELECT (count(), sum(length(message)))
+                FROM system.text_log
+                WHERE (now() - toIntervalMinute(mins)) < event_time
+            ) AS total
+        SELECT
+            count() AS count,
+            round(count / (total.1), 3) AS `count_%`,
+            formatReadableSize(sum(length(message))) AS size,
+            round(sum(length(message)) / (total.2), 3) AS `size_%`,
+            countDistinct(logger_name) AS uniq_loggers,
+            countDistinct(thread_id) AS uniq_threads,
+            groupArrayDistinct(toString(level)) AS levels,
+            round(sum(query_id = '') / count, 3) AS `background_%`,
+            message_format_string
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(mins)) < event_time
+        GROUP BY message_format_string
+        ORDER BY count DESC
+        LIMIT 100
+        FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop patterns of log messages:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        WITH
+            240 AS mins
+        SELECT
+            count() AS count,
+            substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
+            substr(any(message), 1, 256) as runtime_message,
+            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
+        GROUP BY pattern
+        ORDER BY count DESC
+        LIMIT 30
+        FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages without format string (fmt::runtime):\n")
+    print(value)
+    print("\n")
+
+    query = """
+        SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(240)) < event_time
+        AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
+        AND (message NOT LIKE concat('%Exception: ', s, '%'))
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages that does not match its format string:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
+              'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
+              'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}',
+              'Removed', 'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',
+              'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}', 'dropIfEmpty',
+              'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', '{}%', 'Read object: {}',
+              'New segment: {}', 'Convert overflow', 'Division by zero', 'Files set to {}',
+              'Bytes set to {}', 'Numeric overflow', 'Invalid mode: {}',
+              'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
+              'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
+              'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
+              'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
+              'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
+              'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
+              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
+              'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
+              'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
+              'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
+              'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
+              'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
+              'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
+        ) AS known_short_messages
+        SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
+            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(240)) < event_time
+            AND (length(message_format_string) < 16
+                OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
+            AND message_format_string NOT IN known_short_messages
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop short messages:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        SELECT max((freq, message_format_string)), level
+        FROM (SELECT count() / (SELECT count() FROM system.text_log
+              WHERE (now() - toIntervalMinute(240)) < event_time) AS freq,
+              min(level) AS level, message_format_string FROM system.text_log
+              WHERE (now() - toIntervalMinute(120)) < event_time
+              GROUP BY message_format_string ORDER BY freq DESC)
+        GROUP BY level
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages by level:\n")
+    print(value)
+    print("\n")
 
 
 def main(args):
@@ -1801,8 +2167,7 @@ def main(args):
     global restarted_tests
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
-            If you are using split build, you have to specify -c option."
+        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
             pid = get_server_pid()
@@ -1811,11 +2176,14 @@ def main(args):
         raise Exception(msg)
 
     args.build_flags = collect_build_flags(args)
+    args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
     args.suppport_system_processes_is_all_data_sent = check_table_column(
         args, "system", "processes", "is_all_data_sent"
     )
 
-    if args.s3_storage and (BuildFlags.THREAD in args.build_flags or BuildFlags.DEBUG in args.build_flags):
+    if args.s3_storage and (
+        BuildFlags.THREAD in args.build_flags or BuildFlags.DEBUG in args.build_flags
+    ):
         args.no_random_settings = True
 
     if args.skip:
@@ -1887,10 +2255,9 @@ def main(args):
         exit_code.value = 1
 
     if args.hung_check:
-
         # Some queries may execute in background for some time after test was finished. This is normal.
         for _ in range(1, 60):
-            processlist = get_processlist(args)
+            processlist = get_processlist_with_stacktraces(args)
             if not processlist:
                 break
             sleep(1)
@@ -1901,7 +2268,7 @@ def main(args):
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(json.dumps(processlist, indent=4))
+            print(processlist.decode())
             print(get_transactions_list(args))
 
             print_stacktraces()
@@ -1927,6 +2294,12 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    if args.report_logs_stats:
+        try:
+            reportLogStats(args)
+        except Exception as e:
+            print(f"Failed to get stats about log messages: {e}")
+
     if args.report_coverage and not reportCoverage(args):
         exit_code.value = 1
 
@@ -1934,19 +2307,32 @@ def main(args):
 
 
 def find_binary(name):
-    if os.path.exists(name) and os.access(name, os.X_OK):
-        return True
+    if os.access(name, os.X_OK):
+        return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
-        if os.access(os.path.join(path, name), os.X_OK):
-            return True
+        bin_path = os.path.join(path, name)
+        if os.access(bin_path, os.X_OK):
+            return bin_path
 
     # maybe it wasn't in PATH
-    if os.access(os.path.join("/usr/local/bin", name), os.X_OK):
-        return True
-    if os.access(os.path.join("/usr/bin", name), os.X_OK):
-        return True
-    return False
+    bin_path = os.path.join("/usr/local/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+
+    raise Exception(f"{name} was not found in PATH")
+
+
+def find_clickhouse_command(binary, command):
+    symlink = binary + "-" + command
+    if os.access(symlink, os.X_OK):
+        return symlink
+
+    # To avoid requiring symlinks (in case you download binary from CI)
+    return binary + " " + command
 
 
 def get_additional_client_options(args):
@@ -1961,24 +2347,7 @@ def get_additional_client_options_url(args):
     return ""
 
 
-if __name__ == "__main__":
-    stop_time = None
-    exit_code = multiprocessing.Value("i", 0)
-    server_died = multiprocessing.Event()
-    stop_tests_triggered_lock = multiprocessing.Lock()
-    stop_tests_triggered = multiprocessing.Event()
-    queue = multiprocessing.Queue(maxsize=1)
-    multiprocessing_manager = multiprocessing.Manager()
-    restarted_tests = multiprocessing_manager.list()
-
-    # Move to a new process group and kill it at exit so that we don't have any
-    # infinite tests processes left
-    # (new process group is required to avoid killing some parent processes)
-    os.setpgid(0, 0)
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGHUP, signal_handler)
-
+def parse_args():
     parser = ArgumentParser(description="ClickHouse functional tests")
     parser.add_argument("-q", "--queries", help="Path to queries dir")
     parser.add_argument("--tmp", help="Path to tmp dir")
@@ -1987,14 +2356,13 @@ if __name__ == "__main__":
         "-b",
         "--binary",
         default="clickhouse",
-        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) "
-        "binary or name of binary in PATH",
+        type=find_binary,
+        help="Path to clickhouse binary or name of binary in PATH",
     )
-
     parser.add_argument(
         "-c",
         "--client",
-        help="Path to clickhouse-client (if split build, useless otherwise) binary of "
+        help="Path to clickhouse-client, this option is useless"
         "name of binary in PATH",
     )
 
@@ -2136,18 +2504,17 @@ if __name__ == "__main__":
         help="Run tests over s3 storage",
     )
     parser.add_argument(
-        "--stress",
-        action="store_true",
-        default=False,
-        help="Run stress tests",
-    )
-    parser.add_argument(
         "--no-random-settings",
         action="store_true",
         default=False,
         help="Disable settings randomization",
     )
-
+    parser.add_argument(
+        "--no-random-merge-tree-settings",
+        action="store_true",
+        default=False,
+        help="Disable MergeTree settings randomization",
+    )
     parser.add_argument(
         "--run-by-hash-num",
         type=int,
@@ -2193,9 +2560,9 @@ if __name__ == "__main__":
     )
 
     group.add_argument(
-        "--backward-compatibility-check",
+        "--upgrade-check",
         action="store_true",
-        help="Run tests for further backward compatibility testing by ignoring all"
+        help="Run tests for further server upgrade testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
     )
     parser.add_argument(
@@ -2216,7 +2583,45 @@ if __name__ == "__main__":
         default=False,
         help="Check what high-level server components were covered by tests",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--report-logs-stats",
+        action="store_true",
+        default=False,
+        help="Report statistics about log messages",
+    )
+    parser.add_argument(
+        "--no-parallel-replicas",
+        action="store_true",
+        default=False,
+        help="Do not include tests that are not supported with parallel replicas feature",
+    )
+
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    stop_time = None
+    exit_code = multiprocessing.Value("i", 0)
+    server_died = multiprocessing.Event()
+    stop_tests_triggered_lock = multiprocessing.Lock()
+    stop_tests_triggered = multiprocessing.Event()
+    queue = multiprocessing.Queue(maxsize=1)
+    multiprocessing_manager = multiprocessing.Manager()
+    restarted_tests = multiprocessing_manager.list()
+
+    # Move to a new process group and kill it at exit so that we don't have any
+    # infinite tests processes left
+    # (new process group is required to avoid killing some parent processes)
+    os.setpgid(0, 0)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+
+    try:
+        args = parse_args()
+    except Exception as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
     if args.queries and not os.path.isdir(args.queries):
         print(
@@ -2257,26 +2662,23 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
-    if args.client is None:
-        if find_binary(args.binary + "-client"):
-            args.client = args.binary + "-client"
 
-            print("Using " + args.client + " as client program (expecting split build)")
-        elif find_binary(args.binary):
-            args.client = args.binary + " client"
+    if args.client:
+        print(
+            "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
+            file=sys.stderr,
+        )
 
-            print(
-                "Using "
-                + args.client
-                + " as client program (expecting monolithic build)"
-            )
-        else:
-            print(
-                "No 'clickhouse' or 'clickhouse-client' client binary found",
-                file=sys.stderr,
-            )
-            parser.print_help()
-            sys.exit(1)
+    args.client = find_clickhouse_command(args.binary, "client")
+
+    if args.extract_from_config:
+        print(
+            "WARNING: --extract_from_config option is deprecated and will be removed the the future",
+            file=sys.stderr,
+        )
+    args.extract_from_config = find_clickhouse_command(
+        args.binary, "extract-from-config"
+    )
 
     if args.configclient:
         args.client += " --config-file=" + args.configclient
@@ -2313,7 +2715,7 @@ if __name__ == "__main__":
     else:
         args.client_database = "default"
 
-    if args.backward_compatibility_check:
+    if args.upgrade_check:
         args.client += " --fake-drop"
 
     if args.client_option or args.secure:
@@ -2338,12 +2740,6 @@ if __name__ == "__main__":
         os.environ["CLICKHOUSE_URL_PARAMS"] += client_options_query_str
     else:
         args.client_options_query_str = ""
-
-    if args.extract_from_config is None:
-        if os.access(args.binary + "-extract-from-config", os.X_OK):
-            args.extract_from_config = args.binary + "-extract-from-config"
-        else:
-            args.extract_from_config = args.binary + " extract-from-config"
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()

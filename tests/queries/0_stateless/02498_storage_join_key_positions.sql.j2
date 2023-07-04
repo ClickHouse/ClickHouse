@@ -33,24 +33,34 @@ SELECT * FROM (SELECT key3 AS c, key1 AS a, key2 AS b FROM t1) AS t1 ALL INNER J
 SELECT * FROM (SELECT key3 AS c, key1 AS a, key2 AS b FROM t1) AS t1 ALL INNER JOIN tj ON t1.a = tj.key1 AND t1.b = tj.key2 AND t1.c = tj.key3 ORDER BY t1.a;
 SELECT * FROM (SELECT key3 AS c, key1 AS a, key2 AS b FROM t1) AS t1 ALL INNER JOIN tj ON t1.c = tj.key3 AND t1.a = tj.key1 AND t1.b = tj.key2 ORDER BY t1.a;
 
--- TODO (vdimir): uncomment after https://github.com/ClickHouse/ClickHouse/pull/44016
--- SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
--- SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
--- SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 1 == 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
--- SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 1 > 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+{% set expected_error = 'INCOMPATIBLE_TYPE_OF_JOIN' if use_analyzer else 'INVALID_JOIN_ON_EXPRESSION' %}
+
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 1; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 0; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 1 > 1; -- { serverError {{ expected_error }} }
 
 SELECT '--- incompatible ---';
-SELECT * FROM t1 ALL INNER JOIN tj ON 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON NULL; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj ON 1 != 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON 0; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON NULL; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1 != 1; -- { serverError {{ expected_error }} }
+
+{% set expected_error = 'INCOMPATIBLE_TYPE_OF_JOIN' if use_analyzer else 'AMBIGUOUS_COLUMN_NAME' %}
+
+-- Here is another error code because equality is handled differently in CollectJoinOnKeysVisitor.
+-- We can change the error code, but it will become inconsistent for other cases
+-- where we actually expect AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION/INCOMPATIBLE_TYPE_OF_JOIN.
+-- These checks are more reliable after switching to a new analyzer, they return INCOMPATIBLE_TYPE_OF_JOIN consistent with cases above
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key3 = tj.key3 AND t1.key2 = tj.key2 AND 1 == 1; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 1; -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 2; -- { serverError {{ expected_error }} }
+
+{% set expected_error = 'UNKNOWN_IDENTIFIER' if use_analyzer else 'INCOMPATIBLE_TYPE_OF_JOIN' %}
+
+SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, attr); -- { serverError {{ expected_error }} }
+SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3, attr); -- { serverError {{ expected_error }} }
 
 SELECT * FROM t1 ALL INNER JOIN tj USING (key2, key3); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, attr) SETTINGS allow_experimental_analyzer = 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, attr) SETTINGS allow_experimental_analyzer = 1; -- { serverError UNKNOWN_IDENTIFIER }
-SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3, attr) SETTINGS allow_experimental_analyzer = 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3, attr) SETTINGS allow_experimental_analyzer = 1; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.attr; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.key1 = tj.key1 AND t1.key2 = tj.key2 AND t1.key3 = tj.attr; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }

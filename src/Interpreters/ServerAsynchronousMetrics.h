@@ -21,6 +21,7 @@ private:
 
     const Duration heavy_metric_update_period;
     TimePoint heavy_metric_previous_update_time;
+    double heavy_update_interval = 0.;
 
     struct DetachedPartsStats
     {

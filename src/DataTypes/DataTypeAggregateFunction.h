@@ -30,9 +30,9 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_,
+    DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
                               const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
-        : function(function_)
+        : function(std::move(function_))
         , argument_types(argument_types_)
         , parameters(parameters_)
         , version(version_)
@@ -45,13 +45,14 @@ public:
     String doGetName() const override;
     String getNameWithoutVersion() const;
     const char * getFamilyName() const override { return "AggregateFunction"; }
+    String getSQLCompatibleName() const override { return "TEXT"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
     Array getParameters() const { return parameters; }
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr getReturnType() const { return function->getReturnType(); }
+    DataTypePtr getReturnType() const { return function->getResultType(); }
     DataTypePtr getReturnTypeToPredict() const { return function->getReturnTypeToPredict(); }
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 

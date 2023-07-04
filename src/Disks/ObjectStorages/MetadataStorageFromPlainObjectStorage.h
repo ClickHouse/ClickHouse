@@ -33,7 +33,7 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
 
-    MetadataTransactionPtr createTransaction() const override;
+    MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
 
@@ -63,7 +63,7 @@ public:
 
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
-        return 1;
+        return 0;
     }
 
     bool supportsChmod() const override { return false; }

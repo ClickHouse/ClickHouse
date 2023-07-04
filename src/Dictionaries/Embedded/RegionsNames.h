@@ -84,7 +84,7 @@ public:
     {
         size_t language_id = static_cast<size_t>(language);
 
-        if (region_id >= names_refs[language_id].size()) //-V1051
+        if (region_id >= names_refs[language_id].size())
             return StringRef("", 0);
 
         StringRef ref = names_refs[language_id][region_id];

@@ -7,18 +7,18 @@ Contains information about settings for `MergeTree` tables.
 
 Columns:
 
--   `name` (String) — Setting name.
--   `value` (String) — Setting value.
--   `description` (String) — Setting description.
--   `type` (String) — Setting type (implementation specific string value).
--   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+- `name` (String) — Setting name.
+- `value` (String) — Setting value.
+- `description` (String) — Setting description.
+- `type` (String) — Setting type (implementation specific string value).
+- `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
 **Example**
 ```sql
-:) SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
+SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
 ```
 
-```text
+```response
 Row 1:
 ──────
 name:        index_granularity
@@ -53,5 +53,3 @@ type:        SettingUInt64
 
 4 rows in set. Elapsed: 0.001 sec.
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/merge_tree_settings) <!--hide-->

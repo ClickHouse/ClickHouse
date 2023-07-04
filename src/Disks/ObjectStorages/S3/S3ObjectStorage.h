@@ -7,12 +7,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/S3/S3Capabilities.h>
 #include <memory>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/HeadObjectResult.h>
-#include <aws/s3/model/ListObjectsV2Result.h>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -48,7 +44,7 @@ private:
 
     S3ObjectStorage(
         const char * logger_name,
-        std::unique_ptr<Aws::S3::S3Client> && client_,
+        std::unique_ptr<S3::Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
         const S3Capabilities & s3_capabilities_,
@@ -70,7 +66,7 @@ private:
 
 public:
     template <class ...Args>
-    S3ObjectStorage(std::unique_ptr<Aws::S3::S3Client> && client_, Args && ...args)
+    explicit S3ObjectStorage(std::unique_ptr<S3::Client> && client_, Args && ...args)
         : S3ObjectStorage("S3ObjectStorage", std::move(client_), std::forward<Args>(args)...)
     {
     }
@@ -101,14 +97,12 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
-    void getDirectoryContents(const std::string & path,
-        RelativePathsWithSize & files,
-        std::vector<std::string> & directories) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
@@ -125,6 +119,8 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -148,8 +144,6 @@ public:
 
     std::string getObjectsNamespace() const override { return bucket; }
 
-    std::string generateBlobNameForPath(const std::string & path) override;
-
     bool isRemote() const override { return true; }
 
     void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
@@ -165,32 +159,14 @@ public:
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
-    void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);
-
-    void copyObjectImpl(
-        const String & src_bucket,
-        const String & src_key,
-        const String & dst_bucket,
-        const String & dst_key,
-        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
-        std::optional<ObjectAttributes> metadata = std::nullopt) const;
-
-    void copyObjectMultipartImpl(
-        const String & src_bucket,
-        const String & src_key,
-        const String & dst_bucket,
-        const String & dst_key,
-        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
-        std::optional<ObjectAttributes> metadata = std::nullopt) const;
+    void setNewClient(std::unique_ptr<S3::Client> && client_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
-
     std::string bucket;
 
-    MultiVersion<Aws::S3::S3Client> client;
+    MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
@@ -211,7 +187,7 @@ public:
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>
-    S3PlainObjectStorage(Args && ...args)
+    explicit S3PlainObjectStorage(Args && ...args)
         : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...)
     {
         data_source_description.type = DataSourceType::S3_Plain;

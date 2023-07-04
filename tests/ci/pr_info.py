@@ -6,7 +6,7 @@ from typing import Dict, List, Set, Union
 
 from unidiff import PatchSet  # type: ignore
 
-from build_download_helper import get_with_retries
+from build_download_helper import get_gh_api
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -45,7 +45,7 @@ def get_pr_for_commit(sha, ref):
         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     )
     try:
-        response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
+        response = get_gh_api(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
         our_prs = []  # type: List[Dict]
         if len(data) > 1:
@@ -105,7 +105,7 @@ class PRInfo:
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
             self.sha = github_event["workflow_run"]["head_sha"]
-            prs_for_sha = get_with_retries(
+            prs_for_sha = get_gh_api(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
                 "/pulls",
                 sleep=RETRY_SLEEP,
@@ -117,7 +117,7 @@ class PRInfo:
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
                 try:
-                    response = get_with_retries(
+                    response = get_gh_api(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
                         f"/pulls/{self.number}",
                         sleep=RETRY_SLEEP,
@@ -159,7 +159,7 @@ class PRInfo:
             self.user_login = github_event["pull_request"]["user"]["login"]
             self.user_orgs = set([])
             if need_orgs:
-                user_orgs_response = get_with_retries(
+                user_orgs_response = get_gh_api(
                     github_event["pull_request"]["user"]["organizations_url"],
                     sleep=RETRY_SLEEP,
                 )
@@ -255,7 +255,7 @@ class PRInfo:
             raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
-            response = get_with_retries(
+            response = get_gh_api(
                 diff_url,
                 sleep=RETRY_SLEEP,
             )

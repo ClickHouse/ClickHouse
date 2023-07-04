@@ -42,10 +42,10 @@ def cluster():
 # For inserts there is no guarantee that retries will not result in duplicates.
 # But it is better to retry anyway because 'Connection was closed by the server' error
 # happens in fact only for inserts because reads already have build-in retries in code.
-def azure_query(node, query, try_num=3):
+def azure_query(node, query, try_num=3, settings={}):
     for i in range(try_num):
         try:
-            return node.query(query)
+            return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response"
@@ -66,6 +66,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "blob_storage_policy",
         "old_parts_lifetime": 1,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
@@ -80,7 +81,7 @@ def create_table(node, table_name, **additional_settings):
         ORDER BY (dt, id)
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}"""
 
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    azure_query(node, f"DROP TABLE IF EXISTS {table_name}")
     azure_query(node, create_table_statement)
     assert (
         azure_query(node, f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
@@ -96,8 +97,11 @@ def test_read_after_cache_is_wiped(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
 
-    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
-
+    # We insert into different partitions, so do it separately to avoid
+    # test flakyness when retrying the query in case of retriable exception.
+    values = "('2021-11-13',3,'hello')"
+    azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
+    values = "('2021-11-14',4,'heyo')"
     azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
 
     # Wipe cache
@@ -108,8 +112,10 @@ def test_read_after_cache_is_wiped(cluster):
 
     # After cache is populated again, only .bin files should be accessed from Blob Storage.
     assert (
-        azure_query(node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values")
-        == values
+        azure_query(
+            node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values"
+        ).strip()
+        == "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
     )
 
 
@@ -198,7 +204,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
     node.query(f"SYSTEM START MERGES {TABLE_NAME}")
 
     # Wait for merges and old parts deletion
-    for attempt in range(0, 10):
+    for attempt in range(0, 60):
         parts_count = azure_query(
             node,
             f"SELECT COUNT(*) FROM system.parts WHERE table = '{TABLE_NAME}' FORMAT Values",
@@ -206,7 +212,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         if parts_count == "(1)":
             break
 
-        if attempt == 9:
+        if attempt == 59:
             assert parts_count == "(1)"
 
         time.sleep(1)
@@ -230,9 +236,9 @@ def test_alter_table_columns(cluster):
         f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096, -1)}",
     )
 
-    node.query(f"ALTER TABLE {TABLE_NAME} ADD COLUMN col1 UInt64 DEFAULT 1")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} ADD COLUMN col1 UInt64 DEFAULT 1")
     # To ensure parts have been merged
-    node.query(f"OPTIMIZE TABLE {TABLE_NAME}")
+    azure_query(node, f"OPTIMIZE TABLE {TABLE_NAME}")
 
     assert (
         azure_query(node, f"SELECT sum(col1) FROM {TABLE_NAME} FORMAT Values")
@@ -245,7 +251,8 @@ def test_alter_table_columns(cluster):
         == "(4096)"
     )
 
-    node.query(
+    azure_query(
+        node,
         f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN col1 String",
         settings={"mutations_sync": 2},
     )
@@ -271,26 +278,27 @@ def test_attach_detach_partition(cluster):
         == "(8192)"
     )
 
-    node.query(f"ALTER TABLE {TABLE_NAME} DETACH PARTITION '2020-01-03'")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} DETACH PARTITION '2020-01-03'")
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
         == "(4096)"
     )
 
-    node.query(f"ALTER TABLE {TABLE_NAME} ATTACH PARTITION '2020-01-03'")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} ATTACH PARTITION '2020-01-03'")
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
         == "(8192)"
     )
 
-    node.query(f"ALTER TABLE {TABLE_NAME} DROP PARTITION '2020-01-03'")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} DROP PARTITION '2020-01-03'")
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
         == "(4096)"
     )
 
-    node.query(f"ALTER TABLE {TABLE_NAME} DETACH PARTITION '2020-01-04'")
-    node.query(
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} DETACH PARTITION '2020-01-04'")
+    azure_query(
+        node,
         f"ALTER TABLE {TABLE_NAME} DROP DETACHED PARTITION '2020-01-04'",
         settings={"allow_drop_detached": 1},
     )
@@ -314,16 +322,18 @@ def test_move_partition_to_another_disk(cluster):
         == "(8192)"
     )
 
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{LOCAL_DISK}'"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{LOCAL_DISK}'",
     )
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
         == "(8192)"
     )
 
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{AZURE_BLOB_STORAGE_DISK}'"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{AZURE_BLOB_STORAGE_DISK}'",
     )
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
@@ -344,14 +354,14 @@ def test_table_manipulations(cluster):
         f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}"
     )
 
-    node.query(f"RENAME TABLE {TABLE_NAME} TO {renamed_table}")
+    azure_query(node, f"RENAME TABLE {TABLE_NAME} TO {renamed_table}")
     assert (
         azure_query(node, f"SELECT count(*) FROM {renamed_table} FORMAT Values")
         == "(8192)"
     )
 
-    node.query(f"RENAME TABLE {renamed_table} TO {TABLE_NAME}")
-    assert node.query(f"CHECK TABLE {TABLE_NAME} FORMAT Values") == "(1)"
+    azure_query(node, f"RENAME TABLE {renamed_table} TO {TABLE_NAME}")
+    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values") == "(1)"
 
     node.query(f"DETACH TABLE {TABLE_NAME}")
     node.query(f"ATTACH TABLE {TABLE_NAME}")
@@ -360,7 +370,7 @@ def test_table_manipulations(cluster):
         == "(8192)"
     )
 
-    node.query(f"TRUNCATE TABLE {TABLE_NAME}")
+    azure_query(node, f"TRUNCATE TABLE {TABLE_NAME}")
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     )
@@ -395,11 +405,13 @@ def test_move_replace_partition_to_another_table(cluster):
 
     create_table(node, table_clone_name)
 
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-03' TO TABLE {table_clone_name}"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-03' TO TABLE {table_clone_name}",
     )
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-05' TO TABLE {table_clone_name}"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-05' TO TABLE {table_clone_name}",
     )
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
@@ -428,11 +440,13 @@ def test_move_replace_partition_to_another_table(cluster):
         == "(1024)"
     )
 
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION '2020-01-03' FROM {table_clone_name}"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION '2020-01-03' FROM {table_clone_name}",
     )
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION '2020-01-05' FROM {table_clone_name}"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION '2020-01-05' FROM {table_clone_name}",
     )
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
@@ -448,16 +462,16 @@ def test_move_replace_partition_to_another_table(cluster):
         == "(512)"
     )
 
-    node.query(f"DROP TABLE {table_clone_name} NO DELAY")
+    azure_query(node, f"DROP TABLE {table_clone_name} SYNC")
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
         == "(1024)"
     )
 
-    node.query(f"ALTER TABLE {TABLE_NAME} FREEZE")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE")
 
-    node.query(f"DROP TABLE {TABLE_NAME} NO DELAY")
+    azure_query(node, f"DROP TABLE {TABLE_NAME} SYNC")
 
 
 def test_freeze_unfreeze(cluster):
@@ -470,20 +484,21 @@ def test_freeze_unfreeze(cluster):
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"
     )
-    node.query(f"ALTER TABLE {TABLE_NAME} FREEZE WITH NAME '{backup1}'")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE WITH NAME '{backup1}'")
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}"
     )
-    node.query(f"ALTER TABLE {TABLE_NAME} FREEZE WITH NAME '{backup2}'")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE WITH NAME '{backup2}'")
 
     azure_query(node, f"TRUNCATE TABLE {TABLE_NAME}")
 
     # Unfreeze single partition from backup1.
-    node.query(
-        f"ALTER TABLE {TABLE_NAME} UNFREEZE PARTITION '2020-01-03' WITH NAME '{backup1}'"
+    azure_query(
+        node,
+        f"ALTER TABLE {TABLE_NAME} UNFREEZE PARTITION '2020-01-03' WITH NAME '{backup1}'",
     )
     # Unfreeze all partitions from backup2.
-    node.query(f"ALTER TABLE {TABLE_NAME} UNFREEZE WITH NAME '{backup2}'")
+    azure_query(node, f"ALTER TABLE {TABLE_NAME} UNFREEZE WITH NAME '{backup2}'")
 
 
 def test_apply_new_settings(cluster):
@@ -514,61 +529,6 @@ def test_apply_new_settings(cluster):
     )
 
 
-# NOTE: this test takes a couple of minutes when run together with other tests
-@pytest.mark.long_run
-def test_restart_during_load(cluster):
-    node = cluster.instances[NODE_NAME]
-    create_table(node, TABLE_NAME)
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        "./{}/node/configs/config.d/storage_conf.xml".format(
-            cluster.instances_dir_name
-        ),
-    )
-
-    # Force multi-part upload mode.
-    replace_config(
-        config_path, "<container_already_exists>false</container_already_exists>", ""
-    )
-
-    azure_query(
-        node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}"
-    )
-    azure_query(
-        node,
-        f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096, -1)}",
-    )
-
-    def read():
-        for ii in range(0, 5):
-            logging.info(f"Executing {ii} query")
-            assert (
-                azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values")
-                == "(0)"
-            )
-            logging.info(f"Query {ii} executed")
-            time.sleep(0.2)
-
-    def restart_disk():
-        for iii in range(0, 2):
-            logging.info(f"Restarting disk, attempt {iii}")
-            node.query(f"SYSTEM RESTART DISK {AZURE_BLOB_STORAGE_DISK}")
-            logging.info(f"Disk restarted, attempt {iii}")
-            time.sleep(0.5)
-
-    threads = []
-    for _ in range(0, 4):
-        threads.append(SafeThread(target=read))
-
-    threads.append(SafeThread(target=restart_disk))
-
-    for thread in threads:
-        thread.start()
-
-    for thread in threads:
-        thread.join()
-
-
 def test_big_insert(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
@@ -579,8 +539,8 @@ def test_big_insert(cluster):
         node,
         f"INSERT INTO {TABLE_NAME} {check_query}",
     )
-    assert azure_query(node, f"SELECT * FROM {TABLE_NAME} ORDER BY id") == node.query(
-        check_query
+    assert azure_query(node, f"SELECT * FROM {TABLE_NAME} ORDER BY id") == azure_query(
+        node, check_query
     )
 
     blob_container_client = cluster.blob_service_client.get_container_client(

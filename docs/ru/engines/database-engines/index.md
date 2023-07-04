@@ -21,4 +21,3 @@ sidebar_label: "Движки баз данных"
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
 -   [Replicated](../../engines/database-engines/replicated.md)
-

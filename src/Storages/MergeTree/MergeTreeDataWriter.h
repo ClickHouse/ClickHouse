@@ -22,15 +22,15 @@ struct BlockWithPartition
 {
     Block block;
     Row partition;
-    ChunkOffsetsPtr offsets;
+    std::vector<size_t> offsets;
 
     BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }
 
-    BlockWithPartition(Block && block_, Row && partition_, ChunkOffsetsPtr chunk_offsets_)
-        : block(block_), partition(std::move(partition_)), offsets(chunk_offsets_)
+    BlockWithPartition(Block && block_, Row && partition_, std::vector<size_t> && offsets_)
+        : block(block_), partition(std::move(partition_)), offsets(std::move(offsets_))
     {
     }
 };
@@ -71,6 +71,7 @@ public:
 
         scope_guard temporary_directory_lock;
 
+        void cancel();
         void finalize();
     };
 
@@ -78,6 +79,13 @@ public:
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
     TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+
+    MergeTreeData::MergingParams::Mode getMergingMode() const
+    {
+        return data.merging_params.mode;
+    }
+
+    TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
 
     /// For insertion.
     static TemporaryPart writeProjectionPart(
@@ -104,6 +112,14 @@ public:
         const MergeTreeData::MergingParams & merging_params);
 
 private:
+
+    TemporaryPart writeTempPartImpl(
+        BlockWithPartition & block,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        int64_t block_number,
+        bool need_tmp_prefix);
+
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,

@@ -226,7 +226,7 @@ private:
             UInt32 left_scale = getDecimalScale(*arguments[1].type);
             UInt32 right_scale = getDecimalScale(*arguments[2].type);
             if (left_scale != right_scale)
-                throw Exception("Conditional functions with different Decimal scales", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conditional functions with different Decimal scales");
             return left_scale;
         }
         else
@@ -754,8 +754,7 @@ private:
                     new_cond_column = ColumnConst::create(new_cond_column, column_size);
             }
             else
-                throw Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of {} condition", arg_cond.column->getName(), getName());
 
             ColumnsWithTypeAndName temporary_columns
             {
@@ -924,9 +923,8 @@ private:
                     return makeNullableColumnIfNot(arg_else_column);
             }
             else
-                throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
-                    + ". Must be ColumnUInt8 or ColumnConstUInt8.",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                    "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
         }
 
         /// If else is NULL, we create Nullable column with null mask OR-ed with negated condition.
@@ -975,9 +973,8 @@ private:
                     return result_type->createColumn()->cloneResized(input_rows_count);
             }
             else
-                throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
-                    + ". Must be ColumnUInt8 or ColumnConstUInt8.",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                    "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
         }
 
         return nullptr;
@@ -1026,6 +1023,7 @@ public:
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1038,8 +1036,8 @@ public:
                 removeNullable(arguments[0]), arguments[1], arguments[2]});
 
         if (!WhichDataType(arguments[0]).isUInt8())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
+                "Must be UInt8.", arguments[0]->getName());
 
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
@@ -1085,9 +1083,8 @@ public:
         }
 
         if (!cond_col)
-            throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
-                + ". Must be ColumnUInt8 or ColumnConstUInt8.",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
 
         auto call = [&](const auto & types) -> bool
         {
@@ -1118,6 +1115,32 @@ public:
         }
 
         return res;
+    }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        const ColumnWithTypeAndName & arg_cond = arguments[0];
+        if (!arg_cond.column || !isColumnConst(*arg_cond.column))
+            return {};
+
+        const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
+        if (!cond_const_col)
+            return {};
+
+        bool condition_value = cond_const_col->getValue<UInt8>();
+
+        const ColumnWithTypeAndName & arg_then = arguments[1];
+        const ColumnWithTypeAndName & arg_else = arguments[2];
+        const ColumnWithTypeAndName & potential_const_column = condition_value ? arg_then : arg_else;
+
+        if (!potential_const_column.column || !isColumnConst(*potential_const_column.column))
+            return {};
+
+        auto result = castColumn(potential_const_column, result_type);
+        if (!isColumnConst(*result))
+            return {};
+
+        return result;
     }
 };
 

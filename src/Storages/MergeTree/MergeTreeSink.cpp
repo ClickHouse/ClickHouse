@@ -3,6 +3,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
+#include <Common/ProfileEventsScope.h>
 
 namespace ProfileEvents
 {
@@ -11,6 +12,20 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+struct MergeTreeSink::DelayedChunk
+{
+    struct Partition
+    {
+        MergeTreeDataWriter::TemporaryPart temp_part;
+        UInt64 elapsed_ns;
+        String block_dedup_token;
+        ProfileEvents::Counters part_counters;
+    };
+
+    std::vector<Partition> partitions;
+};
+
 
 MergeTreeSink::~MergeTreeSink() = default;
 
@@ -24,15 +39,15 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
+    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
 {
 }
 
 void MergeTreeSink::onStart()
 {
-    /// Only check "too many parts" before write,
+    /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context);
+    storage.delayInsertOrThrowIfNeeded(nullptr, context, true);
 }
 
 void MergeTreeSink::onFinish()
@@ -40,21 +55,11 @@ void MergeTreeSink::onFinish()
     finishDelayedChunk();
 }
 
-struct MergeTreeSink::DelayedChunk
-{
-    struct Partition
-    {
-        MergeTreeDataWriter::TemporaryPart temp_part;
-        UInt64 elapsed_ns;
-        String block_dedup_token;
-    };
-
-    std::vector<Partition> partitions;
-};
-
-
 void MergeTreeSink::consume(Chunk chunk)
 {
+    if (num_blocks_processed > 0)
+        storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
+
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
@@ -70,12 +75,18 @@ void MergeTreeSink::consume(Chunk chunk)
 
     for (auto & current_block : part_blocks)
     {
-        Stopwatch watch;
-        String block_dedup_token;
+        ProfileEvents::Counters part_counters;
 
-        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+        UInt64 elapsed_ns = 0;
+        MergeTreeDataWriter::TemporaryPart temp_part;
 
-        UInt64 elapsed_ns = watch.elapsed();
+        {
+            ProfileEventsScope scoped_attach(&part_counters);
+
+            Stopwatch watch;
+            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+            elapsed_ns = watch.elapsed();
+        }
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
@@ -85,6 +96,7 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
+        String block_dedup_token;
         if (storage.getDeduplicationLog())
         {
             const String & dedup_token = settings.insert_deduplication_token;
@@ -119,13 +131,16 @@ void MergeTreeSink::consume(Chunk chunk)
         {
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
-            .block_dedup_token = std::move(block_dedup_token)
+            .block_dedup_token = std::move(block_dedup_token),
+            .part_counters = std::move(part_counters),
         });
     }
 
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+
+    ++num_blocks_processed;
 }
 
 void MergeTreeSink::finishDelayedChunk()
@@ -135,6 +150,8 @@ void MergeTreeSink::finishDelayedChunk()
 
     for (auto & partition : delayed_chunk->partitions)
     {
+        ProfileEventsScope scoped_attach(&partition.part_counters);
+
         partition.temp_part.finalize();
 
         auto & part = partition.temp_part.part;
@@ -156,7 +173,7 @@ void MergeTreeSink::finishDelayedChunk()
                 if (!res.second)
                 {
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
                     continue;
                 }
             }
@@ -168,7 +185,8 @@ void MergeTreeSink::finishDelayedChunk()
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
-            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
             storage.incrementInsertedPartsProfileEvent(part->getType());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.

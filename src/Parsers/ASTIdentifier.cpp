@@ -24,7 +24,7 @@ ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
         children.push_back(std::move(name_param));
 }
 
-ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, std::vector<ASTPtr> && name_params)
+ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, ASTs && name_params)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
@@ -164,12 +164,12 @@ void ASTIdentifier::resetFullName()
         full_name += '.' + name_parts[i];
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const String & table_name, ASTs && name_params)
     : ASTIdentifier({table_name}, true, std::move(name_params))
 {
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTs && name_params)
     : ASTIdentifier(
         table_id.database_name.empty() ? std::vector<String>{table_id.table_name}
                                        : std::vector<String>{table_id.database_name, table_id.table_name},
@@ -178,7 +178,7 @@ ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<A
     uuid = table_id.uuid;
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params)
     : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
 {
 }
@@ -255,7 +255,9 @@ String getIdentifierName(const IAST * ast)
     String res;
     if (tryGetIdentifierNameInto(ast, res))
         return res;
-    throw Exception(ast ? queryToString(*ast) + " is not an identifier" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    if (ast)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", queryToString(*ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 
 std::optional<String> tryGetIdentifierName(const IAST * ast)

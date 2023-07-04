@@ -53,7 +53,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
             out << type->getName();
         }
 
-        out << ") → " << function->getReturnType()->getName() << "\n";
+        out << ") → " << function->getResultType()->getName() << "\n";
     }
     else
         out << prefix << "  Function: nullptr\n";
@@ -109,7 +109,7 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
             args_array->add(type->getName());
 
         function_map->add("Argument Types", std::move(args_array));
-        function_map->add("Result Type", function->getReturnType()->getName());
+        function_map->add("Result Type", function->getResultType()->getName());
 
         map.add("Function", std::move(function_map));
     }

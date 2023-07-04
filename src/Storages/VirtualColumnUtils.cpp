@@ -20,9 +20,18 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/ActionsVisitor.h>
 
 
@@ -51,7 +60,7 @@ bool isValidFunction(const ASTPtr & expression, const std::function<bool(const A
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, std::vector<ASTPtr> & result)
+bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTs & result)
 {
     const auto * function = expression->as<ASTFunction>();
     if (function && (function->name == "and" || function->name == "indexHint"))
@@ -78,25 +87,6 @@ ASTPtr buildWhereExpression(const ASTs & functions)
     if (functions.size() == 1)
         return functions[0];
     return makeASTFunction("and", functions);
-}
-
-void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
-{
-    const auto * func = expression->as<ASTFunction>();
-    if (func && functionIsInOrGlobalInOperator(func->name))
-    {
-        const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
-        if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
-        {
-            analyzer.tryMakeSetForIndexFromSubquery(arg);
-        }
-    }
-    else
-    {
-        for (const auto & child : expression->children)
-            buildSets(child, analyzer);
-    }
 }
 
 }
@@ -132,7 +122,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
     if (block.rows() == 0)
-        throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot prepare filter with empty block");
 
     /// Take the first row of the input block to build a constant block
     auto columns = block.getColumns();
@@ -162,7 +152,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         const ColumnNumbersList grouping_set_keys;
 
         ActionsVisitor::Data visitor_data(
-            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true, false,
+            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
             { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
 
         ActionsVisitor(visitor_data).visit(node);
@@ -175,7 +165,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
-    std::vector<ASTPtr> functions;
+    ASTs functions;
     if (select.where())
         unmodified &= extractFunctions(select.where(), is_constant, functions);
     if (select.prewhere())
@@ -199,8 +189,35 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     /// Let's analyze and calculate the prepared expression.
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    buildSets(expression_ast, analyzer);
     ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
+
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        auto plan = set_from_subquery->build(context);
+                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+                        pipeline.complete(std::make_shared<EmptySink>(Block()));
+
+                        CompletedPipelineExecutor executor(pipeline);
+                        executor.execute();
+                    }
+                }
+            }
+        }
+    }
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);

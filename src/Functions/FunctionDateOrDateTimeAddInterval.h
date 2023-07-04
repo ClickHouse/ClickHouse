@@ -68,12 +68,12 @@ struct AddNanosecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addNanoSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addNanoSeconds() cannot be used with Date");
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addNanoSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addNanoSeconds() cannot be used with Date32");
     }
 };
 
@@ -112,12 +112,12 @@ struct AddMicrosecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMicroSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMicroSeconds() cannot be used with Date");
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMicroSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMicroSeconds() cannot be used with Date32");
     }
 };
 
@@ -156,12 +156,12 @@ struct AddMillisecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMilliSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMilliSeconds() cannot be used with Date");
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMilliSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "addMilliSeconds() cannot be used with Date32");
     }
 };
 
@@ -513,7 +513,7 @@ private:
         Int64 result;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
@@ -607,32 +607,31 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                getName(), arguments.size());
 
         if (!isNativeNumber(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " (delta) must be a number",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} (delta) must be a number",
+                getName());
 
         if (arguments.size() == 2)
         {
             if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
-                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                    "Should be a date or a date with time", arguments[0].type->getName(), getName());
         }
         else
         {
             if (!WhichDataType(arguments[0].type).isDateTime()
                 || !WhichDataType(arguments[2].type).isString())
             {
-                throw Exception(
-                    "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
-                    "must be of type Date or DateTime. The 2nd argument must be a number. "
-                    "The 3rd argument (optional) must be "
-                    "a constant string with timezone name. The timezone argument is allowed "
-                    "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} supports 2 or 3 arguments. "
+                                "The 1st argument must be of type Date or DateTime. "
+                                "The 2nd argument must be a number. "
+                                "The 3rd argument (optional) must be a constant string with timezone name. "
+                                "The timezone argument is allowed only when the 1st argument has the type DateTime",
+                                getName());
             }
         }
 
@@ -648,9 +647,8 @@ public:
                 return resolveReturnType<DataTypeDateTime64>(arguments);
             default:
             {
-                throw Exception("Invalid type of 1st argument of function " + getName() + ": "
-                    + arguments[0].type->getName() + ", expected: Date, DateTime or DateTime64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid type of 1st argument of function {}: "
+                    "{}, expected: Date, DateTime or DateTime64.", getName(), arguments[0].type->getName());
             }
         }
     }
@@ -681,41 +679,31 @@ public:
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            if (typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
+            static constexpr auto target_scale = std::invoke(
+                []() -> std::optional<UInt32>
+                {
+                    if constexpr (std::is_base_of_v<AddNanosecondsImpl, Transform>)
+                        return 9;
+                    else if constexpr (std::is_base_of_v<AddMicrosecondsImpl, Transform>)
+                        return 6;
+                    else if constexpr (std::is_base_of_v<AddMillisecondsImpl, Transform>)
+                        return 3;
+
+                    return {};
+                });
+
+            auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
+            if (const auto* datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
             {
-                const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-
-                auto from_scale = datetime64_type.getScale();
-                auto scale = from_scale;
-
-                if (std::is_same_v<Transform, AddNanosecondsImpl>)
-                    scale = 9;
-                else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
-                    scale = 6;
-                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
-                    scale = 3;
-
-                scale = std::max(scale, from_scale);
-
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+                const auto from_scale = datetime64_type->getScale();
+                return std::make_shared<DataTypeDateTime64>(std::max(from_scale, target_scale.value_or(from_scale)), std::move(timezone));
             }
-            else
-            {
-                auto scale = DataTypeDateTime64::default_scale;
 
-                if (std::is_same_v<Transform, AddNanosecondsImpl>)
-                    scale = 9;
-                else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
-                    scale = 6;
-                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
-                    scale = 3;
-
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
-            }
+            return std::make_shared<DataTypeDateTime64>(target_scale.value_or(DataTypeDateTime64::default_scale), std::move(timezone));
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
@@ -751,8 +739,8 @@ public:
                 Transform{}, arguments, result_type, from_scale);
         }
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                arguments[0].type->getName(), getName());
     }
 };
 

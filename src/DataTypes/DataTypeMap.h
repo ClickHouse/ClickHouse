@@ -30,6 +30,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Map"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
 
     bool canBeInsideNullable() const override { return false; }
 
@@ -47,6 +48,7 @@ public:
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
     const DataTypePtr & getNestedType() const { return nested; }
+    DataTypePtr getNestedTypeWithUnnamedTuple() const;
 
     SerializationPtr doGetDefaultSerialization() const override;
 

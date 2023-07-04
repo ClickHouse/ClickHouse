@@ -1,5 +1,6 @@
 #include <Analyzer/SortNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -91,7 +92,8 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs) const
 void SortNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(sort_direction);
-    hash_state.update(nulls_sort_direction);
+    /// use some determined value if `nulls_sort_direction` is `nullopt`
+    hash_state.update(nulls_sort_direction.value_or(sort_direction));
     hash_state.update(with_fill);
 
     if (collator)
@@ -108,7 +110,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
     return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
 }
 
-ASTPtr SortNode::toASTImpl() const
+ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto result = std::make_shared<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
@@ -119,10 +121,10 @@ ASTPtr SortNode::toASTImpl() const
     result->nulls_direction_was_explicitly_specified = nulls_sort_direction.has_value();
 
     result->with_fill = with_fill;
-    result->fill_from = hasFillFrom() ? getFillFrom()->toAST() : nullptr;
-    result->fill_to = hasFillTo() ? getFillTo()->toAST() : nullptr;
-    result->fill_step = hasFillStep() ? getFillStep()->toAST() : nullptr;
-    result->children.push_back(getExpression()->toAST());
+    result->fill_from = hasFillFrom() ? getFillFrom()->toAST(options) : nullptr;
+    result->fill_to = hasFillTo() ? getFillTo()->toAST(options) : nullptr;
+    result->fill_step = hasFillStep() ? getFillStep()->toAST(options) : nullptr;
+    result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
     {

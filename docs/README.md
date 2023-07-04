@@ -40,6 +40,8 @@ The documentation contains information about all the aspects of the ClickHouse l
 
 At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [Clickhouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
 
+To get the latter launch the `get-clickhouse-docs.sh` script.
+
 Each language lies in the corresponding folder. Files that are not translated from English are symbolic links to the English ones.
 
 <a name="how-to-contribute"/>
@@ -125,12 +127,6 @@ Contribute all new information in English language. Other languages are translat
 <a name="adding-a-new-file"/>
 
 ### Adding a New File
-
-When you add a new file, it should end with a link like:
-
-`[Original article](https://clickhouse.com/docs/<path-to-the-page>) <!--hide-->`
-
-and there should be **a new empty line** after it.
 
 {## When adding a new file:
 

@@ -29,7 +29,13 @@ public:
         size_t size = arguments.size();
         DataTypes res(size);
         for (size_t i = 0; i < size; ++i)
-            res[i] = removeNullable(arguments[i]);
+        {
+            /// Nullable(Nothing) is processed separately, don't convert it to Nothing.
+            if (arguments[i]->onlyNull())
+                res[i] = arguments[i];
+            else
+                res[i] = removeNullable(arguments[i]);
+        }
         return res;
     }
 
@@ -41,12 +47,16 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        for (const auto & arg_type : arguments)
+        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        if (nested_function)
+            arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
+
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (arg_type->isNullable())
+            if (arguments[i]->isNullable())
             {
                 has_nullable_types = true;
-                if (arg_type->onlyNull())
+                if (arguments[i]->onlyNull() && !arguments_that_can_be_only_null.contains(i))
                 {
                     has_null_types = true;
                     break;
@@ -55,18 +65,16 @@ public:
         }
 
         if (!has_nullable_types)
-            throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function combinator 'Null' "
+                            "requires at least one argument to be Nullable");
 
         if (has_null_types)
         {
             /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
             if (properties.returns_default_when_only_null)
-                return std::make_shared<AggregateFunctionNothing>(DataTypes{
-                    std::make_shared<DataTypeUInt64>()}, params);
+                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeUInt64>());
             else
-                return std::make_shared<AggregateFunctionNothing>(DataTypes{
-                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())}, params);
+                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
         }
 
         assert(nested_function);
@@ -87,7 +95,7 @@ public:
                 transformed_nested_function->getParameters());
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)

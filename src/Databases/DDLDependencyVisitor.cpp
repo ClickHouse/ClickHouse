@@ -1,7 +1,9 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -11,6 +13,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
 #include <Poco/String.h>
 
@@ -24,6 +28,7 @@ namespace
     /// Used to visits ASTCreateQuery and extracts the names of all tables explicitly referenced in the create query.
     class DDLDependencyVisitorData
     {
+        friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
         DDLDependencyVisitorData(const ContextPtr & context_, const QualifiedTableName & table_name_, const ASTPtr & ast_)
             : create_query(ast_), table_name(table_name_), current_database(context_->getCurrentDatabase()), context(context_)
@@ -105,9 +110,17 @@ namespace
             if (!info || !info->is_local)
                 return;
 
-            if (info->table_name.database.empty())
-                info->table_name.database = current_database;
-            dependencies.emplace(std::move(info->table_name));
+            if (!info->table_name.table.empty())
+            {
+                if (info->table_name.database.empty())
+                    info->table_name.database = current_database;
+                dependencies.emplace(std::move(info->table_name));
+            }
+            else
+            {
+                /// We don't have a table name, we have a select query instead
+                tryVisitNestedSelect(info->query, *this);
+            }
         }
 
         /// ASTTableExpression represents a reference to a table in SELECT query.
@@ -175,17 +188,18 @@ namespace
         /// Finds dependencies of a function.
         void visitFunction(const ASTFunction & function)
         {
-            if (function.name == "joinGet" || function.name == "dictHas" || function.name == "dictIsIn" || function.name.starts_with("dictGet"))
+            if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
             {
                 /// dictGet('dict_name', attr_names, id_expr)
                 /// dictHas('dict_name', id_expr)
                 /// joinGet(join_storage_table_name, `value_column`, join_keys)
                 addQualifiedNameFromArgument(function, 0);
             }
-            else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn")
+            else if (functionIsInOrGlobalInOperator(function.name))
             {
-                /// in(x, table_name) - function for evaluating (x IN table_name)
-                addQualifiedNameFromArgument(function, 1);
+                /// x IN table_name.
+                /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
+                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
             {
@@ -247,7 +261,10 @@ namespace
 
             if (has_local_replicas && !table_function)
             {
-                auto maybe_qualified_name = tryGetQualifiedNameFromArgument(function, 1, /* apply_current_database= */ false);
+                /// We set `apply_current_database=false` here because if this argument is an identifier without dot,
+                /// then it's not the name of a table within the current database, it's the name of a database, and
+                /// the name of a table will be in the following argument.
+                auto maybe_qualified_name = tryGetQualifiedNameFromArgument(function, 1, /* evaluate= */ true, /* apply_current_database= */ false);
                 if (!maybe_qualified_name)
                     return;
                 auto & qualified_name = *maybe_qualified_name;
@@ -270,7 +287,7 @@ namespace
         }
 
         /// Gets an argument as a string, evaluates constants if necessary.
-        std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx) const
+        std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
         {
             if (!function.arguments)
                 return {};
@@ -280,28 +297,41 @@ namespace
                 return {};
 
             const auto & arg = args[arg_idx];
-            ASTPtr evaluated;
 
-            try
+            if (evaluate)
             {
-                evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+                try
+                {
+                    /// We're just searching for dependencies here, it's not safe to execute subqueries now.
+                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+                    const auto * literal = evaluated->as<ASTLiteral>();
+                    if (!literal || (literal->value.getType() != Field::Types::String))
+                        return {};
+                    return literal->value.safeGet<String>();
+                }
+                catch (...)
+                {
+                    return {};
+                }
             }
-            catch (...)
+            else
             {
+                if (const auto * id = arg->as<ASTIdentifier>())
+                    return id->name();
+                if (const auto * literal = arg->as<ASTLiteral>())
+                {
+                    if (literal->value.getType() == Field::Types::String)
+                        return literal->value.safeGet<String>();
+                }
                 return {};
             }
-
-            const auto * literal = evaluated->as<ASTLiteral>();
-            if (!literal || (literal->value.getType() != Field::Types::String))
-                return {};
-            return literal->value.safeGet<String>();
         }
 
         /// Gets an argument as a qualified table name.
         /// Accepts forms db_name.table_name (as an identifier) and 'db_name.table_name' (as a string).
         /// The function doesn't replace an empty database name with the current_database (the caller must do that).
-        std::optional<QualifiedTableName>
-        tryGetQualifiedNameFromArgument(const ASTFunction & function, size_t arg_idx, bool apply_current_database = true) const
+        std::optional<QualifiedTableName> tryGetQualifiedNameFromArgument(
+            const ASTFunction & function, size_t arg_idx, bool evaluate = true, bool apply_current_database = true) const
         {
             if (!function.arguments)
                 return {};
@@ -325,7 +355,7 @@ namespace
             }
             else
             {
-                auto qualified_name_as_string = tryGetStringFromArgument(function, arg_idx);
+                auto qualified_name_as_string = tryGetStringFromArgument(function, arg_idx, evaluate);
                 if (!qualified_name_as_string)
                     return {};
 
@@ -344,9 +374,9 @@ namespace
 
         /// Adds a qualified table name from an argument to the collection of dependencies.
         /// Accepts forms db_name.table_name (as an identifier) and 'db_name.table_name' (as a string).
-        void addQualifiedNameFromArgument(const ASTFunction & function, size_t arg_idx)
+        void addQualifiedNameFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true)
         {
-            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx))
+            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
                 dependencies.emplace(std::move(qualified_name).value());
         }
 
@@ -359,7 +389,7 @@ namespace
                 return {};
 
             auto table = tryGetStringFromArgument(function, table_arg_idx);
-            if (!table)
+            if (!table || table->empty())
                 return {};
 
             QualifiedTableName qualified_name;
@@ -406,6 +436,25 @@ namespace
         static bool needChildVisit(const ASTPtr &, const ASTPtr & child, const Data & data) { return data.needChildVisit(child); }
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
+
+    void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data)
+    {
+        try
+        {
+            ParserSelectWithUnionQuery parser;
+            String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
+            String fixed_query = removeWhereConditionPlaceholder(query);
+            ASTPtr select = parseQuery(parser, fixed_query, description,
+                                       data.context->getSettingsRef().max_query_size, data.context->getSettingsRef().max_parser_depth);
+
+            DDLDependencyVisitor::Visitor visitor{data};
+            visitor.visit(select);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("DDLDependencyVisitor");
+        }
+    }
 }
 
 

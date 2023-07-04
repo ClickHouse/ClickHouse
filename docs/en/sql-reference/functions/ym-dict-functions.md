@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/ym-dict-functions
-sidebar_position: 59
+sidebar_position: 60
 sidebar_label: Embedded Dictionaries
 ---
 
@@ -118,13 +118,13 @@ regionToTopContinent(id[, geobase])
 
 **Arguments**
 
--   `id` — Region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
--   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
+- `id` — Region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
+- `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
 
 **Returned value**
 
--   Identifier of the top level continent (the latter when you climb the hierarchy of regions).
--   0, if there is none.
+- Identifier of the top level continent (the latter when you climb the hierarchy of regions).
+- 0, if there is none.
 
 Type: `UInt32`.
 
@@ -150,4 +150,3 @@ Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 Accepts a UInt32 number – the region ID from the geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 
 `ua` and `uk` both mean Ukrainian.
-

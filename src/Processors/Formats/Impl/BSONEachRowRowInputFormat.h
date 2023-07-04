@@ -54,7 +54,7 @@ public:
         ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BSONEachRowRowInputFormat"; }
-    void resetParser() override { }
+    void resetParser() override;
 
 private:
     void readPrefix() override { }
@@ -91,7 +91,7 @@ private:
     Block::NameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<Block::NameMap::LookupResult> prev_positions;
+    std::vector<Block::NameMap::const_iterator> prev_positions;
 
     DataTypes types;
 

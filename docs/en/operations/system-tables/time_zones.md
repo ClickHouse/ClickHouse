@@ -7,7 +7,7 @@ Contains a list of time zones that are supported by the ClickHouse server. This 
 
 Columns:
 
--   `time_zone` (String) — List of supported time zones.
+- `time_zone` (String) — List of supported time zones.
 
 **Example**
 
@@ -29,5 +29,3 @@ SELECT * FROM system.time_zones LIMIT 10
 │ Africa/Bissau      │
 └────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/time_zones) <!--hide-->

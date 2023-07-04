@@ -6,8 +6,11 @@ import re
 import shutil
 import time
 from multiprocessing.dummy import Pool
+from pathlib import Path
+from typing import List, Union
 
 import boto3  # type: ignore
+import botocore  # type: ignore
 
 from env_helper import (
     S3_TEST_REPORTS_BUCKET,
@@ -40,11 +43,14 @@ def _flatten_list(lst):
 
 
 class S3Helper:
-    def __init__(self, host=S3_URL, download_host=S3_DOWNLOAD):
+    max_pool_size = 100
+
+    def __init__(self):
+        config = botocore.config.Config(max_pool_connections=self.max_pool_size)
         self.session = boto3.session.Session(region_name="us-east-1")
-        self.client = self.session.client("s3", endpoint_url=host)
-        self.host = host
-        self.download_host = download_host
+        self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
+        self.host = S3_URL
+        self.download_host = S3_DOWNLOAD
 
     def _upload_file_to_s3(self, bucket_name: str, file_path: str, s3_path: str) -> str:
         logging.debug(
@@ -89,16 +95,16 @@ class S3Helper:
                 logging.info("No content type provied for %s", file_path)
         else:
             if re.search(r"\.(txt|log|err|out)$", s3_path) or re.search(
-                r"\.log\..*(?<!\.gz)$", s3_path
+                r"\.log\..*(?<!\.zst)$", s3_path
             ):
                 logging.info(
                     "Going to compress file log file %s to %s",
                     file_path,
-                    file_path + ".gz",
+                    file_path + ".zst",
                 )
-                compress_file_fast(file_path, file_path + ".gz")
-                file_path += ".gz"
-                s3_path += ".gz"
+                compress_file_fast(file_path, file_path + ".zst")
+                file_path += ".zst"
+                s3_path += ".zst"
             else:
                 logging.info("Processing file without compression")
             logging.info("File is too large, do not provide content type")
@@ -124,7 +130,9 @@ class S3Helper:
         else:
             return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
 
-    def fast_parallel_upload_dir(self, dir_path, s3_dir_path, bucket_name):
+    def fast_parallel_upload_dir(
+        self, dir_path: Union[str, Path], s3_dir_path: str, bucket_name: str
+    ) -> List[str]:
         all_files = []
 
         for root, _, files in os.walk(dir_path):
@@ -137,12 +145,12 @@ class S3Helper:
         t = time.time()
         sum_time = 0
 
-        def upload_task(file_path):
+        def upload_task(file_path: str) -> str:
             nonlocal counter
             nonlocal t
             nonlocal sum_time
             try:
-                s3_path = file_path.replace(dir_path, s3_dir_path)
+                s3_path = file_path.replace(str(dir_path), s3_dir_path)
                 metadata = {}
                 if s3_path.endswith("html"):
                     metadata["ContentType"] = "text/html; charset=utf-8"
@@ -167,25 +175,20 @@ class S3Helper:
                 if counter % 1000 == 0:
                     sum_time += int(time.time() - t)
                     print(
-                        "Uploaded",
-                        counter,
-                        "-",
-                        int(time.time() - t),
-                        "s",
-                        "sum time",
-                        sum_time,
-                        "s",
+                        f"Uploaded {counter}, {int(time.time()-t)}s, "
+                        f"sum time {sum_time}s",
                     )
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
             return f"{self.download_host}/{bucket_name}/{s3_path}"
 
-        p = Pool(256)
+        p = Pool(self.max_pool_size)
 
+        original_level = logging.root.level
         logging.basicConfig(level=logging.CRITICAL)
         result = sorted(_flatten_list(p.map(upload_task, all_files)))
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=original_level)
         return result
 
     def _upload_folder_to_s3(

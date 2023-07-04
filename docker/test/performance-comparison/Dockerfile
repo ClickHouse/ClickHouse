@@ -1,5 +1,10 @@
 # docker build -t clickhouse/performance-comparison .
-FROM ubuntu:20.04
+
+# Using ubuntu:22.04 over 20.04 as all other images, since:
+# a) ubuntu 20.04 has too old parallel, and does not support --memsuspend
+# b) anyway for perf tests it should not be important (backward compatiblity
+#    with older ubuntu had been checked lots of times in various tests)
+FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -37,6 +42,8 @@ RUN apt-get update \
             wget \
             rustc \
             cargo \
+            ripgrep \
+            zstd \
     && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \

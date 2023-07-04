@@ -1,6 +1,7 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -52,23 +53,41 @@ bool DDLMatcherBase::needChildVisit(const ASTPtr & node, const ASTPtr & child)
     return true;
 }
 
-ssize_t DDLMatcherBase::getPositionOfTableNameArgument(const ASTFunction & function)
+ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToEvaluate(const ASTFunction & function)
 {
-    if (function.name == "joinGet" ||
-        function.name == "dictHas" ||
-        function.name == "dictIsIn" ||
-        function.name.starts_with("dictGet"))
+    if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
         return 0;
 
-    if (Poco::toLower(function.name) == "in")
+    return -1;
+}
+
+ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction & function)
+{
+    ssize_t maybe_res = getPositionOfTableNameArgumentToEvaluate(function);
+    if (0 <= maybe_res)
+        return maybe_res;
+
+    if (functionIsInOrGlobalInOperator(function.name))
+    {
+        if (function.children.empty())
+            return -1;
+
+        const auto * args = function.children[0]->as<ASTExpressionList>();
+        if (!args || args->children.size() != 2)
+            return -1;
+
+        if (args->children[1]->as<ASTFunction>())
+            return -1;
+
         return 1;
+    }
 
     return -1;
 }
 
 void DDLLoadingDependencyVisitor::visit(const ASTFunction & function, Data & data)
 {
-    ssize_t table_name_arg_idx = getPositionOfTableNameArgument(function);
+    ssize_t table_name_arg_idx = getPositionOfTableNameArgumentToVisit(function);
     if (table_name_arg_idx < 0)
         return;
     extractTableNameFromArgument(function, data, table_name_arg_idx);
@@ -84,7 +103,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
     auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
 
-    if (!info || !info->is_local)
+    if (!info || !info->is_local || info->table_name.table.empty())
         return;
 
     if (info->table_name.database.empty())
@@ -96,10 +115,13 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (!storage.engine)
         return;
-    if (storage.engine->name != "Dictionary")
-        return;
 
-    extractTableNameFromArgument(*storage.engine, data, 0);
+    if (storage.engine->name == "Distributed")
+        /// Checks that dict* expression was used as sharding_key and builds dependency between the dictionary and current table.
+        /// Distributed(logs, default, hits[, sharding_key[, policy_name]])
+        extractTableNameFromArgument(*storage.engine, data, 3);
+    else if (storage.engine->name == "Dictionary")
+        extractTableNameFromArgument(*storage.engine, data, 0);
 }
 
 
@@ -112,7 +134,29 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     QualifiedTableName qualified_name;
 
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
-    if (const auto * literal = arg->as<ASTLiteral>())
+
+    if (const auto * dict_function = arg->as<ASTFunction>())
+    {
+        if (!functionIsDictGet(dict_function->name))
+            return;
+
+        /// Get the dictionary name from `dict*` function.
+        const auto * literal_arg = dict_function->arguments->as<ASTExpressionList>()->children[0].get();
+        const auto * dictionary_name = literal_arg->as<ASTLiteral>();
+
+        if (!dictionary_name)
+            return;
+
+        if (dictionary_name->value.getType() != Field::Types::String)
+            return;
+
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
+        if (!maybe_qualified_name)
+            return;
+
+        qualified_name = std::move(*maybe_qualified_name);
+    }
+    else if (const auto * literal = arg->as<ASTLiteral>())
     {
         if (literal->value.getType() != Field::Types::String)
             return;
@@ -148,5 +192,4 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     }
     data.dependencies.emplace(std::move(qualified_name));
 }
-
 }

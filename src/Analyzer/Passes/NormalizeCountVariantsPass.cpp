@@ -14,12 +14,17 @@ namespace DB
 namespace
 {
 
-class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>
+class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>
 {
 public:
-    explicit NormalizeCountVariantsVisitor(ContextPtr context_) : context(std::move(context_)) {}
+    using Base = InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>;
+    using Base::Base;
+
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_normalize_count_variants)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || (function_node->getFunctionName() != "count" && function_node->getFunctionName() != "sum"))
             return;
@@ -41,24 +46,19 @@ public:
         }
         else if (function_node->getFunctionName() == "sum" &&
             first_argument_constant_literal.getType() == Field::Types::UInt64 &&
-            first_argument_constant_literal.get<UInt64>() == 1 &&
-            !context->getSettingsRef().aggregate_functions_null_for_empty)
+            first_argument_constant_literal.get<UInt64>() == 1)
         {
             resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
         }
     }
 private:
-    ContextPtr context;
-
     static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
-        auto function_result_type = function_node.getResultType();
-
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

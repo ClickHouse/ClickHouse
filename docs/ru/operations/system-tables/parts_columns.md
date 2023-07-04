@@ -147,4 +147,3 @@ column_marks_bytes:                    48
 **Смотрите также**
 
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
-

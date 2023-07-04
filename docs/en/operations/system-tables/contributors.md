@@ -7,7 +7,7 @@ Contains information about contributors. The order is random at query execution 
 
 Columns:
 
--   `name` (String) — Contributor (author) name from git log.
+- `name` (String) — Contributor (author) name from git log.
 
 **Example**
 
@@ -41,4 +41,3 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 │ Olga Khvostikova │
 └──────────────────┘
 ```
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/contributors) <!--hide-->

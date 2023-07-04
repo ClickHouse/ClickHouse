@@ -9,22 +9,27 @@ from typing import List, Tuple
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from build_download_helper import download_unit_tests
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, update_mergeable_check
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
+from docker_pull_helper import get_image_with_version
+from env_helper import TEMP_PATH, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, TestResult
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 IMAGE_NAME = "clickhouse/unit-test"
@@ -40,20 +45,20 @@ def get_test_name(line):
 
 def process_results(
     result_folder: str,
-) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
+) -> Tuple[str, str, TestResults, List[str]]:
     OK_SIGN = "OK ]"
     FAILED_SIGN = "FAILED  ]"
     SEGFAULT = "Segmentation fault"
     SIGNAL = "received signal SIG"
     PASSED = "PASSED"
 
-    summary = []  # type: List[Tuple[str, str]]
+    test_results = []  # type: TestResults
     total_counter = 0
     failed_counter = 0
     result_log_path = f"{result_folder}/test_result.txt"
     if not os.path.exists(result_log_path):
         logging.info("No output log on path %s", result_log_path)
-        return "error", "No output log", summary, []
+        return "error", "No output log", test_results, []
 
     status = "success"
     description = ""
@@ -64,13 +69,13 @@ def process_results(
                 logging.info("Found ok line: '%s'", line)
                 test_name = get_test_name(line.strip())
                 logging.info("Test name: '%s'", test_name)
-                summary.append((test_name, "OK"))
+                test_results.append(TestResult(test_name, "OK"))
                 total_counter += 1
             elif FAILED_SIGN in line and "listed below" not in line and "ms)" in line:
                 logging.info("Found fail line: '%s'", line)
                 test_name = get_test_name(line.strip())
                 logging.info("Test name: '%s'", test_name)
-                summary.append((test_name, "FAIL"))
+                test_results.append(TestResult(test_name, "FAIL"))
                 total_counter += 1
                 failed_counter += 1
             elif SEGFAULT in line:
@@ -99,48 +104,45 @@ def process_results(
             f"fail: {failed_counter}, passed: {total_counter - failed_counter}"
         )
 
-    return status, description, summary, [result_log_path]
+    return status, description, test_results, [result_log_path]
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
-    reports_path = REPORTS_PATH
-
     check_name = sys.argv[1]
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    if not os.path.exists(TEMP_PATH):
+        os.makedirs(TEMP_PATH)
 
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = get_image_with_version(REPORTS_PATH, IMAGE_NAME)
 
-    download_unit_tests(check_name, reports_path, temp_path)
+    download_unit_tests(check_name, REPORTS_PATH, TEMP_PATH)
 
-    tests_binary_path = os.path.join(temp_path, "unit_tests_dbms")
+    tests_binary_path = os.path.join(TEMP_PATH, "unit_tests_dbms")
     os.chmod(tests_binary_path, 0o777)
 
-    test_output = os.path.join(temp_path, "test_output")
+    test_output = os.path.join(TEMP_PATH, "test_output")
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
     run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
 
     logging.info("Going to run func tests: %s", run_command)
 
@@ -151,7 +153,7 @@ if __name__ == "__main__":
         else:
             logging.info("Run failed")
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(test_output)
@@ -168,7 +170,7 @@ if __name__ == "__main__":
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -182,5 +184,9 @@ if __name__ == "__main__":
 
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "error":
+    if state == "failure":
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

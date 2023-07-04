@@ -60,12 +60,12 @@ public:
 
     ~MergeTreeWriteAheadLog();
 
-    void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
     std::vector<MergeTreeMutableDataPartPtr> restore(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        std::unique_lock<std::mutex> & parts_lock);
+        std::unique_lock<std::mutex> & parts_lock,
+        bool readonly);
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;
     static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
@@ -76,7 +76,6 @@ public:
 private:
     void init();
     void rotate(const std::unique_lock<std::mutex> & lock);
-    void sync(std::unique_lock<std::mutex> & lock);
 
     const MergeTreeData & storage;
     DiskPtr disk;

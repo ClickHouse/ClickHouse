@@ -11,20 +11,21 @@ import boto3  # type: ignore
 import requests  # type: ignore
 from github import Github
 
+from build_download_helper import get_build_name_for_check
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from compress_files import compress_fast
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
-from stopwatch import Stopwatch
-from upload_result_helper import upload_results
-from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from compress_files import compress_fast
-from commit_status_helper import post_commit_status
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from version_helper import get_version_from_repo
-from tee_popen import TeePopen
+from report import TestResults, TestResult
+from s3_helper import S3Helper
 from ssh import SSHKey
-from build_download_helper import get_build_name_for_check
-from rerun_helper import RerunHelper
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
+from upload_result_helper import upload_results
+from version_helper import get_version_from_repo
+from build_check import get_release_or_pr
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -44,8 +45,8 @@ CRASHED_TESTS_ANCHOR = "# Crashed tests"
 FAILED_TESTS_ANCHOR = "# Failed tests"
 
 
-def _parse_jepsen_output(path):
-    test_results = []
+def _parse_jepsen_output(path: str) -> TestResults:
+    test_results = []  # type: TestResults
     current_type = ""
     with open(path, "r") as f:
         for line in f:
@@ -59,7 +60,7 @@ def _parse_jepsen_output(path):
             if (
                 line.startswith("store/clickhouse") or line.startswith("clickhouse")
             ) and current_type:
-                test_results.append((line.strip(), current_type))
+                test_results.append(TestResult(line.strip(), current_type))
 
     return test_results
 
@@ -180,10 +181,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
     check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -209,12 +211,7 @@ if __name__ == "__main__":
 
     build_name = get_build_name_for_check(check_name)
 
-    if pr_info.number == 0:
-        version = get_version_from_repo()
-        release_or_pr = f"{version.major}.{version.minor}"
-    else:
-        # PR number for anything else
-        release_or_pr = str(pr_info.number)
+    release_or_pr, _ = get_release_or_pr(pr_info, get_version_from_repo())
 
     # This check run separately from other checks because it requires exclusive
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
@@ -251,7 +248,7 @@ if __name__ == "__main__":
         )
         logging.info("Going to run jepsen: %s", cmd)
 
-        run_log_path = os.path.join(TEMP_PATH, "runlog.log")
+        run_log_path = os.path.join(TEMP_PATH, "run.log")
 
         with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
@@ -266,20 +263,20 @@ if __name__ == "__main__":
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
-        if any(r[1] == "FAIL" for r in test_result):
+        if any(r.status == "FAIL" for r in test_result):
             status = "failure"
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         compress_fast(
             os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.gz"),
+            os.path.join(result_path, "jepsen_store.tar.zst"),
         )
-        additional_data.append(os.path.join(result_path, "jepsen_store.tar.gz"))
+        additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
     except Exception as ex:
         print("Exception", ex)
         status = "failure"
         description = "No Jepsen output log"
-        test_result = [("No Jepsen output log", "FAIL")]
+        test_result = [TestResult("No Jepsen output log", "FAIL")]
 
     s3_helper = S3Helper()
     report_url = upload_results(
@@ -292,7 +289,7 @@ if __name__ == "__main__":
     )
 
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
 
     ch_helper = ClickHouseHelper()
     prepared_events = prepare_tests_results_for_clickhouse(

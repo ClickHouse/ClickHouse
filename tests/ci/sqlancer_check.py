@@ -4,29 +4,36 @@ import logging
 import subprocess
 import os
 import sys
-from typing import List, Tuple
+from typing import List
 
 from github import Github
 
+from build_download_helper import get_build_name_for_check, read_build_urls
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import (
+    RerunHelper,
+    format_description,
+    get_commit,
+    post_commit_status,
+)
+from docker_pull_helper import get_image_with_version
 from env_helper import (
-    GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     REPORTS_PATH,
-    REPO_COPY,
     TEMP_PATH,
 )
-from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from build_download_helper import get_build_name_for_check, read_build_urls
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from upload_result_helper import upload_results
+from report import TestResults, TestResult
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
+from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/sqlancer-test"
+
+
+def get_pull_command(docker_image):
+    return f"docker pull {docker_image}"
 
 
 def get_run_command(download_url, workspace_path, image):
@@ -42,19 +49,12 @@ def get_run_command(download_url, workspace_path, image):
     )
 
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(GITHUB_REPOSITORY)
-    commit = repo.get_commit(commit_sha)
-    return commit
-
-
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
-    repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
@@ -65,8 +65,9 @@ if __name__ == "__main__":
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -92,10 +93,25 @@ if __name__ == "__main__":
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
 
+    pull_command = get_pull_command(docker_image)
+
+    logging.info("Going to pull image %s", pull_command)
+
+    pull_log_path = os.path.join(workspace_path, "pull.log")
+    with open(pull_log_path, "w", encoding="utf-8") as log:
+        with subprocess.Popen(
+            pull_command, shell=True, stderr=log, stdout=log
+        ) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Pull successfully")
+            else:
+                logging.info("Pull failed")
+
     run_command = get_run_command(build_url, workspace_path, docker_image)
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(workspace_path, "runlog.log")
+    run_log_path = os.path.join(workspace_path, "run.log")
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -108,11 +124,6 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    check_name_lower = (
-        check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
-    )
-    s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_lower}/"
-
     tests = [
         "TLPGroupBy",
         "TLPHaving",
@@ -124,6 +135,7 @@ if __name__ == "__main__":
 
     paths = [
         run_log_path,
+        pull_log_path,
         os.path.join(workspace_path, "clickhouse-server.log"),
         os.path.join(workspace_path, "stderr.log"),
         os.path.join(workspace_path, "stdout.log"),
@@ -138,29 +150,31 @@ if __name__ == "__main__":
     report_url = GITHUB_RUN_URL
 
     status = "success"
-    test_results = []  # type: List[Tuple[str, str]]
+    test_results = []  # type: TestResults
     # Try to get status message saved by the SQLancer
     try:
-        # with open(
-        #     os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-        # ) as status_f:
-        #     status = status_f.readline().rstrip("\n")
+        with open(
+            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
+        ) as status_f:
+            status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
-            test_results.append(("Server crashed", "FAIL"))
+            test_results.append(TestResult("Server crashed", "FAIL"))
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
             for line in summary_f:
                 l = line.rstrip("\n").split("\t")
-                test_results.append((l[0], l[1]))
+                test_results.append(TestResult(l[0], l[1]))
 
         with open(
             os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
         ) as desc_f:
-            description = desc_f.readline().rstrip("\n")[:140]
+            description = desc_f.readline().rstrip("\n")
     except:
-        # status = "failure"
+        status = "failure"
         description = "Task failed: $?=" + str(retcode)
+
+    description = format_description(description)
 
     report_url = upload_results(
         s3_helper,
@@ -169,15 +183,12 @@ if __name__ == "__main__":
         test_results,
         paths,
         check_name,
-        False,
     )
 
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
-
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
     print(f"::notice:: {check_name} Report url: {report_url}")
 
     ch_helper = ClickHouseHelper()
-
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         test_results,
@@ -187,8 +198,8 @@ if __name__ == "__main__":
         report_url,
         check_name,
     )
-
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    print(f"::notice Result: '{status}', '{description}', '{report_url}'")
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
+
+if __name__ == "__main__":
+    main()

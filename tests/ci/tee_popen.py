@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
 from io import TextIOWrapper
+from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
 from threading import Thread
 from time import sleep
-from typing import Optional
+from typing import Optional, Union
 import logging
 import os
 import sys
 
 
-# Very simple tee logic implementation. You can specify shell command, output
+# Very simple tee logic implementation. You can specify a shell command, output
 # logfile and env variables. After TeePopen is created you can only wait until
 # it finishes. stderr and stdout will be redirected both to specified file and
 # stdout.
@@ -18,7 +19,7 @@ class TeePopen:
     def __init__(
         self,
         command: str,
-        log_file: str,
+        log_file: Union[str, Path],
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
     ):
@@ -28,11 +29,13 @@ class TeePopen:
         self.env = env or os.environ.copy()
         self._process = None  # type: Optional[Popen]
         self.timeout = timeout
+        self.timeout_exceeded = False
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
         sleep(self.timeout)
+        self.timeout_exceeded = True
         while self.process.poll() is None:
             logging.warning(
                 "Killing process %s, timeout %s exceeded",
@@ -61,9 +64,19 @@ class TeePopen:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.wait()
+        if self.timeout_exceeded:
+            exceeded_log = (
+                f"Command `{self.command}` has failed, "
+                f"timeout {self.timeout}s is exceeded"
+            )
+            if self.process.stdout is not None:
+                sys.stdout.write(exceeded_log)
+
+            self.log_file.write(exceeded_log)
+
         self.log_file.close()
 
-    def wait(self):
+    def wait(self) -> int:
         if self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)

@@ -78,7 +78,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
         const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
 
         if (!declare_column || !declare_column->data_type)
-            throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Missing type in definition of column.");
 
         bool is_nullable = true;
         bool is_unsigned = false;
@@ -147,7 +147,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
 static ColumnsDescription createColumnsDescription(const NamesAndTypesList & columns_name_and_type, const ASTExpressionList * columns_definition)
 {
     if (columns_name_and_type.size() != columns_definition->children.size())
-            throw Exception("Columns of different size provided.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns of different size provided.");
 
     ColumnsDescription columns_description;
 
@@ -155,7 +155,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
     /// (see git blame for details).
     auto column_name_and_type = columns_name_and_type.begin();
-    auto declare_column_ast = columns_definition->children.begin();
+    const auto * declare_column_ast = columns_definition->children.begin();
     for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
@@ -337,7 +337,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         WhichDataType which(type);
 
         if (which.isNullable())
-            throw Exception("LOGICAL ERROR: MySQL primary key must be not null, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: MySQL primary key must be not null, it is a bug.");
 
         if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {
@@ -440,7 +440,7 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
                 missing_columns_definition = false;
         }
         if (missing_columns_definition)
-            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
     }
 }
 
@@ -473,8 +473,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     ColumnsDescription columns_description = createColumnsDescription(columns_name_and_type, create_defines->columns);
 
     if (primary_keys.empty())
-        throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
-            + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The {}.{} cannot be materialized, because there is no primary keys.",
+            backQuoteIfNeed(mysql_database), backQuoteIfNeed(create_query.table));
 
     auto columns = std::make_shared<ASTColumns>();
 
@@ -572,7 +572,7 @@ ASTs InterpreterDropImpl::getRewrittenQueries(
 void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, ContextPtr /*context*/)
 {
     if (rename_query.exchange)
-        throw Exception("Cannot execute exchange for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot execute exchange for external ddl query.");
 }
 
 ASTs InterpreterRenameImpl::getRewrittenQueries(
@@ -581,19 +581,19 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
     ASTRenameQuery::Elements elements;
     for (const auto & rename_element : rename_query.elements)
     {
-        const auto & to_database = resolveDatabase(rename_element.to.database, mysql_database, mapped_to_database, context);
-        const auto & from_database = resolveDatabase(rename_element.from.database, mysql_database, mapped_to_database, context);
+        const auto & to_database = resolveDatabase(rename_element.to.getDatabase(), mysql_database, mapped_to_database, context);
+        const auto & from_database = resolveDatabase(rename_element.from.getDatabase(), mysql_database, mapped_to_database, context);
 
         if ((from_database == mapped_to_database || to_database == mapped_to_database) && to_database != from_database)
-            throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
 
         if (from_database == mapped_to_database)
         {
             elements.push_back(ASTRenameQuery::Element());
-            elements.back().from.database = mapped_to_database;
-            elements.back().from.table = rename_element.from.table;
-            elements.back().to.database = mapped_to_database;
-            elements.back().to.table = rename_element.to.table;
+            elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            elements.back().from.table = rename_element.from.table->clone();
+            elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            elements.back().to.table = rename_element.to.table->clone();
         }
     }
 
@@ -718,7 +718,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 auto modify_columns = getColumnsList(alter_command->additional_columns);
 
                 if (modify_columns.size() != 1)
-                    throw Exception("It is a bug", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "It is a bug");
 
                 new_column_name = modify_columns.front().name;
 
@@ -751,17 +751,17 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             const auto & to_database = resolveDatabase(alter_command->new_database_name, mysql_database, mapped_to_database, context);
 
             if (to_database != mapped_to_database)
-                throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
 
             /// For ALTER TABLE table_name RENAME TO new_table_name_1, RENAME TO new_table_name_2;
             /// We just need to generate RENAME TABLE table_name TO new_table_name_2;
             if (rewritten_rename_query->elements.empty())
                 rewritten_rename_query->elements.push_back(ASTRenameQuery::Element());
 
-            rewritten_rename_query->elements.back().from.database = mapped_to_database;
-            rewritten_rename_query->elements.back().from.table = alter_query.table;
-            rewritten_rename_query->elements.back().to.database = mapped_to_database;
-            rewritten_rename_query->elements.back().to.table = alter_command->new_table_name;
+            rewritten_rename_query->elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rewritten_rename_query->elements.back().from.table = std::make_shared<ASTIdentifier>(alter_query.table);
+            rewritten_rename_query->elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rewritten_rename_query->elements.back().to.table = std::make_shared<ASTIdentifier>(alter_command->new_table_name);
         }
     }
 

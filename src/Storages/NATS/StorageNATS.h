@@ -5,7 +5,6 @@
 #include <uv.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/NATS/Buffer_fwd.h>
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
@@ -13,6 +12,9 @@
 
 namespace DB
 {
+
+class NATSConsumer;
+using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
 
 class StorageNATS final : public IStorage, WithContext
 {
@@ -49,11 +51,14 @@ public:
         size_t /* max_block_size */,
         size_t /* num_streams */) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
-    void pushReadBuffer(ConsumerBufferPtr buf);
-    ConsumerBufferPtr popReadBuffer();
-    ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
+    /// We want to control the number of rows in a chunk inserted into NATS
+    bool prefersLargeBlocks() const override { return false; }
+
+    void pushConsumer(NATSConsumerPtr consumer);
+    NATSConsumerPtr popConsumer();
+    NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
@@ -69,9 +74,9 @@ private:
     std::vector<String> subjects;
 
     const String format_name;
-    char row_delimiter;
     const String schema_name;
     size_t num_consumers;
+    size_t max_rows_per_message;
 
     Poco::Logger * log;
 
@@ -80,11 +85,11 @@ private:
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
-    std::mutex buffers_mutex;
-    std::vector<ConsumerBufferPtr> buffers; /// available buffers for NATS consumers
+    std::mutex consumers_mutex;
+    std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
-    /// to setup size of inner buffer for received messages
+    /// to setup size of inner consumer for received messages
     uint32_t queue_size;
 
     std::once_flag flag; /// remove exchange only once
@@ -114,8 +119,7 @@ private:
     mutable bool drop_table = false;
     bool is_attach;
 
-    ConsumerBufferPtr createReadBuffer();
-    ProducerBufferPtr createWriteBuffer(const std::string & subject);
+    NATSConsumerPtr createConsumer();
 
     bool isSubjectInSubscriptions(const std::string & subject);
 

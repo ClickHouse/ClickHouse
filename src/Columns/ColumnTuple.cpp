@@ -47,7 +47,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
     for (auto & column : mutable_columns)
     {
         if (isColumnConst(*column))
-            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
 
         columns.push_back(std::move(column));
     }
@@ -57,7 +57,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
     for (const auto & column : columns)
         if (isColumnConst(*column))
-            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
 
     auto column_tuple = ColumnTuple::create(MutableColumns());
     column_tuple->columns.assign(columns.begin(), columns.end());
@@ -69,7 +69,7 @@ ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 {
     for (const auto & column : columns)
         if (isColumnConst(*column))
-            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
 
     auto column_tuple = ColumnTuple::create(MutableColumns());
     column_tuple->columns = columns;
@@ -127,12 +127,12 @@ bool ColumnTuple::isDefaultAt(size_t n) const
 
 StringRef ColumnTuple::getDataAt(size_t) const
 {
-    throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
 
 void ColumnTuple::insertData(const char *, size_t)
 {
-    throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
 void ColumnTuple::insert(const Field & x)
@@ -141,7 +141,7 @@ void ColumnTuple::insert(const Field & x)
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
-        throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
@@ -153,7 +153,7 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 
     const size_t tuple_size = columns.size();
     if (src.columns.size() != tuple_size)
-        throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
@@ -211,8 +211,8 @@ void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
     auto s = size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     for (const auto & column : columns)
         column->updateWeakHash32(hash);
@@ -495,15 +495,15 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
@@ -552,17 +552,22 @@ ColumnPtr ColumnTuple::compress() const
     }
 
     return ColumnCompressed::create(size(), byte_size,
-        [compressed = std::move(compressed)]() mutable
+        [my_compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : compressed)
+            for (auto & column : my_compressed)
                 column = column->decompress();
-            return ColumnTuple::create(compressed);
+            return ColumnTuple::create(my_compressed);
         });
 }
 
 double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 {
     return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
+}
+
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnTuple>();
 }
 
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const

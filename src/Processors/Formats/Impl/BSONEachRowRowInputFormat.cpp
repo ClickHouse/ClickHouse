@@ -18,6 +18,7 @@
 #include <Columns/ColumnMap.h>
 
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -52,10 +53,10 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , name_map(header_.getNamesToIndexesMap())
     , prev_positions(header_.columns())
     , types(header_.getDataTypes())
 {
+    name_map = getPort().getHeader().getNamesToIndexesMap();
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
@@ -63,20 +64,22 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index && prev_positions[key_index] && name == prev_positions[key_index]->getKey())
+    if (prev_positions.size() > key_index
+        && prev_positions[key_index] != Block::NameMap::const_iterator{}
+        && name == prev_positions[key_index]->first)
     {
-        return prev_positions[key_index]->getMapped();
+        return prev_positions[key_index]->second;
     }
     else
     {
-        auto * it = name_map.find(name);
+        const auto it = name_map.find(name);
 
-        if (it)
+        if (it != name_map.end())
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->getMapped();
+            return it->second;
         }
         else
             return UNKNOWN_FIELD;
@@ -145,15 +148,28 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
     }
     else
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
     }
+}
+
+static void readAndInsertIPv4(ReadBuffer & in, IColumn & column, BSONType bson_type)
+{
+    /// We expect BSON type Int32 as IPv4 value.
+    if (bson_type != BSONType::INT32)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Int32 into column with type IPv4");
+
+    UInt32 value;
+    readBinary(value, in);
+    assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
 }
 
 template <typename T>
 static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != BSONType::DOUBLE)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
 
     Float64 value;
     readBinary(value, in);
@@ -164,7 +180,8 @@ template <typename DecimalType, BSONType expected_bson_type>
 static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != expected_bson_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
 
     DecimalType value;
     readBinary(value, in);
@@ -185,12 +202,14 @@ template <typename ColumnType>
 static void readAndInsertBigInteger(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != BSONType::BINARY)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
 
     auto size = readBSONSize(in);
     auto subtype = getBSONBinarySubtype(readBSONType(in));
     if (subtype != BSONBinarySubtype::BINARY)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Binary subtype {} into column with type {}", getBSONBinarySubtypeName(subtype), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Binary subtype {} into column with type {}",
+                        getBSONBinarySubtypeName(subtype), data_type->getName());
 
     using ValueType = typename ColumnType::ValueType;
 
@@ -215,7 +234,7 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & fixed_string_column = assert_cast<ColumnFixedString &>(column);
         size_t n = fixed_string_column.getN();
         if (size > n)
-            throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
         auto & data = fixed_string_column.getChars();
 
@@ -265,6 +284,8 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     if (bson_type == BSONType::STRING || bson_type == BSONType::SYMBOL || bson_type == BSONType::JAVA_SCRIPT_CODE)
     {
         auto size = readBSONSize(in);
+        if (size == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size of a string (zero) in BSON");
         readAndInsertStringImpl<is_fixed_string>(in, column, size - 1);
         assertChar(0, in);
     }
@@ -282,7 +303,7 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     }
     else if (bson_type == BSONType::OBJECT_ID)
     {
-        readAndInsertStringImpl<is_fixed_string>(in, column, 12);
+        readAndInsertStringImpl<is_fixed_string>(in, column, BSON_OBJECT_ID_SIZE);
     }
     else
     {
@@ -290,37 +311,52 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     }
 }
 
+static void readAndInsertIPv6(ReadBuffer & in, IColumn & column, BSONType bson_type)
+{
+    if (bson_type != BSONType::BINARY)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into IPv6 column", getBSONTypeName(bson_type));
+
+    auto size = readBSONSize(in);
+    auto subtype = getBSONBinarySubtype(readBSONType(in));
+    if (subtype != BSONBinarySubtype::BINARY)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Binary subtype {} into IPv6 column", getBSONBinarySubtypeName(subtype));
+
+    if (size != sizeof(IPv6))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot parse value of type IPv6, size of binary data is not equal to the binary size of IPv6 value: {} != {}",
+            size,
+            sizeof(IPv6));
+
+    IPv6 value;
+    readBinary(value, in);
+    assert_cast<ColumnIPv6 &>(column).insertValue(value);
+}
+
+
 static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_type)
 {
-    if (bson_type == BSONType::BINARY)
-    {
-        auto size = readBSONSize(in);
-        auto subtype = getBSONBinarySubtype(readBSONType(in));
-        if (subtype == BSONBinarySubtype::UUID || subtype == BSONBinarySubtype::UUID_OLD)
-        {
-            if (size != sizeof(UUID))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot parse value of type UUID, size of binary data is not equal to the binary size of UUID value: {} != {}",
-                    size,
-                    sizeof(UUID));
-
-            UUID value;
-            readBinary(value, in);
-            assert_cast<ColumnUUID &>(column).insertValue(value);
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot insert BSON Binary subtype {} into UUID column",
-                getBSONBinarySubtypeName(subtype));
-        }
-    }
-    else
-    {
+    if (bson_type != BSONType::BINARY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into UUID column", getBSONTypeName(bson_type));
-    }
+
+    auto size = readBSONSize(in);
+    auto subtype = getBSONBinarySubtype(readBSONType(in));
+    if (subtype != BSONBinarySubtype::UUID && subtype != BSONBinarySubtype::UUID_OLD)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot insert BSON Binary subtype {} into UUID column",
+            getBSONBinarySubtypeName(subtype));
+
+    if (size != sizeof(UUID))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot parse value of type UUID, size of binary data is not equal to the binary size of UUID value: {} != {}",
+            size,
+            sizeof(UUID));
+
+    UUID value;
+    readBinary(value, in);
+    assert_cast<ColumnUUID &>(column).insertValue(value);
 }
 
 void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -374,18 +410,20 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
             auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
             if (!try_get_index)
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot parse tuple column with type {} from BSON array/embedded document field: tuple doesn't have element with name \"{}\"",
-                    data_type->getName(),
-                    name);
+                                ErrorCodes::INCORRECT_DATA,
+                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                                "tuple doesn't have element with name \"{}\"",
+                                data_type->getName(),
+                                name);
             index = *try_get_index;
         }
 
         if (index >= data_type_tuple->getElements().size())
             throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Cannot parse tuple column with type {} from BSON array/embedded document field: the number of fields BSON document exceeds the number of fields in tuple",
-                data_type->getName());
+                            ErrorCodes::INCORRECT_DATA,
+                            "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                            "the number of fields BSON document exceeds the number of fields in tuple",
+                            data_type->getName());
 
         readField(tuple_column.getColumn(index), data_type_tuple->getElement(index), nested_bson_type);
         ++read_nested_columns;
@@ -395,11 +433,12 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
     if (read_nested_columns != data_type_tuple->getElements().size())
         throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Cannot parse tuple column with type {} from BSON array/embedded document field, the number of fields in tuple and BSON document doesn't match: {} != {}",
-            data_type->getName(),
-            data_type_tuple->getElements().size(),
-            read_nested_columns);
+                        ErrorCodes::INCORRECT_DATA,
+                        "Cannot parse tuple column with type {} from BSON array/embedded document field, "
+                        "the number of fields in tuple and BSON document doesn't match: {} != {}",
+                        data_type->getName(),
+                        data_type_tuple->getElements().size(),
+                        read_nested_columns);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -409,9 +448,6 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
 
     const auto * data_type_map = assert_cast<const DataTypeMap *>(data_type.get());
     const auto & key_data_type = data_type_map->getKeyType();
-    if (!isStringOrFixedString(key_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", key_data_type->getName());
-
     const auto & value_data_type = data_type_map->getValueType();
     auto & column_map = assert_cast<ColumnMap &>(column);
     auto & key_column = column_map.getNestedData().getColumn(0);
@@ -425,7 +461,8 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        key_column.insertData(name.data, name.size);
+        ReadBufferFromMemory buf(name.data, name.size);
+        key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
         readField(value_column, value_data_type, nested_bson_type);
     }
 
@@ -445,7 +482,9 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         }
 
         if (!format_settings.null_as_default)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Null value into non-nullable column with type {}", getBSONTypeName(bson_type), data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot insert BSON Null value into non-nullable column with type {}",
+                            data_type->getName());
 
         column.insertDefault();
         return false;
@@ -470,6 +509,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             lc_column.insertFromFullColumn(*tmp_column, 0);
             return res;
         }
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             readAndInsertInteger<Int8>(*in, column, data_type, bson_type);
@@ -480,6 +520,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertInteger<UInt8>(*in, column, data_type, bson_type);
             return true;
         }
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             readAndInsertInteger<Int16>(*in, column, data_type, bson_type);
@@ -578,6 +619,16 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertString<false>(*in, column, bson_type);
             return true;
         }
+        case TypeIndex::IPv4:
+        {
+            readAndInsertIPv4(*in, column, bson_type);
+            return true;
+        }
+        case TypeIndex::IPv6:
+        {
+            readAndInsertIPv6(*in, column, bson_type);
+            return true;
+        }
         case TypeIndex::UUID:
         {
             readAndInsertUUID(*in, column, bson_type);
@@ -664,7 +715,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::OBJECT_ID:
         {
-            in.ignore(12);
+            in.ignore(BSON_OBJECT_ID_SIZE);
             break;
         }
         case BSONType::REGEXP:
@@ -677,7 +728,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size;
             readBinary(size, in);
-            in.ignore(size + 12);
+            in.ignore(size + BSON_DB_POINTER_SIZE);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
@@ -737,6 +788,9 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         }
         else
         {
+            if (seen_columns[index])
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }
@@ -758,6 +812,14 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         ext.read_columns.assign(read_columns.size(), true);
 
     return true;
+}
+
+void BSONEachRowRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    read_columns.clear();
+    seen_columns.clear();
+    prev_positions.clear();
 }
 
 BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_)
@@ -796,13 +858,17 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
-        case BSONType::OBJECT_ID: [[fallthrough]];
         case BSONType::STRING:
         {
             BSONSizeT size;
             readBinary(size, in);
             in.ignore(size);
             return std::make_shared<DataTypeString>();
+        }
+        case BSONType::OBJECT_ID:;
+        {
+            in.ignore(BSON_OBJECT_ID_SIZE);
+            return makeNullable(std::make_shared<DataTypeFixedString>(BSON_OBJECT_ID_SIZE));
         }
         case BSONType::DOCUMENT:
         {
@@ -931,6 +997,10 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     {
         BSONSizeT document_size;
         readBinary(document_size, in);
+
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         if (min_bytes != 0 && document_size > 10 * min_bytes)
             throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
@@ -938,9 +1008,12 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
 
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
-        memcpy(memory.data() + old_size, reinterpret_cast<char *>(&document_size), sizeof(document_size));
+        unalignedStore<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
     }
@@ -954,6 +1027,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
+    factory.registerFileExtension("bson", "BSONEachRow");
 }
 
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory)

@@ -44,7 +44,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeExtremes(Chunk chunk)
 {
     auto num_rows = chunk.getNumRows();
     if (num_rows != 2)
-        throw Exception("Got " + toString(num_rows) + " in extremes chunk, expected 2", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in extremes chunk, expected 2", num_rows);
 
     const auto & columns = chunk.getColumns();
     JSONUtils::writeFieldDelimiter(*ostr, 2);
@@ -66,7 +66,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeTotals(Chunk chunk)
 {
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
-        throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in totals chunk, expected 1", num_rows);
 
     const auto & columns = chunk.getColumns();
     JSONUtils::writeFieldDelimiter(*ostr, 2);
@@ -77,10 +77,6 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeTotals(Chunk chunk)
 
 void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
 {
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
-
     JSONUtils::writeAdditionalInfo(
         rows,
         statistics.rows_before_limit,
@@ -95,12 +91,18 @@ void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
     ostr->next();
 }
 
+void JSONColumnsWithMetadataBlockOutputFormat::resetFormatterImpl()
+{
+    JSONColumnsBlockOutputFormat::resetFormatterImpl();
+    rows = 0;
+    statistics = Statistics();
+}
+
 void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONColumnsWithMetadata", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         return std::make_shared<JSONColumnsWithMetadataBlockOutputFormat>(buf, sample, format_settings);

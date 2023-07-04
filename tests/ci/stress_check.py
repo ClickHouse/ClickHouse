@@ -5,26 +5,27 @@ import logging
 import subprocess
 import os
 import sys
+from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from docker_pull_helper import get_image_with_version
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, read_test_results
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 def get_run_command(
@@ -47,8 +48,8 @@ def get_run_command(
 
 def process_results(
     result_folder: str, server_log_path: str, run_log_path: str
-) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
-    test_results = []  # type: List[Tuple[str, str]]
+) -> Tuple[str, str, TestResults, List[str]]:
+    test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content
@@ -90,16 +91,23 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = os.path.join(result_folder, "test_results.tsv")
-    with open(results_path, "r", encoding="utf-8") as results_file:
-        test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
-    if len(test_results) == 0:
-        raise Exception("Empty results")
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
+        test_results = read_test_results(results_path, True)
+        if len(test_results) == 0:
+            raise Exception("Empty results")
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 
 
-if __name__ == "__main__":
+def run_stress_test(docker_image_name):
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -116,13 +124,14 @@ if __name__ == "__main__":
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/stress-test")
+    docker_image = get_image_with_version(reports_path, docker_image_name)
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
@@ -138,7 +147,7 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(temp_path, "runlog.log")
+    run_log_path = os.path.join(temp_path, "run.log")
 
     run_command = get_run_command(
         packages_path, result_path, repo_tests_path, server_log_path, docker_image
@@ -171,7 +180,7 @@ if __name__ == "__main__":
     )
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -184,5 +193,9 @@ if __name__ == "__main__":
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "error":
+    if state == "failure":
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    run_stress_test("clickhouse/stress-test")

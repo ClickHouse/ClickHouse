@@ -55,9 +55,6 @@ struct ModuloByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
         /// Modulo with too small divisor.
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
@@ -75,14 +72,12 @@ struct ModuloByConstantImpl
             return;
         }
 
-#pragma GCC diagnostic pop
-
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         /// Division by min negative value.
         if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
-            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
@@ -179,15 +174,15 @@ using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloIm
 
 REGISTER_FUNCTION(PositiveModulo)
 {
-    factory.registerFunction<FunctionPositiveModulo>(
+    factory.registerFunction<FunctionPositiveModulo>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
 Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
 In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
         )",
-            Documentation::Examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);"}},
-            Documentation::Categories{"Arithmetic"}},
+            .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
+            .categories{"Arithmetic"}},
         FunctionFactory::CaseInsensitive);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);

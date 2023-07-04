@@ -111,6 +111,3 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 `Join`表的数据总是保存在内存中。当往表中插入行记录时，CH会将数据块保存在硬盘目录中，这样服务器重启时数据可以恢复。
 
 如果服务器非正常重启，保存在硬盘上的数据块会丢失或被损坏。这种情况下，需要手动删除被损坏的数据文件。
-
-
-[原始文档](https://clickhouse.com/docs/en/operations/table_engines/join/) <!--hide-->

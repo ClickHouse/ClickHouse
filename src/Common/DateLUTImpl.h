@@ -10,6 +10,8 @@
 #include <type_traits>
 
 
+#define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
+
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
 #define DATE_LUT_MAX_YEAR 2299 /// Last supported year (complete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
@@ -38,6 +40,15 @@ enum class WeekModeFlag : UInt8
     NEWYEAR_DAY = 8
 };
 using YearWeek = std::pair<UInt16, UInt8>;
+
+/// Modes for toDayOfWeek() function.
+enum class WeekDayMode
+{
+    WeekStartsMonday1 = 0,
+    WeekStartsMonday0 = 1,
+    WeekStartsSunday0 = 2,
+    WeekStartsSunday1 = 3
+};
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -302,16 +313,16 @@ public:
 
     /// All functions below are thread-safe; arguments are not checked.
 
-    static ExtendedDayNum toDayNum(ExtendedDayNum d)
-    {
-        return d;
-    }
-
     static UInt32 saturateMinus(UInt32 x, UInt32 y)
     {
         UInt32 res = x - y;
         res &= -Int32(res <= x);
         return res;
+    }
+
+    static ExtendedDayNum toDayNum(ExtendedDayNum d)
+    {
+        return d;
     }
 
     static ExtendedDayNum toDayNum(LUTIndex d)
@@ -352,6 +363,27 @@ public:
             return toDayNum(LUTIndexWithSaturation(i - (lut[i].day_of_week - 1)));
         else
             return toDayNum(LUTIndex(i - (lut[i].day_of_week - 1)));
+    }
+
+    /// Round up to the last day of week.
+    template <typename DateOrTime>
+    inline Time toLastDayOfWeek(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return lut_saturated[i + (7 - lut[i].day_of_week)].date;
+        else
+            return lut[i + (7 - lut[i].day_of_week)].date;
+    }
+
+    template <typename DateOrTime>
+    inline auto toLastDayNumOfWeek(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(i + (7 - lut[i].day_of_week)));
+        else
+            return toDayNum(LUTIndex(i + (7 - lut[i].day_of_week)));
     }
 
     /// Round down to start of month.
@@ -619,8 +651,27 @@ public:
     template <typename DateOrTime>
     inline Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    /// 1-based, starts on Monday
     template <typename DateOrTime>
     inline UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
+
+    template <typename DateOrTime>
+    inline UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
+    {
+        WeekDayMode mode = check_week_day_mode(week_day_mode);
+
+        UInt8 res = toDayOfWeek(v);
+        using enum WeekDayMode;
+        bool start_from_sunday = (mode == WeekStartsSunday0 || mode == WeekStartsSunday1);
+        bool zero_based = (mode == WeekStartsMonday0 || mode == WeekStartsSunday0);
+
+        if (start_from_sunday)
+            res = res % 7 + 1;
+        if (zero_based)
+            --res;
+
+        return res;
+    }
 
     template <typename DateOrTime>
     inline UInt8 toDayOfMonth(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_month; }
@@ -828,10 +879,31 @@ public:
         }
         else
         {
+            const auto day_of_week = toDayOfWeek(v);
             if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-                return (toDayOfWeek(v) != 7) ? DayNum(saturateMinus(v, toDayOfWeek(v))) : toDayNum(v);
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
             else
-                return (toDayOfWeek(v) != 7) ? ExtendedDayNum(v - toDayOfWeek(v)) : toDayNum(v);
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        }
+    }
+
+    /// Get last day of week with week_mode, return Saturday or Sunday
+    template <typename DateOrTime>
+    inline auto toLastDayNumOfWeek(DateOrTime v, UInt8 week_mode) const
+    {
+        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
+        if (monday_first_mode)
+        {
+            return toLastDayNumOfWeek(v);
+        }
+        else
+        {
+            const auto day_of_week = toDayOfWeek(v);
+            v += 6;
+            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            else
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
         }
     }
 
@@ -842,6 +914,12 @@ public:
         if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
             week_format ^= static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
         return week_format;
+    }
+
+    /// Check and change mode to effective.
+    inline WeekDayMode check_week_day_mode(UInt8 mode) const /// NOLINT
+    {
+        return static_cast<WeekDayMode>(mode & 3);
     }
 
     /** Calculate weekday from d.
@@ -1204,6 +1282,11 @@ public:
         return res;
     }
 
+    template <typename DateOrTime>
+    inline DateTimeComponents toDateTimeComponents(DateOrTime v) const
+    {
+        return toDateTimeComponents(lut[toLUTIndex(v)].date);
+    }
 
     inline UInt64 toNumYYYYMMDDhhmmss(Time t) const
     {

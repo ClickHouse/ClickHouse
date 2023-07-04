@@ -43,7 +43,7 @@ When creating an `AggregatingMergeTree` table the same [clauses](../../../engine
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
@@ -109,7 +109,7 @@ INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
  VALUES (1667446031, 1, 6, 3)
 ```
 
-The data are inserted in both the table and the materialized view `test.mv_visits`.
+The data is inserted in both the table and the materialized view `test.mv_visits`.
 
 To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
 
@@ -123,4 +123,6 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

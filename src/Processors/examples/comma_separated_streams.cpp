@@ -102,8 +102,7 @@ try
     auto pipeline = QueryPipeline(std::move(input_format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
 
-    RowOutputFormatParams out_params;
-    OutputFormatPtr output_format = std::make_shared<CSVRowOutputFormat>(out_buf, sample, true, true, out_params, format_settings);
+    OutputFormatPtr output_format = std::make_shared<CSVRowOutputFormat>(out_buf, sample, true, true, format_settings);
     Block res;
     while (reader->pull(res))
     {

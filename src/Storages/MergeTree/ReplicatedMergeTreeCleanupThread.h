@@ -3,8 +3,8 @@
 #include <base/types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include <Common/Stopwatch.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
 
@@ -32,6 +32,8 @@ public:
 
     void stop() { task->deactivate(); }
 
+    void wakeupEarlierIfNeeded();
+
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
@@ -39,11 +41,20 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     pcg64 rng{randomSeed()};
 
-    void run();
-    void iterate();
+    UInt64 sleep_ms;
 
-    /// Remove old records from ZooKeeper.
-    void clearOldLogs();
+    std::atomic<UInt64> prev_cleanup_timestamp_ms = 0;
+    std::atomic<bool> is_running = false;
+
+    AtomicStopwatch wakeup_check_timer;
+
+    void run();
+
+    /// Returns a number this is directly proportional to the number of cleaned up blocks
+    Float32 iterate();
+
+    /// Remove old records from ZooKeeper. Returns the number of removed logs
+    size_t clearOldLogs();
 
     /// The replica is marked as "lost" if it is inactive and its log pointer
     ///  is far behind and we are not going to keep logs for it.
@@ -52,18 +63,19 @@ private:
                           const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
                           size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper);
 
-    /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
-    void clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size);
-
-    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
-    void clearOldMutations();
-
     using NodeCTimeAndVersionCache = std::map<String, std::pair<Int64, Int32>>;
-    NodeCTimeAndVersionCache cached_block_stats;
+    /// Remove old block hashes from ZooKeeper. This is done by the leader replica. Returns the number of removed blocks
+    size_t clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats);
+
+    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica. Returns the number of removed mutations
+    size_t clearOldMutations();
+
+    NodeCTimeAndVersionCache cached_block_stats_for_sync_inserts;
+    NodeCTimeAndVersionCache cached_block_stats_for_async_inserts;
 
     struct NodeWithStat;
     /// Returns list of blocks (with their stat) sorted by ctime in descending order.
-    void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
+    void getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks, NodeCTimeAndVersionCache & cached_block_stats);
 
     /// TODO Removing old quorum/failed_parts
 };

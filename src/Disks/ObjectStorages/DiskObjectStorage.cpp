@@ -10,12 +10,20 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Common/CurrentMetrics.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskObjectStorageAsyncThreads;
+    extern const Metric DiskObjectStorageAsyncThreadsActive;
+}
+
 
 namespace DB
 {
@@ -26,6 +34,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 namespace
@@ -37,7 +46,8 @@ class AsyncThreadPoolExecutor : public Executor
 public:
     AsyncThreadPoolExecutor(const String & name_, int thread_pool_size)
         : name(name_)
-        , pool(ThreadPool(thread_pool_size)) {}
+        , pool(CurrentMetrics::DiskObjectStorageAsyncThreads, CurrentMetrics::DiskObjectStorageAsyncThreadsActive, thread_pool_size)
+    {}
 
     std::future<void> execute(std::function<void()> task) override
     {
@@ -126,6 +136,9 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
+    if (!metadata_storage->exists(local_path))
+        return;
+
     /// Protect against concurrent delition of files (for example because of a merge).
     if (metadata_storage->isFile(local_path))
     {
@@ -138,6 +151,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
+                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
                 e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
@@ -157,6 +171,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
+                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
                 e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
@@ -281,7 +296,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].absolute_path;
+        id = blobs_paths[0].remote_path;
     return id;
 }
 
@@ -293,7 +308,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
         return false;
     }
 
-    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
+    auto object = StoredObject(id);
     return object_storage->exists(object);
 }
 
@@ -514,24 +529,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         threadpool_size);
 }
 
-void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
-{
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
-}
-
-NameSet DiskObjectStorage::getCacheLayersNames() const
-{
-    NameSet cache_layers;
-    auto current_object_storage = object_storage;
-    while (current_object_storage->supportsCache())
-    {
-        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
-        cache_layers.insert(cached_object_storage->getCacheConfigName());
-        current_object_storage = cached_object_storage->getWrappedObjectStorage();
-    }
-    return cache_layers;
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
@@ -561,6 +558,27 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
 
     return result;
+}
+
+Strings DiskObjectStorage::getBlobPath(const String & path) const
+{
+    auto objects = getStorageObjects(path);
+    Strings res;
+    res.reserve(objects.size() + 1);
+    for (const auto & object : objects)
+        res.emplace_back(object.remote_path);
+    String objects_namespace = object_storage->getObjectsNamespace();
+    if (!objects_namespace.empty())
+        res.emplace_back(objects_namespace);
+    return res;
+}
+
+void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+{
+    LOG_TEST(log, "Write file: {}", path);
+    auto transaction = createObjectStorageTransaction();
+    transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
+    transaction->commit();
 }
 
 void DiskObjectStorage::applyNewSettings(
@@ -602,7 +620,7 @@ UInt64 DiskObjectStorage::getRevision() const
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)
-        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+        throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
     return disk;
 }
 

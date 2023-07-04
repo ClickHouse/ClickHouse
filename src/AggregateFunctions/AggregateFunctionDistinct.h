@@ -9,6 +9,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <IO/ReadHelpersArena.h>
 
 
 namespace DB
@@ -168,7 +169,7 @@ private:
 
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
-    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_)
+    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
     , nested_func(nested_func_)
     , arguments_num(arguments.size())
     {
@@ -253,11 +254,6 @@ public:
     String getName() const override
     {
         return nested_func->getName() + "Distinct";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return nested_func->getReturnType();
     }
 
     bool allocatesMemoryInArena() const override

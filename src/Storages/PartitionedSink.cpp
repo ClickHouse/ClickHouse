@@ -33,7 +33,7 @@ PartitionedSink::PartitionedSink(
     , context(context_)
     , sample_block(sample_block_)
 {
-    std::vector<ASTPtr> arguments(1, partition_by);
+    ASTs arguments(1, partition_by);
     ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
 
     auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
@@ -111,11 +111,11 @@ void PartitionedSink::consume(Chunk chunk)
     }
 }
 
-void PartitionedSink::onException()
+void PartitionedSink::onException(std::exception_ptr exception)
 {
     for (auto & [_, sink] : partition_id_to_sink)
     {
-        sink->onException();
+        sink->onException(exception);
     }
 }
 

@@ -2,7 +2,6 @@
 
 #include <base/sort.h>
 
-#include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
 #include <Columns/ColumnVector.h>
@@ -29,6 +28,7 @@
 namespace DB
 {
 struct Settings;
+class Arena;
 
 namespace ErrorCodes
 {
@@ -207,7 +207,7 @@ private:
         {
             // Fuse points if their text representations differ only in last digit
             auto min_diff = 10 * (points[left].mean + points[right].mean) * std::numeric_limits<Mean>::epsilon();
-            if (points[left].mean + min_diff >= points[right].mean)
+            if (points[left].mean + std::fabs(min_diff) >= points[right].mean)
             {
                 points[left] = points[left] + points[right];
             }
@@ -221,7 +221,7 @@ private:
     }
 
 public:
-    AggregateFunctionHistogramData() //-V730
+    AggregateFunctionHistogramData()
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
@@ -256,7 +256,7 @@ public:
         // nans break sort and compression
         // infs don't fit in bins partition method
         if (!isFinite(value))
-            throw Exception("Invalid value (inf or nan) for aggregation by 'histogram' function", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value (inf or nan) for aggregation by 'histogram' function");
 
         points[size] = {value, weight};
         ++size;
@@ -291,7 +291,11 @@ public:
 
         readVarUInt(size, buf);
         if (size > max_bins * 2)
-            throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many bins");
+        static constexpr size_t max_size = 1_GiB;
+        if (size > max_size)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size in histogram (maximum: {})", max_size);
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }
@@ -307,7 +311,7 @@ private:
 
 public:
     AggregateFunctionHistogram(UInt32 max_bins_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params, createResultType())
         , max_bins(max_bins_)
     {
     }
@@ -316,7 +320,7 @@ public:
     {
         return Data::structSize(max_bins);
     }
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types;
         auto mean = std::make_shared<DataTypeNumber<Data::Mean>>();

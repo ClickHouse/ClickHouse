@@ -4,7 +4,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
-#include <Common/Documentation.h>
+#include <Common/FunctionDocumentation.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
 #include <string>
@@ -49,6 +50,11 @@ public:
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
 
+    /** Return array of table function arguments indexes for which query tree analysis must be skipped.
+      * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
+      */
+    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
+
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
@@ -74,7 +80,7 @@ public:
 
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert = false) const;
 
     virtual ~ITableFunction() = default;
 
@@ -91,7 +97,7 @@ private:
 /// Properties of table function that are independent of argument types and parameters.
 struct TableFunctionProperties
 {
-    Documentation documentation;
+    FunctionDocumentation documentation;
 
     /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
       *
