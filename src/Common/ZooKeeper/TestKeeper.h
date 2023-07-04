@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 
 namespace Coordination
@@ -92,9 +93,9 @@ public:
 
     void finalize(const String & reason) override;
 
-    DB::KeeperApiVersion getApiVersion() const override
+    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
     {
-        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
+        return false;
     }
 
     struct Node
