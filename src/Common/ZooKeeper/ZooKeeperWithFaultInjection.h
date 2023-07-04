@@ -402,9 +402,9 @@ public:
         ephemeral_nodes.clear();
     }
 
-    KeeperApiVersion getApiVersion() const
+    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     {
-        return keeper->getApiVersion();
+        return keeper->isFeatureEnabled(feature_flag);
     }
 
 private:
