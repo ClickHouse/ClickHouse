@@ -143,7 +143,6 @@ void ParquetBlockInputFormat::initializeRowGroupReader(size_t row_group_idx)
     row_group.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "Parquet",
-        format_settings.parquet.import_nested,
         format_settings.parquet.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.parquet.case_insensitive_column_matching);
@@ -415,7 +414,6 @@ void registerInputFormatParquet(FormatFactory & factory)
                     max_parsing_threads,
                     min_bytes_for_seek);
             });
-    factory.markFormatSupportsSubcolumns("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 

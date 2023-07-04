@@ -20,6 +20,7 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 
@@ -603,7 +604,7 @@ private:
 
 Pipe StorageAzureBlob::read(
     const Names & column_names,
-    const StorageSnapshotPtr &  storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -614,15 +615,6 @@ Pipe StorageAzureBlob::read(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned Azure storage is not implemented yet");
 
     Pipes pipes;
-
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    std::vector<NameAndTypePair> requested_virtual_columns;
-
-    for (const auto & virtual_column : getVirtuals())
-    {
-        if (column_names_set.contains(virtual_column.name))
-            requested_virtual_columns.push_back(virtual_column);
-    }
 
     std::shared_ptr<StorageAzureBlobSource::Iterator> iterator_wrapper;
     if (configuration.withGlobs())
@@ -639,39 +631,15 @@ Pipe StorageAzureBlob::read(
             std::nullopt, query_info.query, virtual_block, local_context, nullptr);
     }
 
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
-
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, configuration.format, getVirtuals());
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageAzureBlobSource>(
-            requested_virtual_columns,
+            read_from_format_info,
             configuration.format,
             getName(),
-            block_for_format,
             local_context,
             format_settings,
-            columns_description,
             max_block_size,
             configuration.compression_method,
             object_storage.get(),
@@ -760,11 +728,6 @@ NamesAndTypesList StorageAzureBlob::getVirtuals() const
 bool StorageAzureBlob::supportsPartitionBy() const
 {
     return true;
-}
-
-bool StorageAzureBlob::supportsSubcolumns() const
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubcolumns(configuration.format);
 }
 
 bool StorageAzureBlob::supportsSubsetOfColumns() const
@@ -1075,35 +1038,26 @@ Chunk StorageAzureBlobSource::generate()
     return {};
 }
 
-Block StorageAzureBlobSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
-
-    return sample_block;
-}
-
 StorageAzureBlobSource::StorageAzureBlobSource(
-    const std::vector<NameAndTypePair> & requested_virtual_columns_,
+    const ReadFromFormatInfo & info,
     const String & format_,
     String name_,
-    const Block & sample_block_,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     String compression_hint_,
     AzureObjectStorage * object_storage_,
     const String & container_,
     std::shared_ptr<Iterator> file_iterator_)
-    :ISource(getHeader(sample_block_, requested_virtual_columns_))
+    :ISource(info.source_header)
     , WithContext(context_)
-    , requested_virtual_columns(requested_virtual_columns_)
+    , requested_columns(info.requested_columns)
+    , requested_virtual_columns(info.requested_virtual_columns)
     , format(format_)
     , name(std::move(name_))
-    , sample_block(sample_block_)
+    , sample_block(info.format_header)
     , format_settings(format_settings_)
-    , columns_desc(columns_)
+    , columns_desc(info.columns_description)
     , max_block_size(max_block_size_)
     , compression_hint(compression_hint_)
     , object_storage(std::move(object_storage_))
@@ -1158,6 +1112,13 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
             [&](const Block & header)
             { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
     }
+
+    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// from chunk read by IInputFormat.
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+    });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);

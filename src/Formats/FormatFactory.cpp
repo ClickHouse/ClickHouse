@@ -117,7 +117,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
     format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
     format_settings.parquet.output_version = settings.output_format_parquet_version;
-    format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.preserve_order = settings.input_format_parquet_preserve_order;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
@@ -161,7 +160,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.with_types_use_header = settings.input_format_with_types_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
-    format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
@@ -169,11 +167,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.output_string_as_string = settings.output_format_arrow_string_as_string;
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings.output_format_arrow_fixed_string_as_fixed_byte_array;
     format_settings.arrow.output_compression_method = settings.output_format_arrow_compression_method;
-    format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
@@ -676,26 +672,12 @@ void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
     target = true;
 }
 
-void FormatFactory::markFormatSupportsSubcolumns(const String & name)
-{
-    auto & target = dict[name].supports_subcolumns;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subcolumns", name);
-    target = true;
-}
-
 void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
 {
     auto & target = dict[name].prefers_large_blocks;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
     target = true;
-}
-
-bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
-{
-    const auto & target = getCreators(name);
-    return target.supports_subcolumns;
 }
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const

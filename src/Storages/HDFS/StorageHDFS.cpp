@@ -13,6 +13,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/CompressionMethod.h>
@@ -332,30 +333,21 @@ StorageHDFS::PathWithInfo HDFSSource::URISIterator::next()
     return pimpl->next();
 }
 
-Block HDFSSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
-
-    return sample_block;
-}
-
 HDFSSource::HDFSSource(
+    const ReadFromFormatInfo & info,
     StorageHDFSPtr storage_,
-    const Block & block_for_format_,
-    const std::vector<NameAndTypePair> & requested_virtual_columns_,
     ContextPtr context_,
     UInt64 max_block_size_,
-    std::shared_ptr<IteratorWrapper> file_iterator_,
-    ColumnsDescription columns_description_)
-    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
+    std::shared_ptr<IteratorWrapper> file_iterator_)
+    : ISource(info.source_header)
     , WithContext(context_)
     , storage(std::move(storage_))
-    , block_for_format(block_for_format_)
-    , requested_virtual_columns(requested_virtual_columns_)
+    , block_for_format(info.format_header)
+    , requested_columns(info.requested_columns)
+    , requested_virtual_columns(info.requested_virtual_columns)
     , max_block_size(max_block_size_)
     , file_iterator(file_iterator_)
-    , columns_description(std::move(columns_description_))
+    , columns_description(info.columns_description)
 {
     initialize();
 }
@@ -408,6 +400,14 @@ bool HDFSSource::initialize()
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
         });
     }
+
+    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// from chunk read by IInputFormat.
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+    });
+
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
     return true;
@@ -640,50 +640,17 @@ Pipe StorageHDFS::read(
         });
     }
 
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    std::vector<NameAndTypePair> requested_virtual_columns;
-
-    for (const auto & virtual_column : getVirtuals())
-    {
-        if (column_names_set.contains(virtual_column.name))
-            requested_virtual_columns.push_back(virtual_column);
-    }
-
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
-
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, format_name, getVirtuals());
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<HDFSSource>(
+            read_from_format_info,
             this_ptr,
-            block_for_format,
-            requested_virtual_columns,
             context_,
             max_block_size,
-            iterator_wrapper,
-            columns_description));
+            iterator_wrapper));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

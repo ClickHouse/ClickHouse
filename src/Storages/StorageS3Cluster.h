@@ -36,6 +36,8 @@ public:
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 
+    bool supportsSubcolumns() const override { return true; }
+
 protected:
     void updateConfigurationIfChanged(ContextPtr local_context);
 
