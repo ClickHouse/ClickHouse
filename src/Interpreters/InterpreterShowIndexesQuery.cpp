@@ -40,7 +40,7 @@ SELECT *
 FROM (
         (SELECT
             name AS table,
-            0 AS non_unique,
+            1 AS non_unique,
             'PRIMARY' AS key_name,
             NULL AS seq_in_index,
             NULL AS column_name,
@@ -61,7 +61,7 @@ FROM (
     UNION ALL (
         SELECT
             table AS table,
-            0 AS non_unique,
+            1 AS non_unique,
             name AS key_name,
             NULL AS seq_in_index,
             NULL AS column_name,

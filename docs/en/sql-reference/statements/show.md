@@ -283,7 +283,7 @@ The optional keyword `EXTENDED` currently has no effect, it only exists for MySQ
 
 The statement produces a result table with the following structure:
 - table - The name of the table (String)
-- non_unique - 0 if the index cannot contain duplicates, 1 otherwise (UInt8)
+- non_unique - Always `1` as ClickHouse does not support uniqueness constraints. (UInt8)
 - key_name - The name of the index, `PRIMARY` if the index is a primary key index (String)
 - seq_in_index - Currently unused
 - column_name - Currently unused
@@ -310,11 +310,11 @@ Result:
 
 ``` text
 ┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
-│ tbl   │          0 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
-│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
-│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
-│ tbl   │          0 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │ c, a       │
-│ tbl   │          0 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
+│ tbl   │          1 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          1 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          1 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          1 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │ c, a       │
+│ tbl   │          1 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
 └───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
 ```
 
