@@ -42,8 +42,8 @@ FROM (
             name AS table,
             1 AS non_unique,
             'PRIMARY' AS key_name,
-            1 AS seq_in_index,
-            '' AS column_name,
+            arrayJoin(splitByString(', ', primary_key)) AS column_name,
+            row_number() over (order by column_name) AS seq_in_index,
             'A' AS collation,
             0 AS cardinality,
             NULL AS sub_part,
@@ -53,7 +53,7 @@ FROM (
             '' AS comment,
             '' AS index_comment,
             'YES' AS visible,
-            primary_key AS expression
+            '' AS expression
         FROM system.tables
         WHERE
             database = '{0}'
@@ -63,8 +63,8 @@ FROM (
             table AS table,
             1 AS non_unique,
             name AS key_name,
-            1 AS seq_in_index,
             '' AS column_name,
+            1 AS seq_in_index,
             NULL AS collation,
             0 AS cardinality,
             NULL AS sub_part,
@@ -85,6 +85,21 @@ ORDER BY index_type, expression;)", database, table, where_expression);
     /// Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
     /// sort the output of SHOW INDEXES otherwise (SELECT * FROM (SHOW INDEXES ...) ORDER BY ...) is rejected) and 3. some
     /// SQL tests can take advantage of this.
+
+    /// Note about compatibility of fields 'column_name', 'seq_in_index' and 'expression' with MySQL:
+    /// MySQL has non-functional and functional indexes.
+    /// - Non-functional indexes only reference columns, e.g. 'col1, col2'. In this case, `SHOW INDEX` produces as many result rows as there
+    ///   are indexed columns. 'column_name' and 'seq_in_index' (an ascending integer 1, 2, ...) are filled, 'expression' is empty.
+    /// - Functional indexes can reference arbitrary expressions, e.g. 'col1 + 1, concat(col2, col3)'. 'SHOW INDEX' produces a single row
+    ///   with `column_name` and `seq_in_index` empty and `expression` filled with the entire index expression. Only non-primary-key indexes
+    ///   can be functional indexes.
+    /// Above SELECT tries to emulate that. Caveats:
+    /// 1. The primary key index sub-SELECT assumes the primary key expression is non-functional. Non-functional primary key indexes in
+    ///    ClickHouse are possible but quiete obscure. In MySQL they are not possible at all.
+    /// 2. Related to 1.: Poor man's tuple parsing with splitByString() in the PK sub-SELECT messes up for functional primary key index
+    ///    expressions where the comma is not only used as separator between tuple components, e.g. in 'col1 + 1, concat(col2, col3)'.
+    /// 3. The data skipping index sub-SELECT assumes the index expression is functional. 3rd party tools that expect MySQL semantics from
+    ///    SHOW INDEX will probably not care as MySQL has no skipping indexes and they only use the result to figure out the primary key.
 
     return rewritten_query;
 }
