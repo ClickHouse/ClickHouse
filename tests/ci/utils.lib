@@ -1,0 +1,29 @@
+#!/bin/bash
+
+function run_with_retry()
+{
+    set +e
+
+    local total_retries="$1"
+    shift
+
+    local retry=0
+
+    until [ "$retry" -ge "$total_retries" ]
+    do
+        if "$@"; then
+            set -e
+            return
+        else
+            retry=$((retry + 1))
+            sleep 5
+        fi
+    done
+
+    echo "Command '$*' failed after $total_retries retries, exiting"
+    exit 1
+}
+
+function fn_exists() {
+    declare -F "$1" > /dev/null;
+}
