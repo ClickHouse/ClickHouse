@@ -1852,23 +1852,24 @@ namespace
 
             write_function = [this](IPv6 value)
             {
-                ipToString(value, text_buffer);
+                text_buffer = String(IPV6_BINARY_LENGTH, '\0');
+                memcpy(text_buffer.data(), &value.toUnderType(), IPV6_BINARY_LENGTH);
                 writeStr(text_buffer);
             };
 
             read_function = [this]() -> IPv6
             {
                 readStr(text_buffer);
-                return parse<IPv6>(text_buffer);
+                if (text_buffer.size() != IPV6_BINARY_LENGTH)
+                    throw Exception(ErrorCodes::PROTOBUF_BAD_CAST,
+                                    "Could not convert bytes field {} to IPv6 for inserting into column {} - field size {} is not equal to IPv6 size {}",
+                                    field_descriptor.full_name(), column_name, text_buffer.size(), IPV6_BINARY_LENGTH);
+                IPv6 value;
+                memcpy(&value.toUnderType(), text_buffer.data(), IPV6_BINARY_LENGTH);
+                return value;
             };
 
             default_function = [this]() -> IPv6 { return parse<IPv6>(field_descriptor.default_value_string()); };
-        }
-
-        static void ipToString(const IPv6 & ip, String & str)
-        {
-            WriteBufferFromString buf{str};
-            writeText(ip, buf);
         }
 
         std::function<void(IPv6)> write_function;
@@ -3005,10 +3006,10 @@ namespace
             bool google_wrappers_special_treatment)
         {
             root_serializer_ptr = std::make_shared<ProtobufSerializer *>();
-            get_root_desc_function = [root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
+            get_root_desc_function = [my_root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
             {
                 WriteBufferFromOwnString buf;
-                (*root_serializer_ptr)->describeTree(buf, indent);
+                (*my_root_serializer_ptr)->describeTree(buf, indent);
                 return buf.str();
             };
 

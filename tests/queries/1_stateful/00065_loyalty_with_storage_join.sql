@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 USE test;
 
 DROP TABLE IF EXISTS join;
