@@ -368,7 +368,12 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash());
+        {
+            auto future_set = prepared_sets->findSubquery(ast_node->getTreeHash());
+            if (!future_set || !types_match(future_set->getTypes()))
+                return nullptr;
+            return future_set;
+        }
 
         auto tree_hash = ast_node->getTreeHash();
         const auto & sets = prepared_sets->getSetsFromTuple();
