@@ -6,6 +6,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ReadFromStorageProgress.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -28,6 +29,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -564,56 +566,46 @@ using StorageFilePtr = std::shared_ptr<StorageFile>;
 class StorageFileSource : public ISource
 {
 public:
-    struct FilesInfo
+    class FilesIterator
     {
+    public:
+        explicit FilesIterator(const Strings & files_) : files(files_)
+        {
+        }
+
+        String next()
+        {
+            auto current_index = index.fetch_add(1, std::memory_order_relaxed);
+            if (current_index >= files.size())
+                return "";
+
+            return files[current_index];
+        }
+
+    private:
         std::vector<std::string> files;
-
-        std::atomic<size_t> next_file_to_read = 0;
-
-        bool need_path_column = false;
-        bool need_file_column = false;
-
-        size_t total_bytes_to_read = 0;
+        std::atomic<size_t> index = 0;
     };
 
-    using FilesInfoPtr = std::shared_ptr<FilesInfo>;
-
-    static Block getBlockForSource(const Block & block_for_format, const FilesInfoPtr & files_info)
-    {
-        auto res = block_for_format;
-        if (files_info->need_path_column)
-        {
-            res.insert(
-                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                 "_path"});
-        }
-        if (files_info->need_file_column)
-        {
-            res.insert(
-                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                 "_file"});
-        }
-        return res;
-    }
+    using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
 
     StorageFileSource(
+        const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
-        FilesInfoPtr files_info_,
-        ColumnsDescription columns_description_,
-        const Block & block_for_format_,
+        FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : ISource(getBlockForSource(block_for_format_, files_info_))
+        : ISource(info.source_header)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
-        , files_info(std::move(files_info_))
+        , files_iterator(std::move(files_iterator_))
         , read_buf(std::move(read_buf_))
-        , columns_description(std::move(columns_description_))
-        , block_for_format(block_for_format_)
+        , columns_description(info.columns_description)
+        , requested_columns(info.requested_columns)
+        , requested_virtual_columns(info.requested_virtual_columns)
+        , block_for_format(info.format_header)
         , context(context_)
         , max_block_size(max_block_size_)
     {
@@ -699,11 +691,9 @@ public:
             {
                 if (!storage->use_table_fd)
                 {
-                    auto current_file = files_info->next_file_to_read.fetch_add(1);
-                    if (current_file >= files_info->files.size())
+                    current_path = files_iterator->next();
+                    if (current_path.empty())
                         return {};
-
-                    current_path = files_info->files[current_file];
 
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
@@ -744,6 +734,13 @@ public:
                     });
                 }
 
+                /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+                /// from chunk read by IInputFormat.
+                builder.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                });
+
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
 
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -755,19 +752,19 @@ public:
                 UInt64 num_rows = chunk.getNumRows();
 
                 /// Enrich with virtual columns.
-                if (files_info->need_path_column)
-                {
-                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
-                    chunk.addColumn(column->convertToFullColumnIfConst());
-                }
 
-                if (files_info->need_file_column)
+                for (const auto & virtual_column : requested_virtual_columns)
                 {
-                    size_t last_slash_pos = current_path.find_last_of('/');
-                    auto file_name = current_path.substr(last_slash_pos + 1);
-
-                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
+                    if (virtual_column.name == "_path")
+                    {
+                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, current_path)->convertToFullColumnIfConst());
+                    }
+                    else if (virtual_column.name == "_file")
+                    {
+                        size_t last_slash_pos = current_path.find_last_of('/');
+                        auto file_name = current_path.substr(last_slash_pos + 1);
+                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_name)->convertToFullColumnIfConst());
+                    }
                 }
 
                 if (num_rows && total_files_size)
@@ -799,7 +796,7 @@ public:
 private:
     std::shared_ptr<StorageFile> storage;
     StorageSnapshotPtr storage_snapshot;
-    FilesInfoPtr files_info;
+    FilesIteratorPtr files_iterator;
     String current_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
@@ -808,6 +805,8 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     ColumnsDescription columns_description;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
 
     ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
@@ -849,18 +848,7 @@ Pipe StorageFile::read(
         }
     }
 
-    auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
-    files_info->files = paths;
-    files_info->total_bytes_to_read = total_bytes_to_read;
-
-    for (const auto & column : column_names)
-    {
-        if (column == "_path")
-            files_info->need_path_column = true;
-        if (column == "_file")
-            files_info->need_file_column = true;
-    }
-
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths);
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
@@ -876,33 +864,10 @@ Pipe StorageFile::read(
     if (progress_callback)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, format_name, getVirtuals());
+
     for (size_t i = 0; i < num_streams; ++i)
     {
-        ColumnsDescription columns_description;
-        Block block_for_format;
-        if (supportsSubsetOfColumns())
-        {
-            auto fetch_columns = column_names;
-            const auto & virtuals = getVirtuals();
-            std::erase_if(
-                fetch_columns,
-                [&](const String & col)
-                {
-                    return std::any_of(
-                        virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col) { return col == virtual_col.name; });
-                });
-
-            if (fetch_columns.empty())
-                fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-            columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        }
-        else
-        {
-            columns_description = storage_snapshot->metadata->getColumns();
-        }
-
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-
         /// In case of reading from fd we have to check whether we have already created
         /// the read buffer from it in Storage constructor (for schema inference) or not.
         /// If yes, then we should use it in StorageFileSource. Atomic bool flag is needed
@@ -912,13 +877,12 @@ Pipe StorageFile::read(
             read_buffer = std::move(peekable_read_buffer_from_fd);
 
         pipes.emplace_back(std::make_shared<StorageFileSource>(
+            read_from_format_info,
             this_ptr,
             storage_snapshot,
             context,
             max_block_size,
-            files_info,
-            columns_description,
-            block_for_format,
+            files_iterator,
             std::move(read_buffer)));
     }
 
