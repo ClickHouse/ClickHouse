@@ -181,6 +181,21 @@ bool RPNBuilderTreeNode::isConstant() const
     }
 }
 
+bool RPNBuilderTreeNode::isSubqueryOrSet() const
+{
+    if (ast_node)
+    {
+        return
+            typeid_cast<const ASTSubquery *>(ast_node) ||
+            typeid_cast<const ASTTableIdentifier *>(ast_node);
+    }
+    else
+    {
+        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+        return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
+    }
+}
+
 ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
 {
     if (!isConstant())

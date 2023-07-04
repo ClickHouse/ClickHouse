@@ -12,6 +12,7 @@
 
 #include <type_traits>
 
+#include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
 }
 
 /// Helper functions for formatted input.
@@ -136,6 +138,19 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
 
     s.resize(size);
     buf.readStrict(s.data(), size);
+}
+
+/// For historical reasons we store IPv6 as a String
+inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+
+    if (size != IPV6_BINARY_LENGTH)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH,
+                        "Size of the string {} doesn't match size of binary IPv6 {}", size, IPV6_BINARY_LENGTH);
+
+    buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
 template <typename T>
@@ -1092,6 +1107,8 @@ inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+
+inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
