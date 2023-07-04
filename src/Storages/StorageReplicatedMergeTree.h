@@ -108,7 +108,8 @@ public:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
-        RenamingRestrictions renaming_restrictions_);
+        RenamingRestrictions renaming_restrictions_,
+        bool need_check_structure);
 
     void startup() override;
     void shutdown() override;
@@ -138,7 +139,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
 
@@ -342,8 +343,9 @@ public:
 private:
     std::atomic_bool are_restoring_replica {false};
 
-    /// Delete old parts from disk and from ZooKeeper.
-    void clearOldPartsAndRemoveFromZK();
+    /// Delete old parts from disk and from ZooKeeper. Returns the number of removed parts
+    size_t clearOldPartsAndRemoveFromZK();
+    void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
@@ -382,6 +384,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
     zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
+    String getEndpointName() const;
 
     /// If true, the table is offline and can not be written to it.
     /// This flag is managed by RestartingThread.
@@ -456,6 +459,8 @@ private:
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
+    UInt64 merge_selecting_sleep_ms;
+
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
 
@@ -525,7 +530,7 @@ private:
       */
     void createNewZooKeeperNodes();
 
-    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
+    bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, bool strict_check = true);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
@@ -576,6 +581,8 @@ private:
     /// Remove parts from ZooKeeper, throw exception if unable to do so after max_retries.
     void removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
     void removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries = 5);
+
+    void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & part_name) override;
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
@@ -699,6 +706,7 @@ private:
     bool fetchPart(
         const String & part_name,
         const StorageMetadataPtr & metadata_snapshot,
+        const String & source_zookeeper_name,
         const String & source_replica_path,
         bool to_detached,
         size_t quorum,

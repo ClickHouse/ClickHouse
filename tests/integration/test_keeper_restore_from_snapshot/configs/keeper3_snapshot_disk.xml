@@ -1,0 +1,5 @@
+<clickhouse>
+    <keeper_server>
+        <snapshot_storage_disk>snapshot_s3_plain3</snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>

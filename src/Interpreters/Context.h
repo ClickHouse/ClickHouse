@@ -1,9 +1,10 @@
 #pragma once
 
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
@@ -11,6 +12,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/AsyncReadCounters.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -31,7 +33,11 @@
 
 
 namespace Poco::Net { class IPAddress; }
-namespace zkutil { class ZooKeeper; }
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 struct OvercommitTracker;
 
@@ -104,6 +110,7 @@ class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
+using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class Block;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
@@ -290,6 +297,7 @@ private:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
+            partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
         }
@@ -307,6 +315,7 @@ private:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
+            std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
         }
@@ -316,6 +325,7 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
+        std::set<std::string> partitions{};
         std::set<std::string> projections{};
         std::set<std::string> views{};
     };
@@ -607,6 +617,7 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     const Scalars & getScalars() const;
@@ -624,6 +635,7 @@ public:
         const Names & column_names,
         const String & projection_name = {},
         const String & view_name = {});
+    void addQueryAccessInfo(const Names & partition_names);
 
 
     /// Supported factories for records in query_log
@@ -646,6 +658,8 @@ public:
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
+    /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
+    StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -727,7 +741,8 @@ public:
     BackupsWorker & getBackupsWorker() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt, const std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
@@ -826,6 +841,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+    /// return Auxiliary Zookeeper map
+    std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
@@ -1096,16 +1113,7 @@ public:
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
-    enum class FilesystemReaderType
-    {
-        SYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_REMOTE_FS_READER,
-    };
-
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
-
-    size_t getThreadPoolReaderSize(FilesystemReaderType type) const;
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
@@ -1234,3 +1242,9 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
+
+#else
+
+#include <Coordination/Standalone/Context.h>
+
+#endif
