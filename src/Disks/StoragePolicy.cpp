@@ -209,14 +209,17 @@ DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 
 UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 {
-    UInt64 res = 0;
+    std::optional<UInt64> res;
     for (const auto & volume : volumes)
     {
-        auto max_unreserved_for_volume = volume->getMaxUnreservedFreeSpace();
-        if (max_unreserved_for_volume)
-            res = std::max(res, *max_unreserved_for_volume);
+        auto volume_unreserved_space = volume->getMaxUnreservedFreeSpace();
+        if (!volume_unreserved_space)
+            return -1ULL; /// There is at least one unlimited disk.
+
+        if (!res || *volume_unreserved_space > *res)
+            res = volume_unreserved_space;
     }
-    return res;
+    return res.value_or(-1ULL);
 }
 
 
