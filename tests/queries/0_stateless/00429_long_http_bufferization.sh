@@ -15,7 +15,9 @@ function query {
 }
 
 function ch_url() {
-    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "$(query "$2")"
+    ${CLICKHOUSE_CURL_COMMAND} -q -sS \
+        "${CLICKHOUSE_URL}${max_block_size:+"&max_block_size=$max_block_size"}&$1" \
+        -d "$(query "$2")"
 }
 
 
@@ -26,9 +28,9 @@ exception_pattern="DB::Exception:[[:print:]]*"
 function check_only_exception() {
     local res
     res=$(ch_url "$1" "$2")
-    #(echo "$res")
-    #(echo "$res" | wc -l)
-    #(echo "$res" | grep -c "$exception_pattern")
+    # echo "$res"
+    # echo "$res" | wc -l
+    # echo "$res" | grep -c "$exception_pattern"
     [[ $(echo "$res" | wc -l) -eq 1 ]] || echo FAIL 1 "$@"
     [[ $(echo "$res" | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 2 "$@"
 }
@@ -36,27 +38,23 @@ function check_only_exception() {
 function check_last_line_exception() {
     local res
     res=$(ch_url "$1" "$2")
-    #echo "$res" > res
-    #echo "$res" | wc -c
-    #echo "$res" | tail -n -2
+    # echo "$res" > res
+    # echo "$res" | wc -c
+    # echo "$res" | tail -n -2
     [[ $(echo "$res" | tail -n -1 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 3 "$@"
     [[ $(echo "$res" | head -n -1 | grep -c "$exception_pattern") -eq 0 ]] || echo FAIL 4 "$@"
 }
 
 function check_exception_handling() {
-    # it is impossible to override max_block_size, details here https://github.com/ClickHouse/ClickHouse/issues/51694
-    # rebuild CLICKHOUSE_URL for one call in order to avoid using random parameters from CLICKHOUSE_URL_PARAMS
-    CLICKHOUSE_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?wait_end_of_query=0" \
-    max_block_size=30000 \
     format=TSV \
     check_last_line_exception \
-        "max_result_rows=400000&buffer_size=1048577&wait_end_of_query=0" 111222333444
+        "max_block_size=30000&max_result_rows=400000&buffer_size=1048577&wait_end_of_query=0" 111222333444
 
     check_only_exception "max_result_bytes=1000"                        1001
     check_only_exception "max_result_bytes=1000&wait_end_of_query=1"    1001
 
-    check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
-    check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
+    check_last_line_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
+    check_only_exception      "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
 
     check_only_exception "max_result_bytes=1500000&buffer_size=2500000&wait_end_of_query=0" 1500001
     check_only_exception "max_result_bytes=1500000&buffer_size=1500000&wait_end_of_query=1" 1500001
@@ -70,7 +68,6 @@ check_exception_handling
 
 
 # Tune setting to speed up combinatorial test
-# max_block_size has no effect here, that value has been set inside CLICKHOUSE_URL
 max_block_size=500000
 corner_sizes="1048576 $(seq 500000 1000000 3500000)"
 
