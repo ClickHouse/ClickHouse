@@ -411,7 +411,7 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
         }
 
     buckets.reserve(buckets.size() + bucket_count);
-    for(auto & bucket : tmp_buckets)
+    for (auto & bucket : tmp_buckets)
         buckets.emplace_back(std::move(bucket));
 }
 
