@@ -985,7 +985,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
-            assert(create_query_string == readMetadataFile(table_name));
+            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
             continue;
         }
 
@@ -1274,7 +1274,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -1291,6 +1291,16 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
     assert(checkDigestValid(query_context));
+}
+
+
+bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
+{
+    /// ReplicatedMergeTree may call commitAlterTable from its background threads when executing ALTER_METADATA entries.
+    /// It may update the metadata digest (both locally and in ZooKeeper)
+    /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
+    /// We should not update metadata until the database is initialized.
+    return ddl_worker && ddl_worker->isCurrentlyActive();
 }
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)

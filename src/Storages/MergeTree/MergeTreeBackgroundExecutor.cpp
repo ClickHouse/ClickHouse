@@ -151,9 +151,9 @@ void printExceptionWithRespectToAbort(Poco::Logger * log)
     {
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            /// Cancelled merging parts is not an error - log as info.
+            /// Cancelled merging parts is not an error - log normally.
             if (e.code() == ErrorCodes::ABORTED)
-                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                LOG_DEBUG(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
         });
@@ -182,7 +182,6 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         }
         catch (...)
         {
-            printExceptionWithRespectToAbort(log);
             pending.remove(id);
         }
 
