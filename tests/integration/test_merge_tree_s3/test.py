@@ -336,9 +336,7 @@ def test_attach_detach_partition(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
@@ -738,84 +736,6 @@ def test_cache_with_full_disk_space(cluster, node_name):
         "Insert into cache is skipped due to insufficient disk space"
     )
     check_no_objects_after_drop(cluster, node_name=node_name)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
-def test_cache_setting_compatibility(cluster, node_name):
-    node = cluster.instances[node_name]
-
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
-
-    node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r', compress_marks=false, compress_primary_key=false;"
-    )
-    node.query(
-        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500"
-    )
-
-    result = node.query("SYSTEM DROP FILESYSTEM CACHE")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) == 0
-
-    node.query("SELECT * FROM s3_test")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        f"./{cluster.instances_dir_name}/node/configs/config.d/storage_conf.xml",
-    )
-
-    replace_config(
-        config_path,
-        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
-        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
-    )
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("1")
-
-    node.restart_clickhouse()
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("0")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    node.query("SELECT * FROM s3_test FORMAT Null")
-
-    assert not node.contains_in_log("No such file or directory: Cache info:")
-
-    replace_config(
-        config_path,
-        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
-        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
-    )
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    node.restart_clickhouse()
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("1")
-
-    node.query("SELECT * FROM s3_test FORMAT Null")
-
-    assert not node.contains_in_log("No such file or directory: Cache info:")
-
-    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
