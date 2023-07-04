@@ -22,22 +22,22 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     auto proxy_prefix = config_prefix + ".proxy";
 
     if (!configuration.has(proxy_prefix))
-        return nullptr;
-
-    std::vector<String> config_keys;
-    configuration.keys(proxy_prefix, config_keys);
-
-    if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
     {
-        if (resolver_configs > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
+        std::vector<String> config_keys;
+        configuration.keys(proxy_prefix, config_keys);
 
-        return getRemoteResolver(proxy_prefix + ".resolver", configuration);
-    }
+        if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
+        {
+            if (resolver_configs > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
 
-    if (auto list_resolver = getListResolver(proxy_prefix, configuration))
-    {
-        return list_resolver;
+            return getRemoteResolver(proxy_prefix + ".resolver", configuration);
+        }
+
+        if (auto list_resolver = getListResolver(proxy_prefix, configuration))
+        {
+            return list_resolver;
+        }
     }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>();
