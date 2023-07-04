@@ -142,6 +142,7 @@ range([start, ] end [, step])
 
 - All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
 - An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+- Returns Null if any argument has Nullable(Nothing) type. An exception is thrown if any argument has Null value (Nullable(T) type).
 
 **Examples**
 
@@ -878,7 +879,7 @@ A special function. See the section [“ArrayJoin function”](../../sql-referen
 
 ## arrayDifference
 
-Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
+Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
 **Syntax**
 
