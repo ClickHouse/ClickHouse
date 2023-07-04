@@ -13,6 +13,20 @@ Supported platforms:
 - AArch64
 - Power9 (experimental)
 
+## Building in docker
+We use the docker image `clickhouse/binary-builder` for our CI builds. It contains everything necessary to build the binary and packages. There is a script `docker/packager/packager` to ease the image usage:
+
+```bash
+# define a directory for the output artifacts
+output_dir="build_results"
+# a simplest build
+./docker/packager/packager --package-type=binary --output-dir "$output_dir"
+# build debian packages
+./docker/packager/packager --package-type=deb --output-dir "$output_dir"
+# by default, debian packages use thin LTO, so we can override it to speed up the build
+CMAKE_FLAGS='-DENABLE_THINLTO=' ./docker/packager/packager --package-type=deb --output-dir "./$(git rev-parse --show-cdup)/build_results"
+```
+
 ## Building on Ubuntu
 
 The following tutorial is based on Ubuntu Linux.
