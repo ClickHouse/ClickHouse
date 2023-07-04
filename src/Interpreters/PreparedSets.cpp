@@ -95,6 +95,15 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
 SubqueryForSet & PreparedSets::getSubquery(const String & subquery_id) { return subqueries[subquery_id]; }
 
+SubqueryForSet * PreparedSets::getSetOrNull(const String & subquery_id)
+{
+    auto it = subqueries.find(subquery_id);
+    if (it == subqueries.end())
+        return nullptr;
+
+    return &it->second;
+}
+
 void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = FutureSet(set_); }
 
 FutureSet PreparedSets::getFuture(const PreparedSetKey & key) const

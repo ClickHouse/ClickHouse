@@ -114,6 +114,8 @@ public:
                                          SizeLimits set_size_limit, bool transform_null_in);
     SubqueryForSet & getSubquery(const String & subquery_id);
 
+    SubqueryForSet * getSetOrNull(const String & subquery_id);
+
     void set(const PreparedSetKey & key, SetPtr set_);
     FutureSet getFuture(const PreparedSetKey & key) const;
     SetPtr get(const PreparedSetKey & key) const;

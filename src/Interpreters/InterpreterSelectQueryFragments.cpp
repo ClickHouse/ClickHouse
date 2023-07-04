@@ -1106,6 +1106,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
         result = createOrderByFragment(root_node.step, child_fragments[0]);
         if (result)
             all_fragments.emplace_back(result);
+        else
+            result = child_fragments[0];
     }
     else if (isLimitRelated(root_node.step))
     {
@@ -1137,7 +1139,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     }
     else if (dynamic_cast<CreatingSetsStep *>(root_node.step.get()))
     {
-        /// push to child_fragments[0], connect child_fragments[0] to child_fragments[1-N]
+        /// CreatingSetsStep need push to child_fragments[0], connect child_fragments[0] to child_fragments[1-N]
         result = createCreatingSetsFragment(root_node, child_fragments);
     }
     else
@@ -2068,7 +2070,7 @@ void InterpreterSelectQueryFragments::executeSinglePlan(QueryPlan & query_plan, 
 
     executeOffset(query_plan);
 
-    executeSubqueriesInSetsAndJoins(query_plan);
+//    executeSubqueriesInSetsAndJoins(query_plan);
 }
 
 static std::shared_ptr<MergingAggregatedStep> executeMergeAggregatedImpl(
@@ -2688,6 +2690,32 @@ void InterpreterSelectQueryFragments::executeFetchColumns(QueryPlan & query_plan
     }
 }
 
+void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
+                                           ContextPtr context,
+                                           const PreparedSetsPtr & prepared_sets,
+                                           const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+{
+    PreparedSets::SubqueriesForSets subqueries_for_sets;
+
+    for (const auto & actions_to_execute : result_actions_to_execute)
+    {
+        for (const auto & node : actions_to_execute->getNodes())
+        {
+            const auto & set_key = node.result_name;
+
+            SubqueryForSet * subquery_for_set = prepared_sets->getSetOrNull(set_key);
+
+            if (!subquery_for_set || !subquery_for_set->hasSource())
+                continue;
+
+            subqueries_for_sets.emplace(set_key, std::move(*subquery_for_set));
+        }
+    }
+
+    if (!subqueries_for_sets.empty())
+        addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), context);
+}
+
 void InterpreterSelectQueryFragments::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto where_step = std::make_shared<FilterStep>(
@@ -2695,6 +2723,8 @@ void InterpreterSelectQueryFragments::executeWhere(QueryPlan & query_plan, const
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {expression});
 }
 
 static Aggregator::Params getAggregatorParams(
@@ -2773,6 +2803,8 @@ void InterpreterSelectQueryFragments::executeAggregation(QueryPlan & query_plan,
         return;
 
     query_plan.addStep(executeAggregationImpl(query_plan.getCurrentDataStream(), overflow_row, true, group_by_info));
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {expression});
 }
 
 std::shared_ptr<AggregatingStep> InterpreterSelectQueryFragments::executeAggregationImpl(const DataStream & output_stream, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
@@ -2879,6 +2911,8 @@ void InterpreterSelectQueryFragments::executeHaving(QueryPlan & query_plan, cons
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {expression});
 }
 
 
@@ -2899,6 +2933,8 @@ void InterpreterSelectQueryFragments::executeTotalsAndHaving(
         final);
 
     query_plan.addStep(std::move(totals_having_step));
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {expression});
 }
 
 void InterpreterSelectQueryFragments::executeRollupOrCube(QueryPlan & query_plan, Modificator modificator)
@@ -2933,6 +2969,8 @@ void InterpreterSelectQueryFragments::executeExpression(QueryPlan & query_plan, 
 
     expression_step->setStepDescription(description);
     query_plan.addStep(std::move(expression_step));
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {expression});
 }
 
 static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)

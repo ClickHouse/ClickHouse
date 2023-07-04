@@ -178,43 +178,43 @@ def test_aggregate_query(started_cluster):
 
     assert r == rr
 
+    # IN subquery
     print("local table select:")
-    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("select * from local_table where val in (select val from local_table1 where str like '%d%') order by id limit 13 SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%')")
+    rr = node1.query("select * from distributed_table where val GLOBAL in (select val from distributed_table1 where str like '%d%') order by id limit 13 ")
     print(rr)
 
     assert r == rr
 
     print("local table select:")
-    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%') or id in (select id from local_table1 where name like '%b%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("select * from local_table where val in (select val from local_table1 where str like '%d%') or val in (select val from local_table1 where str like '%v%') order by id limit 13  SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%') or id in (select id from distributed_table1 where name like '%b%')")
+    rr = node1.query("select * from distributed_table where val GLOBAL in (select val from distributed_table1 where str like '%d%') or val GLOBAL in (select val from distributed_table1 where str like '%v%') order by id limit 13 ")
     print(rr)
 
     assert r == rr
 
     print("local table select:")
-    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%') or id in (select id from local_table1 where name like '%b%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("select * from local_table where val in (select val from local_table1 where str like '%d%') or val in (select val from local_table1 where str like '%v%') order by id limit 13 SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%') or id in (select id from distributed_table1 where name like '%b%')")
+    rr = node1.query("select * from distributed_table where val GLOBAL in (select val from distributed_table1 where str like '%d%') or val GLOBAL in (select val from distributed_table1 where str like '%v%') order by id limit 13 ")
     print(rr)
 
     assert r == rr
 
-
     print("local table select:")
-    r = node1.query("select * from local_table where id in (select id from local_table1 where name like '%c%' or id in (select id from local_table)) or id in (select id from local_table1 where name like '%b%') SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("select * from local_table where val in (select val from local_table1 where str like '%d%' or val in (select val from local_table)) or val in (select val from local_table1 where str like '%v%') order by id limit 13 SETTINGS use_index_for_in_with_subqueries=0, allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("select * from distributed_table where id in (select id from distributed_table1 where name like '%c%' or id in (select id from distributed_table)) or id in (select id from distributed_table1 where name like '%b%')")
+    rr = node1.query("select * from distributed_table where val GLOBAL in (select val from distributed_table1 where str like '%d%' or val GLOBAL in (select val from distributed_table)) or val GLOBAL in (select val from distributed_table1 where str like '%v%') order by id limit 13")
     print(rr)
 
     assert r == rr
