@@ -469,6 +469,7 @@ MSan
 MVCC
 MacBook
 MacOS
+MapState
 MarkCacheBytes
 MarkCacheFiles
 MarksLoaderThreads
@@ -2169,6 +2170,7 @@ snowflakeToDateTime
 socketcache
 soundex
 sparkbar
+sparkBar
 sparsehash
 speedscope
 splitByChar
@@ -2262,6 +2264,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2456,6 +2459,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime
