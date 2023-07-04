@@ -19,6 +19,7 @@
 #include <csignal>
 #include <unistd.h>
 
+#include <algorithm>
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
@@ -153,6 +154,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
+    writeVectorBinary(Exception::thread_frame_pointers, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
@@ -250,6 +252,7 @@ public:
                 siginfo_t info{};
                 ucontext_t * context{};
                 StackTrace stack_trace(NoCapture{});
+                std::vector<StackTrace::FramePointers> thread_frame_pointers;
                 UInt32 thread_num{};
                 ThreadStatus * thread_ptr{};
 
@@ -260,12 +263,13 @@ public:
                 }
 
                 readPODBinary(stack_trace, in);
+                readVectorBinary(thread_frame_pointers, in);
                 readBinary(thread_num, in);
                 readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
             }
         }
     }
@@ -300,6 +304,7 @@ private:
         const siginfo_t & info,
         ucontext_t * context,
         const StackTrace & stack_trace,
+        const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         ThreadStatus * thread_ptr) const
     {
@@ -374,6 +379,31 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
+
+        /// In case it's a scheduled job write all previous jobs origins call stacks
+        std::for_each(thread_frame_pointers.rbegin(), thread_frame_pointers.rend(),
+            [this](const StackTrace::FramePointers & frame_pointers)
+            {
+                if (size_t size = std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())
+                {
+                    LOG_FATAL(log, "========================================");
+                    WriteBufferFromOwnString bare_stacktrace;
+                    writeString("Job's origin stack trace:", bare_stacktrace);
+                    std::for_each_n(frame_pointers.begin(), size,
+                        [&bare_stacktrace](const void * ptr)
+                        {
+                            writeChar(' ', bare_stacktrace);
+                            writePointerHex(ptr, bare_stacktrace);
+                        }
+                    );
+
+                    LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+
+                    StackTrace::toStringEveryLine(const_cast<void **>(frame_pointers.data()), 0, size, [this](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
+                }
+            }
+        );
+
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.

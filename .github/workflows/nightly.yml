@@ -121,8 +121,6 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   SonarCloud:
-    # TODO: Remove if: whenever SonarCloud supports c++23
-    if: ${{ false }}
     runs-on: [self-hosted, builder]
     env:
       SONAR_SCANNER_VERSION: 4.8.0.2856
@@ -159,7 +157,7 @@ jobs:
       - name: Set Up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm
+          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm nasm
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
       - name: Run build-wrapper
         run: |
@@ -178,4 +176,5 @@ jobs:
             --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
             --define sonar.projectKey="ClickHouse_ClickHouse" \
             --define sonar.organization="clickhouse-java" \
-            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql" \
+            --define sonar.cfamily.cpp23.enabled=true \
+            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql"
