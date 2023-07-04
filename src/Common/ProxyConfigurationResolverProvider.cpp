@@ -21,7 +21,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 {
     auto proxy_prefix = config_prefix + ".proxy";
 
-    if (!configuration.has(proxy_prefix))
+    if (configuration.has(proxy_prefix))
     {
         std::vector<String> config_keys;
         configuration.keys(proxy_prefix, config_keys);
