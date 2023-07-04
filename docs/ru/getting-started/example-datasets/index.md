@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/
 sidebar_label: "Тестовые массивы данных"
 sidebar_position: 14
 ---
@@ -20,3 +19,5 @@ sidebar_position: 14
 -   [Данные о стоимости недвижимости в Великобритании](../../getting-started/example-datasets/uk-price-paid.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
 -   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets) <!--hide-->

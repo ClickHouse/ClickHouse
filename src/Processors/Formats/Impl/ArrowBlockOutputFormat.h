@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_ARROW
 
@@ -27,7 +27,6 @@ public:
 private:
     void consume(Chunk) override;
     void finalizeImpl() override;
-    void resetFormatterImpl() override;
 
     void prepareWriter(const std::shared_ptr<arrow::Schema> & schema);
 

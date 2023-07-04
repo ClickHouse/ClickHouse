@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/
 sidebar_label: F.A.Q.
 toc_hidden: true
 sidebar_position: 76

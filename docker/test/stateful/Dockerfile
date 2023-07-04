@@ -1,4 +1,4 @@
-# rebuild in #47031
+# rebuild in #33610
 # docker build -t clickhouse/stateful-test .
 ARG FROM_TAG=latest
 FROM clickhouse/stateless-test:$FROM_TAG
@@ -16,9 +16,7 @@ COPY s3downloader /s3downloader
 ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
 ENV DATASETS="hits visits"
 
-# The following is already done in clickhouse/stateless-test
-# RUN npm install -g azurite
-# RUN npm install tslib
+RUN npm install -g azurite
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

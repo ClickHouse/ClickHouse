@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/decimal
 sidebar_position: 42
 sidebar_label: Decimal
 ---
@@ -31,7 +30,7 @@ sidebar_label: Decimal
 ## Внутреннее представление {#vnutrennee-predstavlenie}
 
 Внутри данные представляются как знаковые целые числа, соответсвующей разрядности. Реальные диапазоны, хранящиеся в ячейках памяти несколько больше заявленных. Заявленные диапазоны Decimal проверяются только при вводе числа из строкового представления.
-Поскольку современные CPU не поддерживают 128-битные и 256-битные числа, для операций над Decimal128 и Decimal256 эмулируются программно. Данные типы работают в разы медленнее, чем Decimal32/Decimal64.
+Поскольку современные CPU не поддерживают 128-битные числа, операции над Decimal128 эмулируются программно. Decimal128 работает в разы медленней чем Decimal32/Decimal64.
 
 ## Операции и типы результата {#operatsii-i-tipy-rezultata}
 
@@ -58,10 +57,6 @@ sidebar_label: Decimal
 ## Проверка переполнений {#proverka-perepolnenii}
 
 При выполнении операций над типом Decimal могут происходить целочисленные переполнения. Лишняя дробная часть отбрасывается (не округляется). Лишняя целочисленная часть приводит к исключению.
-
-:::warning
-Проверка переполнения не реализована для Decimal128 и Decimal256. В случае переполнения неверный результат будёт возвращён без выбрасывания исключения.
-:::
 
 ``` sql
 SELECT toDecimal32(2, 4) AS x, x / 3
@@ -115,3 +110,5 @@ DB::Exception: Can't compare.
 **Смотрите также**
 -   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
 -   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
+
+

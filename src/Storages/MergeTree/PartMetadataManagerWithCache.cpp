@@ -1,11 +1,10 @@
 #include "PartMetadataManagerWithCache.h"
 
 #if USE_ROCKSDB
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace ProfileEvents
@@ -31,31 +30,25 @@ PartMetadataManagerWithCache::PartMetadataManagerWithCache(const IMergeTreeDataP
 
 String PartMetadataManagerWithCache::getKeyFromFilePath(const String & file_path) const
 {
-    return part->getDataPartStorage().getDiskName() + ":" + file_path;
+    return part->data_part_storage->getDiskName() + ":" + file_path;
 }
 
 String PartMetadataManagerWithCache::getFilePathFromKey(const String & key) const
 {
-    return key.substr(part->getDataPartStorage().getDiskName().size() + 1);
+    return key.substr(part->data_part_storage->getDiskName().size() + 1);
 }
 
-std::unique_ptr<ReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
+std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
 {
-    String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
+    String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
     String key = getKeyFromFilePath(file_path);
     String value;
     auto status = cache->get(key, value);
     if (!status.ok())
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
-        auto in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-        std::unique_ptr<ReadBuffer> reader;
-        if (!isCompressedFromFileName(file_name))
-            reader = std::move(in);
-        else
-            reader = std::make_unique<CompressedReadBufferFromFile>(std::move(in));
-
-        readStringUntilEOF(value, *reader);
+        auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
+        readStringUntilEOF(value, *in);
         cache->put(key, value);
     }
     else
@@ -67,7 +60,7 @@ std::unique_ptr<ReadBuffer> PartMetadataManagerWithCache::read(const String & fi
 
 bool PartMetadataManagerWithCache::exists(const String & file_name) const
 {
-    String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
+    String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
     String key = getKeyFromFilePath(file_path);
     String value;
     auto status = cache->get(key, value);
@@ -79,7 +72,7 @@ bool PartMetadataManagerWithCache::exists(const String & file_name) const
     else
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
-        return part->getDataPartStorage().exists(file_name);
+        return part->data_part_storage->exists(file_name);
     }
 }
 
@@ -91,7 +84,7 @@ void PartMetadataManagerWithCache::deleteAll(bool include_projection)
     String value;
     for (const auto & file_name : file_names)
     {
-        String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
+        String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
         String key = getKeyFromFilePath(file_path);
         auto status = cache->del(key);
         if (!status.ok())
@@ -117,46 +110,29 @@ void PartMetadataManagerWithCache::updateAll(bool include_projection)
 
     String value;
     String read_value;
-
-    /// This is used to remove the keys in case of any exception while caching other keys
-    Strings keys_added_to_cache;
-    keys_added_to_cache.reserve(file_names.size());
-
-    try
+    for (const auto & file_name : file_names)
     {
-        for (const auto & file_name : file_names)
+        String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
+        if (!part->data_part_storage->exists(file_name))
+            continue;
+        auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
+        readStringUntilEOF(value, *in);
+
+        String key = getKeyFromFilePath(file_path);
+        auto status = cache->put(key, value);
+        if (!status.ok())
         {
-            String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
-            if (!part->getDataPartStorage().exists(file_name))
+            status = cache->get(key, read_value);
+            if (status.IsNotFound() || read_value == value)
                 continue;
-            auto in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-            readStringUntilEOF(value, *in);
 
-            String key = getKeyFromFilePath(file_path);
-            auto status = cache->put(key, value);
-            if (!status.ok())
-            {
-                status = cache->get(key, read_value);
-                if (status.IsNotFound() || read_value == value)
-                    continue;
-
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "updateAll failed include_projection:{} status:{}, file_path:{}",
-                    include_projection,
-                    status.ToString(),
-                    file_path);
-            }
-            keys_added_to_cache.emplace_back(key);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "updateAll failed include_projection:{} status:{}, file_path:{}",
+                include_projection,
+                status.ToString(),
+                file_path);
         }
-    }
-    catch (...)
-    {
-        for (const auto & key : keys_added_to_cache)
-        {
-            cache->del(key);
-        }
-        throw;
     }
 }
 
@@ -176,7 +152,7 @@ void PartMetadataManagerWithCache::assertAllDeleted(bool include_projection) con
         file_name = fs::path(file_path).filename();
 
         /// Metadata file belongs to current part
-        if (fs::path(part->getDataPartStorage().getRelativePath()) / file_name == file_path)
+        if (fs::path(part->data_part_storage->getRelativePath()) / file_name == file_path)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Data part {} with type {} with meta file {} still in cache",
@@ -190,11 +166,11 @@ void PartMetadataManagerWithCache::assertAllDeleted(bool include_projection) con
             const auto & projection_parts = part->getProjectionParts();
             for (const auto & [projection_name, projection_part] : projection_parts)
             {
-                if (fs::path(part->getDataPartStorage().getRelativePath()) / (projection_name + ".proj") / file_name == file_path)
+                if (fs::path(part->data_part_storage->getRelativePath()) / (projection_name + ".proj") / file_name == file_path)
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Data part {} with type {} with meta file {} with projection name {} still in cache",
+                        "Data part {} with type {} with meta file {} with projection name still in cache",
                         part->name,
                         part->getType().toString(),
                         file_path,
@@ -207,7 +183,7 @@ void PartMetadataManagerWithCache::assertAllDeleted(bool include_projection) con
 
 void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vector<uint128> & checksums) const
 {
-    String prefix = getKeyFromFilePath(fs::path(part->getDataPartStorage().getRelativePath()) / "");
+    String prefix = getKeyFromFilePath(fs::path(part->data_part_storage->getRelativePath()) / "");
     Strings values;
     cache->getByPrefix(prefix, keys, values);
     size_t size = keys.size();
@@ -215,7 +191,6 @@ void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vect
     {
         ReadBufferFromString rbuf(values[i]);
         HashingReadBuffer hbuf(rbuf);
-        hbuf.ignoreAll();
         checksums.push_back(hbuf.getHash());
     }
 }
@@ -242,7 +217,7 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
         results.emplace(file_name, cache_checksums[i]);
 
         /// File belongs to normal part
-        if (fs::path(part->getDataPartStorage().getRelativePath()) / file_name == file_path)
+        if (fs::path(part->data_part_storage->getRelativePath()) / file_name == file_path)
         {
             auto disk_checksum = part->getActualChecksumByFile(file_name);
             if (disk_checksum != cache_checksums[i])
@@ -250,8 +225,8 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                     ErrorCodes::CORRUPTED_DATA,
                     "Checksums doesn't match in part {} for {}. Expected: {}. Found {}.",
                     part->name, file_path,
-                    getHexUIntUppercase(disk_checksum.high64) + getHexUIntUppercase(disk_checksum.low64),
-                    getHexUIntUppercase(cache_checksums[i].high64) + getHexUIntUppercase(cache_checksums[i].low64));
+                    getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
+                    getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
 
             disk_checksums.push_back(disk_checksum);
             continue;
@@ -287,8 +262,8 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                 ErrorCodes::CORRUPTED_DATA,
                 "Checksums doesn't match in projection part {} {}. Expected: {}. Found {}.",
                 part->name, proj_name,
-                getHexUIntUppercase(disk_checksum.high64) + getHexUIntUppercase(disk_checksum.low64),
-                getHexUIntUppercase(cache_checksums[i].high64) + getHexUIntUppercase(cache_checksums[i].low64));
+                getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
+                getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
         disk_checksums.push_back(disk_checksum);
     }
     return results;

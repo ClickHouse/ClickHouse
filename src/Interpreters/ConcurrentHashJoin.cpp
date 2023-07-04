@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -39,7 +38,7 @@ static UInt32 toPowerOfTwo(UInt32 x)
 ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
-    , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
+    , slots(toPowerOfTwo(std::min<size_t>(slots_, 256)))
 {
     for (size_t i = 0; i < slots; ++i)
     {
@@ -162,14 +161,16 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
+std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
-    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
+    if (table_join->strictness() == JoinStrictness::Asof ||
+        table_join->strictness() == JoinStrictness::Semi ||
+        !isRightOrFull(table_join->kind()))
+    {
         return {};
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
-                    table_join->kind(), table_join->strictness());
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
 static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
@@ -203,7 +204,6 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
 
 Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
-    /// TODO: use JoinCommon::scatterBlockByHash
     size_t num_shards = hash_joins.size();
     size_t num_cols = from_block.columns();
 

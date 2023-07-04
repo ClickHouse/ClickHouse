@@ -13,7 +13,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -30,13 +30,13 @@ private:
 
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
         assert(parameters == nested_func->getParameters());
         for (const auto & type : arguments)
             if (!isArray(type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
+                throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override
@@ -44,9 +44,9 @@ public:
         return nested_func->getName() + "Array";
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
+    DataTypePtr getReturnType() const override
     {
-        return nested_->getResultType();
+        return nested_func->getReturnType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -129,7 +129,7 @@ public:
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
             if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
+                throw Exception("Arrays passed to " + getName() + " aggregate function have different sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
 
         for (size_t i = begin; i < end; ++i)
@@ -139,13 +139,6 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
-    }
-
-    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
-    {
-        nested_func->merge(place, rhs, thread_pool, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -161,11 +154,6 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        nested_func->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

@@ -135,7 +135,7 @@ def check_args_and_update_paths(args):
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call(
-        'docker ps --all --quiet --filter name={name} --format="{{{{.ID}}}}"'.format(
+        'docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(
             name=CONTAINER_NAME
         ),
         shell=True,
@@ -243,21 +243,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-random",
-        action="store",
-        dest="no_random",
-        help="Disable tests order randomization",
-    )
-
-    parser.add_argument(
-        "--pre-pull",
-        action="store_true",
-        default=False,
-        dest="pre_pull",
-        help="Pull images for docker_compose before all other actions",
-    )
-
-    parser.add_argument(
         "-t",
         "--tests_list",
         action="store",
@@ -309,10 +294,6 @@ if __name__ == "__main__":
         parallel_args += "--dist=loadfile"
         parallel_args += " -n {}".format(args.parallel)
 
-    rand_args = ""
-    # if not args.no_random:
-    #     rand_args += f"--random-seed={os.getpid()}"
-
     net = ""
     if args.network:
         net = "--net={}".format(args.network)
@@ -336,8 +317,6 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
             elif image == "clickhouse/postgresql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
-            elif image == "clickhouse/integration-helper":
-                env_tags += "-e {}={} ".format("DOCKER_HELPER_TAG", tag)
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
             elif image == "clickhouse/kerberized-hadoop":
@@ -371,7 +350,8 @@ if __name__ == "__main__":
         # randomizer, we should remove it after Sep 2022
         try:
             subprocess.check_call(
-                f"docker volume ls -q | grep '{VOLUME_NAME}_.*_volume' | xargs --no-run-if-empty docker volume rm",
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
                 shell=True,
             )
         except Exception as ex:
@@ -395,31 +375,37 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    pytest_opts = " ".join(args.pytest_args).replace("'", "\\'")
-    tests_list = " ".join(args.tests_list)
-    cmd_base = (
-        f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
-        "--privileged --dns-search='.' "  # since recent dns search leaks from host
-        f"--volume={args.odbc_bridge_binary}:/clickhouse-odbc-bridge "
-        f"--volume={args.binary}:/clickhouse "
-        f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
-        f"--volume={args.base_configs_dir}:/clickhouse-config "
-        f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
-        f"--volume={args.src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos "
-        f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        "-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 -e PYTHONUNBUFFERED=1 "
-        f"-e PYTEST_OPTS='{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv'"
-        f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
-    )
-
-    cmd = cmd_base + " " + args.command
-    cmd_pre_pull = (
-        f"{cmd_base} find /compose -name docker_compose_*.yml "
-        r"-exec docker-compose -f '{}' pull \;"
+    cmd = "docker run {net} {tty} --rm --name {name} --privileged \
+        --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
+        --volume={library_bridge_bin}:/clickhouse-library-bridge \
+        --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
+        --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
+        --volume=/run:/run/host:ro \
+        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
+        -e XTABLES_LOCKFILE=/run/host/xtables.lock \
+        -e PYTHONUNBUFFERED=1 \
+        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
+        net=net,
+        tty=tty,
+        bin=args.binary,
+        odbc_bridge_bin=args.odbc_bridge_binary,
+        library_bridge_bin=args.library_bridge_binary,
+        base_cfg=args.base_configs_dir,
+        cases_dir=args.cases_dir,
+        src_dir=args.src_dir,
+        env_tags=env_tags,
+        env_cleanup=env_cleanup,
+        parallel=parallel_args,
+        opts=" ".join(args.pytest_args).replace("'", "\\'"),
+        tests_list=" ".join(args.tests_list),
+        dockerd_internal_volume=dockerd_internal_volume,
+        img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
+        name=CONTAINER_NAME,
+        command=args.command,
     )
 
     containers = subprocess.check_output(
-        f"docker ps --all --quiet --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
         shell=True,
         universal_newlines=True,
     ).splitlines()
@@ -427,10 +413,6 @@ if __name__ == "__main__":
         print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print(f"Containers {containers} killed")
-
-    if args.pre_pull:
-        print(("Running pre pull as: '" + cmd_pre_pull + "'."))
-        subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)

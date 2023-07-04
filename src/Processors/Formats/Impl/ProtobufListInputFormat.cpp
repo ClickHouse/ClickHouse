@@ -30,12 +30,6 @@ ProtobufListInputFormat::ProtobufListInputFormat(
 {
 }
 
-void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    reader->setReadBuffer(in_);
-    IRowInputFormat::setReadBuffer(in_);
-}
-
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
     if (reader->eof())
@@ -88,14 +82,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
             });
     factory.markFormatSupportsSubsetOfColumns("ProtobufList");
     factory.registerAdditionalInfoForSchemaCacheGetter(
-        "ProtobufList",
-        [](const FormatSettings & settings)
-        {
-            return fmt::format(
-                "format_schema={}, skip_fields_with_unsupported_types_in_schema_inference={}",
-                settings.schema.format_schema,
-                settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
-        });
+        "ProtobufList", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory)

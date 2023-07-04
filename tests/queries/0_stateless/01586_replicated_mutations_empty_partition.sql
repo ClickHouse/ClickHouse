@@ -1,6 +1,6 @@
 -- Tags: replica
 
-DROP TABLE IF EXISTS replicated_mutations_empty_partitions SYNC;
+DROP TABLE IF EXISTS replicated_mutations_empty_partitions;
 
 CREATE TABLE replicated_mutations_empty_partitions
 (
@@ -11,8 +11,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/test/'||currentDatabase()||'/01586_rep
 ORDER BY key
 PARTITION by key;
 
--- insert_keeper* settings are adjusted since several actual inserts are happening behind one statement due to partitioning i.e. inserts in different partitions
-INSERT INTO replicated_mutations_empty_partitions SETTINGS insert_keeper_max_retries=100, insert_keeper_retry_max_backoff_ms=10 SELECT number, toString(number) FROM numbers(10);
+INSERT INTO replicated_mutations_empty_partitions SELECT number, toString(number) FROM numbers(10);
 
 SELECT count(distinct value) FROM replicated_mutations_empty_partitions;
 
@@ -32,4 +31,4 @@ SELECT sum(value) FROM replicated_mutations_empty_partitions;
 
 SHOW CREATE TABLE replicated_mutations_empty_partitions;
 
-DROP TABLE IF EXISTS replicated_mutations_empty_partitions SYNC;
+DROP TABLE IF EXISTS replicated_mutations_empty_partitions;

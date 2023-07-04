@@ -2,7 +2,6 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
-#include <base/range.h>
 #include <utility>
 
 
@@ -16,27 +15,22 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
-        const String & path_prefix_,
-        const String & data_file_extension_,
-        size_t marks_count_,
+        DataPartStoragePtr data_part_storage_,
+        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges_,
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache_,
-        UncompressedCache * uncompressed_cache_,
-        size_t file_size_,
+        UncompressedCache * uncompressed_cache_, size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_,
-        bool is_low_cardinality_dictionary_,
-        ThreadPool * load_marks_cache_threadpool_)
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_,
+        bool is_low_cardinality_dictionary_)
     : settings(settings_)
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , all_mark_ranges(all_mark_ranges_)
     , file_size(file_size_)
     , uncompressed_cache(uncompressed_cache_)
-    , data_part_storage(data_part_reader_->getDataPartStorage())
+    , data_part_storage(std::move(data_part_storage_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
@@ -45,14 +39,13 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
     , marks_loader(
-        data_part_reader_,
+        data_part_storage,
         mark_cache,
         index_granularity_info->getMarksFilePath(path_prefix),
         marks_count,
         *index_granularity_info,
         save_marks_in_cache,
-        settings.read_settings,
-        load_marks_cache_threadpool_)
+        settings.read_settings)
 {
 }
 

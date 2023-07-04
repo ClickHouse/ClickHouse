@@ -1,5 +1,3 @@
--- Tags: no-random-merge-tree-settings
-
 DROP TABLE IF EXISTS codecTest;
 
 CREATE TABLE codecTest (

@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/table-functions/view
-sidebar_position: 210
+sidebar_position: 51
 sidebar_label: view
-title: view
 ---
+
+## view
 
 Turns a subquery into a table. The function implements views (see [CREATE VIEW](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
 
@@ -15,11 +15,11 @@ view(subquery)
 
 **Arguments**
 
-- `subquery` — `SELECT` query.
+-   `subquery` — `SELECT` query.
 
 **Returned value**
 
-- A table.
+-   A table.
 
 **Example**
 
@@ -63,4 +63,6 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 
 **See Also**
 
-- [View Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/view/)
+-   [View Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/view/)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/view/) <!--hide-->

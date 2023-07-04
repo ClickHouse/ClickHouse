@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/session_log
----
 # system.session_log {#system_tables-session_log}
 
 Содержит информацию о всех успешных и неудачных событиях входа и выхода из системы.
@@ -27,7 +24,7 @@ slug: /ru/operations/system-tables/session_log
 -   `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — список профилей, установленных для всех ролей и (или) пользователей.
 -   `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — список ролей, к которым применяется данный профиль.
 -   `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — настройки, которые были изменены при входе или выходе клиента из системы.
--   `client_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP-адрес, который использовался для входа или выхода из системы.
+-   `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP-адрес, который использовался для входа или выхода из системы.
 -   `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт клиента, который использовался для входа или выхода из системы.
 -   `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — интерфейс, с которого был инициирован вход в систему. Возможные значения:
     -   `TCP`

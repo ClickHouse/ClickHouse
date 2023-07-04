@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
-#include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -45,30 +44,9 @@ StorageSQLite::StorageSQLite(
     , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-
-    if (columns_.empty())
-    {
-        auto columns = getTableStructureFromData(sqlite_db, remote_table_name);
-        storage_metadata.setColumns(columns);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-}
-
-
-ColumnsDescription StorageSQLite::getTableStructureFromData(
-    const SQLitePtr & sqlite_db_,
-    const String & table)
-{
-    auto columns = fetchSQLiteTableStructure(sqlite_db_.get(), table);
-
-    if (!columns)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Failed to fetch table structure for {}", table);
-
-    return ColumnsDescription{*columns};
 }
 
 
@@ -79,7 +57,7 @@ Pipe StorageSQLite::read(
     ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    unsigned int)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
@@ -88,7 +66,6 @@ Pipe StorageSQLite::read(
 
     String query = transformQueryForExternalDatabase(
         query_info,
-        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         "",
@@ -169,7 +146,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
@@ -184,7 +161,8 @@ void registerStorageSQLite(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name");
+            throw Exception("SQLite database requires 2 arguments: database path, table name",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
@@ -198,7 +176,6 @@ void registerStorageSQLite(StorageFactory & factory)
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {
-        .supports_schema_inference = true,
         .source_access_type = AccessType::SQLITE,
     });
 }

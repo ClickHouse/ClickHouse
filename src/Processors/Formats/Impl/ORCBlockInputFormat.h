@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "config_formats.h"
 #if USE_ORC
 
 #include <Processors/Formats/IInputFormat.h>
@@ -29,8 +29,6 @@ public:
 
     const BlockMissingValues & getMissingValues() const override;
 
-    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
-
 protected:
     Chunk generate() override;
 
@@ -51,8 +49,8 @@ private:
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
 
+    std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;

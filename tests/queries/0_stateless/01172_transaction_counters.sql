@@ -1,8 +1,9 @@
--- Tags: no-ordinary-database
+-- Tags: no-s3-storage, no-ordinary-database
+-- FIXME this test fails with S3 due to a bug in DiskCacheWrapper
 
 drop table if exists txn_counters;
 
-create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n SETTINGS old_parts_lifetime=3600;
+create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n;
 
 insert into txn_counters(n) values (1);
 select transactionID();
@@ -31,7 +32,7 @@ attach table txn_counters;
 begin transaction;
 insert into txn_counters(n) values (4);
 select 6, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
-select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' and active order by system.parts.name;
+select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
 select 8, transactionID().3 == serverUUID();
 commit;
 

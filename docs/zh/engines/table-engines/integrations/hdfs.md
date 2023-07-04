@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/integrations/hdfs
 sidebar_position: 36
 sidebar_label: HDFS
 ---
@@ -205,3 +204,5 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 **另请参阅**
 
 -   [虚拟列](../index.md#table_engines-virtual_columns)
+
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/hdfs/) <!--hide-->

@@ -12,17 +12,6 @@ echo '{
     "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }' | dd of=/etc/docker/daemon.json 2>/dev/null
 
-if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
-    # move the processes from the root group to the /init group,
-    # otherwise writing subtree_control fails with EBUSY.
-    # An error during moving non-existent process (i.e., "cat") is ignored.
-    mkdir -p /sys/fs/cgroup/init
-    xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
-    # enable controllers
-    sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
-        > /sys/fs/cgroup/cgroup.subtree_control
-fi
-
 # In case of test hung it is convenient to use pytest --pdb to debug it,
 # and on hung you can simply press Ctrl-C and it will spawn a python pdb,
 # but on SIGINT dockerd will exit, so ignore it to preserve the daemon.
@@ -45,16 +34,11 @@ done
 set -e
 
 # cleanup for retry run if volume is not recreated
+# shellcheck disable=SC2046
 {
-    docker ps --all --quiet | xargs --no-run-if-empty docker kill || true
-    docker ps --all --quiet | xargs --no-run-if-empty docker rm || true
+    docker ps -aq | xargs -r docker kill || true
+    docker ps -aq | xargs -r docker rm || true
 }
-
-java_path="$(update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p')"
-export JAVA_PATH=$java_path
-export SPARK_HOME="/spark-3.3.2-bin-hadoop3"
-export PATH=$SPARK_HOME/bin:$PATH
-export JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
@@ -63,8 +47,6 @@ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-config
 export CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH=/clickhouse-odbc-bridge
 export CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH=/clickhouse-library-bridge
 
-export DOCKER_BASE_TAG=${DOCKER_BASE_TAG:=latest}
-export DOCKER_HELPER_TAG=${DOCKER_HELPER_TAG:=latest}
 export DOCKER_MYSQL_GOLANG_CLIENT_TAG=${DOCKER_MYSQL_GOLANG_CLIENT_TAG:=latest}
 export DOCKER_DOTNET_CLIENT_TAG=${DOCKER_DOTNET_CLIENT_TAG:=latest}
 export DOCKER_MYSQL_JAVA_CLIENT_TAG=${DOCKER_MYSQL_JAVA_CLIENT_TAG:=latest}

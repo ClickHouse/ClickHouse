@@ -1,6 +1,6 @@
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCacheSettings.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Disks/DiskFactory.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check */)
+void registerDiskCache(DiskFactory & factory)
 {
     auto creator = [](const String & name,
                     const Poco::Util::AbstractConfiguration & config,
@@ -40,18 +40,13 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         FileCacheSettings file_cache_settings;
         file_cache_settings.loadFromConfig(config, config_prefix);
 
-        if (file_cache_settings.base_path.empty())
-            file_cache_settings.base_path = fs::path(context->getPath()) / "disks" / name / "cache/";
-        else if (fs::path(file_cache_settings.base_path).is_relative())
-            file_cache_settings.base_path = fs::path(context->getPath()) / "caches" / file_cache_settings.base_path;
+        auto cache_base_path = config.getString(config_prefix + ".path", fs::path(context->getPath()) / "disks" / name / "cache/");
+        if (!fs::exists(cache_base_path))
+            fs::create_directories(cache_base_path);
 
-        auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
         auto disk = disk_it->second;
-        if (!dynamic_cast<const DiskObjectStorage *>(disk.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot wrap disk `{}` with cache layer `{}`: cached disk is allowed only on top of object storage",
-                disk_name, name);
 
+        auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
         auto disk_object_storage = disk->createDiskObjectStorage();
 
         disk_object_storage->wrapWithCache(cache, file_cache_settings, name);

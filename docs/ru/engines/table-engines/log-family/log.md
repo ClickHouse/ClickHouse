@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/log-family/log
 sidebar_position: 33
 sidebar_label: Log
 ---

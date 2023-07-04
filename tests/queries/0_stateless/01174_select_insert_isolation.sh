@@ -2,7 +2,6 @@
 # Tags: long, no-ordinary-database
 
 # shellcheck disable=SC2015
-# shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,7 +55,7 @@ thread_select & PID_4=$!
 wait $PID_1 && wait $PID_2 && wait $PID_3
 kill -TERM $PID_4
 wait
-wait_for_queries_to_finish 40
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

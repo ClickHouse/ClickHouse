@@ -25,9 +25,9 @@ public:
     bool isReadOnly() const override;
     bool isReadOnly(const UUID & id) const override;
 
+    void reload() override;
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
-    void reload(ReloadMode reload_mode) override;
 
     void setStorages(const std::vector<StoragePtr> & storages);
     void addStorage(const StoragePtr & new_storage);

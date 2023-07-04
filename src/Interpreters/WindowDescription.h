@@ -7,14 +7,12 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
+#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB
 {
 
 class ASTFunction;
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 struct WindowFunctionDescription
 {
@@ -100,6 +98,7 @@ struct WindowDescription
 
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
+
 
     std::string dump() const;
 

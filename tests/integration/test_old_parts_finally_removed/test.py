@@ -27,8 +27,7 @@ def started_cluster():
 
 def test_part_finally_removed(started_cluster):
     node1.query(
-        "CREATE TABLE drop_outdated_part (Key UInt64) ENGINE = ReplicatedMergeTree('/table/d', '1') ORDER BY tuple() "
-        "SETTINGS old_parts_lifetime=10, cleanup_delay_period=10, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0"
+        "CREATE TABLE drop_outdated_part (Key UInt64) ENGINE = ReplicatedMergeTree('/table/d', '1') ORDER BY tuple() SETTINGS old_parts_lifetime=10, cleanup_delay_period=10, cleanup_delay_period_random_add=1"
     )
     node1.query("INSERT INTO drop_outdated_part VALUES (1)")
 
@@ -45,7 +44,7 @@ def test_part_finally_removed(started_cluster):
     )
 
     node1.query(
-        "ALTER TABLE drop_outdated_part MODIFY SETTING old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0"
+        "ALTER TABLE drop_outdated_part MODIFY SETTING old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1"
     )
 
     for i in range(60):
@@ -64,6 +63,7 @@ def test_part_finally_removed(started_cluster):
     )
 
     for i in range(60):
+
         if (
             node1.query(
                 "SELECT count() from system.parts WHERE table = 'drop_outdated_part'"

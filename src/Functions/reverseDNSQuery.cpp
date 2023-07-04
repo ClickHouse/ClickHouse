@@ -98,21 +98,7 @@ public:
 
 REGISTER_FUNCTION(ReverseDNSQuery)
 {
-    factory.registerFunction<ReverseDNSQuery>(
-            FunctionDocumentation{
-                .description = R"(Performs a reverse DNS query to get the PTR records associated with the IP address)",
-                .syntax = "reverseDNSQuery(address)",
-                .arguments = {{"address", "An IPv4 or IPv6 address. [String](../../sql-reference/data-types/string.md)"}},
-                .returned_value = "Associated domains (PTR records). [String](../../sql-reference/data-types/string.md).",
-                .examples = {{"",
-                              "SELECT reverseDNSQuery('192.168.0.2');",
-R"(
-┌─reverseDNSQuery('192.168.0.2')────────────┐
-│ ['test2.example.com','test3.example.com'] │
-└───────────────────────────────────────────┘
-)"}}
-            }
-    );
+    factory.registerFunction<ReverseDNSQuery>();
 }
 
 }

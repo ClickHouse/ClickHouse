@@ -31,7 +31,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
-    extern const int LOGICAL_ERROR;
 }
 
 class GlobalSubqueriesMatcher
@@ -97,7 +96,7 @@ public:
             }
 
             if (!subquery_or_table_name)
-                throw Exception(ErrorCodes::WRONG_GLOBAL_SUBQUERY, "Global subquery requires subquery or table name");
+                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
 
             if (is_table)
             {
@@ -162,20 +161,30 @@ public:
                 nullptr,
                 /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
+
             external_tables.emplace(external_table_name, external_storage_holder);
 
-            auto set_key = database_and_table_name->getTreeHash();
-
-            if (!prepared_sets->findSubquery(set_key))
+            /// We need to materialize external tables immediately because reading from distributed
+            /// tables might generate local plans which can refer to external tables during index
+            /// analysis. It's too late to populate the external table via CreatingSetsTransform.
+            if (is_explain)
             {
-                std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
-                interpreter->buildQueryPlan(*source);
-
-                auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
-                external_storage_holder->future_set = std::move(future_set);
+                /// Do not materialize external tables if it's explain statement.
+            }
+            else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            {
+                auto external_table = external_storage_holder->getTable();
+                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
+                auto io = interpreter->execute();
+                io.pipeline.complete(std::move(table_out));
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
             }
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set is already created for GLOBAL IN");
+            {
+                auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
+                subquery_for_set.createSource(*interpreter, external_storage);
+            }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
             *  then a new temporary table will be created (for example, _data1),
@@ -200,19 +209,10 @@ public:
     }
 
 private:
-    static bool shouldBeExecutedGlobally(const Data & data)
-    {
-        const Settings & settings = data.getContext()->getSettingsRef();
-        /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
-        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
-        return settings.prefer_global_in_and_join || enable_parallel_processing_of_joins;
-    }
-
-
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((shouldBeExecutedGlobally(data)
+        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
@@ -242,7 +242,8 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || shouldBeExecutedGlobally(data)))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
+                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             Names required_columns;
 

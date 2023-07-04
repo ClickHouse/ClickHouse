@@ -5,11 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-opts=(
-    "--allow_experimental_analyzer=0"
-)
-
-$CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 --multiquery <<EOF
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --multiquery <<EOF
 SET allow_experimental_window_view = 1;
 SET window_view_clean_interval = 1;
 
@@ -28,19 +24,19 @@ INSERT INTO test_01086.mt VALUES (1, 5, toDateTime('1990/01/01 12:00:06', 'US/Sa
 EOF
 
 while true; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM test_01086.\`.inner.wv\`" | grep -q "5" && break || sleep .5 ||:
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM test_01086.\`.inner.wv\`" | grep -q "5" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT sleep(2);"
+$CLICKHOUSE_CLIENT --query="SELECT sleep(2);"
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="INSERT INTO test_01086.mt VALUES (1, 6, toDateTime('1990/01/01 12:00:11', 'US/Samoa'));"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01086.mt VALUES (1, 6, toDateTime('1990/01/01 12:00:11', 'US/Samoa'));"
 
 while true; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM test_01086.\`.inner.wv\`" | grep -q "3" && break || sleep .5 ||:
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM test_01086.\`.inner.wv\`" | grep -q "3" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT market, wid FROM test_01086.\`.inner.wv\` ORDER BY market, \`windowID(timestamp, toIntervalSecond('5'), 'US/Samoa')\` as wid";
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.wv SYNC;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.mt SYNC;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE test_01086.dst SYNC;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP DATABASE test_01086 SYNC;"
+$CLICKHOUSE_CLIENT --query="SELECT market, wid FROM test_01086.\`.inner.wv\` ORDER BY market, \`windowID(timestamp, toIntervalSecond('5'), 'US/Samoa')\` as wid";
+$CLICKHOUSE_CLIENT --query="DROP TABLE test_01086.wv NO DELAY;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE test_01086.mt NO DELAY;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE test_01086.dst NO DELAY;"
+$CLICKHOUSE_CLIENT --query="DROP DATABASE test_01086 NO DELAY;"
