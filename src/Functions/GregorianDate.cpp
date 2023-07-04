@@ -115,7 +115,7 @@ GregorianDate::GregorianDate(ReadBuffer & in)
     assertEOF(in);
 
     if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > gd::monthLength(gd::is_leap_year(year_), month_))
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date: {}", toString());
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date");
 }
 
 GregorianDate::GregorianDate(int64_t modified_julian_day)
@@ -143,7 +143,7 @@ ReturnType GregorianDate::writeImpl(WriteBuffer & buf) const
     {
         if constexpr (std::is_same_v<ReturnType, void>)
             throw Exception(ErrorCodes::CANNOT_FORMAT_DATETIME,
-                "Impossible to stringify: year too big or small: {}", DB::toString(year_));
+                "Impossible to stringify: year too big or small: {}", year_);
         else
             return false;
     }
@@ -231,7 +231,7 @@ MonthDay::MonthDay(uint8_t month, uint8_t day_of_month)
     , day_of_month_(day_of_month)
 {
     if (month < 1 || month > 12)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid month: {}", DB::toString(month));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid month: {}", month);
     /* We can't validate day_of_month here, because we don't know if
      * it's a leap year. */
 }
@@ -240,7 +240,7 @@ MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
 {
     if (day_of_year < 1 || day_of_year > (is_leap_year ? 366 : 365))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year: {}{}",
-                        (is_leap_year ? "leap, " : "non-leap, "), DB::toString(day_of_year));
+                        (is_leap_year ? "leap, " : "non-leap, "), day_of_year);
 
     month_ = 1;
     uint16_t d = day_of_year;
@@ -249,7 +249,7 @@ MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
         const auto len = gd::monthLength(is_leap_year, month_);
         if (d <= len)
             break;
-        month_++;
+        ++month_;
         d -= len;
     }
     day_of_month_ = d;
@@ -260,7 +260,7 @@ uint16_t MonthDay::dayOfYear(bool is_leap_year) const
     if (day_of_month_ < 1 || day_of_month_ > gd::monthLength(is_leap_year, month_))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of month: {}{}-{}",
-            (is_leap_year ? "leap, " : "non-leap, "), DB::toString(month_), DB::toString(day_of_month_));
+            (is_leap_year ? "leap, " : "non-leap, "), month_, day_of_month_);
     }
     const auto k = month_ <= 2 ? 0 : is_leap_year ? -1 :-2;
     return (367 * month_ - 362) / 12 + k + day_of_month_;
