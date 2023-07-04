@@ -39,6 +39,9 @@
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/assertProcessUserMatchesDataOwner.h>
+#include <Common/makeSocketAddress.h>
+#include <Server/waitServersToFinish.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -130,6 +133,7 @@ namespace CurrentMetrics
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
 }
@@ -199,40 +203,6 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     }
 }
 
-
-namespace
-{
-
-size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
-{
-    const size_t sleep_max_ms = 1000 * seconds_to_wait;
-    const size_t sleep_one_ms = 100;
-    size_t sleep_current_ms = 0;
-    size_t current_connections = 0;
-    for (;;)
-    {
-        current_connections = 0;
-
-        for (auto & server : servers)
-        {
-            server.stop();
-            current_connections += server.currentConnections();
-        }
-
-        if (!current_connections)
-            break;
-
-        sleep_current_ms += sleep_one_ms;
-        if (sleep_current_ms < sleep_max_ms)
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
-        else
-            break;
-    }
-    return current_connections;
-}
-
-}
-
 namespace DB
 {
 
@@ -243,8 +213,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int FAILED_TO_GETPWUID;
-    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
 }
@@ -258,54 +226,6 @@ static std::string getCanonicalPath(std::string && path)
     if (path.back() != '/')
         path += '/';
     return std::move(path);
-}
-
-static std::string getUserName(uid_t user_id)
-{
-    /// Try to convert user id into user name.
-    auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
-    if (buffer_size <= 0)
-        buffer_size = 1024;
-    std::string buffer;
-    buffer.reserve(buffer_size);
-
-    struct passwd passwd_entry;
-    struct passwd * result = nullptr;
-    const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
-
-    if (error)
-        throwFromErrno("Failed to find user name for " + toString(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
-    else if (result)
-        return result->pw_name;
-    return toString(user_id);
-}
-
-Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port, Poco::Logger * log)
-{
-    Poco::Net::SocketAddress socket_address;
-    try
-    {
-        socket_address = Poco::Net::SocketAddress(host, port);
-    }
-    catch (const Poco::Net::DNSException & e)
-    {
-        const auto code = e.code();
-        if (code == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-                    || code == EAI_ADDRFAMILY
-#endif
-           )
-        {
-            LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
-                "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                "specify IPv4 address to listen in <listen_host> element of configuration "
-                "file. Example: <listen_host>0.0.0.0</listen_host>",
-                host, e.code(), e.message());
-        }
-
-        throw;
-    }
-    return socket_address;
 }
 
 Poco::Net::SocketAddress Server::socketBindListen(
@@ -763,20 +683,35 @@ try
     });
 #endif
 
-    IOThreadPool::initialize(
+    getIOThreadPool().initialize(
         server_settings.max_io_thread_pool_size,
         server_settings.max_io_thread_pool_free_size,
         server_settings.io_thread_pool_queue_size);
 
-    BackupsIOThreadPool::initialize(
+    getBackupsIOThreadPool().initialize(
         server_settings.max_backups_io_thread_pool_size,
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
-    OutdatedPartsLoadingThreadPool::initialize(
+    getActivePartsLoadingThreadPool().initialize(
+        server_settings.max_active_parts_loading_thread_pool_size,
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_active_parts_loading_thread_pool_size);
+
+    getOutdatedPartsLoadingThreadPool().initialize(
         server_settings.max_outdated_parts_loading_thread_pool_size,
-        0, // We don't need any threads one all the parts will be loaded
-        server_settings.outdated_part_loading_thread_pool_queue_size);
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_outdated_parts_loading_thread_pool_size);
+
+    /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+    getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+        server_settings.max_active_parts_loading_thread_pool_size
+    );
+
+    getPartsCleaningThreadPool().initialize(
+        server_settings.max_parts_cleaning_thread_pool_size,
+        0, // We don't need any threads one all the parts will be deleted
+        server_settings.max_parts_cleaning_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -958,24 +893,7 @@ try
     std::string default_database = server_settings.default_database.toString();
 
     /// Check that the process user id matches the owner of the data.
-    const auto effective_user_id = geteuid();
-    struct stat statbuf;
-    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
-    {
-        const auto effective_user = getUserName(effective_user_id);
-        const auto data_owner = getUserName(statbuf.st_uid);
-        std::string message = "Effective user of the process (" + effective_user +
-            ") does not match the owner of the data (" + data_owner + ").";
-        if (effective_user_id == 0)
-        {
-            message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
-        }
-        else
-        {
-            global_context->addWarningMessage(message);
-        }
-    }
+    assertProcessUserMatchesDataOwner(path_str, [&](const std::string & message){ global_context->addWarningMessage(message); });
 
     global_context->setPath(path_str);
 
@@ -1042,8 +960,8 @@ try
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
-    DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
+    DateLUT::serverTimezoneInstance();
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings.tmp_policy.value.empty())
@@ -1225,6 +1143,25 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
+
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            if (merges_mutations_memory_usage_soft_limit == 0 || merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+            {
+                merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+                LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            }
+
+            LOG_INFO(log, "Merges and mutations memory limit is set to {}",
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit));
+            background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
+            background_memory_tracker.setDescription("(background)");
+            background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
+
             total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
@@ -1238,8 +1175,13 @@ try
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
-            global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            if (global_context->isServerCompletelyStarted())
+            {
+                /// It does not make sense to reload anything before server has started.
+                /// Moreover, it may break initialization order.
+                global_context->loadOrReloadDictionaries(*config);
+                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            }
 
             global_context->setRemoteHostFilter(*config);
 
@@ -1298,6 +1240,36 @@ try
             global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+
+            getIOThreadPool().reloadConfiguration(
+                server_settings.max_io_thread_pool_size,
+                server_settings.max_io_thread_pool_free_size,
+                server_settings.io_thread_pool_queue_size);
+
+            getBackupsIOThreadPool().reloadConfiguration(
+                server_settings.max_backups_io_thread_pool_size,
+                server_settings.max_backups_io_thread_pool_free_size,
+                server_settings.backups_io_thread_pool_queue_size);
+
+            getActivePartsLoadingThreadPool().reloadConfiguration(
+                server_settings.max_active_parts_loading_thread_pool_size,
+                0, // We don't need any threads once all the parts will be loaded
+                server_settings.max_active_parts_loading_thread_pool_size);
+
+            getOutdatedPartsLoadingThreadPool().reloadConfiguration(
+                server_settings.max_outdated_parts_loading_thread_pool_size,
+                0, // We don't need any threads once all the parts will be loaded
+                server_settings.max_outdated_parts_loading_thread_pool_size);
+
+            /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+            getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+                server_settings.max_active_parts_loading_thread_pool_size
+            );
+
+            getPartsCleaningThreadPool().reloadConfiguration(
+                server_settings.max_parts_cleaning_thread_pool_size,
+                0, // We don't need any threads one all the parts will be deleted
+                server_settings.max_parts_cleaning_thread_pool_size);
 
             if (config->has("resources"))
             {
@@ -1370,8 +1342,8 @@ try
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config(), socket, listen_host, port);
-                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    socket.setReceiveTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
+                    socket.setSendTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
@@ -1393,8 +1365,8 @@ try
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socketBindListen(config(), socket, listen_host, port, /* secure = */ true);
-                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    socket.setReceiveTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
+                    socket.setSendTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
                     return ProtocolServerAdapter(
                         listen_host,
                         secure_port_name,
@@ -1733,7 +1705,6 @@ try
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-
         async_metrics.start();
 
         {
@@ -1847,7 +1818,7 @@ try
             }
 
             if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+                LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
                 LOG_INFO(log, "Closed all listening sockets.");
 
@@ -1859,7 +1830,7 @@ try
                 current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
-                LOG_INFO(log, "Closed connections. But {} remain."
+                LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
@@ -1875,7 +1846,7 @@ try
 
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
-                LOG_INFO(log, "Will shutdown forcefully.");
+                LOG_WARNING(log, "Will shutdown forcefully.");
                 safeExit(0);
             }
         });

@@ -8,10 +8,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-
+#include <Backups/BackupCoordinationStage.h>
 
 namespace DB
 {
+
+namespace Stage = BackupCoordinationStage;
 
 namespace ErrorCodes
 {
@@ -42,7 +44,7 @@ void BackupCoordinationStageSync::createRootNodes()
     });
 }
 
-void BackupCoordinationStageSync::set(const String & current_host, const String & new_stage, const String & message)
+void BackupCoordinationStageSync::set(const String & current_host, const String & new_stage, const String & message, const bool & all_hosts)
 {
     auto holder = with_retries.createRetriesControlHolder("set");
     holder.retries_ctl.retryLoop(
@@ -50,14 +52,23 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
     {
         with_retries.renewZooKeeper(zookeeper);
 
-        /// Make an ephemeral node so the initiator can track if the current host is still working.
-        String alive_node_path = zookeeper_path + "/alive|" + current_host;
-        auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-            throw zkutil::KeeperException(code, alive_node_path);
+        if (all_hosts)
+        {
+            auto code = zookeeper->trySet(zookeeper_path, new_stage);
+            if (code != Coordination::Error::ZOK)
+                throw zkutil::KeeperException(code, zookeeper_path);
+        }
+        else
+        {
+            /// Make an ephemeral node so the initiator can track if the current host is still working.
+            String alive_node_path = zookeeper_path + "/alive|" + current_host;
+            auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException(code, alive_node_path);
 
-        zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
-        zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
+            zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
+            zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
+        }
     });
 }
 
@@ -73,6 +84,13 @@ void BackupCoordinationStageSync::setError(const String & current_host, const Ex
         writeStringBinary(current_host, buf);
         writeException(exception, buf, true);
         zookeeper->createIfNotExists(zookeeper_path + "/error", buf.str());
+
+        /// When backup/restore fails, it removes the nodes from Zookeeper.
+        /// Sometimes it fails to remove all nodes. It's possible that it removes /error node, but fails to remove /stage node,
+        /// so the following line tries to preserve the error status.
+        auto code = zookeeper->trySet(zookeeper_path, Stage::ERROR);
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperException(code, zookeeper_path);
     });
 }
 
