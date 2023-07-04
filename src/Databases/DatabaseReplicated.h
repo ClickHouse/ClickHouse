@@ -48,6 +48,8 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal) override;
 
+    bool canExecuteReplicatedMetadataAlter() const override;
+
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
