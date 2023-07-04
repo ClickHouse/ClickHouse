@@ -35,7 +35,7 @@ public:
     Self & operator=(T && rhs) { t = std::move(rhs); return *this;}
 
     // NOLINTBEGIN(google-explicit-constructor)
-    operator const T & () const { return t; }
+    constexpr operator const T & () const { return t; }
     operator T & () { return t; }
     // NOLINTEND(google-explicit-constructor)
 

@@ -49,17 +49,23 @@ echo -e "Successfully cloned previous release tests$OK" >> /test_output/test_res
 echo -e "Successfully downloaded previous release packages$OK" >> /test_output/test_results.tsv
 
 # Make upgrade check more funny by forcing Ordinary engine for system database
-mkdir /var/lib/clickhouse/metadata
+mkdir -p /var/lib/clickhouse/metadata
 echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
 
 # Install previous release packages
 install_packages previous_release_package_folder
 
-# Start server from previous release
-# Let's enable S3 storage by default
-export USE_S3_STORAGE_FOR_MERGE_TREE=1
-# Previous version may not be ready for fault injections
-export ZOOKEEPER_FAULT_INJECTION=0
+# Initial run without S3 to create system.*_log on local file system to make it
+# available for dump via clickhouse-local
+configure
+
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+
+start
+stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # force_sync=false doesn't work correctly on some older versions
 sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -67,14 +73,23 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
-configure
-
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
   | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
   > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+
+# Start server from previous release
+# Let's enable S3 storage by default
+export USE_S3_STORAGE_FOR_MERGE_TREE=1
+# Previous version may not be ready for fault injections
+export ZOOKEEPER_FAULT_INJECTION=0
+configure
+
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
 
@@ -102,9 +117,15 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages package_folder
-# Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
-export ZOOKEEPER_FAULT_INJECTION=0
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
+
+# Just in case previous version left some garbage in zk
+sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
+  | sed "s|>1<|>0<|g" \
+  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
@@ -168,6 +189,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Authentication failed" \
            -e "Cannot flush" \
            -e "Container already exists" \
+           -e "doesn't have metadata version on disk" \
     clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
@@ -184,8 +206,6 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
-
-check_oom_in_dmesg
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
 

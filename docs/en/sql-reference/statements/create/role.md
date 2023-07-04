@@ -5,7 +5,7 @@ sidebar_label: ROLE
 title: "CREATE ROLE"
 ---
 
-Creates new [roles](../../../operations/access-rights.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
+Creates new [roles](../../../guides/sre/user-management/index.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 
 Syntax:
 
@@ -22,7 +22,7 @@ User can have default roles which apply at user login. To set default roles, use
 
 To revoke a role, use the [REVOKE](../../../sql-reference/statements/revoke.md) statement.
 
-To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ## Examples
 

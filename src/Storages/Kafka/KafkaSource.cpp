@@ -101,8 +101,8 @@ Chunk KafkaSource::generateImpl()
     auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;

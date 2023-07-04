@@ -25,7 +25,6 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentThread.h>
-#include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadStatus.h>
 #include <Client/Connection.h>

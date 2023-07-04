@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Common/checkStackSize.h>
 #include <ranges>
 #include <Common/logger_useful.h>
@@ -109,7 +110,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
             if (hardlink_count == 0)
             {
-                objects_to_remove = objects;
+                objects_to_remove = std::move(objects);
             }
         }
         catch (const Exception & e)
@@ -194,7 +195,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
                 /// File is really redundant
                 if (hardlink_count == 0 && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    objects_to_remove.insert(objects_to_remove.end(), objects.begin(), objects.end());
+                    std::move(objects.begin(), objects.end(), std::back_inserter(objects_to_remove));
             }
             catch (const Exception & e)
             {
@@ -267,7 +268,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
                 if (hardlink_count == 0)
                 {
-                    objects_to_remove[path_to_remove] = objects_paths;
+                    objects_to_remove[path_to_remove] = std::move(objects_paths);
                 }
             }
             catch (const Exception & e)
@@ -321,7 +322,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             {
                 if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
                 {
-                    remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
+                    std::move(remote_paths.begin(), remote_paths.end(), std::back_inserter(remove_from_remote));
                 }
             }
             /// Read comment inside RemoveObjectStorageOperation class
@@ -450,8 +451,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         for (const auto & object_from : source_blobs)
         {
             std::string blob_name = object_storage.generateBlobNameForPath(to_path);
-            auto object_to = StoredObject::create(
-                object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+            auto object_to = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
 
             object_storage.copyObject(object_from, object_to);
 
@@ -616,7 +616,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
@@ -659,14 +659,57 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     operations_to_execute.emplace_back(std::move(write_operation));
 
-    /// We always use mode Rewrite because we simulate append using metadata and different files
-    return object_storage.writeObject(
+    auto impl = object_storage.writeObject(
         object,
+        /// We always use mode Rewrite because we simulate append using metadata and different files
         WriteMode::Rewrite,
         object_attributes,
-        std::move(create_metadata_callback),
         buf_size,
         settings);
+
+    return std::make_unique<WriteBufferWithFinalizeCallback>(
+        std::move(impl), std::move(create_metadata_callback), object.remote_path);
+}
+
+
+void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
+    const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+{
+    /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
+    auto blob_name = object_storage.generateBlobNameForPath(path);
+    std::optional<ObjectAttributes> object_attributes;
+
+    if (metadata_helper)
+    {
+        auto revision = metadata_helper->revision_counter + 1;
+        metadata_helper->revision_counter++;
+        object_attributes = {
+            {"path", path}
+        };
+        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
+    }
+
+    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
+
+    operations_to_execute.emplace_back(std::move(write_operation));
+
+    /// See DiskObjectStorage::getBlobPath().
+    Strings blob_path;
+    blob_path.reserve(2);
+    blob_path.emplace_back(object.remote_path);
+    String objects_namespace = object_storage.getObjectsNamespace();
+    if (!objects_namespace.empty())
+        blob_path.emplace_back(objects_namespace);
+
+    /// We always use mode Rewrite because we simulate append using metadata and different files
+    size_t object_size = std::move(write_blob_function)(blob_path, WriteMode::Rewrite, object_attributes);
+
+    /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
+    if (mode == WriteMode::Rewrite)
+        metadata_transaction->createMetadataFile(path, blob_name, object_size);
+    else
+        metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
 }
 
 

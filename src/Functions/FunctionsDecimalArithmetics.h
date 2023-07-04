@@ -10,7 +10,6 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
 

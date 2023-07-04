@@ -3,7 +3,6 @@
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <Common/HashTable/StringHashMap.h>
-#include <Common/Arena.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <mutex>
 #include <string>
@@ -11,6 +10,7 @@
 
 namespace DB
 {
+class Arena;
 
 enum TLDType
 {

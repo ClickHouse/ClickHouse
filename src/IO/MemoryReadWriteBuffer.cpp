@@ -5,12 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED;
-}
-
-
 class ReadBufferFromMemoryWriteBuffer : public ReadBuffer, boost::noncopyable, private Allocator<false>
 {
 public:
@@ -106,7 +100,7 @@ void MemoryWriteBuffer::addChunk()
     }
     else
     {
-        next_chunk_size = std::max(static_cast<size_t>(1), static_cast<size_t>(chunk_tail->size() * growth_rate));
+        next_chunk_size = std::max(1uz, static_cast<size_t>(chunk_tail->size() * growth_rate));
         next_chunk_size = std::min(next_chunk_size, max_chunk_size);
     }
 
@@ -118,7 +112,7 @@ void MemoryWriteBuffer::addChunk()
         if (0 == next_chunk_size)
         {
             set(position(), 0);
-            throw Exception(ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED, "MemoryWriteBuffer limit is exhausted");
+            throw MemoryWriteBuffer::CurrentBufferExhausted();
         }
     }
 
@@ -132,6 +126,8 @@ void MemoryWriteBuffer::addChunk()
 
 std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
+    finalize();
+
     auto res = std::make_shared<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
 
     /// invalidate members

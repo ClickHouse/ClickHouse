@@ -448,20 +448,25 @@ private:
 REGISTER_FUNCTION(DateDiff)
 {
     factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
 }
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    factory.registerFunction<FunctionTimeDiff>({R"(
+    factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
 Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
 It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
 
 Example:
 [example:typical]
 )",
-    Documentation::Examples{
-        {"typical", "SELECT timeDiff(UTCTimestamp(), now());"}},
-    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+    .examples{
+        {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
+    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Age)

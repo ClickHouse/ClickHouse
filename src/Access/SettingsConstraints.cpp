@@ -105,21 +105,21 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
-        if (!element.value.isNull())
+        if (element.value)
         {
-            SettingChange value(element.setting_name, element.value);
+            SettingChange value(element.setting_name, *element.value);
             check(current_settings, value);
         }
 
-        if (!element.min_value.isNull())
+        if (element.min_value)
         {
-            SettingChange value(element.setting_name, element.min_value);
+            SettingChange value(element.setting_name, *element.min_value);
             check(current_settings, value);
         }
 
-        if (!element.max_value.isNull())
+        if (element.max_value)
         {
-            SettingChange value(element.setting_name, element.max_value);
+            SettingChange value(element.setting_name, *element.max_value);
             check(current_settings, value);
         }
 

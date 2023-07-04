@@ -10,20 +10,8 @@
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <ctime>
-
-
-namespace
-{
-
-inline uint64_t clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return uint64_t(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-}
-
-}
 
 
 namespace mysqlxx
@@ -33,9 +21,12 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
+
     /// First reference, initialize thread
     if (data->ref_count.fetch_add(1) == 0)
         mysql_thread_init();
+
+    chassert(!data->removed_from_pool);
 }
 
 
@@ -44,9 +35,16 @@ void Pool::Entry::decrementRefCount()
     if (!data)
         return;
 
-    /// We were the last user of this thread, deinitialize it
-    if (data->ref_count.fetch_sub(1) == 1)
+    const auto ref_count = data->ref_count.fetch_sub(1);
+    if (ref_count == 1)
+    {
+        /// We were the last user of this thread, deinitialize it
         mysql_thread_end();
+        /// In Pool::Entry::disconnect() we remove connection from the list of pool's connections.
+        /// So now we must deallocate the memory.
+        if (data->removed_from_pool)
+            ::delete data;
+    }
 }
 
 
@@ -232,12 +230,10 @@ void Pool::removeConnection(Connection* connection)
     std::lock_guard lock(mutex);
     if (connection)
     {
-        if (connection->ref_count > 0)
-        {
+        if (!connection->removed_from_pool)
             connection->conn.disconnect();
-            connection->ref_count = 0;
-        }
         connections.remove(connection);
+        connection->removed_from_pool = true;
     }
 }
 

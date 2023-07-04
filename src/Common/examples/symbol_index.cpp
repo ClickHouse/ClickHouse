@@ -6,13 +6,10 @@
 #include <iostream>
 #include <dlfcn.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-static NO_INLINE const void * getAddress()
+[[maybe_unused]] static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
-#pragma GCC diagnostic pop
 
 int main(int argc, char ** argv)
 {

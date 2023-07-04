@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import datetime
+import fnmatch
 import math
 import os
 import time
@@ -149,7 +150,7 @@ def java_container():
 
 
 def test_mysql_client(started_cluster):
-    # type: (Container, str) -> None
+    # type: (ClickHouseCluster) -> None
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u user_with_double_sha1 --password=abacaba
@@ -365,7 +366,10 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentDatabase()\ndefault\n"
+    assert stdout.decode().lower() in [
+        "currentdatabase()\ndefault\n",
+        "database()\ndefault\n",
+    ]
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
@@ -377,7 +381,10 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentDatabase()\ndefault\n"
+    assert stdout.decode().lower() in [
+        "currentdatabase()\ndefault\n",
+        "database()\ndefault\n",
+    ]
 
 
 def test_mysql_select_user(started_cluster):
@@ -391,7 +398,7 @@ def test_mysql_select_user(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentUser()\ndefault\n"
+    assert stdout.decode() in ["currentUser()\ndefault\n", "user()\ndefault\n"]
 
 
 def test_mysql_explain(started_cluster):
@@ -568,9 +575,8 @@ def test_python_client(started_cluster):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query("select name from tables")
 
-    assert exc_info.value.args[1].startswith(
-        "Code: 60. DB::Exception: Table default.tables doesn't exist"
-    ), exc_info.value.args[1]
+    resp = exc_info.value.args[1]
+    assert fnmatch.fnmatch(resp, "*DB::Exception:*tables*UNKNOWN_TABLE*"), resp
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -602,9 +608,8 @@ def test_python_client(started_cluster):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query("select name from tables")
 
-    assert exc_info.value.args[1].startswith(
-        "Code: 60. DB::Exception: Table default.tables doesn't exist"
-    ), exc_info.value.args[1]
+    resp = exc_info.value.args[1]
+    assert fnmatch.fnmatch(resp, "*DB::Exception:*tables*UNKNOWN_TABLE*"), resp
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")

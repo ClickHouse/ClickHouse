@@ -1,6 +1,7 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

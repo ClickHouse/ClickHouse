@@ -15,6 +15,8 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
+#include <Interpreters/castColumn.h>
+
 
 namespace DB
 {
@@ -25,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -39,12 +42,14 @@ NativeReader::NativeReader(
     UInt64 server_revision_,
     bool skip_unknown_columns_,
     bool null_as_default_,
+    bool allow_types_conversion_,
     BlockMissingValues * block_missing_values_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , skip_unknown_columns(skip_unknown_columns_)
     , null_as_default(null_as_default_)
+    , allow_types_conversion(allow_types_conversion_)
     , block_missing_values(block_missing_values_)
 {
 }
@@ -132,6 +137,11 @@ Block NativeReader::read()
     {
         readVarUInt(columns, istr);
         readVarUInt(rows, istr);
+
+        if (columns > 1'000'000uz)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many columns in Native format: {}", columns);
+        if (rows > 1'000'000'000'000uz)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Native format: {}", rows);
     }
     else
     {
@@ -204,11 +214,31 @@ Block NativeReader::read()
                 if (null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
 
-                /// Support insert from old clients without low cardinality type.
                 if (!header_column.type->equals(*column.type))
                 {
-                    column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
-                    column.type = header.safeGetByPosition(i).type;
+                    if (allow_types_conversion)
+                    {
+                        try
+                        {
+                            column.column = castColumn(column, header_column.type);
+                        }
+                        catch (Exception & e)
+                        {
+                            e.addMessage(fmt::format(
+                                "while converting column \"{}\" from type {} to type {}",
+                                column.name,
+                                column.type->getName(),
+                                header_column.type->getName()));
+                            throw;
+                        }
+                    }
+                    else
+                    {
+                        /// Support insert from old clients without low cardinality type.
+                        column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
+                    }
+
+                    column.type = header_column.type;
                 }
             }
             else

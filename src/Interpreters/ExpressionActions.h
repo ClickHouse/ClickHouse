@@ -109,6 +109,9 @@ public:
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
+
+    void describeActions(WriteBuffer & out, std::string_view prefix) const;
+
     JSONBuilder::ItemPtr toTree() const;
 
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);

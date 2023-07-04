@@ -4,14 +4,18 @@ from random import randint, choices
 import sys
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
 from pure_http_client import ClickHouseClient
 
 client = ClickHouseClient()
 
 N = 10
-create_query = "CREATE TABLE t_cnf_fuzz(" + ", ".join([f"c{i} UInt8" for i in range(N)]) + ") ENGINE = Memory"
+create_query = (
+    "CREATE TABLE t_cnf_fuzz("
+    + ", ".join([f"c{i} UInt8" for i in range(N)])
+    + ") ENGINE = Memory"
+)
 
 client.query("DROP TABLE IF EXISTS t_cnf_fuzz")
 client.query(create_query)
@@ -35,6 +39,7 @@ client.query(insert_query)
 MAX_CLAUSES = 10
 MAX_ATOMS = 5
 
+
 def generate_dnf():
     clauses = []
     num_clauses = randint(1, MAX_CLAUSES)
@@ -42,12 +47,17 @@ def generate_dnf():
         num_atoms = randint(1, MAX_ATOMS)
         atom_ids = choices(range(N), k=num_atoms)
         negates = choices([0, 1], k=num_atoms)
-        atoms = [f"(NOT c{i})" if neg else f"c{i}" for (i, neg) in zip(atom_ids, negates)]
+        atoms = [
+            f"(NOT c{i})" if neg else f"c{i}" for (i, neg) in zip(atom_ids, negates)
+        ]
         clauses.append("(" + " AND ".join(atoms) + ")")
 
     return " OR ".join(clauses)
 
-select_query = "SELECT count() FROM t_cnf_fuzz WHERE {} SETTINGS convert_query_to_cnf = {}"
+
+select_query = (
+    "SELECT count() FROM t_cnf_fuzz WHERE {} SETTINGS convert_query_to_cnf = {}"
+)
 
 fail_report = """
 Failed query: '{}'.

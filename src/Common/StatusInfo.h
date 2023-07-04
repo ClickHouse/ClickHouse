@@ -6,13 +6,14 @@
 #include <atomic>
 #include <vector>
 #include <base/types.h>
+#include <base/strong_typedef.h>
 #include <mutex>
 #include <unordered_map>
 
 
 namespace CurrentStatusInfo
 {
-    using Status = size_t;
+    using Status = StrongTypedef<size_t, struct StatusTag>;
     using Key = std::string;
 
     const char * getName(Status event);

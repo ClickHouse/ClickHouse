@@ -354,7 +354,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
     auto quoted_name = doubleQuoteWithSchema(table_name);
-    query_str = fmt::format("SELECT * FROM {}", quoted_name);
+    query_str = fmt::format("SELECT * FROM ONLY {}", quoted_name);
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
     auto table_structure = fetchTableStructure(*tx, table_name);
@@ -417,7 +417,15 @@ void PostgreSQLReplicationHandler::consumerFunc()
 {
     assertInitialized();
 
-    bool schedule_now = getConsumer()->consume();
+    bool schedule_now = true;
+    try
+    {
+        schedule_now = getConsumer()->consume();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     if (stop_synchronization)
     {

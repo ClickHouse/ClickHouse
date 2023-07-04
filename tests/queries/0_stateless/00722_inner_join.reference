@@ -16,24 +16,24 @@
 ┌─x──────┬─name─┐
 │ system │ one  │
 └────────┴──────┘
-┌─database─┬─t.name─┐
-│ system   │ one    │
-└──────────┴────────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
 ┌─db.x───┬─name─┐
 │ system │ one  │
 └────────┴──────┘
-┌─db.name─┬─t.name─┐
-│ system  │ one    │
-└─────────┴────────┘
-┌─db.name─┬─t.name─┐
-│ system  │ one    │
-└─────────┴────────┘
-┌─t.database─┬─t.name─┐
-│ system     │ one    │
-└────────────┴────────┘
-┌─database─┬─t.name─┐
-│ system   │ one    │
-└──────────┴────────┘
+┌─db.name─┬─name─┐
+│ system  │ one  │
+└─────────┴──────┘
+┌─db.name─┬─name─┐
+│ system  │ one  │
+└─────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
 2
 2
 2

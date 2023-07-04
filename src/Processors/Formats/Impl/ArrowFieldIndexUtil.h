@@ -19,11 +19,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int THERE_IS_NO_COLUMN;
 }
-/// For ORC format, index_nested_type = true, a nested type takes one index count. And the
-/// the start index for ORC format should be 1, since index 0 indicates to select all columns.
-template<bool index_nested_type>
+
 class ArrowFieldIndexUtil
 {
 public:
@@ -46,9 +44,7 @@ public:
         calculateFieldIndices(const arrow::Schema & schema)
     {
         std::unordered_map<std::string, std::pair<int, int>> result;
-        // For format like ORC, index = 0 indicates to select all columns, so we skip 0 and start
-        // from 1.
-        int index_start = index_nested_type;
+        int index_start = 0;
         for (int i = 0; i < schema.num_fields(); ++i)
         {
             const auto & field = schema.field(i);
@@ -79,7 +75,7 @@ public:
             {
                 if (!allow_missing_columns)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
+                        ErrorCodes::THERE_IS_NO_COLUMN, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
                 else
                     continue;
             }
@@ -94,17 +90,16 @@ public:
     }
 
     /// Count the number of indices for types.
-    /// For orc format, index_nested_type is true, a complex type takes one index.
     size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     {
         if (type->id() == arrow::Type::LIST)
         {
-            return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type()) + index_nested_type;
+            return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
         }
 
         if (type->id() == arrow::Type::STRUCT)
         {
-            int indices = index_nested_type;
+            int indices = 0;
             auto * struct_type = static_cast<arrow::StructType *>(type.get());
             for (int i = 0; i != struct_type->num_fields(); ++i)
                 indices += countIndicesForType(struct_type->field(i)->type());
@@ -114,7 +109,7 @@ public:
         if (type->id() == arrow::Type::MAP)
         {
             auto * map_type = static_cast<arrow::MapType *>(type.get());
-            return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type()) + index_nested_type;
+            return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type()) ;
         }
 
         return 1;
@@ -144,8 +139,6 @@ private:
         index_info.first = current_start_index;
         if (field_type->id() == arrow::Type::STRUCT)
         {
-            current_start_index += index_nested_type;
-
             auto * struct_type = static_cast<arrow::StructType *>(field_type.get());
             for (int i = 0, n = struct_type->num_fields(); i < n; ++i)
             {
@@ -161,7 +154,6 @@ private:
             const auto * list_type = static_cast<arrow::ListType *>(field_type.get());
             const auto value_field = list_type->value_field();
             auto index_snapshot = current_start_index;
-            current_start_index += index_nested_type;
             calculateFieldIndices(*value_field, field_name, current_start_index, result, name_prefix);
             // The nested struct field has the same name as this list field.
             // rewrite it back to the original value.

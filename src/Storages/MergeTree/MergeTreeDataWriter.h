@@ -71,6 +71,7 @@ public:
 
         scope_guard temporary_directory_lock;
 
+        void cancel();
         void finalize();
     };
 
@@ -78,6 +79,11 @@ public:
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
     TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+
+    MergeTreeData::MergingParams::Mode getMergingMode() const
+    {
+        return data.merging_params.mode;
+    }
 
     TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
 

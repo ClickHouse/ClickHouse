@@ -139,7 +139,7 @@ private:
         source_current += bytes_to_read;
 
         if constexpr (std::endian::native == std::endian::little)
-            tmp_buffer = __builtin_bswap64(tmp_buffer);
+            tmp_buffer = std::byteswap(tmp_buffer);
 
         bits_buffer |= BufferType(tmp_buffer) << ((sizeof(BufferType) - sizeof(tmp_buffer)) * 8 - bits_count);
         bits_count += static_cast<UInt8>(bytes_to_read) * 8;
@@ -217,14 +217,14 @@ private:
         if (available < to_write)
         {
             throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER,
-                "Can not write past end of buffer. Space available {} bytes, required to write {} bytes.",
+                "Can not write past end of buffer. Space available is {} bytes, required to write {} bytes.",
                 available, to_write);
         }
-        UInt64 tmp_buffer = 0;
+
+        UInt64 tmp_buffer = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8);
         if constexpr (std::endian::native == std::endian::little)
-            tmp_buffer = __builtin_bswap64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
-        else
-            tmp_buffer = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8);
+            tmp_buffer = std::byteswap(tmp_buffer);
+
         memcpy(dest_current, &tmp_buffer, to_write);
         dest_current += to_write;
 

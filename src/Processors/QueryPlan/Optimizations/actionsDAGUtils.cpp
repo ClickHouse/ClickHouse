@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
 
 #include <stack>
 
@@ -11,7 +12,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
 {
     using Parents = std::set<const ActionsDAG::Node *>;
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs_and_constants;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
 
     {
         std::stack<const ActionsDAG::Node *> stack;
@@ -27,8 +28,8 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                 const auto * node = stack.top();
                 stack.pop();
 
-                if (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::COLUMN)
-                    inner_inputs_and_constants.emplace(node->result_name, node);
+                if (node->type == ActionsDAG::ActionType::INPUT)
+                    inner_inputs.emplace(node->result_name, node);
 
                 for (const auto * child : node->children)
                 {
@@ -84,10 +85,10 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
             /// match.node will be set if match is found.
             auto & match = matches[frame.node];
 
-            if (frame.node->type == ActionsDAG::ActionType::INPUT || frame.node->type == ActionsDAG::ActionType::COLUMN)
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
             {
                 const ActionsDAG::Node * mapped = nullptr;
-                if (auto it = inner_inputs_and_constants.find(frame.node->result_name); it != inner_inputs_and_constants.end())
+                if (auto it = inner_inputs.find(frame.node->result_name); it != inner_inputs.end())
                     mapped = it->second;
 
                 match.node = mapped;
@@ -101,14 +102,20 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                 //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
 
                 bool found_all_children = true;
-                for (const auto * child : frame.mapped_children)
-                    if (!child)
+                const ActionsDAG::Node * any_child = nullptr;
+                size_t num_children = frame.node->children.size();
+                for (size_t i = 0; i < num_children; ++i)
+                {
+                    if (frame.mapped_children[i])
+                        any_child = frame.mapped_children[i];
+                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
                         found_all_children = false;
+                }
 
-                if (found_all_children && !frame.mapped_children.empty())
+                if (found_all_children && any_child)
                 {
                     Parents container;
-                    Parents * intersection = &inner_parents[frame.mapped_children[0]];
+                    Parents * intersection = &inner_parents[any_child];
 
                     if (frame.mapped_children.size() > 1)
                     {
@@ -116,7 +123,8 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                         size_t mapped_children_size = frame.mapped_children.size();
                         other_parents.reserve(mapped_children_size);
                         for (size_t i = 1; i < mapped_children_size; ++i)
-                            other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
+                            if (frame.mapped_children[i])
+                                other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
 
                         for (const auto * parent : *intersection)
                         {
@@ -148,12 +156,20 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
                             {
                                 const auto & children = parent->children;
-                                size_t num_children = children.size();
-                                if (frame.mapped_children.size() == num_children)
+                                if (children.size() == num_children)
                                 {
                                     bool all_children_matched = true;
                                     for (size_t i = 0; all_children_matched && i < num_children; ++i)
-                                        all_children_matched = frame.mapped_children[i] == children[i];
+                                    {
+                                        if (frame.mapped_children[i] == nullptr)
+                                        {
+                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
+                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
+                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
+                                        }
+                                        else
+                                            all_children_matched = frame.mapped_children[i] == children[i];
+                                    }
 
                                     if (all_children_matched)
                                     {
@@ -211,6 +227,5 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
 
     return matches;
 }
-
 
 }

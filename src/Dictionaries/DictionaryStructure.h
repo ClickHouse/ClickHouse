@@ -16,11 +16,6 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
-#if defined(__GNUC__)
-    /// GCC mistakenly warns about the names in enum class.
-    #pragma GCC diagnostic ignored "-Wshadow"
-#endif
-
 namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
@@ -85,10 +80,10 @@ struct DictionaryAttributeType
 template <typename F>
 constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
+    static_for<AttributeUnderlyingType>([type, my_func = std::forward<F>(func)](auto other)
     {
         if (type == other)
-            func(DictionaryAttributeType<other>{});
+            my_func(DictionaryAttributeType<other>{});
     });
 }
 

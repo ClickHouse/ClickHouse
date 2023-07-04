@@ -26,6 +26,7 @@ logging.basicConfig(
 total_start_seconds = time.perf_counter()
 stage_start_seconds = total_start_seconds
 
+
 # Thread executor that does not hides exception that happens during function
 # execution, and rethrows it after join()
 class SafeThread(Thread):
@@ -157,6 +158,7 @@ for e in subst_elems:
         raise Exception(f"No values given for substitution {{{name}}}")
 
     available_parameters[name] = values
+
 
 # Takes parallel lists of templates, substitutes them with all combos of
 # parameters. The set of parameters is determined based on the first list.

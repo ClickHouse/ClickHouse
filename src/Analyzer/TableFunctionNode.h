@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
+
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
@@ -122,6 +124,18 @@ public:
         return table_expression_modifiers;
     }
 
+    /// Get settings changes passed to table function
+    const SettingsChanges & getSettingsChanges() const
+    {
+        return settings_changes;
+    }
+
+    /// Set settings changes passed as last argument to table function
+    void setSettingsChanges(SettingsChanges settings_changes_)
+    {
+        settings_changes = std::move(settings_changes_);
+    }
+
     /// Set table expression modifiers
     void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
     {
@@ -142,7 +156,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     String table_function_name;
@@ -151,6 +165,7 @@ private:
     StorageID storage_id;
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+    SettingsChanges settings_changes;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t children_size = arguments_child_index + 1;

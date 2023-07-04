@@ -105,10 +105,12 @@ public:
         return first.value == second.value;
     }
 
+    static String generateDigest(const String & userdata);
+
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time;
+        int64_t time{0};
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
         std::optional<Digest> digest;
@@ -220,6 +222,7 @@ public:
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
+        void addDelta(Delta new_delta);
         void addDeltas(std::vector<Delta> new_deltas);
         void commit(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
@@ -263,6 +266,8 @@ public:
             return check_auth(auth_it->second);
         }
 
+        void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
+
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
         std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
@@ -305,6 +310,10 @@ public:
     };
 
     UncommittedState uncommitted_state{*this};
+
+    // Apply uncommitted state to another storage using only transactions
+    // with zxid > last_zxid
+    void applyUncommittedState(KeeperStorage & other, int64_t last_zxid);
 
     Coordination::Error commit(int64_t zxid);
 
