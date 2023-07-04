@@ -101,8 +101,9 @@ private:
     bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
     bool hasMemoryOverflow(const BlocksList & blocks) const;
 
-    /// Create new bucket at the end of @destination.
-    void addBucket(Buckets & destination);
+    /// Add bucket_count new buckets
+    /// Throws if a bucket creation fails
+    void addBuckets(size_t bucket_count);
 
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
