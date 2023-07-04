@@ -13,7 +13,6 @@
 
 #include <cmath>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -379,6 +378,40 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     *this = map;
 }
 
+#else
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+SettingFieldMap::SettingFieldMap(const Field &) : value(Map()) {}
+String SettingFieldMap::toString() const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+
+SettingFieldMap & SettingFieldMap::operator =(const Field &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::parseFromString(const String &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::writeBinary(WriteBuffer &) const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::readBinary(ReadBuffer &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
 #endif
 
 namespace
@@ -451,6 +484,17 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
+void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value, out);
+}
+
+void SettingFieldTimezone::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    *this = std::move(str);
+}
 
 String SettingFieldCustom::toString() const
 {

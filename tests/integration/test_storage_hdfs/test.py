@@ -816,6 +816,56 @@ def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
     )
 
 
+def test_skip_empty_files(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', TSVRaw) select * from numbers(0) settings hdfs_truncate_on_insert=1"
+    )
+
+    node.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files2.parquet') select * from numbers(1) settings hdfs_truncate_on_insert=1"
+    )
+
+    node.query_and_get_error(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=0"
+    )
+
+    node.query_and_get_error(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UINt64') settings hdfs_skip_empty_files=0"
+    )
+
+    node.query_and_get_error(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=1"
+    )
+
+    res = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
+    )
+
+    assert len(res) == 0
+
+    node.query_and_get_error(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=0"
+    )
+
+    node.query_and_get_error(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=0"
+    )
+
+    res = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=1"
+    )
+
+    assert int(res) == 0
+
+    res = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
+    )
+
+    assert int(res) == 0
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

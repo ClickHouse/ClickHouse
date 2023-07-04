@@ -188,6 +188,7 @@
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
@@ -197,8 +198,9 @@
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
     M(ReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
     M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
-
+    M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
+    M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
+    M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler")
 
 namespace CurrentMetrics
 {
