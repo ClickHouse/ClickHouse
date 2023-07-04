@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/url
-sidebar_position: 41
+sidebar_position: 200
 sidebar_label: url
 ---
 
@@ -52,6 +52,10 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 - `_path` — Path to the `URL`.
 - `_file` — Resource name of the `URL`.
+
+## Storage Settings {#storage-settings}
+
+- [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**
 
