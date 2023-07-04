@@ -273,7 +273,7 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 Displays a list of primary and data skipping indexes of a table.
 
 ```sql
-SHOW [EXTENDED] {INDEX | INDEXES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are
@@ -283,7 +283,7 @@ The optional keyword `EXTENDED` currently has no effect, it only exists for MySQ
 
 `SHOW INDEX` produces a result table with the following structure:
 - table - The name of the table (String)
-- non_unique - 0 if the index can contain duplicates, 1 otherwise (UInt8)
+- non_unique - 0 if the index cannot contain duplicates, 1 otherwise (UInt8)
 - key_name - The name of the index, `PRIMARY` if the index is a primary key index (String)
 - seq_in_index - Currently unused
 - column_name - Currently unused

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <pcg_random.hpp>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
@@ -7,6 +9,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -24,10 +27,11 @@ public:
             storage_,
             selected_entry_,
             task_result_callback_)
+        , rng(randomSeed())
         {}
 
 
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() override { return priority; }
 
 private:
 
@@ -40,7 +44,7 @@ private:
         return mutate_task->execute();
     }
 
-    UInt64 priority{0};
+    Priority priority;
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};
@@ -56,6 +60,7 @@ private:
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
     MutateTaskPtr mutate_task;
+    pcg64 rng;
 };
 
 

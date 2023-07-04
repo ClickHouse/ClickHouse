@@ -108,7 +108,7 @@ Cluster::Address::Address(
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    priority = config.getInt(config_prefix + ".priority", 1);
+    priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
@@ -487,8 +487,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
-            addShard(settings, std::move(replica_addresses), false, current_shard_num,
-                     std::move(insert_paths), /* treat_local_as_remote */ weight, internal_replication);
+            addShard(settings, std::move(replica_addresses), /* treat_local_as_remote = */ false, current_shard_num,
+                     std::move(insert_paths), weight, internal_replication);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);

@@ -226,7 +226,7 @@ Result:
 
 Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
-The conjuction for bitwise operations:
+The conjuction for bit-wise operations:
 
 0 AND 0 = 0
 
@@ -291,7 +291,7 @@ Result:
 
 Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
-The disjunction for bitwise operations:
+The disjunction for bit-wise operations:
 
 0 OR 0 = 0
 

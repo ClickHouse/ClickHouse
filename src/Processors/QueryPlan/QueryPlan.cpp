@@ -481,6 +481,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeThirdPass(*root, nodes);
 
     updateDataStreams(*root);
 }
@@ -538,6 +539,11 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
     }
+}
+
+QueryPlan::Nodes QueryPlan::detachNodes(QueryPlan && plan)
+{
+    return std::move(plan.nodes);
 }
 
 }
