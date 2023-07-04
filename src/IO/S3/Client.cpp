@@ -133,11 +133,12 @@ ProviderType deduceProviderType(const std::string & url)
 Client::Client(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
-    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const Aws::Client::ClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
     bool use_virtual_addressing)
-    : Aws::S3::S3Client(credentials_provider, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    , credentials_provider(credentials_provider_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -177,6 +178,7 @@ Client::Client(
 Client::Client(const Client & other)
     : Aws::S3::S3Client(other)
     , initial_endpoint(other.initial_endpoint)
+    , credentials_provider(other.credentials_provider)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
@@ -186,6 +188,11 @@ Client::Client(const Client & other)
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+}
+
+Aws::Auth::AWSCredentials Client::getCredentials() const
+{
+    return credentials_provider->GetAWSCredentials();
 }
 
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
@@ -711,7 +718,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
     HTTPHeaderEntries headers,
-    CredentialsConfiguration credentials_configuration)
+    CredentialsConfiguration credentials_configuration,
+    const String & session_token)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -735,7 +743,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     // These will be added after request signing
     client_configuration.extra_headers = std::move(headers);
 
-    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
     auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),

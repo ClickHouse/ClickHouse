@@ -84,7 +84,7 @@ struct MergeTreeSource::AsyncReadingState
     {
         try
         {
-            callback_runner(std::move(job), 0);
+            callback_runner(std::move(job), Priority{});
         }
         catch (...)
         {
@@ -105,7 +105,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunner<void>(IOThreadPool::get(), "MergeTreeRead");
+        callback_runner = threadPoolCallbackRunner<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()
@@ -207,6 +207,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
+                OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
                 holder->setResult(algorithm->read());
             }
             catch (...)
@@ -221,6 +222,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
+    OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
     return processReadResult(algorithm->read());
 }
 
