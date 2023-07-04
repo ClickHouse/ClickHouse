@@ -31,12 +31,12 @@ endif()
 
 set (CMAKE_CXX_STANDARD 17)
 
-set(ARROW_VERSION "6.0.1")
+set(ARROW_VERSION "11.0.0")
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
-set(ARROW_VERSION_MAJOR "6")
+set(ARROW_VERSION_MAJOR "11")
 set(ARROW_VERSION_MINOR "0")
-set(ARROW_VERSION_PATCH "1")
+set(ARROW_VERSION_PATCH "0")
 
 if(ARROW_VERSION_MAJOR STREQUAL "0")
     # Arrow 0.x.y => SO version is "x", full SO version is "x.y.0"
@@ -513,6 +513,10 @@ if (SANITIZE STREQUAL "undefined")
     target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
     target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
 endif ()
+
+# Define Thrift version for parquet (we use 0.16.0)
+add_definitions(-DPARQUET_THRIFT_VERSION_MAJOR=0)
+add_definitions(-DPARQUET_THRIFT_VERSION_MINOR=16)
 
 # === tools
 
