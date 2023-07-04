@@ -13,6 +13,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
+#include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
 
 
@@ -33,6 +34,8 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
 }
 
 
@@ -45,6 +48,25 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
         || code == ErrorCodes::CANNOT_MUNMAP
         || code == ErrorCodes::CANNOT_MREMAP;
+}
+
+bool isRetryableException(const Exception & e)
+{
+    if (isNotEnoughMemoryErrorCode(e.code()))
+        return true;
+
+    if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
+        return true;
+
+#if USE_AWS_S3
+    const auto * s3_exception = dynamic_cast<const S3Exception *>(&e);
+    if (s3_exception && s3_exception->isRetryableError())
+        return true;
+#endif
+
+    /// In fact, there can be other similar situations.
+    /// But it is OK, because there is a safety guard against deleting too many parts.
+    return false;
 }
 
 
@@ -302,7 +324,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     catch (const Exception & e)
     {
-        if (isNotEnoughMemoryErrorCode(e.code()))
+        if (isRetryableException(e))
             throw;
 
         return drop_cache_and_check();
