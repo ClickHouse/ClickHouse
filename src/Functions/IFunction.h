@@ -2,8 +2,6 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Field.h>
-#include <Core/ValuesWithType.h>
 #include <Core/Names.h>
 #include <Core/IResolvedFunction.h>
 #include <Common/Exception.h>
@@ -12,6 +10,11 @@
 #include "config.h"
 
 #include <memory>
+
+#if USE_EMBEDDED_COMPILER
+#    include <Core/ValuesWithType.h>
+#endif
+
 
 /// This file contains user interface for functions.
 
@@ -32,8 +35,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/// A left-closed and right-open interval representing the preimage of a function.
-using RangeOrNull = std::optional<std::pair<Field, Field>>;
+class Field;
 
 /// The simplest executable object.
 /// Motivation:
@@ -231,12 +233,6 @@ public:
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
-    /** Lets you know if the function has its definition of preimage.
-      * This is used to work with predicate optimizations, where the comparison between
-      * f(x) and a constant c could be converted to the comparison between x and f's preimage [b, e).
-      */
-    virtual bool hasInformationAboutPreimage() const { return false; }
-
     struct ShortCircuitSettings
     {
         /// Should we enable lazy execution for the first argument of short-circuit function?
@@ -288,14 +284,6 @@ public:
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
-    }
-
-    /** Get the preimage of a function in the form of a left-closed and right-open interval. Call only if hasInformationAboutPreimage.
-      * std::nullopt might be returned if the point (a single value) is invalid for this function.
-      */
-    virtual RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
     }
 
 };
@@ -487,16 +475,11 @@ public:
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
-    virtual bool hasInformationAboutPreimage() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
-    }
-    virtual RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
     }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
