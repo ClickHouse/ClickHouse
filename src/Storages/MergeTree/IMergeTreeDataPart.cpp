@@ -1,4 +1,4 @@
-#include "IMergeTreeDataPart.h"
+#include <IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <base/types.h>
 
