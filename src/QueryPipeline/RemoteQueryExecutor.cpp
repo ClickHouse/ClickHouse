@@ -48,7 +48,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     : header(header_), query(query_), context(context_), scalars(scalars_)
     , external_tables(external_tables_), stage(stage_)
     , extension(extension_)
-{}
+{
+    assertHeaderIsNotEmpty(header);
+}
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
@@ -91,6 +93,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , extension(extension_)
 {
+    assertHeaderIsNotEmpty(header);
+
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
@@ -108,6 +112,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , extension(extension_)
 {
+    assertHeaderIsNotEmpty(header);
+
     create_connections = [this, pool, throttler, extension_](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
@@ -752,6 +758,12 @@ bool RemoteQueryExecutor::isQueryPending() const
 bool RemoteQueryExecutor::hasThrownException() const
 {
     return got_exception_from_replica || got_unknown_packet_from_replica;
+}
+
+void RemoteQueryExecutor::assertHeaderIsNotEmpty(const Block & header)
+{
+    if (header.columns() == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote query executor must not have header without columns");
 }
 
 }
