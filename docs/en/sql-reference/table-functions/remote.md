@@ -1,5 +1,6 @@
 ---
-sidebar_position: 40
+slug: /en/sql-reference/table-functions/remote
+sidebar_position: 175
 sidebar_label: remote
 ---
 
@@ -52,7 +53,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-### Adresses
+### Addresses
 
 ``` text
 example01-01-1
@@ -88,10 +89,10 @@ SELECT * FROM remote_table;
 ```
 
 ### Migration of tables from one system to another:
-This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`. 
+This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`.
 
 #### On the source ClickHouse system (the system that currently hosts the data)
-- Verify the source database and table name (`imdb.actors`)  
+- Verify the source database and table name (`imdb.actors`)
   ```sql
   show databases
   ```
@@ -113,9 +114,8 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                             `first_name` String,
                             `last_name` String,
                             `gender` FixedString(1))
-                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
-                  ORDER BY (id, first_name, last_name, gender)
-                  SETTINGS index_granularity = 8192
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
   ```
 
 #### On the destination ClickHouse system:
@@ -131,9 +131,8 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                             `first_name` String,
                             `last_name` String,
                             `gender` FixedString(1))
-                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
-                  ORDER BY (id, first_name, last_name, gender)
-                  SETTINGS index_granularity = 8192
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
   ```
 
 #### Back on the source deployment:
@@ -141,7 +140,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
 Insert into the new database and table created on the remote system.  You will need the host, port, username, password, destination database, and destination table.
 ```sql
 INSERT INTO FUNCTION
-remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD', rand())
+remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 

@@ -5,15 +5,13 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
-#include <Common/logger_useful.h>
-#include <IO/ConnectionTimeoutsContext.h>
 
 
 namespace DB
 {
 
-/// Common base class for XDBC and Library bridge helpers.
-/// Contains helper methods to check/start bridge sync.
+/// Base class for server-side bridge helpers, e.g. xdbc-bridge and library-bridge.
+/// Contains helper methods to check/start bridge sync
 class IBridgeHelper: protected WithContext
 {
 
@@ -43,7 +41,7 @@ protected:
 
     virtual String serviceFileName() const = 0;
 
-    virtual size_t getDefaultPort() const = 0;
+    virtual unsigned getDefaultPort() const = 0;
 
     virtual bool startBridgeManually() const = 0;
 

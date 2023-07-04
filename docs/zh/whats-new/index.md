@@ -1,4 +1,5 @@
 ---
+slug: /zh/whats-new/
 sidebar_label: ClickHouse事迹
 sidebar_position: 82
 ---

@@ -21,7 +21,7 @@ namespace DB
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     if (channels.empty() && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
@@ -46,6 +46,8 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 
 void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
 {
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
     try
     {
         logSplit(msg);
@@ -54,7 +56,7 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
     /// breaking some functionality because of unexpected "File not
     /// found" (or similar) error.
     ///
-    /// For example StorageDistributedDirectoryMonitor will mark batch
+    /// For example DistributedAsyncInsertDirectoryQueue will mark batch
     /// as broken, some MergeTree code can also be affected.
     ///
     /// Also note, that we cannot log the exception here, since this
@@ -62,8 +64,6 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
     /// but let's log it into the stderr at least.
     catch (...)
     {
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
         const std::string & exception_message = getCurrentExceptionMessage(true);
         const std::string & message = msg.getText();
 
@@ -89,7 +89,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             channel.first->log(msg); // ordinary child
     }
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     /// Log to "TCP queue" if message is not too noisy
@@ -133,9 +133,11 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             elem.source_file = msg.getSourceFile();
 
         elem.source_line = msg.getSourceLine();
+        elem.message_format_string = msg.getFormatString();
+
         std::shared_ptr<TextLog> text_log_locked{};
         {
-            std::lock_guard<std::mutex> lock(text_log_mutex);
+            std::lock_guard lock(text_log_mutex);
             text_log_locked = text_log.lock();
         }
         if (text_log_locked)
@@ -150,10 +152,10 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std
     channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
 }
 
-#ifdef WITH_TEXT_LOG
+#ifndef WITHOUT_TEXT_LOG
 void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
-    std::lock_guard<std::mutex> lock(text_log_mutex);
+    std::lock_guard lock(text_log_mutex);
     text_log = log;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }

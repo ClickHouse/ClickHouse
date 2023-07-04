@@ -35,8 +35,9 @@ struct GetColumnsOptions
         Materialized = 2,
         Aliases = 4,
         Ephemeral = 8,
-
+        OrdinaryAndAliases = Ordinary | Aliases,
         AllPhysical = Ordinary | Materialized,
+        AllPhysicalAndAliases = AllPhysical | Aliases,
         All = AllPhysical | Aliases | Ephemeral,
     };
 
@@ -161,12 +162,12 @@ public:
         {
             String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
             appendHintsMessage(exception_message, column_name);
-            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
         }
 
         removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
-            throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
 
         addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
@@ -175,6 +176,7 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
+    bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
 
 project(ClickHouse LANGUAGES C CXX ASM)
 
@@ -18,7 +18,7 @@ include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
-include (cmake/git_status.cmake)
+include (cmake/git.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -57,8 +57,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # gcc10/gcc10/clang -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
+    # -fsanitize=memory is too heavy
+    if (SANITIZE STREQUAL "memory")
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -73,22 +73,7 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
-option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
-# DEVELOPER ONLY.
-# Faster linking if turned on.
-option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files" OFF)
-
-if (USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    message(FATAL_ERROR "SPLIT_SHARED_LIBRARIES=1 must not be used together with USE_STATIC_LIBRARIES=1")
-endif()
-
-if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
-endif ()
-
-if (USE_STATIC_LIBRARIES)
-    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
-endif ()
+list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
@@ -111,9 +96,21 @@ if (ENABLE_FUZZING)
     set (ENABLE_JEMALLOC 0)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
+    set (ENABLE_BENCHMARKS 0)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
+endif()
+
+option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
+
+if (ENABLE_WOBOQ_CODEBROWSER)
+    set (ENABLE_EMBEDDED_COMPILER 0)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
+    # woboq codebrowser uses clang tooling, and they could add default system
+    # clang includes, and later clang will warn for those added by itself
+    # includes.
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
 endif()
 
 # Global libraries
@@ -135,6 +132,7 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
     # ... such manually setting of flags can be removed once CMake supports a variable to
     # activate colors in *all* build systems: https://gitlab.kitware.com/cmake/cmake/-/issues/15502
+    # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
 include (cmake/check_flags.cmake)
@@ -143,32 +141,25 @@ include (cmake/add_warning.cmake)
 if (COMPILER_CLANG)
     # generate ranges for fast "addr2line" search
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        # NOTE: that clang has a bug because of it does not emit .debug_aranges
+        # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
-    if (HAS_USE_CTOR_HOMING)
-        # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-        if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
-            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
-        endif()
+    # See https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
     endif()
 
     no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 endif ()
 
-# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
-# because there are two different branches of clang: clang and AppleClang.
-# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
-if (HAS_RESERVED_IDENTIFIER)
-    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
-endif ()
-
-# If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
+option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND USE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
@@ -190,32 +181,11 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-option(ENABLE_CURL_BUILD "Enable curl, azure, sentry build on by default except MacOS." ON)
-if (OS_DARWIN)
-    # Disable the curl, azure, senry build on MacOS
-    set (ENABLE_CURL_BUILD OFF)
-endif ()
-
-# Ignored if `lld` is used
-option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
-
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # Can be lld or ld-lld.
-    if (LINKER_NAME MATCHES "lld$")
+    # Can be lld or ld-lld or lld-13 or /path/to/lld.
+    if (LINKER_NAME MATCHES "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
-    # we use another tool for gdb-index, because gold linker removes section .debug_aranges, which used inside clickhouse stacktraces
-    # http://sourceware-org.1504.n7.nabble.com/gold-No-debug-aranges-section-when-linking-with-gdb-index-td540965.html#a556932
-    elseif (LINKER_NAME MATCHES "gold$" AND ADD_GDB_INDEX_FOR_GOLD)
-        find_program (GDB_ADD_INDEX_EXE NAMES "gdb-add-index" DOC "Path to gdb-add-index executable")
-        if (NOT GDB_ADD_INDEX_EXE)
-            set (USE_GDB_ADD_INDEX 0)
-            message (WARNING "Cannot add gdb index to binaries, because gold linker is used, but gdb-add-index executable not found.")
-        else()
-            set (USE_GDB_ADD_INDEX 1)
-            message (STATUS "gdb-add-index found: ${GDB_ADD_INDEX_EXE}")
-        endif()
     endif ()
 endif()
 
@@ -246,7 +216,8 @@ else ()
 endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
-if (LINKER_NAME MATCHES "lld$")
+# (NOTE: LINKER_NAME can be either path or name, and in different variants)
+if (LINKER_NAME MATCHES "lld")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
@@ -299,8 +270,8 @@ endif ()
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
@@ -312,59 +283,39 @@ if (ENABLE_BUILD_PROFILING)
      endif ()
 endif ()
 
-set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+set (CMAKE_CXX_STANDARD 23)
+set (CMAKE_CXX_EXTENSIONS OFF)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (CMAKE_C_STANDARD 11)
-set (CMAKE_C_EXTENSIONS ON)
+set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-if (COMPILER_GCC OR COMPILER_CLANG)
-    # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-endif ()
-
-# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-# benchmarks.
-if (COMPILER_GCC OR COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
-endif ()
-
-if (ARCH_AMD64)
-    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
-    # which makes benchmark results more stable.
-    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
-    if (COMPILER_GCC)
-        # gcc is in assembler, need to add "-Wa," prefix
-        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag("${BRANCHES_WITHIN_32B_BOUNDARIES}" HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
-    if (HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-endif()
-
-if (COMPILER_GCC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
-endif ()
-
-# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+# Compiler-specific coverage flags e.g. -fcoverage-mapping
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
-if (WITH_COVERAGE AND COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-    # If we want to disable coverage for specific translation units
-    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-endif()
+if (COMPILER_CLANG)
+    # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
+    # See https://reviews.llvm.org/D112921
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-if (WITH_COVERAGE AND COMPILER_GCC)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
-    set(COVERAGE_OPTION "-lgcov")
-    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
-endif()
+    # falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+    # benchmarks.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+
+    if (ARCH_AMD64)
+        # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+        # which makes benchmark results more stable.
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    if (WITH_COVERAGE)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+        # If we want to disable coverage for specific translation units
+        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+    endif()
+endif ()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
@@ -373,15 +324,15 @@ set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
 
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
-set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 
 set (CMAKE_ASM_FLAGS                     "${CMAKE_ASM_FLAGS} ${COMPILER_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
-set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 
 if (COMPILER_CLANG)
     if (OS_DARWIN)
@@ -401,11 +352,6 @@ if (COMPILER_CLANG)
     endif()
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
-
-    # Set new experimental pass manager, it's a performance, build time and binary size win.
-    # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
@@ -440,19 +386,27 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+else()
+    link_libraries(global-group)
 endif ()
-link_libraries(global-group)
 
-if (NOT (OS_LINUX OR OS_DARWIN))
-    # Using system libs can cause a lot of warnings in includes (on macro expansion).
-    option(WERROR "Enable -Werror compiler option" OFF)
-else ()
-    option(WERROR "Enable -Werror compiler option" ON)
+option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
+# We use mmap for allocations more heavily in debug builds,
+# but GWP-ASan also wants to use mmap frequently,
+# and due to a large number of memory mappings,
+# it does not work together well.
+if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
+    set(ENABLE_GWP_ASAN OFF)
 endif ()
+
+option (ENABLE_FIU "Enable Fiu" ON)
+
+option(WERROR "Enable -Werror compiler option" ON)
 
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
     # Instead, adopt modern cmake usage requirement.
+    # TODO: Set CMAKE_COMPILE_WARNING_AS_ERROR (cmake 3.24)
     target_compile_options(global-group INTERFACE "-Werror")
 endif ()
 
@@ -467,22 +421,16 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (USE_STATIC_LIBRARIES)
+if (NOT SANITIZE)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    if (OS_LINUX AND NOT ARCH_AARCH64)
-        # Slightly more efficient code can be generated
-        # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
-    endif ()
-else ()
-    set (CMAKE_POSITION_INDEPENDENT_CODE ON)
-    # This is required for clang on Arch linux, that uses PIE by default.
-    # See enable-SSP-and-PIE-by-default.patch [1].
-    #
-    #   [1]: https://github.com/archlinux/svntogit-packages/blob/6e681aa860e65ad46a1387081482eb875c2200f2/trunk/enable-SSP-and-PIE-by-default.patch
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
+endif()
+
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
+    # Slightly more efficient code can be generated
+    # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
+    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
 endif ()
 
 if (ENABLE_TESTS)
@@ -493,6 +441,15 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
+option(ENABLE_OPENSSL "This option performs a build with OpenSSL. NOTE! This option is insecure and should never be used. By default, ClickHouse uses and only supports BoringSSL" OFF)
+
+if (ARCH_S390X)
+    set(ENABLE_OPENSSL_DYNAMIC_DEFAULT ON)
+else ()
+    set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
+endif ()
+option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
+
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
     set (CLICKHOUSE_ETC_DIR "/etc")
@@ -500,10 +457,7 @@ else ()
     set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
 endif ()
 
-message (STATUS
-    "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
-    USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
-    SPLIT_SHARED_LIBRARIES=${SPLIT_SHARED_LIBRARIES}")
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
 include (GNUInstallDirs)
 
@@ -549,15 +503,15 @@ macro (clickhouse_add_executable target)
         # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
         # - but jemalloc-cmake does not run private_namespace.sh
         #   so symbol name should be _zone_register
-        if (ENABLE_JEMALLOC AND USE_STATIC_LIBRARIES AND OS_DARWIN)
+        if (ENABLE_JEMALLOC AND OS_DARWIN)
             set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
     endif()
 endmacro()
 
-# With cross-compiling, all targets are built for the target platform which usually different from the host 
-# platform. This is problematic if a build artifact X (e.g. a file or an executable) is generated by running 
-# another executable Y previously produced in the build. This is solved by compiling and running Y for/on 
+# With cross-compiling, all targets are built for the target platform which usually different from the host
+# platform. This is problematic if a build artifact X (e.g. a file or an executable) is generated by running
+# another executable Y previously produced in the build. This is solved by compiling and running Y for/on
 # the host platform. Add target to the list:
 #    add_native_target(<target> ...)
 set_property (GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
@@ -565,12 +519,36 @@ function (add_native_target)
     set_property (GLOBAL APPEND PROPERTY NATIVE_BUILD_TARGETS ${ARGV})
 endfunction (add_native_target)
 
-set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
-include_directories(${ConfigIncludePath})
+set(CONFIG_INCLUDE_PATH ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
+
+if (ENABLE_RUST)
+    add_subdirectory (rust)
+
+    # With LTO Rust adds few symbols with global visiblity, the most common is
+    # rust_eh_personality. And this leads to linking errors because multiple
+    # Rust libraries contains the same symbol.
+    #
+    # If it was shared library, that we could use version script for linker to
+    # hide this symbols, but libraries are static.
+    #
+    # we could in theory compile everything to one library but this will be a
+    # mess
+    #
+    # But this should be OK since CI has lots of other builds that are done
+    # without LTO and it will find multiple definitions if there will be any.
+    #
+    # More information about this behaviour in Rust can be found here
+    # - https://github.com/rust-lang/rust/issues/44322
+    # - https://alanwu.space/post/symbol-hygiene/
+    if (ENABLE_THINLTO)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
+    endif()
+endif()
 
 add_subdirectory (base)
 add_subdirectory (src)
@@ -578,11 +556,11 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 
-include (cmake/sanitize_target_link_libraries.cmake)
+include (cmake/sanitize_targets.cmake)
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
-if (NATIVE_BUILD_TARGETS 
+if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
@@ -590,7 +568,7 @@ if (NATIVE_BUILD_TARGETS
 )
     message (STATUS "Building native targets...")
 
-    set (NATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/native")
+    set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
@@ -600,7 +578,11 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND}
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-        ${CMAKE_SOURCE_DIR}
+            "-DCOMPILER_CACHE=${COMPILER_CACHE}"
+            # Avoid overriding .cargo/config.toml with native toolchain.
+            "-DENABLE_RUST=OFF"
+            "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
+        ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT)
 

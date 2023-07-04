@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import pytest
 import random
 import string
@@ -37,40 +38,22 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_keeper_socket(node_name):
-    hosts = cluster.get_instance_ip(node_name)
-    client = socket.socket()
-    client.settimeout(10)
-    client.connect((hosts, 9181))
-    return client
-
-
 def close_keeper_socket(cli):
     if cli is not None:
         cli.close()
 
 
-def send_4lw_cmd(node_name, cmd="ruok"):
-    client = None
-    try:
-        client = get_keeper_socket(node_name)
-        client.send(cmd.encode())
-        data = client.recv(100_000)
-        data = data.decode()
-        return data
-    finally:
-        if client is not None:
-            client.close()
-
-
 def test_aggressive_mntr(started_cluster):
-    def go_mntr(node_name):
-        for _ in range(100000):
-            print(node_name, send_4lw_cmd(node_name, "mntr"))
+    def go_mntr(node):
+        for _ in range(10000):
+            try:
+                print(node.name, keeper_utils.send_4lw_cmd(cluster, node, "mntr"))
+            except ConnectionRefusedError:
+                pass
 
-    node1_thread = threading.Thread(target=lambda: go_mntr(node1.name))
-    node2_thread = threading.Thread(target=lambda: go_mntr(node2.name))
-    node3_thread = threading.Thread(target=lambda: go_mntr(node3.name))
+    node1_thread = threading.Thread(target=lambda: go_mntr(node1))
+    node2_thread = threading.Thread(target=lambda: go_mntr(node2))
+    node3_thread = threading.Thread(target=lambda: go_mntr(node3))
     node1_thread.start()
     node2_thread.start()
     node3_thread.start()
@@ -78,8 +61,7 @@ def test_aggressive_mntr(started_cluster):
     node2.stop_clickhouse()
     node3.stop_clickhouse()
 
-    while send_4lw_cmd(node1.name, "mntr") != NOT_SERVING_REQUESTS_ERROR_MSG:
-        time.sleep(0.2)
+    keeper_utils.wait_until_quorum_lost(cluster, node1)
 
     node1.stop_clickhouse()
     starters = []

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/
 sidebar_label: "Табличные функции"
 sidebar_position: 34
 ---
@@ -34,5 +35,3 @@ sidebar_position: 34
 | [odbc](odbc.md)       | Создаёт таблицу с движком [ODBC](../../engines/table-engines/integrations/odbc.md).                                                       |
 | [hdfs](hdfs.md)       | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                       |
 | [s3](s3.md)           | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md).                                                       |
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/) <!--hide-->

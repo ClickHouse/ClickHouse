@@ -9,14 +9,15 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-13}
+export LLVM_VERSION=${LLVM_VERSION:-16}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
-read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
+# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequential launch
+read -ra CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
 # Run only matching tests.
 FASTTEST_FOCUS=${FASTTEST_FOCUS:-""}
@@ -36,6 +37,13 @@ export FASTTEST_BUILD
 export FASTTEST_DATA
 export FASTTEST_OUT
 export PATH
+
+function ccache_status
+{
+    ccache --show-config ||:
+    ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
+}
 
 function start_server
 {
@@ -72,7 +80,7 @@ function start_server
 
 function clone_root
 {
-    git config --global --add safe.directory "$FASTTEST_SOURCE"
+    [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -110,15 +118,14 @@ function clone_submodules
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
-            contrib/poco
             contrib/libunwind
             contrib/fmtlib
             contrib/base64
             contrib/cctz
             contrib/libcpuid
+            contrib/libdivide
             contrib/double-conversion
-            contrib/libcxx
-            contrib/libcxxabi
+            contrib/llvm-project
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -136,10 +143,15 @@ function clone_submodules
             contrib/wyhash
             contrib/hashidsxx
             contrib/c-ares
+            contrib/morton-nd
+            contrib/xxHash
+            contrib/simdjson
+            contrib/liburing
+            contrib/libfiu
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --jobs=16 --depth 1 --single-branch --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -156,8 +168,9 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
-        "-DENABLE_REPLXX=1"
+        "-DENABLE_LIBURING=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
@@ -167,14 +180,14 @@ function run_cmake
     export CCACHE_COMPILERCHECK=content
     export CCACHE_MAXSIZE=15G
 
-    ccache --show-stats ||:
+    ccache_status
     ccache --zero-stats ||:
 
     mkdir "$FASTTEST_BUILD" ||:
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
@@ -182,14 +195,20 @@ function build
 {
     (
         cd "$FASTTEST_BUILD"
-        time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
+        ( time ninja clickhouse-bundle) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
+        echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
+          | ts '%Y-%m-%d %H:%M:%S' \
+          | tee "$FASTTEST_OUTPUT/test_result.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+            mkdir -p "$FASTTEST_OUTPUT/binaries/"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
 
-            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
+            strip programs/clickhouse -o programs/clickhouse-stripped
+            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
-        ccache --show-stats ||:
+        ccache_status
         ccache --evict-older-than 1d ||:
     )
 }
@@ -226,6 +245,7 @@ function run_tests
         --hung-check
         --fast-tests-only
         --no-random-settings
+        --no-random-merge-tree-settings
         --no-long
         --testname
         --shard
@@ -233,11 +253,12 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
+        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_result.txt"
+        | tee -a "$FASTTEST_OUTPUT/test_result.txt"
     set -e
 
     clickhouse stop --pid-path "$FASTTEST_DATA"

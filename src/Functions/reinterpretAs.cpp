@@ -180,9 +180,19 @@ public:
                     size_t offset = 0;
                     for (size_t i = 0; i < size; ++i)
                     {
-                        memcpy(&vec_res[i],
-                            &data_from[offset],
-                            std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
+                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1);
+                        if constexpr (std::endian::native == std::endian::little)
+                            memcpy(&vec_res[i],
+                                &data_from[offset],
+                                copy_size);
+                        else
+                        {
+                            size_t offset_to = sizeof(ToFieldType) > copy_size ? sizeof(ToFieldType) - copy_size : 0;
+                            reverseMemcpy(
+                                reinterpret_cast<char*>(&vec_res[i]) + offset_to,
+                                &data_from[offset],
+                                copy_size);
+                        }
                         offset = offsets_from[i];
                     }
 
@@ -203,6 +213,7 @@ public:
 
                     size_t offset = 0;
                     size_t copy_size = std::min(step, sizeof(ToFieldType));
+                    size_t index = data_from.size() - copy_size;
 
                     if (sizeof(ToFieldType) <= step)
                         vec_res.resize(size);
@@ -211,7 +222,13 @@ public:
 
                     for (size_t i = 0; i < size; ++i)
                     {
-                        memcpy(&vec_res[i], &data_from[offset], copy_size);
+                        if constexpr (std::endian::native == std::endian::little)
+                            memcpy(&vec_res[i], &data_from[offset], copy_size);
+                        else
+                        {
+                            size_t offset_to = sizeof(ToFieldType) > copy_size ? sizeof(ToFieldType) - copy_size : 0;
+                            memcpy(reinterpret_cast<char*>(&vec_res[i]) + offset_to, &data_from[index - offset], copy_size);
+                        }
                         offset += step;
                     }
 
@@ -239,10 +256,18 @@ public:
                     static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
 
                     for (size_t i = 0; i < size; ++i)
-                        memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+                    {
+                        if constexpr (std::endian::native == std::endian::little)
+                            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+                        else
+                        {
+                            size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From) : 0;
+                            memcpy(reinterpret_cast<char*>(&to[i]) + offset_to, static_cast<const void*>(&from[i]), copy_size);
+                        }
+
+                    }
 
                     result = std::move(column_to);
-
                     return true;
                 }
             }
@@ -301,7 +326,7 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
-        memcpy(data_to.data(), src.getRawData().data, data_to.size());
+        memcpy(data_to.data(), src.getRawData().data(), data_to.size());
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
@@ -317,11 +342,21 @@ private:
             StringRef data = src.getDataAt(i);
 
             /// Cut trailing zero bytes.
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             while (data.size && data.data[data.size - 1] == 0)
                 --data.size;
-
+#else
+            size_t index = 0;
+            while (index < data.size && data.data[index] == 0)
+                index++;
+            data.size -= index;
+#endif
             data_to.resize(offset + data.size + 1);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data, data.size);
+#else
+            reverseMemcpy(&data_to[offset], data.data + index, data.size);
+#endif
             offset += data.size;
             data_to[offset] = 0;
             ++offset;
@@ -340,24 +375,6 @@ private:
             return ColumnType::create(column_size, type.getScale());
         else
             return ColumnType::create(column_size);
-    }
-
-    template <typename FromContainer, typename ToContainer>
-    static void reinterpretImpl(const FromContainer & from, ToContainer & to)
-    {
-        using From = typename FromContainer::value_type;
-        using To = typename ToContainer::value_type;
-
-        size_t size = from.size();
-        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
-
-        if (sizeof(To) <= sizeof(From))
-            to.resize(size);
-        else
-            to.resize_fill(size);
-
-        for (size_t i = 0; i < size; ++i)
-            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
     }
 };
 

@@ -4,7 +4,11 @@
 #include <deque>
 #include <set>
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+
 #include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
@@ -21,15 +25,52 @@ struct MarkRange
     MarkRange() = default;
     MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
 
-    bool operator==(const MarkRange & rhs) const;
+    size_t getNumberOfMarks() const;
 
+    bool operator==(const MarkRange & rhs) const;
     bool operator<(const MarkRange & rhs) const;
 };
 
-using MarkRanges = std::deque<MarkRange>;
+struct MarkRanges : public std::deque<MarkRange>
+{
+    using std::deque<MarkRange>::deque;
+
+    size_t getNumberOfMarks() const;
+
+    void serialize(WriteBuffer & out) const;
+    String describe() const;
+    void deserialize(ReadBuffer & in);
+};
 
 /** Get max range.end from ranges.
  */
 size_t getLastMark(const MarkRanges & ranges);
 
+std::string toString(const MarkRanges & ranges);
+
+void assertSortedAndNonIntersecting(const MarkRanges & ranges);
+
 }
+
+
+template <>
+struct fmt::formatter<DB::MarkRange>
+{
+    constexpr static auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw fmt::format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::MarkRange & range, FormatContext & ctx)
+    {
+        return fmt::format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
+    }
+};

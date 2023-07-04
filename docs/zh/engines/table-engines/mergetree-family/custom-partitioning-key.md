@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/custom-partitioning-key
+---
 # 自定义分区键 {#zi-ding-yi-fen-qu-jian}
 
 [MergeTree](mergetree.md) 系列的表（包括 [可复制表](replication.md) ）可以使用分区。基于 MergeTree 表的 [物化视图](../special/materializedview.md#materializedview) 也支持分区。
@@ -116,5 +119,3 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 注意，在操作服务器时，你不能手动更改文件系统上的片段集或其数据，因为服务器不会感知到这些修改。对于非复制表，可以在服务器停止时执行这些操作，但不建议这样做。对于复制表，在任何情况下都不要更改片段文件。
 
 ClickHouse 支持对分区执行这些操作：删除分区，将分区从一个表复制到另一个表，或创建备份。了解分区的所有操作，请参阅 [分区和片段的操作](../../../sql-reference/statements/alter.md#alter_manipulations-with-partitions) 一节。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

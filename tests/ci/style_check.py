@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import csv
 import logging
 import os
 import subprocess
 import sys
-import atexit
+from pathlib import Path
+from typing import List, Tuple
 
 
 from clickhouse_helper import (
@@ -13,14 +15,19 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import post_commit_status, update_mergeable_check
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from git_helper import git_runner
 from pr_info import PRInfo
-from rerun_helper import RerunHelper
+from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from ssh import SSHKey
 from stopwatch import Stopwatch
@@ -28,9 +35,18 @@ from upload_result_helper import upload_results
 
 NAME = "Style Check"
 
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
 
-def process_result(result_folder):
-    test_results = []
+
+def process_result(
+    result_folder: str,
+) -> Tuple[str, str, TestResults, List[str]]:
+    test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible
@@ -46,7 +62,7 @@ def process_result(result_folder):
     status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
     if os.path.exists(status_path):
-        logging.info("Found test_results.tsv")
+        logging.info("Found check_status.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
@@ -55,9 +71,8 @@ def process_result(result_folder):
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = os.path.join(result_folder, "test_results.tsv")
-        with open(results_path, "r", encoding="utf-8") as fd:
-            test_results = list(csv.reader(fd, delimiter="\t"))
+        results_path = Path(result_folder) / "test_results.tsv"
+        test_results = read_test_results(results_path)
         if len(test_results) == 0:
             raise Exception("Empty results")
 
@@ -81,7 +96,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def checkout_head(pr_info: PRInfo):
+def checkout_head(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
@@ -89,14 +104,8 @@ def checkout_head(pr_info: PRInfo):
         # We can't push to forks, sorry folks
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_prefix = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-    )
     fetch_cmd = (
-        f"{git_prefix} fetch --depth=1 "
+        f"{GIT_PREFIX} fetch --depth=1 "
         f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
@@ -107,7 +116,7 @@ def checkout_head(pr_info: PRInfo):
     git_runner(f"git checkout -f head-{pr_info.head_ref}")
 
 
-def commit_push_staged(pr_info: PRInfo):
+def commit_push_staged(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
@@ -118,15 +127,9 @@ def commit_push_staged(pr_info: PRInfo):
     if not git_staged:
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_prefix = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-    )
-    git_runner(f"{git_prefix} commit -m 'Automatic style fix'")
+    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
     push_cmd = (
-        f"{git_prefix} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
+        f"{GIT_PREFIX} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
         with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
@@ -135,7 +138,7 @@ def commit_push_staged(pr_info: PRInfo):
         git_runner(push_cmd)
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
     args = parse_args()
@@ -149,11 +152,12 @@ if __name__ == "__main__":
     if args.push:
         checkout_head(pr_info)
 
-    gh = GitHub(get_best_robot_token())
+    gh = GitHub(get_best_robot_token(), create_cache_dir=False)
+    commit = get_commit(gh, pr_info.sha)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
-    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         # Finish with the same code as previous
@@ -191,7 +195,7 @@ if __name__ == "__main__":
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
+    post_commit_status(commit, state, report_url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -206,3 +210,7 @@ if __name__ == "__main__":
 
     if state in ["error", "failure"]:
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

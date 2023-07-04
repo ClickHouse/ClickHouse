@@ -1,5 +1,5 @@
 <clickhouse>
-
+    <enable_system_unfreeze>true</enable_system_unfreeze>
     <storage_configuration>
         <disks>
             <s31>
@@ -93,4 +93,5 @@
         <cluster>test_cluster</cluster>
     </macros>
 
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

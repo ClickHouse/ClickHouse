@@ -6,7 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 class Collator;
@@ -59,19 +59,7 @@ public:
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
-
-    /**
-     * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
-     * EMPTY_STRING_REF indicating that data is not present.
-     */
-    StringRef getDataAt(size_t n) const override
-    {
-        if (isNullAt(n))
-            return EMPTY_STRING_REF;
-
-        return getNestedColumn().getDataAt(n);
-    }
-
+    StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -142,10 +130,18 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(nested_column);
         callback(null_map);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*nested_column);
+        nested_column->forEachSubcolumnRecursively(callback);
+        callback(*null_map);
+        null_map->forEachSubcolumnRecursively(callback);
     }
 
     bool structureEquals(const IColumn & rhs) const override
@@ -158,6 +154,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getRatioOfDefaultRowsImpl<ColumnNullable>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnNullable>();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
@@ -192,6 +193,8 @@ public:
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
     const NullMap & getNullMapData() const { return getNullMapColumn().getData(); }
 
+    ColumnPtr getNestedColumnWithDefaultOnNull() const;
+
     /// Apply the null byte map of a specified nullable column onto the
     /// null byte map of the current column by performing an element-wise OR
     /// between both byte maps. This method is used to determine the null byte
@@ -224,5 +227,6 @@ private:
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
+ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
 }

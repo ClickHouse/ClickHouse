@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Common/StringSearcher.h>
 #include <Core/ColumnNumbers.h>
 
 
@@ -9,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -24,14 +26,15 @@ struct HasTokenImpl
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2}; }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::string & pattern,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        ColumnUInt8 * res_null)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);
@@ -43,11 +46,24 @@ struct HasTokenImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        /// The current index in the array of strings.
-        size_t i = 0;
+        if (!ASCIICaseSensitiveTokenSearcher::isValidNeedle(pattern.data(), pattern.size()))
+        {
+            if (res_null)
+            {
+                std::ranges::fill(res, 0);
+                std::ranges::fill(res_null->getData(), true);
+                return;
+            }
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
+        }
 
         TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
+        if (res_null)
+            std::ranges::fill(res_null->getData(), false);
 
+        /// The current index in the array of strings.
+        size_t i = 0;
         /// We will search for the next occurrence in all rows at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {

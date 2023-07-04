@@ -26,7 +26,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     StorageXDBC(
         const StorageID & table_id_,
@@ -38,7 +38,7 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::string getName() const override;
 private:

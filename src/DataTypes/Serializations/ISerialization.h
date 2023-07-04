@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -101,6 +101,30 @@ public:
 
     struct SubstreamData
     {
+        SubstreamData() = default;
+        SubstreamData(SerializationPtr serialization_)
+            : serialization(std::move(serialization_))
+        {
+        }
+
+        SubstreamData & withType(DataTypePtr type_)
+        {
+            type = std::move(type_);
+            return *this;
+        }
+
+        SubstreamData & withColumn(ColumnPtr column_)
+        {
+            column = std::move(column_);
+            return *this;
+        }
+
+        SubstreamData & withSerializationInfo(SerializationInfoPtr serialization_info_)
+        {
+            serialization_info = std::move(serialization_info_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -164,16 +188,22 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
+    struct EnumerateStreamsSettings
+    {
+        SubstreamPath path;
+        bool position_independent_encoding = true;
+    };
+
     virtual void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const;
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
-
-    void enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const;
+    /// Enumerate streams with default settings.
+    void enumerateStreams(
+        const StreamCallback & callback,
+        const DataTypePtr & type = nullptr,
+        const ColumnPtr & column = nullptr) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -219,7 +249,9 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    /// Column may be used only to retrieve the structure.
     virtual void serializeBinaryBulkStatePrefix(
+        const IColumn & /*column*/,
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
@@ -271,17 +303,17 @@ public:
       */
 
     /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+    virtual void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /// Other variants takes a column, to avoid creating temporary Field object.
     /// Column must be non-constant.
 
     /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */
@@ -313,6 +345,11 @@ public:
       */
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
+    {
+        serializeTextJSON(column, row_num, ostr, settings);
+    }
+
 
     /** Text serialization for putting into the XML format.
       */
@@ -374,5 +411,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
 
     return state_concrete;
 }
+
+bool isOffsetsOfNested(const ISerialization::SubstreamPath & path);
 
 }

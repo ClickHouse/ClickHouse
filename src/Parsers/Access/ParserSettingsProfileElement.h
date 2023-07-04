@@ -6,7 +6,7 @@
 namespace DB
 {
 /** Parses a string like this:
-  * {variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE]} | PROFILE 'profile_name'
+  * {variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY]} | PROFILE 'profile_name'
   */
 class ParserSettingsProfileElement : public IParserBase
 {

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/dictionary
 sidebar_position: 54
 sidebar_label: dictionary
 ---

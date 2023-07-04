@@ -1,9 +1,9 @@
 ---
-sidebar_position: 12
+slug: /en/engines/table-engines/integrations/materialized-postgresql
+sidebar_position: 130
 sidebar_label: MaterializedPostgreSQL
+title: MaterializedPostgreSQL
 ---
-
-# MaterializedPostgreSQL
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
@@ -19,11 +19,11 @@ PRIMARY KEY key;
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `table` — Remote table name.
--   `user` — PostgreSQL user.
--   `password` — User password.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
 
 ## Requirements {#requirements}
 
@@ -33,11 +33,13 @@ PRIMARY KEY key;
 
 3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
 
+4. The `MaterializedPostgreSQL` table engine only works for PostgreSQL versions >= 11 as the implementation requires the [pg_replication_slot_advance](https://pgpedia.info/p/pg_replication_slot_advance.html) PostgreSQL function.
+
 ## Virtual columns {#virtual-columns}
 
--   `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
--   `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
+- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 
@@ -52,8 +54,6 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::warning
+:::note
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/materialized-postgresql) <!--hide-->

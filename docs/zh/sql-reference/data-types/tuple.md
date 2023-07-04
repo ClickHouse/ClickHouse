@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/tuple
+---
 # Tuple(T1, T2, …) {#tuplet1-t2}
 
 元组，其中每个元素都有单独的 [类型](index.md#data_types)。
@@ -14,17 +17,15 @@
 
 创建元组的示例：
 
-    :) SELECT tuple(1,'a') AS x, toTypeName(x)
+```sql
+SELECT tuple(1,'a') AS x, toTypeName(x)
+```
 
-    SELECT
-        (1, 'a') AS x,
-        toTypeName(x)
-
-    ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
-    │ (1,'a') │ Tuple(UInt8, String)      │
-    └─────────┴───────────────────────────┘
-
-    1 rows in set. Elapsed: 0.021 sec.
+```response
+┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
+│ (1,'a') │ Tuple(UInt8, String)      │
+└─────────┴───────────────────────────┘
+```
 
 ## 元组中的数据类型 {#yuan-zu-zhong-de-shu-ju-lei-xing}
 
@@ -32,14 +33,12 @@
 
 自动数据类型检测示例：
 
-    SELECT tuple(1, NULL) AS x, toTypeName(x)
+```sql
+SELECT tuple(1, NULL) AS x, toTypeName(x)
+```
 
-    SELECT
-        (1, NULL) AS x,
-        toTypeName(x)
-
-    ┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
-    │ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
-    └──────────┴─────────────────────────────────┘
-
-    1 rows in set. Elapsed: 0.002 sec.
+```response
+┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
+│ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
+└──────────┴─────────────────────────────────┘
+```

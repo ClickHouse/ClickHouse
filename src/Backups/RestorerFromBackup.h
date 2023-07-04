@@ -2,6 +2,7 @@
 
 #include <Backups/RestoreSettings.h>
 #include <Databases/DDLRenamingVisitor.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/IStorage_fwd.h>
@@ -94,6 +95,7 @@ private:
     void createDatabase(const String & database_name) const;
     void checkDatabase(const String & database_name);
 
+    void removeUnresolvedDependencies();
     void createTables();
     void createTable(const QualifiedTableName & table_name);
     void checkTable(const QualifiedTableName & table_name);
@@ -114,7 +116,6 @@ private:
     {
         ASTPtr create_table_query;
         bool is_predefined_table = false;
-        std::unordered_set<QualifiedTableName> dependencies;
         bool has_data = false;
         std::filesystem::path data_path_in_backup;
         std::optional<ASTs> partitions;
@@ -123,11 +124,10 @@ private:
         TableLockHolder table_lock;
     };
 
-    std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
-
     String current_stage;
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::map<QualifiedTableName, TableInfo> table_infos;
+    TablesDependencyGraph tables_dependencies;
     std::vector<DataRestoreTask> data_restore_tasks;
     std::unique_ptr<AccessRestorerFromBackup> access_restorer;
     bool access_restored = false;

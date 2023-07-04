@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
@@ -19,6 +19,16 @@ class WebObjectStorage : public IObjectStorage, WithContext
 
 public:
     WebObjectStorage(const String & url_, ContextPtr context_);
+
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return DataSourceDescription{
+            .type = DataSourceType::WebServer,
+            .description = url,
+            .is_encrypted = false,
+            .is_cached = false,
+        };
+    }
 
     std::string getName() const override { return "WebObjectStorage"; }
 
@@ -41,11 +51,8 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
-
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     void removeObject(const StoredObject & object) override;
 
@@ -79,8 +86,6 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsAppend() const override { return false; }
-
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
 
     bool isRemote() const override { return true; }
@@ -104,7 +109,7 @@ protected:
         size_t size = 0;
     };
 
-    using Files = std::unordered_map<String, FileData>; /// file path -> file data
+    using Files = std::map<String, FileData>; /// file path -> file data
     mutable Files files;
 
     String url;

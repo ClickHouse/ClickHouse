@@ -4,7 +4,7 @@ import logging
 import os.path as p
 import re
 import subprocess
-from typing import List, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,19 +21,19 @@ TWEAK = 1
 
 
 # Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str):
+def removeprefix(string: str, prefix: str) -> str:
     if string.startswith(prefix):
         return string[len(prefix) :]  # noqa: ignore E203, false positive
     return string
 
 
-def removesuffix(string: str, suffix: str):
+def removesuffix(string: str, suffix: str) -> str:
     if string.endswith(suffix):
         return string[: -len(suffix)]
     return string
 
 
-def commit(name: str):
+def commit(name: str) -> str:
     r = re.compile(SHA_REGEXP)
     if not r.match(name):
         raise argparse.ArgumentTypeError(
@@ -42,7 +42,7 @@ def commit(name: str):
     return name
 
 
-def release_branch(name: str):
+def release_branch(name: str) -> str:
     r = re.compile(RELEASE_BRANCH_REGEXP)
     if not r.match(name):
         raise argparse.ArgumentTypeError("release branch should be as 12.1")
@@ -55,20 +55,23 @@ class Runner:
     def __init__(self, cwd: str = CWD):
         self._cwd = cwd
 
-    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs) -> str:
+    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
         if cwd is None:
             cwd = self.cwd
         logger.debug("Running command: %s", cmd)
-        return subprocess.check_output(
-            cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
-        ).strip()
+        output = str(
+            subprocess.check_output(
+                cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
+            ).strip()
+        )
+        return output
 
     @property
     def cwd(self) -> str:
         return self._cwd
 
     @cwd.setter
-    def cwd(self, value: str):
+    def cwd(self, value: str) -> None:
         # Set _cwd only once, then set it to readonly
         if self._cwd != CWD:
             return
@@ -123,15 +126,16 @@ class Git:
         # Format should match TAG_REGEXP
         if self._ignore_no_tags and is_shallow():
             try:
-                self._update_tags()
+                self._update_tags(True)
             except subprocess.CalledProcessError:
                 pass
 
             return
         self._update_tags()
 
-    def _update_tags(self):
-        self.latest_tag = self.run("git describe --tags --abbrev=0")
+    def _update_tags(self, suppress_stderr: bool = False) -> None:
+        stderr = subprocess.DEVNULL if suppress_stderr else None
+        self.latest_tag = self.run("git describe --tags --abbrev=0", stderr=stderr)
         # Format should be: {latest_tag}-{commits_since_tag}-g{sha_short}
         self.description = self.run("git describe --tags --long")
         self.commits_since_tag = int(
@@ -139,7 +143,7 @@ class Git:
         )
 
     @staticmethod
-    def check_tag(value: str):
+    def check_tag(value: str) -> None:
         if value == "":
             return
         if not Git._tag_pattern.match(value):
@@ -150,7 +154,7 @@ class Git:
         return self._latest_tag
 
     @latest_tag.setter
-    def latest_tag(self, value: str):
+    def latest_tag(self, value: str) -> None:
         self.check_tag(value)
         self._latest_tag = value
 
@@ -159,7 +163,7 @@ class Git:
         return self._new_tag
 
     @new_tag.setter
-    def new_tag(self, value: str):
+    def new_tag(self, value: str) -> None:
         self.check_tag(value)
         self._new_tag = value
 
@@ -168,7 +172,16 @@ class Git:
         if not self.latest_tag.endswith("-testing"):
             # When we are on the tag, we still need to have tweak=1 to not
             # break cmake with versions like 12.13.14.0
-            return self.commits_since_tag or TWEAK
+            if not self.commits_since_tag:
+                # We are in a tagged commit. The tweak should match the
+                # current version's value
+                version = self.latest_tag.split("-", maxsplit=1)[0]
+                try:
+                    return int(version.split(".")[-1])
+                except ValueError:
+                    # There are no tags, or a wrong tag. Return default
+                    return TWEAK
+            return self.commits_since_tag
 
         version = self.latest_tag.split("-", maxsplit=1)[0]
         return int(version.split(".")[-1]) + self.commits_since_tag

@@ -54,15 +54,15 @@ PathInData & PathInData::operator=(const PathInData & other)
     return *this;
 }
 
-UInt128 PathInData::getPartsHash(const Parts & parts_)
+UInt128 PathInData::getPartsHash(const Parts::const_iterator & begin, const Parts::const_iterator & end)
 {
     SipHash hash;
-    hash.update(parts_.size());
-    for (const auto & part : parts_)
+    hash.update(std::distance(begin, end));
+    for (auto part_it = begin; part_it != end; ++part_it)
     {
-        hash.update(part.key.data(), part.key.length());
-        hash.update(part.is_nested);
-        hash.update(part.anonymous_array_level);
+        hash.update(part_it->key.data(), part_it->key.length());
+        hash.update(part_it->is_nested);
+        hash.update(part_it->anonymous_array_level);
     }
 
     UInt128 res;
@@ -104,7 +104,7 @@ void PathInData::buildParts(const Parts & other_parts)
 
 size_t PathInData::Hash::operator()(const PathInData & value) const
 {
-    auto hash = getPartsHash(value.parts);
+    auto hash = getPartsHash(value.parts.begin(), value.parts.end());
     return hash.items[0] ^ hash.items[1];
 }
 

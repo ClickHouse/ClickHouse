@@ -1,5 +1,8 @@
 1
+abandonable_lock-insert
+abandonable_lock-other
 alter_partition_version
+async_blocks
 block_numbers
 blocks
 columns
@@ -14,6 +17,7 @@ leader_election
 leader_election-0
 log
 log_pointer
+lost_part_count
 max_processed_insert_time
 metadata
 metadata
@@ -29,11 +33,18 @@ pinned_part_uuids
 queue
 quorum
 replicas
+shared
+shared
 table_shared_id
 temp
+zero_copy_hdfs
+zero_copy_s3
 -------------------------
 1
+abandonable_lock-insert
+abandonable_lock-other
 alter_partition_version
+async_blocks
 block_numbers
 blocks
 columns
@@ -48,6 +59,7 @@ leader_election
 leader_election-0
 log
 log_pointer
+lost_part_count
 max_processed_insert_time
 metadata
 metadata
@@ -63,5 +75,9 @@ pinned_part_uuids
 queue
 quorum
 replicas
+shared
+shared
 table_shared_id
 temp
+zero_copy_hdfs
+zero_copy_s3

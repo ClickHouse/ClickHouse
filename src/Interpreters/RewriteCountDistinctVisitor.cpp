@@ -62,7 +62,7 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
         auto expr = std::make_shared<ASTExpressionList>();
         expr->children.emplace_back(cloned_select_query);
         auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
-        select_with_union->union_mode = SelectUnionMode::Unspecified;
+        select_with_union->union_mode = SelectUnionMode::UNION_DEFAULT;
         select_with_union->is_normalized = false;
         select_with_union->list_of_modes.clear();
         select_with_union->set_of_modes.clear();

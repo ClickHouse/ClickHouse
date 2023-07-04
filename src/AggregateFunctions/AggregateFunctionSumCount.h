@@ -14,12 +14,13 @@ public:
     using Base = AggregateFunctionAvg<T>;
 
     explicit AggregateFunctionSumCount(const DataTypes & argument_types_, UInt32 num_scale_ = 0)
-         : Base(argument_types_, num_scale_), scale(num_scale_) {}
+        : Base(argument_types_, createResultType(num_scale_), num_scale_)
+    {}
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(UInt32 num_scale_)
     {
         auto second_elem = std::make_shared<DataTypeUInt64>();
-        return std::make_shared<DataTypeTuple>(DataTypes{getReturnTypeFirstElement(), std::move(second_elem)});
+        return std::make_shared<DataTypeTuple>(DataTypes{getReturnTypeFirstElement(num_scale_), std::move(second_elem)});
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const final
@@ -43,9 +44,7 @@ public:
 #endif
 
 private:
-    UInt32 scale;
-
-    auto getReturnTypeFirstElement() const
+    static auto getReturnTypeFirstElement(UInt32 num_scale_)
     {
         using FieldType = AvgFieldType<T>;
 
@@ -54,7 +53,7 @@ private:
         else
         {
             using DataType = DataTypeDecimal<FieldType>;
-            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
+            return std::make_shared<DataType>(DataType::maxPrecision(), num_scale_);
         }
     }
 };

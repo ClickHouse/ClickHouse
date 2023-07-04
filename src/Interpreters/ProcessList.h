@@ -5,6 +5,8 @@
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/Context.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -23,7 +25,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -51,7 +52,8 @@ class ProcessListEntry;
 struct QueryStatusInfo
 {
     String query;
-    double elapsed_seconds;
+    IAST::QueryKind query_kind{};
+    UInt64 elapsed_microseconds;
     size_t read_rows;
     size_t read_bytes;
     size_t total_rows;
@@ -84,7 +86,7 @@ protected:
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
-    ThreadGroupStatusPtr thread_group;
+    ThreadGroupPtr thread_group;
 
     Stopwatch watch;
 
@@ -100,6 +102,11 @@ protected:
 
     QueryPriorities::Handle priority_handle = nullptr;
 
+    /// True if query cancellation is in progress right now
+    /// ProcessListEntry should not be destroyed if is_cancelling is true
+    /// Flag changes is synced with ProcessListBase::mutex and notified with ProcessList::cancelled_cv
+    bool is_cancelling { false };
+    /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
     /// All data to the client already had been sent.
@@ -112,8 +119,22 @@ protected:
 
     mutable std::mutex executors_mutex;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    struct ExecutorHolder
+    {
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+
+        void cancel();
+
+        void remove();
+
+        PipelineExecutor * executor;
+        std::mutex mutex;
+    };
+
+    using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
+
+    /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {
@@ -126,22 +147,25 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
-    IAST::QueryKind query_kind;
+    OvercommitTracker * global_overcommit_tracker = nullptr;
+
+    /// This is used to control the maximum number of SELECT or INSERT queries.
+    IAST::QueryKind query_kind{};
 
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
 
 public:
-
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        ThreadGroupStatusPtr && thread_group_,
-        IAST::QueryKind query_kind_
-        );
+        ThreadGroupPtr && thread_group_,
+        IAST::QueryKind query_kind_,
+        const Settings & query_settings_,
+        UInt64 watch_start_nanoseconds);
 
     ~QueryStatus();
 
@@ -167,11 +191,6 @@ public:
         if (!thread_group)
             return nullptr;
         return &thread_group->memory_tracker;
-    }
-
-    IAST::QueryKind getQueryKind() const
-    {
-        return query_kind;
     }
 
     bool updateProgressIn(const Progress & value)
@@ -212,7 +231,12 @@ public:
     bool checkTimeLimit();
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
+
+    /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
+    UInt64 getQueryCPUStartTime() { return watch.getStart(); }
 };
+
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 
 /// Information of process list for user.
@@ -231,13 +255,17 @@ struct ProcessListForUser
 {
     explicit ProcessListForUser(ProcessList * global_process_list);
 
+    ProcessListForUser(ContextPtr global_context, ProcessList * global_process_list);
+
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
-    using QueryToElement = std::unordered_map<String, QueryStatus *>;
+    using QueryToElement = std::unordered_map<String, QueryStatusPtr>;
     QueryToElement queries;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
     UserOvercommitTracker user_overcommit_tracker;
 
@@ -252,6 +280,7 @@ struct ProcessListForUser
     /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
     void resetTrackers()
     {
+        /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
         if (user_throttler)
             user_throttler.reset();
@@ -266,7 +295,7 @@ class ProcessList;
 class ProcessListEntry
 {
 private:
-    using Container = std::list<QueryStatus>;
+    using Container = std::list<QueryStatusPtr>;
 
     ProcessList & parent;
     Container::iterator it;
@@ -277,18 +306,34 @@ public:
 
     ~ProcessListEntry();
 
-    QueryStatus * operator->() { return &*it; }
-    const QueryStatus * operator->() const { return &*it; }
-
-    QueryStatus & get() { return *it; }
-    const QueryStatus & get() const { return *it; }
+    QueryStatusPtr getQueryStatus() { return *it; }
+    const QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
 
-class ProcessList
+class ProcessListBase
+{
+    mutable std::mutex mutex;
+
+protected:
+    using Lock = std::unique_lock<std::mutex>;
+    struct LockAndBlocker
+    {
+        Lock lock;
+        OvercommitTrackerBlockerInThread blocker;
+    };
+
+    // It is forbidden to do allocations/deallocations with acquired mutex and
+    // enabled OvercommitTracker. This leads to deadlock in the case of OOM.
+    LockAndBlocker safeLock() const noexcept { return { std::unique_lock{mutex}, {} }; }
+    Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
+};
+
+
+class ProcessList : public ProcessListBase
 {
 public:
-    using Element = QueryStatus;
+    using Element = QueryStatusPtr;
     using Entry = ProcessListEntry;
     using QueryAmount = UInt64;
 
@@ -304,14 +349,17 @@ public:
 
 protected:
     friend class ProcessListEntry;
+    friend struct ::OvercommitTracker;
     friend struct ::UserOvercommitTracker;
     friend struct ::GlobalOvercommitTracker;
 
-    mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
     Container processes;
+    /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
+    mutable std::condition_variable cancelled_cv;
+
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
     /// Stores per-user info: queries, statistics and limits
@@ -324,7 +372,7 @@ protected:
     ThrottlerPtr total_network_throttler;
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
-    QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+    QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_insert_queries_amount = 0;
@@ -347,7 +395,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextPtr query_context);
+    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
@@ -360,19 +408,19 @@ public:
 
     void setMaxSize(size_t max_size_)
     {
-        std::lock_guard lock(mutex);
+        auto lock = unsafeLock();
         max_size = max_size_;
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
-        std::lock_guard lock(mutex);
+        auto lock = unsafeLock();
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
-        std::lock_guard lock(mutex);
+        auto lock = unsafeLock();
         max_select_queries_amount = max_select_queries_amount_;
     }
 

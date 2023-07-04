@@ -307,6 +307,32 @@ def test_table_function(started_cluster):
     conn.close()
 
 
+def test_schema_inference(started_cluster):
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, "inference_table")
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "CREATE TABLE clickhouse.inference_table (id INT PRIMARY KEY, data BINARY(16) NOT NULL)"
+        )
+
+    parameters = "'mysql57:3306', 'clickhouse', 'inference_table', 'root', 'clickhouse'"
+
+    node1.query(
+        f"CREATE TABLE mysql_schema_inference_engine ENGINE=MySQL({parameters})"
+    )
+    node1.query(f"CREATE TABLE mysql_schema_inference_function AS mysql({parameters})")
+
+    expected = "id\tInt32\t\t\t\t\t\ndata\tFixedString(16)\t\t\t\t\t\n"
+    assert node1.query("DESCRIBE TABLE mysql_schema_inference_engine") == expected
+    assert node1.query("DESCRIBE TABLE mysql_schema_inference_function") == expected
+
+    node1.query("DROP TABLE mysql_schema_inference_engine")
+    node1.query("DROP TABLE mysql_schema_inference_function")
+
+    drop_mysql_table(conn, "inference_table")
+
+
 def test_binary_type(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     drop_mysql_table(conn, "binary_type")
@@ -329,6 +355,7 @@ def test_binary_type(started_cluster):
         node1.query("SELECT * FROM {}".format(table_function))
         == "42\tclickhouse\\0\\0\\0\\0\\0\\0\n"
     )
+    drop_mysql_table(conn, "binary_type")
 
 
 def test_enum_type(started_cluster):
@@ -519,13 +546,21 @@ def test_settings_connection_wait_timeout(started_cluster):
         )
     )
 
+    worker_started_event = threading.Event()
+
     def worker():
-        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
+        worker_started_event.set()
+        node1.query(
+            "SELECT 1, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
+                table_name
+            )
+        )
 
     worker_thread = threading.Thread(target=worker)
     worker_thread.start()
 
     # ensure that first query started in worker_thread
+    assert worker_started_event.wait(10)
     time.sleep(1)
 
     started = time.time()
@@ -533,7 +568,11 @@ def test_settings_connection_wait_timeout(started_cluster):
         QueryRuntimeException,
         match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)",
     ):
-        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
+        node1.query(
+            "SELECT 2, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
+                table_name
+            )
+        )
     ended = time.time()
     assert (ended - started) >= wait_timeout
 
@@ -726,6 +765,93 @@ def test_mysql_null(started_cluster):
             )
         )
         == 5
+    )
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_settings(started_cluster):
+    table_name = "test_settings"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    wait_timeout = 123
+    rw_timeout = 10123001
+    connect_timeout = 10123002
+    connection_pool_size = 1
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')
+        SETTINGS connection_wait_timeout={wait_timeout}, connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}, connection_pool_size={connection_pool_size}
+        """
+    )
+
+    node1.query(f"SELECT * FROM {table_name}")
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 20123001
+    connect_timeout = 20123002
+    node1.query(f"SELECT * FROM mysql(mysql_with_settings, table='test_settings')")
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 30123001
+    connect_timeout = 30123002
+    node1.query(
+        f"""
+        SELECT *
+            FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse',
+                       SETTINGS
+                           connection_wait_timeout={wait_timeout},
+                           connect_timeout={connect_timeout},
+                           read_write_timeout={rw_timeout},
+                           connection_pool_size={connection_pool_size})
+    """
+    )
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 40123001
+    connect_timeout = 40123002
+    node1.query(
+        f"""
+        CREATE DATABASE m
+        ENGINE = MySQL(mysql_with_settings, connection_wait_timeout={wait_timeout}, connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}, connection_pool_size={connection_pool_size})
+    """
+    )
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 50123001
+    connect_timeout = 50123002
+    node1.query(
+        f"""
+        CREATE DATABASE mm ENGINE = MySQL('mysql57:3306', 'clickhouse', 'root', 'clickhouse')
+            SETTINGS
+                connection_wait_timeout={wait_timeout},
+                connect_timeout={connect_timeout},
+                read_write_timeout={rw_timeout},
+                connection_pool_size={connection_pool_size}
+    """
+    )
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
 
     drop_mysql_table(conn, table_name)

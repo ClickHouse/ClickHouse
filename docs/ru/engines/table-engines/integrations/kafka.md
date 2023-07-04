@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/kafka
 sidebar_position: 8
 sidebar_label: Kafka
 ---
@@ -30,9 +31,17 @@ SETTINGS
     [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
+    [kafka_max_block_size = 0,]
     [kafka_skip_broken_messages = N]
     [kafka_commit_every_batch = 0,]
-    [kafka_thread_per_consumer = 0]
+    [kafka_client_id = '',]
+    [kafka_poll_timeout_ms = 0,]
+    [kafka_poll_max_batch_size = 0,]
+    [kafka_flush_interval_ms = 0,]
+    [kafka_thread_per_consumer = 0,]
+    [kafka_handle_error_mode = 'default',]
+    [kafka_commit_on_select = false,]
+    [kafka_max_rows_per_message = 1];
 ```
 
 Обязательные параметры:
@@ -50,7 +59,14 @@ SETTINGS
 -   `kafka_max_block_size` — максимальный размер пачек (в сообщениях) для poll (по умолчанию `max_block_size`).
 -   `kafka_skip_broken_messages` — максимальное количество некорректных сообщений в блоке. Если `kafka_skip_broken_messages = N`, то движок отбрасывает `N` сообщений Кафки, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке). Значение по умолчанию – 0.
 -   `kafka_commit_every_batch` — включает или отключает режим записи каждой принятой и обработанной пачки по отдельности вместо единой записи целого блока (по умолчанию `0`).
+-   `kafka_client_id` — идентификатор клиента. Значение по умолчанию пусто – ''.
+-   `kafka_poll_timeout_ms` - Таймаут для poll. По умолчанию: (../../../operations/settings/settings.md#stream_poll_timeout_ms)
+-   `kafka_poll_max_batch_size` - Максимальное количество сообщений в одном poll Kafka. По умолчанию: (../../../operations/settings/settings.md#setting-max_block_size)
+-   `kafka_flush_interval_ms` - Таймаут для сброса данных из Kafka. По умолчанию: (../../../operations/settings/settings.md#stream-flush-interval-ms)
 -   `kafka_thread_per_consumer` — включает или отключает предоставление отдельного потока каждому потребителю (по умолчанию `0`). При включенном режиме каждый потребитель сбрасывает данные независимо и параллельно, при отключённом — строки с данными от нескольких потребителей собираются в один блок.
+-   `kafka_handle_error_mode` - Способ обработки ошибок для Kafka. Возможные значения: default, stream.
+-   `kafka_commit_on_select` - Сообщение о commit при запросе select. По умолчанию: `false`.
+-   `kafka_max_rows_per_message` - Максимальное количество строк записанных в одно сообщение Kafka для формата row-based. По умолчанию: `1`.
 
 Примеры
 
@@ -86,14 +102,15 @@ SETTINGS
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Attention"
-    Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+:::note "Attention"
+Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+:::
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
-    :::
+
 </details>
 
 ## Описание {#opisanie}
@@ -186,10 +203,12 @@ ClickHouse может поддерживать учетные данные Kerbe
 -   `_key` — ключ сообщения.
 -   `_offset` — оффсет сообщения.
 -   `_timestamp` — временная метка сообщения.
+-   `_timestamp_ms` — временная метка сообщения в миллисекундах.
 -   `_partition` — секция топика Kafka.
+-   `_headers.name` - Массив ключей заголовков сообщений.
+-   `_headers.value` - Массив значений заголовков сообщений.
 
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-
+-   [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)

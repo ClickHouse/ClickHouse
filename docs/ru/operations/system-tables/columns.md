@@ -1,8 +1,11 @@
+---
+slug: /ru/operations/system-tables/columns
+---
 # system.columns {#system-columns}
 
 Содержит информацию о столбцах всех таблиц.
 
-С помощью этой таблицы можно получить информацию аналогично запросу [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table), но для многих таблиц сразу.
+С помощью этой таблицы можно получить информацию аналогично запросу [DESCRIBE TABLE](../../sql-reference/statements/describe-table.md), но для многих таблиц сразу.
 
 Колонки [временных таблиц](../../sql-reference/statements/create/table.md#temporary-tables) содержатся в `system.columns` только в тех сессиях, в которых эти таблицы были созданы. Поле `database` у таких колонок пустое.
 

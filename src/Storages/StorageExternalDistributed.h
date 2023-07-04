@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #include <Storages/IStorage.h>
 
@@ -18,32 +18,12 @@ struct ExternalDataSourceConfiguration;
 class StorageExternalDistributed final : public DB::IStorage
 {
 public:
-    enum class ExternalStorageEngine
-    {
-        MySQL,
-        PostgreSQL,
-        URL
-    };
-
     StorageExternalDistributed(
         const StorageID & table_id_,
-        ExternalStorageEngine table_engine,
-        const String & cluster_description,
-        const ExternalDataSourceConfiguration & configuration,
+        std::unordered_set<StoragePtr> && shards_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_);
-
-    StorageExternalDistributed(
-        const String & addresses_description,
-        const StorageID & table_id,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const String & compression_method,
-        const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints,
-        ContextPtr context);
+        const String & comment);
 
     std::string getName() const override { return "ExternalDistributed"; }
 
@@ -55,7 +35,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
 private:
     using Shards = std::unordered_set<StoragePtr>;

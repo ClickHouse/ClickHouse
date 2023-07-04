@@ -34,8 +34,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
     if (join->pipelineType() == JoinPipelineType::YShaped)
-        return QueryPipelineBuilder::joinPipelinesYShaped(
+    {
+        auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
             std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
+        joined_pipeline->resize(max_streams);
+        return joined_pipeline;
+    }
 
     return QueryPipelineBuilder::joinPipelinesRightLeft(
         std::move(pipelines[0]),
@@ -79,7 +83,6 @@ static ITransformingStep::Traits getStorageJoinTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = false,

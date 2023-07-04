@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/geo/geohash
 sidebar_label: "Функции для работы с системой Geohash"
 ---
 
@@ -114,4 +115,3 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘
 ```
-

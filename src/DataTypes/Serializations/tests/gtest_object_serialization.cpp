@@ -31,7 +31,7 @@ TEST(SerializationObject, FromString)
         settings.getter = [&out](const auto &) { return &out; };
 
         writeIntBinary(static_cast<UInt8>(1), out);
-        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkStatePrefix(*column_string, settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column_string, 0, column_string->size(), settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
     }

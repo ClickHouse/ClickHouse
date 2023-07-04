@@ -71,28 +71,22 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
     pfd.events = events;
     pfd.revents = 0;
 
-    Stopwatch watch;
-
     int res;
 
     while (true)
     {
-        res = poll(&pfd, 1, timeout_milliseconds);
+        Stopwatch watch;
+        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
-            if (errno == EINTR)
-            {
-                watch.stop();
-                timeout_milliseconds -= watch.elapsedMilliseconds();
-                watch.start();
-
-                continue;
-            }
-            else
-            {
+            if (errno != EINTR)
                 throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
-            }
+
+            const auto elapsed = watch.elapsedMilliseconds();
+            if (timeout_milliseconds <= elapsed)
+                break;
+            timeout_milliseconds -= elapsed;
         }
         else
         {
@@ -280,7 +274,7 @@ namespace
                     }
                     catch (...)
                     {
-                        std::lock_guard<std::mutex> lock(send_data_lock);
+                        std::lock_guard lock(send_data_lock);
                         exception_during_send_data = std::current_exception();
                     }
                 });
@@ -358,7 +352,11 @@ namespace
                 }
 
                 if (!executor->pull(chunk))
+                {
+                    if (configuration.check_exit_code)
+                        command->wait();
                     return {};
+                }
 
                 current_read_rows += chunk.getNumRows();
             }
@@ -393,7 +391,7 @@ namespace
 
         void rethrowExceptionDuringSendDataIfNeeded()
         {
-            std::lock_guard<std::mutex> lock(send_data_lock);
+            std::lock_guard lock(send_data_lock);
             if (exception_during_send_data)
             {
                 command_is_invalid = true;
@@ -474,7 +472,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
 
-    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, configuration.command_termination_timeout_seconds};
+    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
 
     bool is_executable_pool = (process_pool != nullptr);
@@ -527,7 +525,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
         else
         {
-            auto descriptor = i + 2;
+            int descriptor = static_cast<int>(i) + 2;
             auto it = process->write_fds.find(descriptor);
             if (it == process->write_fds.end())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Process does not contain descriptor to write {}", descriptor);
@@ -556,11 +554,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
 
+            timeout_write_buffer->finalize();
+            timeout_write_buffer->reset();
+
             if (!is_executable_pool)
             {
-                timeout_write_buffer->next();
-                timeout_write_buffer->reset();
-
                 write_buffer->close();
             }
         };

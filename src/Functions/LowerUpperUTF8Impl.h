@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>
+#include <base/defines.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -89,19 +90,21 @@ struct LowerUpperUTF8Impl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
+        if (data.empty())
+            return;
         res_data.resize(data.size());
         res_offsets.assign(offsets);
-        array(data.data(), data.data() + data.size(), res_data.data());
+        array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Functions lowerUTF8 and upperUTF8 cannot work with FixedString argument", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions lowerUTF8 and upperUTF8 cannot work with FixedString argument");
     }
 
     /** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
      *    `src` and `dst` are incremented by corresponding sequence lengths. */
-    static void toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
+    static bool toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst, bool partial)
     {
         if (src[0] <= ascii_upper_bound)
         {
@@ -133,6 +136,11 @@ struct LowerUpperUTF8Impl
             static const Poco::UTF8Encoding utf8;
 
             size_t src_sequence_length = UTF8::seqLength(*src);
+            /// In case partial buffer was passed (due to SSE optimization)
+            /// we cannot convert it with current src_end, but we may have more
+            /// bytes to convert and eventually got correct symbol.
+            if (partial && src_sequence_length > static_cast<size_t>(src_end - src))
+                return false;
 
             auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
             if (src_code_point)
@@ -149,7 +157,7 @@ struct LowerUpperUTF8Impl
                     {
                         src += dst_sequence_length;
                         dst += dst_sequence_length;
-                        return;
+                        return true;
                     }
                 }
             }
@@ -158,17 +166,24 @@ struct LowerUpperUTF8Impl
             ++dst;
             ++src;
         }
+
+        return true;
     }
 
 private:
     static constexpr auto ascii_upper_bound = '\x7f';
     static constexpr auto flip_case_mask = 'A' ^ 'a';
 
-    static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+    static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
+        auto offset_it = offsets.begin();
+        const UInt8 * begin = src;
+
 #ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
-        const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
+
+        /// If we are before this position, we can still read at least bytes_sse.
+        const auto * src_end_sse = src_end - bytes_sse + 1;
 
         /// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
         const auto v_zero = _mm_setzero_si128();
@@ -213,26 +228,45 @@ private:
             else
             {
                 /// UTF-8
-                const auto * expected_end = src + bytes_sse;
+
+                /// Find the offset of the next string after src
+                size_t offset_from_begin = src - begin;
+                while (offset_from_begin >= *offset_it)
+                    ++offset_it;
+
+                /// Do not allow one row influence another (since row may have invalid sequence, and break the next)
+                const UInt8 * row_end = begin + *offset_it;
+                chassert(row_end >= src);
+                const UInt8 * expected_end = std::min(src + bytes_sse, row_end);
 
                 while (src < expected_end)
-                    toCase(src, src_end, dst);
-
-                /// adjust src_end_sse by pushing it forward or backward
-                const auto diff = src - expected_end;
-                if (diff != 0)
                 {
-                    if (src_end_sse + diff < src_end)
-                        src_end_sse += diff;
-                    else
-                        src_end_sse -= bytes_sse - diff;
+                    if (!toCase(src, expected_end, dst, /* partial= */ true))
+                    {
+                        /// Fallback to handling byte by byte.
+                        src_end_sse = src;
+                        break;
+                    }
                 }
             }
         }
+
+        /// Find the offset of the next string after src
+        size_t offset_from_begin = src - begin;
+        while (offset_it != offsets.end() && offset_from_begin >= *offset_it)
+            ++offset_it;
 #endif
-        /// handle remaining symbols
+
+        /// handle remaining symbols, row by row (to avoid influence of bad UTF8 symbols from one row, to another)
         while (src < src_end)
-            toCase(src, src_end, dst);
+        {
+            const UInt8 * row_end = begin + *offset_it;
+            chassert(row_end >= src);
+
+            while (src < row_end)
+                toCase(src, row_end, dst, /* partial= */ false);
+            ++offset_it;
+        }
     }
 };
 

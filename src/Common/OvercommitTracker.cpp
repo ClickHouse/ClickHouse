@@ -3,7 +3,13 @@
 #include <chrono>
 #include <mutex>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ThreadsInOvercommitTracker;
+}
 
 namespace ProfileEvents
 {
@@ -14,10 +20,10 @@ using namespace std::chrono_literals;
 
 constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 
-OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
+OvercommitTracker::OvercommitTracker(DB::ProcessList * process_list_)
     : picked_tracker(nullptr)
+    , process_list(process_list_)
     , cancellation_state(QueryCancellationState::NONE)
-    , global_mutex(global_mutex_)
     , freed_memory(0)
     , required_memory(0)
     , next_id(0)
@@ -31,13 +37,15 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return OvercommitResult::NONE;
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::ThreadsInOvercommitTracker);
     // NOTE: Do not change the order of locks
     //
-    // global_mutex must be acquired before overcommit_m, because
+    // global mutex must be acquired before overcommit_m, because
     // method OvercommitTracker::onQueryStop(MemoryTracker *) is
-    // always called with already acquired global_mutex in
+    // always called with already acquired global mutex in
     // ProcessListEntry::~ProcessListEntry().
-    std::unique_lock<std::mutex> global_lock(global_mutex);
+    auto global_lock = process_list->unsafeLock();
     std::unique_lock<std::mutex> lk(overcommit_m);
 
     size_t id = next_id++;
@@ -137,8 +145,8 @@ void OvercommitTracker::releaseThreads()
     cv.notify_all();
 }
 
-UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list, DB::ProcessListForUser * user_process_list_)
-    : OvercommitTracker(process_list->mutex)
+UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list_, DB::ProcessListForUser * user_process_list_)
+    : OvercommitTracker(process_list_)
     , user_process_list(user_process_list_)
 {}
 
@@ -169,9 +177,9 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
 }
 
 GlobalOvercommitTracker::GlobalOvercommitTracker(DB::ProcessList * process_list_)
-    : OvercommitTracker(process_list_->mutex)
-    , process_list(process_list_)
-{}
+    : OvercommitTracker(process_list_)
+{
+}
 
 void GlobalOvercommitTracker::pickQueryToExcludeImpl()
 {
@@ -181,16 +189,16 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
     for (auto const & query : process_list->processes)
     {
-        if (query.isKilled())
+        if (query->isKilled())
             continue;
 
         Int64 user_soft_limit = 0;
-        if (auto const * user_process_list = query.getUserProcessList())
+        if (auto const * user_process_list = query->getUserProcessList())
             user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
         if (user_soft_limit == 0)
             continue;
 
-        auto * memory_tracker = query.getMemoryTracker();
+        auto * memory_tracker = query->getMemoryTracker();
         if (!memory_tracker)
             continue;
         auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);

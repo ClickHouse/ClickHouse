@@ -1,7 +1,7 @@
 # docker build -t clickhouse/style-test .
 FROM ubuntu:20.04
-ARG ACT_VERSION=0.2.25
-ARG ACTIONLINT_VERSION=1.6.8
+ARG ACT_VERSION=0.2.33
+ARG ACTIONLINT_VERSION=1.6.22
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -11,13 +11,14 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     aspell \
     curl \
     git \
+    file \
     libxml2-utils \
     moreutils \
     python3-fuzzywuzzy \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff pylint==2.6.2 \
+    && pip3 install black==23.1.0 boto3 codespell==2.2.1 mypy==1.3.0 PyGithub unidiff pylint==2.6.2 \
     && apt-get clean \
     && rm -rf /root/.cache/pip
 

@@ -273,13 +273,13 @@ private:
 
         {
             /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
-            size_t sums[NUM_PASSES] = {0};
+            CountType sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
             {
                 for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
-                    size_t tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
+                    CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
                     histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
                     sums[pass] = tmp;
                 }

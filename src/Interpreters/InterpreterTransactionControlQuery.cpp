@@ -32,8 +32,7 @@ BlockIO InterpreterTransactionControlQuery::execute()
         case ASTTransactionControl::SET_SNAPSHOT:
             return executeSetSnapshot(session_context, tcl.snapshot);
     }
-    assert(false);
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr session_context)

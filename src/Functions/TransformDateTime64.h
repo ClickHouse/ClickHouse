@@ -48,6 +48,10 @@ public:
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 
+    TransformDateTime64(DateTime64::NativeType scale_multiplier_ = 1) /// NOLINT(google-explicit-constructor)
+        : scale_multiplier(scale_multiplier_)
+    {}
+
     template <typename ... Args>
     inline auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, Args && ... args) const
     {
@@ -86,6 +90,48 @@ public:
     {
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
     }
+
+
+    template <typename ... Args>
+    inline auto NO_SANITIZE_UNDEFINED executeExtendedResult(const DateTime64 & t, Args && ... args) const
+    {
+        /// Type conversion from float to integer may be required.
+        /// We are Ok with implementation specific result for out of range and denormals conversion.
+
+        if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
+        {
+            return wrapped_transform.executeExtendedResult(t, scale_multiplier, std::forward<Args>(args)...);
+        }
+        else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
+        {
+            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+
+            const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
+            using ResultType = std::decay_t<decltype(result)>;
+
+            if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
+            {
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(result, scale_multiplier);
+            }
+            else
+            {
+                return result;
+            }
+        }
+        else
+        {
+            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            return wrapped_transform.executeExtendedResult(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
+        }
+    }
+
+    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
+    inline auto executeExtendedResult(const T & t, Args && ... args) const
+    {
+        return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);
+    }
+
+    DateTime64::NativeType getScaleMultiplier() const { return scale_multiplier; }
 
 private:
     DateTime64::NativeType scale_multiplier = 1;

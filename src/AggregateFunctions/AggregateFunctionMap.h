@@ -18,7 +18,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "DataTypes/Serializations/ISerialization.h"
+#include <base/IPv4andIPv6.h>
 #include "base/types.h"
+#include <Common/formatIPv6.h>
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
 
@@ -60,15 +63,36 @@ struct AggregateFunctionMapCombinatorData<String>
 
     static void writeKey(String key, WriteBuffer & buf)
     {
-        writeVarUInt(key.size(), buf);
-        writeString(key, buf);
+        writeStringBinary(key, buf);
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        UInt64 size;
-        readVarUInt(size, buf);
-        key.resize(size);
-        buf.readStrict(key.data(), size);
+        readStringBinary(key, buf);
+    }
+};
+
+/// Specialization for IPv6 - for historical reasons it should be stored as FixedString(16)
+template <>
+struct AggregateFunctionMapCombinatorData<IPv6>
+{
+    struct IPv6Hash
+    {
+        using hash_type = std::hash<IPv6>;
+        using is_transparent = void;
+
+        size_t operator()(const IPv6 & ip) const { return hash_type{}(ip); }
+    };
+
+    using SearchType = IPv6;
+    std::unordered_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+
+    static void writeKey(const IPv6 & key, WriteBuffer & buf)
+    {
+        writeIPv6Binary(key, buf);
+    }
+    static void readKey(IPv6 & key, ReadBuffer & buf)
+    {
+        readIPv6Binary(key, buf);
     }
 };
 
@@ -84,26 +108,48 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType>>;
 
 public:
-    AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
+    bool isState() const override
     {
-        if (types.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires at least one argument");
+        return nested_func->isState();
+    }
 
-        if (types.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires only one map argument");
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
 
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
-        if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function " + getName() + " requires map as argument");
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
 
-        key_type = map_type->getKeyType();
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
+    AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types)
+        : Base(types, nested->getParameters(), std::make_shared<DataTypeMap>(DataTypes{getKeyType(types, nested), nested->getResultType()}))
+        , nested_func(nested)
+    {
+        key_type = getKeyType(types, nested_func);
     }
 
     String getName() const override { return nested_func->getName() + "Map"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeMap>(DataTypes{key_type, nested_func->getReturnType()}); }
+    static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
+    {
+        if (types.size() != 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {}Map requires one map argument, but {} found", nested->getName(), types.size());
+
+        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
+        if (!map_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Aggregate function {}Map requires map as argument", nested->getName());
+
+        return map_type->getKeyType();
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -128,6 +174,8 @@ public:
                 StringRef key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)
                     key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
+                else if (key_type->getTypeId() == TypeIndex::IPv6)
+                    key_ref = assert_cast<const ColumnIPv6 &>(key_column).getDataAt(offset + i);
                 else
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
@@ -187,6 +235,37 @@ public:
         }
     }
 
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
+    {
+        AggregateFunctionMapCombinatorData<KeyType> & state = Base::data(place);
+
+        for (const auto & [key, nested_place] : state.merged_maps)
+        {
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_place);
+            else
+                nested_func->destroy(nested_place);
+        }
+
+        state.~Data();
+    }
+
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    bool hasTrivialDestructor() const override
+    {
+        return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
@@ -218,7 +297,8 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & map_column = assert_cast<ColumnMap &>(to);
         auto & nested_column = map_column.getNestedColumn();
@@ -242,11 +322,24 @@ public:
         for (auto & key : keys)
         {
             key_column.insert(key);
-            nested_func->insertResultInto(merged_maps[key], val_column, arena);
+            if constexpr (merge)
+                nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
+            else
+                nested_func->insertResultInto(merged_maps[key], val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
         res_offsets.push_back(val_column.size());
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

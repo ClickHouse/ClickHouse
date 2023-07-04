@@ -3,7 +3,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
 #include <memory>
@@ -105,9 +105,10 @@ public:
         std::vector<Node *> children = {};
     };
 
-    const Node * getRootNode() const { return root; }
-
     using Nodes = std::list<Node>;
+
+    Node * getRootNode() const { return root; }
+    static Nodes detachNodes(QueryPlan && plan);
 
 private:
     QueryPlanResourceHolder resources;

@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
@@ -34,8 +35,15 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 
 size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 {
+    auto & initial_buf = format->getReadBuffer();
     format->setReadBuffer(buffer);
-    return execute();
+    size_t rows = execute();
+    /// Format destructor can touch read buffer (for example when we use PeekableReadBuffer),
+    /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
+    /// we can set initial read buffer back, because initial read buffer was created before
+    /// format, so it will be destructed after it.
+    format->setReadBuffer(initial_buf);
+    return rows;
 }
 
 size_t StreamingFormatExecutor::execute()
@@ -85,6 +93,18 @@ size_t StreamingFormatExecutor::execute()
     {
         format->resetParser();
         return on_error(result_columns, e);
+    }
+    catch (std::exception & e)
+    {
+        format->resetParser();
+        auto exception = Exception(Exception::CreateFromSTDTag{}, e);
+        return on_error(result_columns, exception);
+    }
+    catch (...)
+    {
+        format->resetParser();
+        auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknowk exception while executing StreamingFormatExecutor with format {}", format->getName());
+        return on_error(result_columns, exception);
     }
 }
 

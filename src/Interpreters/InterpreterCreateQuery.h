@@ -18,7 +18,9 @@ class ASTExpressionList;
 class ASTConstraintDeclaration;
 class ASTStorage;
 class IDatabase;
+class DDLGuard;
 using DatabasePtr = std::shared_ptr<IDatabase>;
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 
 /** Allows to create new table or database,
@@ -59,6 +61,11 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    void setDontNeedDDLGuard()
+    {
+        need_ddl_guard = false;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
@@ -89,7 +96,7 @@ private:
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties);
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
@@ -110,6 +117,7 @@ private:
     bool internal = false;
     bool force_attach = false;
     bool load_database_without_tables = false;
+    bool need_ddl_guard = true;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

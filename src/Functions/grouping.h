@@ -1,9 +1,9 @@
 #pragma once
 
+#include <base/defines.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -13,16 +13,28 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 class FunctionGroupingBase : public IFunction
 {
 protected:
     static constexpr UInt64 ONE = 1;
 
     const ColumnNumbers arguments_indexes;
+    // Initial implementation of GROUPING function returned 1 if the argument is used as an aggregation key.
+    // This differs from the behavior described in the standard and other DBMS.
+    const bool force_compatibility;
+
+    static constexpr UInt64 COMPATIBLE_MODE[]   = {1, 0};
+    static constexpr UInt64 INCOMPATIBLE_MODE[] = {0, 1};
 
 public:
-    FunctionGroupingBase(ColumnNumbers arguments_indexes_)
+    FunctionGroupingBase(ColumnNumbers arguments_indexes_, bool force_compatibility_)
         : arguments_indexes(std::move(arguments_indexes_))
+        , force_compatibility(force_compatibility_)
     {}
 
     bool isVariadic() const override { return true; }
@@ -48,13 +60,15 @@ public:
         auto result = ColumnUInt64::create();
         auto & result_data = result->getData();
         result_data.reserve(input_rows_count);
+
+        const auto * result_table = likely(force_compatibility) ? COMPATIBLE_MODE : INCOMPATIBLE_MODE;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             UInt64 set_index = grouping_set_column->getElement(i);
 
             UInt64 value = 0;
             for (auto index : arguments_indexes)
-                value = (value << 1) + (checker(set_index, index) ? 1 : 0);
+                value = (value << 1) + result_table[checker(set_index, index) ? 1 : 0];
 
             result_data.push_back(value);
         }
@@ -62,17 +76,35 @@ public:
     }
 };
 
+class FunctionGrouping : public FunctionGroupingBase
+{
+public:
+    explicit FunctionGrouping(bool force_compatibility_)
+        : FunctionGroupingBase(ColumnNumbers(), force_compatibility_)
+    {}
+
+    String getName() const override { return "grouping"; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Method executeImpl is not supported for 'grouping' function");
+    }
+};
+
 class FunctionGroupingOrdinary : public FunctionGroupingBase
 {
 public:
-    explicit FunctionGroupingOrdinary(ColumnNumbers arguments_indexes_)
-        : FunctionGroupingBase(std::move(arguments_indexes_))
+    FunctionGroupingOrdinary(ColumnNumbers arguments_indexes_, bool force_compatibility_)
+        : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
     {}
 
     String getName() const override { return "groupingOrdinary"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (likely(force_compatibility))
+            return ColumnUInt64::create(input_rows_count, 0);
         UInt64 value = (ONE << arguments_indexes.size()) - 1;
         return ColumnUInt64::create(input_rows_count, value);
     }
@@ -83,8 +115,8 @@ class FunctionGroupingForRollup : public FunctionGroupingBase
     const UInt64 aggregation_keys_number;
 
 public:
-    FunctionGroupingForRollup(ColumnNumbers arguments_indexes_, UInt64 aggregation_keys_number_)
-        : FunctionGroupingBase(std::move(arguments_indexes_))
+    FunctionGroupingForRollup(ColumnNumbers arguments_indexes_, UInt64 aggregation_keys_number_, bool force_compatibility_)
+        : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
@@ -113,8 +145,8 @@ class FunctionGroupingForCube : public FunctionGroupingBase
 
 public:
 
-    FunctionGroupingForCube(ColumnNumbers arguments_indexes_, UInt64 aggregation_keys_number_)
-        : FunctionGroupingBase(arguments_indexes_)
+    FunctionGroupingForCube(ColumnNumbers arguments_indexes_, UInt64 aggregation_keys_number_, bool force_compatibility_)
+        : FunctionGroupingBase(arguments_indexes_, force_compatibility_)
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
@@ -142,8 +174,8 @@ class FunctionGroupingForGroupingSets : public FunctionGroupingBase
 {
     ColumnNumbersSetList grouping_sets;
 public:
-    FunctionGroupingForGroupingSets(ColumnNumbers arguments_indexes_, ColumnNumbersList const & grouping_sets_)
-        : FunctionGroupingBase(std::move(arguments_indexes_))
+    FunctionGroupingForGroupingSets(ColumnNumbers arguments_indexes_, ColumnNumbersList const & grouping_sets_, bool force_compatibility_)
+        : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
     {
         for (auto const & set : grouping_sets_)
             grouping_sets.emplace_back(set.begin(), set.end());

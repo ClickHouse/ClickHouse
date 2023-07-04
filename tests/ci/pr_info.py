@@ -2,11 +2,11 @@
 import json
 import logging
 import os
-from typing import Set
+from typing import Dict, List, Set, Union
 
 from unidiff import PatchSet  # type: ignore
 
-from build_download_helper import get_with_retries
+from build_download_helper import get_gh_api
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -16,6 +16,7 @@ from env_helper import (
 
 FORCE_TESTS_LABEL = "force tests"
 SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
+NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -44,17 +45,24 @@ def get_pr_for_commit(sha, ref):
         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     )
     try:
-        response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
+        response = get_gh_api(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
+        our_prs = []  # type: List[Dict]
         if len(data) > 1:
             print("Got more than one pr for commit", sha)
         for pr in data:
+            # We need to check if the PR is created in our repo, because
+            # https://github.com/kaynewu/ClickHouse/pull/2
+            # has broke our PR search once in a while
+            if pr["base"]["repo"]["full_name"] != GITHUB_REPOSITORY:
+                continue
             # refs for pushes looks like refs/head/XX
             # refs for RPs looks like XX
             if pr["head"]["ref"] in ref:
                 return pr
+            our_prs.append(pr)
         print("Cannot find PR with required ref", ref, "returning first one")
-        first_pr = data[0]
+        first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
         print("Cannot fetch PR info from commit", ex)
@@ -64,6 +72,7 @@ def get_pr_for_commit(sha, ref):
 class PRInfo:
     default_event = {
         "commits": 1,
+        "head_commit": {"message": "commit_message"},
         "before": "HEAD~",
         "after": "HEAD",
         "ref": None,
@@ -86,15 +95,17 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
-        self.release_pr = ""
-        ref = github_event.get("ref", "refs/head/master")
+        # release_pr and merged_pr are used for docker images additional cache
+        self.release_pr = 0
+        self.merged_pr = 0
+        ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
             self.sha = github_event["workflow_run"]["head_sha"]
-            prs_for_sha = get_with_retries(
+            prs_for_sha = get_gh_api(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
                 "/pulls",
                 sleep=RETRY_SLEEP,
@@ -106,7 +117,7 @@ class PRInfo:
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
                 try:
-                    response = get_with_retries(
+                    response = get_gh_api(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
                         f"/pulls/{self.number}",
                         sleep=RETRY_SLEEP,
@@ -132,19 +143,23 @@ class PRInfo:
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
+            # master or backport/xx.x/xxxxx - where the PR will be merged
             self.base_ref = github_event["pull_request"]["base"]["ref"]
+            # ClickHouse/ClickHouse
             self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
+            # any_branch-name - the name of working branch name
             self.head_ref = github_event["pull_request"]["head"]["ref"]
+            # UserName/ClickHouse or ClickHouse/ClickHouse
             self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
-            }
+            }  # type: Set[str]
 
             self.user_login = github_event["pull_request"]["user"]["login"]
             self.user_orgs = set([])
             if need_orgs:
-                user_orgs_response = get_with_retries(
+                user_orgs_response = get_gh_api(
                     github_event["pull_request"]["user"]["organizations_url"],
                     sleep=RETRY_SLEEP,
                 )
@@ -154,6 +169,14 @@ class PRInfo:
 
             self.diff_urls.append(github_event["pull_request"]["diff_url"])
         elif "commits" in github_event:
+            # `head_commit` always comes with `commits`
+            commit_message = github_event["head_commit"]["message"]
+            if commit_message.startswith("Merge pull request #"):
+                merged_pr = commit_message.split(maxsplit=4)[3]
+                try:
+                    self.merged_pr = int(merged_pr[1:])
+                except ValueError:
+                    logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
@@ -163,7 +186,7 @@ class PRInfo:
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
                 self.number = 0
-                self.labels = {}
+                self.labels = set()
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
                 self.base_name = self.repo_full_name
@@ -213,7 +236,7 @@ class PRInfo:
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
-            self.labels = {}
+            self.labels = set()
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
@@ -232,7 +255,7 @@ class PRInfo:
             raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
-            response = get_with_retries(
+            response = get_gh_api(
                 diff_url,
                 sleep=RETRY_SLEEP,
             )

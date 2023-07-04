@@ -1,5 +1,6 @@
 ---
-sidebar_position: 35
+slug: /en/sql-reference/functions/array-functions
+sidebar_position: 10
 sidebar_label: Arrays
 ---
 
@@ -17,7 +18,7 @@ empty([x])
 
 An array is considered empty if it does not contain any elements.
 
-:::note    
+:::note
 Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
@@ -25,11 +26,11 @@ The function also works for [strings](string-functions.md#empty) or [UUID](uuid-
 
 **Arguments**
 
--   `[x]` — Input array. [Array](../data-types/array.md).
+- `[x]` — Input array. [Array](../data-types/array.md).
 
 **Returned value**
 
--   Returns `1` for an empty array or `0` for a non-empty array.
+- Returns `1` for an empty array or `0` for a non-empty array.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -61,7 +62,7 @@ notEmpty([x])
 
 An array is considered non-empty if it contains at least one element.
 
-:::note    
+:::note
 Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
@@ -69,11 +70,11 @@ The function also works for [strings](string-functions.md#notempty) or [UUID](uu
 
 **Arguments**
 
--   `[x]` — Input array. [Array](../data-types/array.md).
+- `[x]` — Input array. [Array](../data-types/array.md).
 
 **Returned value**
 
--   Returns `1` for a non-empty array or `0` for an empty array.
+- Returns `1` for a non-empty array or `0` for an empty array.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -117,43 +118,45 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-
 ## range(end), range(\[start, \] end \[, step\])
 
-Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
+Returns an array of numbers from `start` to `end - 1` by `step`. The supported types are [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../data-types/int-uint.md).
 
 **Syntax**
+
 ``` sql
 range([start, ] end [, step])
 ```
 
 **Arguments**
 
--   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
--   `end` — The number before which the array is constructed. Required. [UInt](../data-types/int-uint.md)
--   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
+- `start` — The first element of the array. Optional, required if `step` is used. Default value: 0.
+- `end` — The number before which the array is constructed. Required.
+- `step` — Determines the incremental step between each element in the array. Optional. Default value: 1.
 
 **Returned value**
 
--   Array of `UInt` numbers from `start` to `end - 1` by `step`.
+- Array of numbers from `start` to `end - 1` by `step`.
 
 **Implementation details**
 
--   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
--   An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
-
+- All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
+- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
 
 **Examples**
 
 Query:
+
 ``` sql
-SELECT range(5), range(1, 5), range(1, 5, 2);
+SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);
 ```
+
 Result:
+
 ```txt
-┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
-│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
-└─────────────┴─────────────┴────────────────┘
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
+└─────────────┴─────────────┴────────────────┴─────────────────┘
 ```
 
 ## array(x1, …), operator \[x1, …\]
@@ -176,7 +179,7 @@ arrayConcat(arrays)
 
 **Arguments**
 
--   `arrays` – Arbitrary number of arguments of [Array](../../sql-reference/data-types/array.md) type.
+- `arrays` – Arbitrary number of arguments of [Array](../../sql-reference/data-types/array.md) type.
     **Example**
 
 <!-- -->
@@ -226,19 +229,21 @@ hasAll(set, subset)
 
 **Arguments**
 
--   `set` – Array of any type with a set of elements.
--   `subset` – Array of any type with elements that should be tested to be a subset of `set`.
+- `set` – Array of any type with a set of elements.
+- `subset` – Array of any type that shares a common supertype with `set` containing elements that should be tested to be a subset of `set`.
 
 **Return values**
 
--   `1`, if `set` contains all of the elements from `subset`.
--   `0`, otherwise.
+- `1`, if `set` contains all of the elements from `subset`.
+- `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share a common supertype.
 
 **Peculiar properties**
 
--   An empty array is a subset of any array.
--   `Null` processed as a value.
--   Order of values in both of arrays does not matter.
+- An empty array is a subset of any array.
+- `Null` processed as a value.
+- Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -250,7 +255,7 @@ hasAll(set, subset)
 
 `SELECT hasAll(['a', 'b'], ['a'])` returns 1.
 
-`SELECT hasAll([1], ['a'])` returns 0.
+`SELECT hasAll([1], ['a'])` raises a `NO_COMMON_TYPE` exception.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
@@ -264,18 +269,20 @@ hasAny(array1, array2)
 
 **Arguments**
 
--   `array1` – Array of any type with a set of elements.
--   `array2` – Array of any type with a set of elements.
+- `array1` – Array of any type with a set of elements.
+- `array2` – Array of any type that shares a common supertype with `array1`.
 
 **Return values**
 
--   `1`, if `array1` and `array2` have one similar element at least.
--   `0`, otherwise.
+- `1`, if `array1` and `array2` have one similar element at least.
+- `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
 
 **Peculiar properties**
 
--   `Null` processed as a value.
--   Order of values in both of arrays does not matter.
+- `Null` processed as a value.
+- Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -285,7 +292,7 @@ hasAny(array1, array2)
 
 `SELECT hasAny([-128, 1., 512], [1])` returns `1`.
 
-`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` raises a `NO_COMMON_TYPE` exception.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
 
@@ -301,24 +308,27 @@ In other words, the functions will check whether all the elements of `array2` ar
 the `hasAll` function. In addition, it will check that the elements are observed in the same order in both `array1` and `array2`.
 
 For Example:
+
 - `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
 - `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
 
 **Arguments**
 
--   `array1` – Array of any type with a set of elements.
--   `array2` – Array of any type with a set of elements.
+- `array1` – Array of any type with a set of elements.
+- `array2` – Array of any type with a set of elements.
 
 **Return values**
 
--   `1`, if `array1` contains `array2`.
--   `0`, otherwise.
+- `1`, if `array1` contains `array2`.
+- `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
 
 **Peculiar properties**
 
--   The function will return `1` if `array2` is empty.
--   `Null` processed as a value. In other words `hasSubstr([1, 2, NULL, 3, 4], [2,3])` will return `0`. However, `hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])` will return `1`
--   Order of values in both of arrays does matter.
+- The function will return `1` if `array2` is empty.
+- `Null` processed as a value. In other words `hasSubstr([1, 2, NULL, 3, 4], [2,3])` will return `0`. However, `hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])` will return `1`
+- Order of values in both of arrays does matter.
 
 **Examples**
 
@@ -335,6 +345,9 @@ For Example:
 `SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
 
 `SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
+i
+`SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])` raises a `NO_COMMON_TYPE` exception.
+
 
 ## indexOf(arr, x)
 
@@ -484,7 +497,7 @@ arrayPopBack(array)
 
 **Arguments**
 
--   `array` – Array.
+- `array` – Array.
 
 **Example**
 
@@ -508,7 +521,7 @@ arrayPopFront(array)
 
 **Arguments**
 
--   `array` – Array.
+- `array` – Array.
 
 **Example**
 
@@ -532,8 +545,8 @@ arrayPushBack(array, single_value)
 
 **Arguments**
 
--   `array` – Array.
--   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `array` – Array.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -557,8 +570,8 @@ arrayPushFront(array, single_value)
 
 **Arguments**
 
--   `array` – Array.
--   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `array` – Array.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -582,11 +595,11 @@ arrayResize(array, size[, extender])
 
 **Arguments:**
 
--   `array` — Array.
--   `size` — Required length of the array.
-    -   If `size` is less than the original size of the array, the array is truncated from the right.
--   If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
--   `extender` — Value for extending an array. Can be `NULL`.
+- `array` — Array.
+- `size` — Required length of the array.
+  - If `size` is less than the original size of the array, the array is truncated from the right.
+- If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
+- `extender` — Value for extending an array. Can be `NULL`.
 
 **Returned value:**
 
@@ -642,7 +655,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …)
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -682,10 +695,10 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 └───────────────────────────────────────────────────────────┘
 ```
 
--   `-Inf` values are first in the array.
--   `NULL` values are last in the array.
--   `NaN` values are right before `NULL`.
--   `Inf` values are right before `NaN`.
+- `-Inf` values are first in the array.
+- `NULL` values are last in the array.
+- `NaN` values are right before `NULL`.
+- `Inf` values are right before `NaN`.
 
 Note that `arraySort` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
 
@@ -739,11 +752,15 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 └─────────┘
 ```
 
-:::note    
+:::note
 To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 :::
 
-## arrayReverseSort(\[func,\] arr, …)
+## arrayPartialSort(\[func,\] limit, arr, …)
+
+Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
+
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -783,10 +800,10 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 └───────────────────────────────────────┘
 ```
 
--   `Inf` values are first in the array.
--   `NULL` values are last in the array.
--   `NaN` values are right before `NULL`.
--   `-Inf` values are right before `NaN`.
+- `Inf` values are first in the array.
+- `NULL` values are last in the array.
+- `NaN` values are right before `NULL`.
+- `-Inf` values are right before `NaN`.
 
 Note that the `arrayReverseSort` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument. Example is shown below.
 
@@ -802,8 +819,8 @@ SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
 
 The array is sorted in the following way:
 
-1.  At first, the source array (\[1, 2, 3\]) is sorted according to the result of the lambda function applied to the elements of the array. The result is an array \[3, 2, 1\].
-2.  Array that is obtained on the previous step, is reversed. So, the final result is \[1, 2, 3\].
+1. At first, the source array (\[1, 2, 3\]) is sorted according to the result of the lambda function applied to the elements of the array. The result is an array \[3, 2, 1\].
+2. Array that is obtained on the previous step, is reversed. So, the final result is \[1, 2, 3\].
 
 The lambda function can accept multiple arguments. In this case, you need to pass the `arrayReverseSort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
@@ -819,8 +836,8 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 In this example, the array is sorted in the following way:
 
-1.  At first, the source array (\[‘hello’, ‘world’\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \[‘world’, ‘hello’\].
-2.  Array that was sorted on the previous step, is reversed. So, the final result is \[‘hello’, ‘world’\].
+1. At first, the source array (\[‘hello’, ‘world’\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \[‘world’, ‘hello’\].
+2. Array that was sorted on the previous step, is reversed. So, the final result is \[‘hello’, ‘world’\].
 
 Other examples are shown below.
 
@@ -844,6 +861,10 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 └─────────┘
 ```
 
+## arrayPartialReverseSort(\[func,\] limit, arr, …)
+
+Same as `arrayReverseSort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in descending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
+
 ## arrayUniq(arr, …)
 
 If one argument is passed, it counts the number of different elements in the array.
@@ -857,7 +878,7 @@ A special function. See the section [“ArrayJoin function”](../../sql-referen
 
 ## arrayDifference
 
-Calculates the difference between adjacent array elements. Returns an array where the first element will be 0, the second is the difference between `a[1] - a[0]`, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
+Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
 **Syntax**
 
@@ -867,11 +888,11 @@ arrayDifference(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
+- `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
 
 **Returned values**
 
-Returns an array of differences between adjacent elements.
+Returns an array of differences between adjacent array elements.
 
 Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
@@ -919,7 +940,7 @@ arrayDistinct(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
+- `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -987,8 +1008,8 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 
 **Arguments**
 
--   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
--   `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+- `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
+- `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
 
@@ -1052,13 +1073,13 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 **Arguments**
 
--   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
--   `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
--   `arr` — Any number of [Array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+- `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
+- `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
+- `arr` — Any number of [Array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
 
--   Array containing results of the aggregate function over specified ranges.
+- Array containing results of the aggregate function over specified ranges.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -1108,8 +1129,8 @@ Converts an array of arrays to a flat array.
 
 Function:
 
--   Applies to any depth of nested arrays.
--   Does not change arrays that are already flat.
+- Applies to any depth of nested arrays.
+- Does not change arrays that are already flat.
 
 The flattened array contains all the elements from all source arrays.
 
@@ -1123,7 +1144,7 @@ Alias: `flatten`.
 
 **Arguments**
 
--   `array_of_arrays` — [Array](../../sql-reference/data-types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
+- `array_of_arrays` — [Array](../../sql-reference/data-types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
 
 **Examples**
 
@@ -1185,13 +1206,13 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **Arguments**
 
--   `arrN` — [Array](../../sql-reference/data-types/array.md).
+- `arrN` — [Array](../../sql-reference/data-types/array.md).
 
 The function can take any number of arrays of different types. All the input arrays must be of equal size.
 
 **Returned value**
 
--   Array with elements from the source arrays grouped into [tuples](../../sql-reference/data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
+- Array with elements from the source arrays grouped into [tuples](../../sql-reference/data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -1213,7 +1234,7 @@ Result:
 
 ## arrayAUC
 
-Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>).
 
 **Syntax**
 
@@ -1224,7 +1245,7 @@ arrayAUC(arr_scores, arr_labels)
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
-- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
 
 **Returned value**
 
@@ -1433,12 +1454,12 @@ arrayMin([func,] arr)
 
 **Arguments**
 
--   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
--   The minimum of function values (or the array minimum).
+- The minimum of function values (or the array minimum).
 
 Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
 
@@ -1488,12 +1509,12 @@ arrayMax([func,] arr)
 
 **Arguments**
 
--   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
--   The maximum of function values (or the array maximum).
+- The maximum of function values (or the array maximum).
 
 Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
 
@@ -1543,12 +1564,12 @@ arraySum([func,] arr)
 
 **Arguments**
 
--   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
--   The sum of the function values (or the array sum).
+- The sum of the function values (or the array sum).
 
 Type: for decimal numbers in source array (or for converted values, if `func` is specified) — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [UInt64](../../sql-reference/data-types/int-uint.md), and for numeric signed — [Int64](../../sql-reference/data-types/int-uint.md).
 
@@ -1598,12 +1619,12 @@ arrayAvg([func,] arr)
 
 **Arguments**
 
--   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
--   The average of function values (or the array average).
+- The average of function values (or the array average).
 
 Type: [Float64](../../sql-reference/data-types/float.md).
 
@@ -1639,7 +1660,23 @@ Result:
 
 ## arrayCumSum(\[func,\] arr1, …)
 
-Returns an array of partial sums of elements in the source array (a running sum). If the `func` function is specified, then the values of the array elements are converted by `func(arr1[i], …, arrN[i])` before summing.
+Returns an array of the partial (running) sums of the elements in the source array `arr1`. If `func` is specified, then the sum is computed from applying `func` to `arr1`, `arr2`, ..., `arrN`, i.e. `func(arr1[i], …, arrN[i])`.
+
+**Syntax**
+
+``` sql
+arrayCumSum(arr)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+
+**Returned value**
+
+- Returns an array of the partial sums of the elements in the source array.
+
+Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 Example:
 
@@ -1655,9 +1692,25 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Note that the `arrayCumSum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayCumSumNonNegative(arr)
+## arrayCumSumNonNegative(\[func,\] arr1, …)
 
-Same as `arrayCumSum`, returns an array of partial sums of elements in the source array (a running sum). Different `arrayCumSum`, when then returned value contains a value less than zero, the value is replace with zero and the subsequent calculation is performed with zero parameters. For example:
+Same as `arrayCumSum`, returns an array of the partial (running) sums of the elements in the source array. If `func` is specified, then the sum is computed from applying `func` to `arr1`, `arr2`, ..., `arrN`, i.e. `func(arr1[i], …, arrN[i])`. Unlike `arrayCumSum`, if the current running sum is smaller than `0`, it is replaced by `0`.
+
+**Syntax**
+
+``` sql
+arrayCumSumNonNegative(arr)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+
+**Returned value**
+
+- Returns an array of non-negative partial sums of elements in the source array.
+
+Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
@@ -1668,6 +1721,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 │ [1,2,0,1] │
 └───────────┘
 ```
+
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayProduct
@@ -1682,11 +1736,11 @@ arrayProduct(arr)
 
 **Arguments**
 
--   `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+- `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
 
 **Returned value**
 
--   A product of array's elements.
+- A product of array's elements.
 
 Type: [Float64](../../sql-reference/data-types/float.md).
 

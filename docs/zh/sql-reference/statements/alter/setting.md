@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/alter/setting
 sidebar_position: 38
 sidebar_label: SETTING
 ---
@@ -13,8 +14,9 @@ sidebar_label: SETTING
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 
-!!! note "注意"
-    这些查询只能应用于 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 表。
+:::note
+这些查询只能应用于 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 表。
+:::
 
 
 ## 修改设置 {#alter_modify_setting}
@@ -54,4 +56,4 @@ ALTER TABLE example_table RESET SETTING max_part_loading_threads;
 
 **参见**
 
--   [MergeTree settings](../../../operations/settings/merge-tree-settings.md)
+-   [MergeTree settings](../../../operations/settings/merge-tree-settings.mdx)

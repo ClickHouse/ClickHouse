@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/formats
 sidebar_position: 21
 sidebar_label: "Форматы входных и выходных данных"
 ---
@@ -385,6 +386,23 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
 
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
+
+
+### CSV опции форматирования {#csv-format-settings}
+
+- [format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter) - символ, который будет считаться разделителем в CSV данных. Значение по умолчанию - `,`.
+- [format_csv_allow_single_quotes](../operations/settings/settings.md#format_csv_allow_single_quotes) - разрешить строки в одинарных кавычках. Значение по умолчанию - `true`.
+- [format_csv_allow_double_quotes](../operations/settings/settings.md#format_csv_allow_double_quotes) - разрешить строки в двойных кавычках. Значение по умолчанию - `true`.
+- [format_csv_null_representation](../operations/settings/settings.md#format_tsv_null_representation) - пользовательское представление NULL в формате CSV. Значение по умолчанию - `\N`.
+- [input_format_csv_empty_as_default](../operations/settings/settings.md#input_format_csv_empty_as_default) - рассматривать пустые поля в CSV в качестве значений по умолчанию. Значение по умолчанию - `true`. Для сложных выражений по умолчанию необходимо также включить [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#input_format_defaults_for_omitted_fields).
+- [input_format_csv_enum_as_number](../operations/settings/settings.md#input_format_csv_enum_as_number) - рассматривать вставленные значения enum в форматах CSV как индексы enum. Значение по умолчанию - `false`.
+- [input_format_csv_use_best_effort_in_schema_inference](../operations/settings/settings.md#input_format_csv_use_best_effort_in_schema_inference) - использовать некоторые твики и эвристики для вывода схемы в формате CSV. Если параметр отключен, все поля будут определяться как строки. Значение по умолчанию - `true`.
+- [input_format_csv_arrays_as_nested_csv](../operations/settings/settings.md#input_format_csv_arrays_as_nested_csv) - при чтении массива из CSV ожидать, что его элементы были сериализованы во вложенный CSV и затем помещены в строку. Значение по умолчанию - `false`.
+- [output_format_csv_crlf_end_of_line](../operations/settings/settings.md#output_format_csv_crlf_end_of_line) - если установлено значение true, конец строки в формате вывода CSV будет `\r\n` вместо `\n`. Значение по умолчанию - `false`.
+- [input_format_csv_skip_first_lines](../operations/settings/settings.md#input_format_csv_skip_first_lines) - пропустить указанное количество строк в начале данных. Значение по умолчанию - `0`.
+- [input_format_csv_detect_header](../operations/settings/settings.md#input_format_csv_detect_header) - обнаружить заголовок с именами и типами в формате CSV. Значение по умолчанию - `true`.
+- [input_format_csv_trim_whitespaces](../operations/settings/settings.md#input_format_csv_trim_whitespaces) - удалить пробелы и символы табуляции из строк без кавычек.
+Значение по умолчанию - `true`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -947,7 +965,7 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 
 ## RowBinary {#rowbinary}
 
-Форматирует и парсит данные по строкам, в бинарном виде. Строки и значения уложены подряд, без разделителей.
+Форматирует и парсит данные по строкам, в бинарном виде. Строки и значения уложены подряд, без разделителей. Так как данные представлены в бинарном виде, разделитель после `FORMAT RowBinary` строго определен в следующем виде: любое количество пробелов (`' '` - space, код `0x20`; `'\t'` - tab, код `0x09`; `'\f'` - form feed, код `0x0C`), следующая за этим одна последовательность конца строки (Windows style `"\r\n"` или Unix style `'\n'`), и непосредственно следующие за этим бинарные данные.
 Формат менее эффективен, чем формат Native, так как является строковым.
 
 Числа представлены в little endian формате фиксированной длины. Для примера, UInt64 занимает 8 байт.
@@ -973,7 +991,7 @@ Array представлены как длина в формате varint (unsig
 столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
 В противном случае первая строка будет пропущена.
 :::
-   
+
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 То же самое что [RowBinary](#rowbinary), но добавляется заголовок:
@@ -1325,7 +1343,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдерживаемые типы данных Parquet: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка и выборка данных {#inserting-and-selecting-data}
 
@@ -1385,7 +1403,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдерживаемые типы данных Arrow: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка данных {#inserting-data-arrow}
 
@@ -1443,7 +1461,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдерживаемые типы данных ORC: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
+Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
 ### Вставка данных {#inserting-data-2}
 

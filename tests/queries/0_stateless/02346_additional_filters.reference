@@ -60,6 +60,14 @@ select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filt
 0
 0
 select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy != 0'};
+select * from distr_table settings additional_table_filters={'distr_table' : 'x = 2'};
+2	bb
+2	bb
+select * from distr_table settings additional_table_filters={'distr_table' : 'x != 2 and x != 3'};
+1	a
+4	dddd
+1	a
+4	dddd
 select * from system.numbers limit 5;
 0
 1

@@ -63,8 +63,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         Settings cmd_settings;
         for (const auto & field : cmd_settings.all())
         {
-            if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
-                cmd_settings.addProgramOption(desc, field);
+            std::string_view name = field.getName();
+            if (name == "max_parser_depth" || name == "max_query_size")
+                cmd_settings.addProgramOption(desc, name, field);
         }
 
         boost::program_options::variables_map options;
@@ -150,6 +151,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
             obfuscateQueries(query, out, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
+            out.finalize();
         }
         else
         {
@@ -165,9 +167,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 /// should throw exception early and make exception message more readable.
                 if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
-                    throw Exception(
-                        "Can't format ASTInsertQuery with data, since data will be lost",
-                        DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA);
+                    throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
+                        "Can't format ASTInsertQuery with data, since data will be lost");
                 }
                 if (!quiet)
                 {
@@ -175,7 +176,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOStream res_buf(std::cout, 4096);
                         formatAST(*res, res_buf, hilite, oneline);
-                        res_buf.next();
+                        res_buf.finalize();
                         if (multiple)
                             std::cout << "\n;\n";
                         std::cout << std::endl;
@@ -199,7 +200,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                             res_cout.write(*s_pos++);
                         }
 
-                        res_cout.next();
+                        res_cout.finalize();
                         if (multiple)
                             std::cout << " \\\n;\n";
                         std::cout << std::endl;

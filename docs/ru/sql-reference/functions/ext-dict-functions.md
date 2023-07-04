@@ -1,11 +1,13 @@
 ---
+slug: /ru/sql-reference/functions/ext-dict-functions
 sidebar_position: 58
 sidebar_label: "Функции для работы с внешними словарями"
 ---
 
-    :::note "Внимание"
-    Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
-    :::
+:::note "Внимание"
+Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
+:::
+
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -149,7 +151,7 @@ LIMIT 3;
 
 ``` sql
 SELECT
-    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    dictGet('ext-dict-mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
 FROM system.numbers
 LIMIT 3;

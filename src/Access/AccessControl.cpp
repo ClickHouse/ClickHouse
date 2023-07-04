@@ -16,15 +16,16 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
+#include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
-#include <base/find_symbols.h>
+#include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
+#include <re2/re2.h>
 #include <filesystem>
 #include <mutex>
 
@@ -36,8 +37,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
+    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
 }
-
 
 namespace
 {
@@ -79,7 +81,7 @@ public:
             /// No user, probably the user has been dropped while it was in the cache.
             cache.remove(params);
         }
-        auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
+        auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
         return res;
@@ -103,7 +105,7 @@ public:
 
     bool isSettingNameAllowed(std::string_view setting_name) const
     {
-        if (Settings::hasBuiltin(setting_name))
+        if (settingIsBuiltin(setting_name))
             return true;
 
         std::lock_guard lock{mutex};
@@ -124,10 +126,10 @@ public:
         std::lock_guard lock{mutex};
         if (!registered_prefixes.empty())
         {
-            throw Exception(
-                "Setting " + String{setting_name} + " is neither a builtin setting nor started with the prefix '"
-                    + boost::algorithm::join(registered_prefixes, "' or '") + "' registered for user-defined settings",
-                ErrorCodes::UNKNOWN_SETTING);
+            throw Exception(ErrorCodes::UNKNOWN_SETTING,
+                            "Setting {} is neither a builtin setting nor started with the prefix '{}"
+                            "' registered for user-defined settings",
+                            String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
         else
             BaseSettingsHelpers::throwSettingNotFound(setting_name);
@@ -139,16 +141,120 @@ private:
 };
 
 
+class AccessControl::PasswordComplexityRules
+{
+public:
+    void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
+    {
+        std::lock_guard lock{mutex};
+
+        rules.clear();
+
+        if (config_.has("password_complexity"))
+        {
+            Poco::Util::AbstractConfiguration::Keys password_complexity;
+            config_.keys("password_complexity", password_complexity);
+
+            for (const auto & key : password_complexity)
+            {
+                if (key == "rule" || key.starts_with("rule["))
+                {
+                    String pattern(config_.getString("password_complexity." + key + ".pattern"));
+                    String message(config_.getString("password_complexity." + key + ".message"));
+
+                    auto matcher = std::make_unique<RE2>(pattern, RE2::Quiet);
+                    if (!matcher->ok())
+                        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                            "Password complexity pattern {} cannot be compiled: {}",
+                            pattern, matcher->error());
+
+                    rules.push_back({std::move(matcher), std::move(pattern), std::move(message)});
+                }
+            }
+        }
+    }
+
+    void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_)
+    {
+        Rules new_rules;
+
+        for (const auto & [original_pattern, exception_message] : rules_)
+        {
+            auto matcher = std::make_unique<RE2>(original_pattern, RE2::Quiet);
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Password complexity pattern {} cannot be compiled: {}",
+                    original_pattern, matcher->error());
+
+            new_rules.push_back({std::move(matcher), original_pattern, exception_message});
+        }
+
+        std::lock_guard lock{mutex};
+        rules = std::move(new_rules);
+    }
+
+    void checkPasswordComplexityRules(const String & password_) const
+    {
+        String exception_text;
+        bool failed = false;
+
+        std::lock_guard lock{mutex};
+        for (const auto & rule : rules)
+        {
+            if (!RE2::PartialMatch(password_, *rule.matcher))
+            {
+                failed = true;
+
+                if (!exception_text.empty())
+                    exception_text += ", ";
+
+                exception_text += rule.exception_message;
+            }
+        }
+
+        if (failed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid password. The password should: {}", exception_text);
+    }
+
+    std::vector<std::pair<String, String>> getPasswordComplexityRules()
+    {
+        std::vector<std::pair<String, String>> result;
+
+        std::lock_guard lock{mutex};
+        result.reserve(rules.size());
+
+        for (const auto & rule : rules)
+            result.push_back({rule.original_pattern, rule.exception_message});
+
+        return result;
+    }
+
+private:
+    struct Rule
+    {
+        std::unique_ptr<RE2> matcher;
+        String original_pattern;
+        String exception_message;
+    };
+
+    using Rules = std::vector<Rule>;
+
+    Rules rules TSA_GUARDED_BY(mutex);
+    mutable std::mutex mutex;
+};
+
+
 AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
-      role_cache(std::make_unique<RoleCache>(*this)),
+      role_cache(std::make_unique<RoleCache>(*this, 600)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
-      changes_notifier(std::make_unique<AccessChangesNotifier>())
+      changes_notifier(std::make_unique<AccessChangesNotifier>()),
+      password_rules(std::make_unique<PasswordComplexityRules>())
 {
 }
 
@@ -162,8 +268,13 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     if (config_.has("custom_settings_prefixes"))
         setCustomSettingsPrefixes(config_.getString("custom_settings_prefixes"));
 
+    setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
+    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
+    setPasswordComplexityRulesFromConfig(config_);
+
+    setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
@@ -171,8 +282,11 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
+    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
+
+    role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
 
 
@@ -341,7 +455,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             addReplicatedStorage(name, zookeeper_path, get_zookeeper_function, allow_backup);
         }
         else
-            throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown storage type '{}' at {} in config", type, prefix);
     }
 }
 
@@ -390,9 +504,9 @@ void AccessControl::addStoragesFromMainConfig(
 }
 
 
-void AccessControl::reload()
+void AccessControl::reload(ReloadMode reload_mode)
 {
-    MultipleAccessStorage::reload();
+    MultipleAccessStorage::reload(reload_mode);
     changes_notifier->sendNotifications();
 }
 
@@ -452,9 +566,23 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
 
+        WriteBufferFromOwnString message;
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
+
+        /// Better exception message for usability.
+        /// It is typical when users install ClickHouse, type some password and instantly forget it.
+        if (credentials.getUserName().empty() || credentials.getUserName() == "default")
+            message << "\n\n"
+                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
+                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
+                << "and deleting this file will reset the password.\n"
+                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(PreformattedMessage{message.str(),
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                        ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
@@ -498,6 +626,15 @@ void AccessControl::checkSettingNameIsAllowed(const std::string_view setting_nam
     custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
 
+void AccessControl::setImplicitNoPasswordAllowed(bool allow_implicit_no_password_)
+{
+    allow_implicit_no_password = allow_implicit_no_password_;
+}
+
+bool AccessControl::isImplicitNoPasswordAllowed() const
+{
+    return allow_implicit_no_password;
+}
 
 void AccessControl::setNoPasswordAllowed(bool allow_no_password_)
 {
@@ -517,6 +654,62 @@ void AccessControl::setPlaintextPasswordAllowed(bool allow_plaintext_password_)
 bool AccessControl::isPlaintextPasswordAllowed() const
 {
     return allow_plaintext_password;
+}
+
+void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
+{
+    for (auto check_type : collections::range(AuthenticationType::MAX))
+    {
+        const auto & info = AuthenticationTypeInfo::get(check_type);
+
+        if (type_ == info.name && info.is_password)
+        {
+            default_password_type = check_type;
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
+}
+
+AuthenticationType AccessControl::getDefaultPasswordType() const
+{
+    return default_password_type;
+}
+
+void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
+{
+    password_rules->setPasswordComplexityRulesFromConfig(config_);
+}
+
+void AccessControl::setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_)
+{
+    password_rules->setPasswordComplexityRules(rules_);
+}
+
+void AccessControl::checkPasswordComplexityRules(const String & password_) const
+{
+    password_rules->checkPasswordComplexityRules(password_);
+}
+
+std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules() const
+{
+    return password_rules->getPasswordComplexityRules();
+}
+
+void AccessControl::setBcryptWorkfactor(int workfactor_)
+{
+    if (workfactor_ < 4)
+        bcrypt_workfactor = 4;
+    else if (workfactor_ > 31)
+        bcrypt_workfactor = 31;
+    else
+        bcrypt_workfactor = workfactor_;
+}
+
+int AccessControl::getBcryptWorkfactor() const
+{
+    return bcrypt_workfactor;
 }
 
 
@@ -543,14 +736,7 @@ std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
 
     /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
     /// Only the last proxy can be trusted (if any).
-    Strings forwarded_addresses;
-    boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
-    if (!forwarded_addresses.empty())
-    {
-        String & last_forwarded_address = forwarded_addresses.back();
-        boost::trim(last_forwarded_address);
-        params.forwarded_address = last_forwarded_address;
-    }
+    params.forwarded_address = client_info.getLastForwardedFor();
 
     return getContextAccess(params);
 }

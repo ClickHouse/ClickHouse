@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/time-window-functions
 sidebar_position: 68
 sidebar_label: 时间窗口
 ---

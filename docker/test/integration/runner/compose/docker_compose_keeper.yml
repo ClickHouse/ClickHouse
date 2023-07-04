@@ -9,6 +9,9 @@ services:
               source: ${keeper_binary:-}
               target: /usr/bin/clickhouse
             - type: bind
+              source: ${keeper_binary:-}
+              target: /usr/bin/clickhouse-keeper
+            - type: bind
               source: ${keeper_config_dir1:-}
               target: /etc/clickhouse-keeper
             - type: bind
@@ -39,6 +42,9 @@ services:
               source: ${keeper_binary:-}
               target: /usr/bin/clickhouse
             - type: bind
+              source: ${keeper_binary:-}
+              target: /usr/bin/clickhouse-keeper
+            - type: bind
               source: ${keeper_config_dir2:-}
               target: /etc/clickhouse-keeper
             - type: bind
@@ -68,6 +74,9 @@ services:
             - type: bind
               source: ${keeper_binary:-}
               target: /usr/bin/clickhouse
+            - type: bind
+              source: ${keeper_binary:-}
+              target: /usr/bin/clickhouse-keeper
             - type: bind
               source: ${keeper_config_dir3:-}
               target: /etc/clickhouse-keeper

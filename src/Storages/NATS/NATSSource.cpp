@@ -3,7 +3,8 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/NATS/ReadBufferFromNATSConsumer.h>
+#include <Storages/NATS/NATSConsumer.h>
+#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
@@ -59,11 +60,10 @@ NATSSource::~NATSSource()
 {
     storage.decrementReader();
 
-    if (!buffer)
+    if (!consumer)
         return;
 
-    buffer->allowNext();
-    storage.pushReadBuffer(buffer);
+    storage.pushConsumer(consumer);
 }
 
 bool NATSSource::checkTimeLimit() const
@@ -81,21 +81,22 @@ bool NATSSource::checkTimeLimit() const
 
 Chunk NATSSource::generate()
 {
-    if (!buffer)
+    if (!consumer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
-        buffer = storage.popReadBuffer(timeout);
-        buffer->subscribe();
+        consumer = storage.popConsumer(timeout);
+        consumer->subscribe();
     }
 
-    if (!buffer || is_finished)
+    if (!consumer || is_finished)
         return {};
 
     is_finished = true;
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
-    auto input_format
-        = FormatFactory::instance().getInputFormat(storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+    EmptyReadBuffer empty_buf;
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
 
@@ -103,22 +104,22 @@ Chunk NATSSource::generate()
 
     while (true)
     {
-        if (buffer->eof())
+        if (consumer->queueEmpty())
             break;
 
-        auto new_rows = executor.execute();
+        size_t new_rows = 0;
+        if (auto buf = consumer->consume())
+            new_rows = executor.execute(*buf);
 
         if (new_rows)
         {
-            auto subject = buffer->getSubject();
+            auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
 
             total_rows = total_rows + new_rows;
         }
 
-        buffer->allowNext();
-
-        if (total_rows >= max_block_size || buffer->queueEmpty() || buffer->isConsumerStopped() || !checkTimeLimit())
+        if (total_rows >= max_block_size || consumer->queueEmpty() || consumer->isConsumerStopped() || !checkTimeLimit())
             break;
     }
 

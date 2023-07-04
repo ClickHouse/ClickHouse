@@ -1,93 +1,98 @@
 #pragma once
 
-#include <Common/config.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/PocoHTTPClient.h>
+#include <IO/HTTPHeaderEntries.h>
+
+#include <string>
+#include <optional>
+
+#include "config.h"
 
 #if USE_AWS_S3
 
 #include <base/types.h>
-#include <aws/core/Aws.h>
-#include <aws/core/client/ClientConfiguration.h>
-#include <IO/S3/PocoHTTPClient.h>
-#include <Poco/URI.h>
+#include <Common/Exception.h>
+#include <Common/Throttler_fwd.h>
 
-namespace Aws::S3
-{
-    class S3Client;
-}
+#include <IO/S3/URI.h>
+
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Errors.h>
 
 namespace DB
 {
-    class RemoteHostFilter;
-    struct HttpHeader;
-    using HeaderCollection = std::vector<HttpHeader>;
+
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
 }
 
-namespace DB::S3
-{
-class ClientFactory
+class RemoteHostFilter;
+
+class S3Exception : public Exception
 {
 public:
-    ~ClientFactory();
 
-    static ClientFactory & instance();
+    // Format message with fmt::format, like the logging functions.
+    template <typename... Args>
+    S3Exception(Aws::S3::S3Errors code_, fmt::format_string<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), ErrorCodes::S3_ERROR)
+        , code(code_)
+    {
+    }
 
-    std::unique_ptr<Aws::S3::S3Client> create(
-        const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & server_side_encryption_customer_key_base64,
-        HeaderCollection headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request);
+    S3Exception(const std::string & msg, Aws::S3::S3Errors code_)
+        : Exception(msg, ErrorCodes::S3_ERROR)
+        , code(code_)
+    {}
 
-    PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects,
-        bool enable_s3_requests_logging);
+    Aws::S3::S3Errors getS3ErrorCode() const
+    {
+        return code;
+    }
+
+    bool isRetryableError() const;
 
 private:
-    ClientFactory();
-
-    Aws::SDKOptions aws_options;
-    std::atomic<bool> s3_requests_logging_enabled;
+    Aws::S3::S3Errors code;
 };
-
-/**
- * Represents S3 URI.
- *
- * The following patterns are allowed:
- * s3://bucket/key
- * http(s)://endpoint/bucket/key
- */
-struct URI
-{
-    Poco::URI uri;
-    // Custom endpoint if URI scheme is not S3.
-    String endpoint;
-    String bucket;
-    String key;
-    String version_id;
-    String storage_name;
-
-    bool is_virtual_hosted_style;
-
-    explicit URI(const Poco::URI & uri_);
-
-    static void validateBucket(const String & bucket, const Poco::URI & uri);
-};
-
-struct ObjectInfo
-{
-    size_t size = 0;
-    time_t last_modification_time = 0;
-};
-
-S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
-
-size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
-
 }
 
 #endif
+
+namespace Poco::Util
+{
+    class AbstractConfiguration;
+};
+
+namespace DB::S3
+{
+
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+struct AuthSettings
+{
+    static AuthSettings loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+    std::string access_key_id;
+    std::string secret_access_key;
+    std::string region;
+    std::string server_side_encryption_customer_key_base64;
+    ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+
+    HTTPHeaderEntries headers;
+
+    std::optional<bool> use_environment_credentials;
+    std::optional<bool> use_insecure_imds_request;
+    std::optional<uint64_t> expiration_window_seconds;
+    std::optional<bool> no_sign_request;
+
+    bool operator==(const AuthSettings & other) const = default;
+
+    void updateFrom(const AuthSettings & from);
+};
+
+}

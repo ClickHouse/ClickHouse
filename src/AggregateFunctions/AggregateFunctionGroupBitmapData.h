@@ -20,6 +20,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
+}
+
 enum BitmapKind
 {
     Small = 0,
@@ -41,20 +47,19 @@ private:
     using ValueBuffer = std::vector<T>;
     using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
     using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
-    std::shared_ptr<RoaringBitmap> rb = nullptr;
+    std::shared_ptr<RoaringBitmap> roaring_bitmap;
 
     void toLarge()
     {
-        rb = std::make_shared<RoaringBitmap>();
+        roaring_bitmap = std::make_shared<RoaringBitmap>();
         for (const auto & x : small)
-            rb->add(static_cast<Value>(x.getValue()));
+            roaring_bitmap->add(static_cast<Value>(x.getValue()));
         small.clear();
     }
 
 public:
-    bool isLarge() const { return rb != nullptr; }
-
-    bool isSmall() const { return rb == nullptr; }
+    bool isLarge() const { return roaring_bitmap != nullptr; }
+    bool isSmall() const { return roaring_bitmap == nullptr; }
 
     void add(T value)
     {
@@ -63,17 +68,19 @@ public:
             if (small.find(value) == small.end())
             {
                 if (!small.full())
+                {
                     small.insert(value);
+                }
                 else
                 {
                     toLarge();
-                    rb->add(static_cast<Value>(value));
+                    roaring_bitmap->add(static_cast<Value>(value));
                 }
             }
         }
         else
         {
-            rb->add(static_cast<Value>(value));
+            roaring_bitmap->add(static_cast<Value>(value));
         }
     }
 
@@ -82,7 +89,7 @@ public:
         if (isSmall())
             return small.size();
         else
-            return rb->cardinality();
+            return roaring_bitmap->cardinality();
     }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
@@ -92,7 +99,7 @@ public:
             if (isSmall())
                 toLarge();
 
-            *rb |= *r1.rb;
+            *roaring_bitmap |= *r1.roaring_bitmap;
         }
         else
         {
@@ -105,6 +112,7 @@ public:
     {
         UInt8 kind;
         readBinary(kind, in);
+
         if (BitmapKind::Small == kind)
         {
             small.read(in);
@@ -113,26 +121,40 @@ public:
         {
             size_t size;
             readVarUInt(size, in);
+
+            static constexpr size_t max_size = 100_GiB;
+
+            if (size == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size (0) in groupBitmap.");
+            if (size > max_size)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too large array size in groupBitmap (maximum: {})", max_size);
+
+            /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
-            rb = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
+
+            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
         }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
     }
 
     void write(DB::WriteBuffer & out) const
     {
         UInt8 kind = isLarge() ? BitmapKind::Bitmap : BitmapKind::Small;
         writeBinary(kind, out);
+
         if (BitmapKind::Small == kind)
         {
             small.write(out);
         }
         else if (BitmapKind::Bitmap == kind)
         {
-            auto size = rb->getSizeInBytes();
+            auto size = roaring_bitmap->getSizeInBytes();
             writeVarUInt(size, out);
             std::unique_ptr<char[]> buf(new char[size]);
-            rb->write(buf.get());
+            roaring_bitmap->write(buf.get());
             out.write(buf.get(), size);
         }
     }
@@ -173,7 +195,7 @@ public:
         {
             for (const auto & x : small)
             {
-                if (r1.rb->contains(static_cast<Value>(x.getValue())))
+                if (r1.roaring_bitmap->contains(static_cast<Value>(x.getValue())))
                     buffer.push_back(x.getValue());
             }
 
@@ -187,15 +209,18 @@ public:
         }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.rb;
-            *rb &= *new_rb;
+            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+            *roaring_bitmap &= *new_rb;
         }
     }
 
     /**
      * Computes the union between two bitmaps.
      */
-    void rb_or(const RoaringBitmapWithSmallSet & r1) { merge(r1); } /// NOLINT
+    void rb_or(const RoaringBitmapWithSmallSet & r1)
+    {
+        merge(r1); /// NOLINT
+    }
 
     /**
      * Computes the symmetric difference (xor) between two bitmaps.
@@ -205,8 +230,8 @@ public:
         if (isSmall())
             toLarge();
 
-        std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.rb;
-        *rb ^= *new_rb;
+        std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+        *roaring_bitmap ^= *new_rb;
     }
 
     /**
@@ -234,7 +259,7 @@ public:
         {
             for (const auto & x : small)
             {
-                if (!r1.rb->contains(static_cast<Value>(x.getValue())))
+                if (!r1.roaring_bitmap->contains(static_cast<Value>(x.getValue())))
                     buffer.push_back(x.getValue());
             }
 
@@ -248,8 +273,8 @@ public:
         }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.rb;
-            *rb -= *new_rb;
+            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+            *roaring_bitmap -= *new_rb;
         }
     }
 
@@ -269,14 +294,14 @@ public:
         {
             for (const auto & x : small)
             {
-                if (r1.rb->contains(static_cast<Value>(x.getValue())))
+                if (r1.roaring_bitmap->contains(static_cast<Value>(x.getValue())))
                     ++ret;
             }
         }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.rb;
-            ret = (*rb & *new_rb).cardinality();
+            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+            ret = (*roaring_bitmap & *new_rb).cardinality();
         }
         return ret;
     }
@@ -321,8 +346,8 @@ public:
         if (isSmall())
             toLarge();
 
-        std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.rb;
-        return *rb == *new_rb;
+        std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+        return *roaring_bitmap == *new_rb;
     }
 
     /**
@@ -343,7 +368,7 @@ public:
             {
                 for (const auto & x : small)
                 {
-                    if (r1.rb->contains(static_cast<Value>(x.getValue())))
+                    if (r1.roaring_bitmap->contains(static_cast<Value>(x.getValue())))
                         return 1;
                 }
             }
@@ -352,13 +377,13 @@ public:
         {
             for (const auto & x : r1.small)
             {
-                if (rb->contains(static_cast<Value>(x.getValue())))
+                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
                     return 1;
             }
         }
         else
         {
-            if ((*rb & *r1.rb).cardinality() > 0)
+            if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
                 return 1;
         }
 
@@ -396,7 +421,7 @@ public:
                 // greater then r1 is not a subset.
                 for (const auto & x : small)
                 {
-                    if (!r1.rb->contains(static_cast<Value>(x.getValue())) && ++r1_size > small.size())
+                    if (!r1.roaring_bitmap->contains(static_cast<Value>(x.getValue())) && ++r1_size > small.size())
                         return 0;
                 }
             }
@@ -405,13 +430,13 @@ public:
         {
             for (const auto & x : r1.small)
             {
-                if (!rb->contains(static_cast<Value>(x.getValue())))
+                if (!roaring_bitmap->contains(static_cast<Value>(x.getValue())))
                     return 0;
             }
         }
         else
         {
-            if (!r1.rb->isSubset(*rb))
+            if (!r1.roaring_bitmap->isSubset(*roaring_bitmap))
                 return 0;
         }
         return 1;
@@ -426,48 +451,9 @@ public:
             return 0;
 
         if (isSmall())
-            return small.find(x) != small.end();
+            return small.find(static_cast<T>(x)) != small.end();
         else
-            return rb->contains(static_cast<Value>(x));
-    }
-
-    /**
-     * Remove value
-     */
-    void rb_remove(UInt64 x) /// NOLINT
-    {
-        if (!std::is_same_v<T, UInt64> && x > rb_max())
-            return;
-
-        if (isSmall())
-            toLarge();
-
-        rb->remove(x);
-    }
-
-    /**
-     * compute (in place) the negation of the roaring bitmap within a specified
-     * interval: [range_start, range_end). The number of negated values is
-     * range_end - range_start.
-     * Areas outside the range are passed through unchanged.
-     */
-    void rb_flip(UInt64 begin, UInt64 end) /// NOLINT
-    {
-        if (isSmall())
-            toLarge();
-
-        rb->flip(begin, end);
-    }
-
-    /**
-     * returns the number of integers that are smaller or equal to offsetid.
-     */
-    UInt64 rb_rank(UInt64 x) /// NOLINT
-    {
-        if (isSmall())
-            toLarge();
-
-        return rb->rank(x);
+            return roaring_bitmap->contains(static_cast<Value>(x));
     }
 
     /**
@@ -487,7 +473,7 @@ public:
         }
         else
         {
-            for (auto it = rb->begin(); it != rb->end(); ++it)
+            for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
                 res.emplace_back(*it);
                 ++count;
@@ -519,7 +505,7 @@ public:
         }
         else
         {
-            for (auto it = rb->begin(); it != rb->end(); ++it)
+            for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
                 if (*it < range_start)
                     continue;
@@ -569,7 +555,7 @@ public:
         else
         {
             UInt64 count = 0;
-            for (auto it = rb->begin(); it != rb->end(); ++it)
+            for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
                 if (*it < range_start)
                     continue;
@@ -607,11 +593,11 @@ public:
         {
             UInt64 count = 0;
             UInt64 offset_count = 0;
-            auto it = rb->begin();
-            for (;it != rb->end() && offset_count < offset; ++it)
+            auto it = roaring_bitmap->begin();
+            for (;it != roaring_bitmap->end() && offset_count < offset; ++it)
                 ++offset_count;
 
-            for (;it != rb->end() && count < limit; ++it, ++count)
+            for (;it != roaring_bitmap->end() && count < limit; ++it, ++count)
                 r1.add(*it);
             return count;
         }
@@ -633,7 +619,7 @@ public:
             return min_val;
         }
         else
-            return rb->minimum();
+            return roaring_bitmap->minimum();
     }
 
     UInt64 rb_max() const /// NOLINT
@@ -652,7 +638,7 @@ public:
             return max_val;
         }
         else
-            return rb->maximum();
+            return roaring_bitmap->maximum();
     }
 
     /**
@@ -668,9 +654,9 @@ public:
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-            bool changed = rb->removeChecked(static_cast<Value>(from_vals[i]));
+            bool changed = roaring_bitmap->removeChecked(static_cast<Value>(from_vals[i]));
             if (changed)
-                rb->add(static_cast<Value>(to_vals[i]));
+                roaring_bitmap->add(static_cast<Value>(to_vals[i]));
         }
     }
 };
@@ -680,7 +666,7 @@ struct AggregateFunctionGroupBitmapData
 {
     // If false, all bitmap operations will be treated as merge to initialize the state
     bool init = false;
-    RoaringBitmapWithSmallSet<T, 32> rbs;
+    RoaringBitmapWithSmallSet<T, 32> roaring_bitmap_with_small_set;
     static const char * name() { return "groupBitmap"; }
 };
 

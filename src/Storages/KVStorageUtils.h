@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/PreparedSets.h>
@@ -30,7 +29,7 @@ void fillColumns(const K & key, const V & value, size_t key_pos, const Block & h
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const auto & serialization = header.getByPosition(i).type->getDefaultSerialization();
-        serialization->deserializeBinary(*columns[i], i == key_pos ? key_buffer : value_buffer);
+        serialization->deserializeBinary(*columns[i], i == key_pos ? key_buffer : value_buffer, {});
     }
 }
 

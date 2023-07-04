@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <!-- See also the files in users.d directory where the settings can be overridden. -->
     <!-- Profiles of settings. -->

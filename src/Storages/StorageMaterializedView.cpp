@@ -70,17 +70,17 @@ StorageMaterializedView::StorageMaterializedView(
     storage_metadata.setColumns(columns_);
 
     if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// If the destination table is not set, use inner table
     has_inner_table = query.to_table_id.empty();
     if (has_inner_table && !query.storage)
-        throw Exception(
-            "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
-            ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "You must specify where to save results of a MaterializedView query: "
+                        "either ENGINE or an existing table in a TO clause");
 
     if (query.select->list_of_selects->children.size() != 1)
-        throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
     storage_metadata.setSelectQuery(select);
@@ -150,7 +150,7 @@ void StorageMaterializedView::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t num_streams)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
@@ -192,13 +192,13 @@ void StorageMaterializedView::read(
     }
 }
 
-SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
+SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto sink = storage->write(query, metadata_snapshot, local_context);
+    auto sink = storage->write(query, metadata_snapshot, local_context, async_insert);
 
     sink->addTableLock(lock);
     return sink;
@@ -210,15 +210,28 @@ void StorageMaterializedView::drop()
     auto table_id = getStorageID();
     const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
+        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
-    dropInnerTableIfAny(true, getContext());
+    /// Sync flag and the setting make sense for Atomic databases only.
+    /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
+    /// Running synchronous DROP from that task leads to deadlock.
+    /// Usually dropInnerTableIfAny is no-op, because the inner table is dropped before enqueueing a drop task for the MV itself.
+    /// But there's a race condition with SYSTEM RESTART REPLICA: the inner table might be detached due to RESTART.
+    /// In this case, dropInnerTableIfAny will not find the inner table and will not drop it during executions of DROP query for the MV itself.
+    /// DDLGuard does not protect from that, because RESTART REPLICA acquires DDLGuard for the inner table name,
+    /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
+    /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
+    dropInnerTableIfAny(/* sync */ false, getContext());
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
+    /// We will use `sync` argument wneh this function is called from a DROP query
+    /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
+    /// See the comment in StorageMaterializedView::drop
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
+                                               sync, /* ignore_sync_setting */ true);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -230,9 +243,8 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
 {
     if (!has_inner_table)
-        throw Exception(
-            "MATERIALIZED VIEW targets existing table " + target_table_id.getNameForLogs() + ". "
-            + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "MATERIALIZED VIEW targets existing table {}. "
+            "Execute the statement directly on it.", target_table_id.getNameForLogs());
 }
 
 bool StorageMaterializedView::optimize(
@@ -242,12 +254,13 @@ bool StorageMaterializedView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
 void StorageMaterializedView::alter(
@@ -266,7 +279,7 @@ void StorageMaterializedView::alter(
         const auto & new_select = new_metadata.select;
         const auto & old_select = old_metadata.getSelectQuery();
 
-        DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+        DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
         new_metadata.setSelectQuery(new_select);
     }
@@ -337,19 +350,22 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto new_target_table_name = generateInnerTableName(new_table_id);
         auto rename = std::make_shared<ASTRenameQuery>();
 
-        ASTRenameQuery::Table from;
         assert(target_table_id.database_name == old_table_id.database_name);
-        from.database = target_table_id.database_name;
-        from.table = target_table_id.table_name;
 
-        ASTRenameQuery::Table to;
-        to.database = new_table_id.database_name;
-        to.table = new_target_table_name;
-
-        ASTRenameQuery::Element elem;
-        elem.from = from;
-        elem.to = to;
-        rename->elements.emplace_back(elem);
+        ASTRenameQuery::Element elem
+        {
+            ASTRenameQuery::Table
+            {
+                target_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(target_table_id.database_name),
+                std::make_shared<ASTIdentifier>(target_table_id.table_name)
+            },
+            ASTRenameQuery::Table
+            {
+                new_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(new_table_id.database_name),
+                std::make_shared<ASTIdentifier>(new_target_table_name)
+            }
+        };
+        rename->elements.emplace_back(std::move(elem));
 
         InterpreterRenameQuery(rename, getContext()).execute();
         target_table_id.database_name = new_table_id.database_name;
@@ -364,7 +380,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::startup()
@@ -372,7 +388,7 @@ void StorageMaterializedView::startup()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
@@ -381,7 +397,7 @@ void StorageMaterializedView::shutdown()
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());
+        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const

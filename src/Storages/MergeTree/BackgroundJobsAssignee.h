@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
-#include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
 

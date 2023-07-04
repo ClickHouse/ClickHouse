@@ -8,13 +8,25 @@ DEFAULT_QUERY_TIMEOUT = 600
 
 
 class Client:
-    def __init__(self, host, port=9000, command="/usr/bin/clickhouse-client"):
+    def __init__(
+        self,
+        host,
+        port=9000,
+        command="/usr/bin/clickhouse-client",
+        secure=False,
+        config=None,
+    ):
         self.host = host
         self.port = port
         self.command = [command]
 
         if os.path.basename(command) == "clickhouse":
             self.command.append("client")
+
+        if secure:
+            self.command.append("--secure")
+        if config is not None:
+            self.command += ["--config-file", config]
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 
@@ -109,6 +121,7 @@ class Client:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         return self.get_query_request(
             sql,
@@ -118,6 +131,7 @@ class Client:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         ).get_error()
 
     @stacktraces_on_timeout_decorator
@@ -190,6 +204,16 @@ class CommandRequest:
             self.timer = Timer(timeout, kill_process)
             self.timer.start()
 
+    def remove_trash_from_stderr(self, stderr):
+        # FIXME https://github.com/ClickHouse/ClickHouse/issues/48181
+        if not stderr:
+            return stderr
+        lines = stderr.split("\n")
+        lines = [
+            x for x in lines if ("completion_queue" not in x and "Kick failed" not in x)
+        ]
+        return "\n".join(lines)
+
     def get_answer(self):
         self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
@@ -206,7 +230,9 @@ class CommandRequest:
             logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException("Client timed out!")
 
-        if (self.process.returncode != 0 or stderr) and not self.ignore_error:
+        if (
+            self.process.returncode != 0 or self.remove_trash_from_stderr(stderr)
+        ) and not self.ignore_error:
             raise QueryRuntimeException(
                 "Client failed! Return code: {}, stderr: {}".format(
                     self.process.returncode, stderr

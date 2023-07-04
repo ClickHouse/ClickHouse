@@ -1,8 +1,14 @@
+import pytest
+
+# FIXME This test is too flaky
+# https://github.com/ClickHouse/ClickHouse/issues/42561
+
+pytestmark = pytest.mark.skip
+
 import logging
 from string import Template
 import time
 
-import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -105,8 +111,8 @@ def test_hdfs_zero_copy_replication_insert(cluster):
             SHARDS * FILES_OVERHEAD_PER_TABLE + FILES_OVERHEAD_PER_PART_COMPACT,
         )
     finally:
-        node1.query("DROP TABLE IF EXISTS hdfs_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS hdfs_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS hdfs_test SYNC")
+        node2.query("DROP TABLE IF EXISTS hdfs_test SYNC")
 
 
 @pytest.mark.parametrize(
@@ -122,7 +128,7 @@ def test_hdfs_zero_copy_replication_single_move(cluster, storage_policy, init_ob
             CREATE TABLE single_node_move_test (dt DateTime, id Int64)
             ENGINE=ReplicatedMergeTree('/clickhouse/tables/{cluster}/{shard}/single_node_move_test', '{replica}')
             ORDER BY (dt, id)
-            SETTINGS storage_policy='$policy'
+            SETTINGS storage_policy='$policy',temporary_directories_lifetime=1
             """
             ).substitute(policy=storage_policy)
         )
@@ -167,7 +173,7 @@ def test_hdfs_zero_copy_replication_single_move(cluster, storage_policy, init_ob
             == "(10),(11)"
         )
     finally:
-        node1.query("DROP TABLE IF EXISTS single_node_move_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS single_node_move_test SYNC")
 
 
 @pytest.mark.parametrize(
@@ -238,8 +244,8 @@ def test_hdfs_zero_copy_replication_move(cluster, storage_policy, init_objects):
             cluster, "/clickhouse1", init_objects + FILES_OVERHEAD_PER_PART_COMPACT
         )
     finally:
-        node1.query("DROP TABLE IF EXISTS move_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS move_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS move_test SYNC")
+        node2.query("DROP TABLE IF EXISTS move_test SYNC")
 
 
 @pytest.mark.parametrize(("storage_policy"), ["hybrid", "tiered", "tiered_copy"])
@@ -276,8 +282,8 @@ def test_hdfs_zero_copy_with_ttl_move(cluster, storage_policy):
             == "(10),(11)"
         )
     finally:
-        node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+        node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
 
 
 def test_hdfs_zero_copy_with_ttl_delete(cluster):
@@ -312,5 +318,5 @@ def test_hdfs_zero_copy_with_ttl_delete(cluster):
             == "(11)"
         )
     finally:
-        node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+        node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")

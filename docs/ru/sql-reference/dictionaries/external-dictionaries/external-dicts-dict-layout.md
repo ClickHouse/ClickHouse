@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 sidebar_position: 41
 sidebar_label: "Хранение словарей в памяти"
 ---
@@ -130,27 +131,20 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md).
 
-Если `preallocate` имеет значение `true` (по умолчанию `false`), хеш-таблица будет предварительно определена (это ускорит загрузку словаря). Используйте этот метод только в случае, если:
-
-- Источник поддерживает произвольное количество элементов (пока поддерживается только источником `ClickHouse`).
-- В данных нет дубликатов (иначе это может увеличить объем используемой памяти хеш-таблицы).
-
 Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) читаются целиком.
 
 Пример конфигурации:
 
 ``` xml
 <layout>
-   <hashed>
-    <preallocate>0</preallocate>
-  </hashed>
+  <hashed/>
 </layout>
 ```
 
 или
 
 ``` sql
-LAYOUT(HASHED(PREALLOCATE 0))
+LAYOUT(HASHED())
 ```
 
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
@@ -158,8 +152,6 @@ LAYOUT(HASHED(PREALLOCATE 0))
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 
 Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md).
-
-Для этого типа размещения также можно задать `preallocate` в значении `true`. В данном случае это более важно, чем для типа `hashed`.
 
 Пример конфигурации:
 
@@ -172,7 +164,7 @@ LAYOUT(HASHED(PREALLOCATE 0))
 или
 
 ``` sql
-LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
+LAYOUT(SPARSE_HASHED())
 ```
 
 ### complex_key_hashed {#complex-key-hashed}
@@ -406,7 +398,7 @@ RANGE(MIN StartDate MAX EndDate);
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются все виды источников.
 
 Пример настройки:
 

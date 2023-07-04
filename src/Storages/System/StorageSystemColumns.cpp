@@ -20,10 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -78,6 +74,8 @@ public:
         : ISource(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
+        , client_info_interface(context->getClientInfo().interface)
+        , use_mysql_types(context->getSettingsRef().use_mysql_types_in_show_columns)
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
@@ -113,21 +111,12 @@ protected:
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock;
 
-                try
+                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+
+                if (table_lock == nullptr)
                 {
-                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
-                }
-                catch (const Exception & e)
-                {
-                    /** There are case when IStorage::drop was called,
-                    *  but we still own the object.
-                    * Then table will throw exception at attempt to lock it.
-                    * Just skip the table.
-                    */
-                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                        continue;
-                    else
-                        throw;
+                    // Table was dropped while acquiring the lock, skipping table
+                    continue;
                 }
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -142,6 +131,18 @@ protected:
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+            auto get_type_name = [this](const IDataType& type) -> std::string
+            {
+                // Check if the use_mysql_types_in_show_columns setting is enabled and client is connected via MySQL protocol
+                if (use_mysql_types && client_info_interface == DB::ClientInfo::Interface::MYSQL)
+                {
+                    return type.getSQLCompatibleName();
+                }
+                else
+                {
+                    return type.getName();
+                }
+            };
             size_t position = 0;
             for (const auto & column : columns)
             {
@@ -159,7 +160,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(column.type->getName());
+                    res_columns[res_index++]->insert(get_type_name(*column.type));
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(position);
 
@@ -294,6 +295,8 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ClientInfo::Interface client_info_interface;
+    bool use_mysql_types;
     size_t db_table_num = 0;
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
@@ -309,7 +312,7 @@ Pipe StorageSystemColumns::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

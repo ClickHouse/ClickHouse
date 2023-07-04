@@ -1,11 +1,12 @@
 #pragma once
 
+#include <utility>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
@@ -17,10 +18,12 @@ class IExecutableFunction;
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+
+class FunctionNode;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -74,7 +77,6 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
-        FunctionOverloadResolverPtr function_builder;
         /// Can be used to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
@@ -139,6 +141,15 @@ public:
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
             std::string result_name);
+    const Node & addFunction(
+        const FunctionNode & function,
+        NodeRawConstPtrs children,
+        std::string result_name);
+    const Node & addFunction(
+        const FunctionBasePtr & function_base,
+        NodeRawConstPtrs children,
+        std::string result_name);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -181,19 +192,19 @@ public:
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
     /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT SUM(val) GROUP BY toStartOfHour(dt)));
+    ///                   PROJECTION p_hour (SELECT sum(val) GROUP BY toStartOfHour(dt)));
     ///
-    /// Query: SELECT toStartOfHour(dt), SUM(val) FROM tbl GROUP BY toStartOfHour(dt);
+    /// Query: SELECT toStartOfHour(dt), sum(val) FROM tbl GROUP BY toStartOfHour(dt);
     ///
     /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       SUM(val)
+    /// FUNCTION: toStartOfHour(dt)       sum(val)
     ///                 ^                   ^
     ///                 |                   |
     /// INPUT:          dt                  val
     ///
     /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
     /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       SUM(val)
+    /// INPUT:  toStartOfHour(dt)       sum(val)
     ///
     /// We don't need aggregate columns from projection because they are matched after DAG.
     /// Currently we use canonical names of each node to find matches. It can be improved after we
@@ -210,6 +221,30 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
+    /// Get an ActionsDAG in a following way:
+    /// * Traverse a tree starting from required_outputs
+    /// * If there is a node from new_inputs keys, replace it to INPUT
+    /// * INPUT name should be taken from new_inputs mapped node name
+    /// * Mapped nodes may be the same nodes, and in this case there would be a single INPUT
+    /// Here want to substitute some expressions to columns from projection.
+    /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
+    /// If not, exception will happen.
+    /// This function also expects that new_inputs and required_outputs are valid nodes from the same DAG.
+    /// Example:
+    /// DAG:                   new_inputs:                   Result DAG
+    /// a      b               c * d -> "(a + b) * d"
+    /// \     /                e     -> ""
+    ///  a + b
+    ///     \                  required_outputs:         =>  "(a + b) * d"    e
+    ///   c (alias)   d        c * d - e                              \      /
+    ///       \      /                                               c * d - e
+    ///        c * d       e
+    ///            \      /
+    ///            c * d - e
+    static ActionsDAGPtr foldActionsByProjection(
+        const std::unordered_map<const Node *, const Node *> & new_inputs,
+        const NodeRawConstPtrs & required_outputs);
+
     /// Reorder the output nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
 
@@ -220,6 +255,7 @@ public:
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
+    bool hasNonDeterministic() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
@@ -273,6 +309,14 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    /// The result is similar to merge(*this, second);
+    /// Invariant : no nodes are removed from the first (this) DAG.
+    /// So that pointers to nodes are kept valid.
+    void mergeInplace(ActionsDAG && second);
+
+    /// Merge current nodes with specified dag nodes
+    void mergeNodes(ActionsDAG && second);
+
     using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
@@ -318,14 +362,72 @@ public:
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
 
+    /** Build filter dag from multiple filter dags.
+      *
+      * If filter nodes are empty, result is nullptr.
+      *
+      * If filter nodes are not empty, nodes and their children are merged into single dag.
+      *
+      * Additionally during dag construction if node has name that exists in node_name_to_input_column map argument
+      * in final dag this node is represented as INPUT node with specified column.
+      *
+      * If single_output_condition_node = true, result dag has single output node:
+      * 1. If there is single filter node, result dag output will contain this node.
+      * 2. If there are multiple filter nodes, result dag output will contain single `and` function node
+      * and children of this node will be filter nodes.
+      *
+      * If single_output_condition_node = false, result dag has multiple output nodes.
+      */
+    static ActionsDAGPtr buildFilterActionsDAG(
+        const NodeRawConstPtrs & filter_nodes,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
+        const ContextPtr & context,
+        bool single_output_condition_node = true);
+
 private:
+    NodeRawConstPtrs getParents(const Node * target) const;
+
     Node & addNode(Node node);
+
+    const Node & addFunctionImpl(
+        const FunctionBasePtr & function_base,
+        NodeRawConstPtrs children,
+        ColumnsWithTypeAndName arguments,
+        std::string result_name,
+        DataTypePtr result_type,
+        bool all_const);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+};
+
+class FindOriginalNodeForOutputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindOriginalNodeForOutputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & output_name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
+};
+
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
 };
 
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.

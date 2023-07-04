@@ -23,7 +23,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
+#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -35,9 +36,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -154,7 +155,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            /// don't optimise functions that shadow any of it's arguments, e.g.:
+            /// don't optimize functions that shadow any of it's arguments, e.g.:
             /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
             if (!function->alias.empty())
             {
@@ -244,36 +245,6 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     }
 
     return data;
-}
-
-///eliminate functions of other GROUP BY keys
-void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
-{
-    if (!select_query->groupBy())
-        return;
-
-    auto group_by = select_query->groupBy();
-    const auto & group_by_keys = group_by->children;
-
-    ASTs modified; ///result
-
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
-
-    if (!group_by_keys_data.has_function)
-        return;
-
-    GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
-
-    modified.reserve(group_by_keys.size());
-
-    /// filling the result
-    for (const auto & group_key : group_by_keys)
-        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
-            modified.push_back(group_key);
-
-    /// modifying the input
-    group_by->children = modified;
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
@@ -418,7 +389,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         return;
 
     std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
-    std::unordered_set<String> selected_names;
+    std::unordered_set<std::string_view> selected_names;
 
     /// Check source column names from select list (ignore aliases and table names)
     for (const auto & id : select.select()->children)
@@ -427,11 +398,11 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         if (!identifier)
             return;
 
-        String name = identifier->shortName();
+        const String & name = identifier->shortName();
         if (!distinct_names.contains(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
-        selected_names.insert(name);
+        selected_names.emplace(name);
     }
 
     /// select columns list != distinct columns list
@@ -453,7 +424,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their undelying tables
+    /// because we can't get the sorting key of their underlying tables
     /// and we can break the matching of the sorting key for `read_in_order`
     /// optimization by removing monotonous functions from the prefix of key.
     if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
@@ -464,7 +435,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         auto * order_by_element = child->as<ASTOrderByElement>();
 
         if (!order_by_element || order_by_element->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
         if (order_by_element->with_fill)
             return;
@@ -543,7 +514,7 @@ void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, Co
         auto * order_by_element = child->as<ASTOrderByElement>();
 
         if (!order_by_element || order_by_element->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
         if (order_by_element->with_fill)
             return;
@@ -632,7 +603,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
         if (!cnf_form)
             return false;
 
-        cnf_form->pushNotInFuntions();
+        cnf_form->pushNotInFunctions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
         return true;
     }
@@ -688,6 +659,12 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeArrayExistsFunctions(ASTPtr & query)
+{
+    RewriteArrayExistsFunctionVisitor::Data data = {};
+    RewriteArrayExistsFunctionVisitor(data).visit(query);
+}
+
 void optimizeMultiIfToIf(ASTPtr & query)
 {
     OptimizeMultiIfToIfVisitor::Data data;
@@ -718,59 +695,6 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
-std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
-{
-    if (functions.size() < 2)
-        return nullptr;
-
-    const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
-    auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
-    func_base->arguments->children = common_arguments;
-    func_base->parameters = std::make_shared<ASTExpressionList>();
-
-    for (const auto * ast : functions)
-    {
-        assert(ast && *ast);
-        const auto * func = (*ast)->as<ASTFunction>();
-        assert(func && func->parameters->as<ASTExpressionList>());
-        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
-        if (parameters.size() != 1)
-            return nullptr; /// query is illegal, give up
-        func_base->parameters->children.push_back(parameters[0]);
-    }
-    return func_base;
-}
-
-/// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
-/// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
-///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
-void optimizeFuseQuantileFunctions(ASTPtr & query)
-{
-    GatherFunctionQuantileVisitor::Data data{};
-    GatherFunctionQuantileVisitor(data).visit(query);
-    for (auto & candidate : data.fuse_quantile)
-    {
-        String func_name = candidate.first;
-        auto & args_to_functions = candidate.second;
-
-        /// Try to fuse multiply `quantile*` Function to plural
-        for (auto it : args_to_functions.arg_map_function)
-        {
-            std::vector<ASTPtr *> & functions = it.second;
-            auto func_base = getQuantileFuseCandidate(func_name, functions);
-            if (!func_base)
-                continue;
-            for (size_t i = 0; i < functions.size(); ++i)
-            {
-                std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
-                if (const auto & alias = (*functions[i])->tryGetAlias(); !alias.empty())
-                    ast_new->setAlias(alias);
-                *functions[i] = ast_new;
-            }
-        }
-    }
-}
-
 void optimizeOrLikeChain(ASTPtr & query)
 {
     ConvertFunctionOrLikeVisitor::Data data = {};
@@ -779,8 +703,11 @@ void optimizeOrLikeChain(ASTPtr & query)
 
 }
 
-void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
+void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
 {
+    if (multiif_to_if)
+        optimizeMultiIfToIf(query);
+
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
 
@@ -788,9 +715,39 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
+void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query, ContextPtr context)
 {
-    RewriteCountVariantsVisitor::visit(query);
+    RewriteCountVariantsVisitor(context).visit(query);
+}
+
+///eliminate functions of other GROUP BY keys
+void TreeOptimizer::optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
+{
+    if (!select_query->groupBy())
+        return;
+
+    auto group_by = select_query->groupBy();
+    const auto & group_by_keys = group_by->children;
+
+    ASTs modified; ///result
+
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
+
+    if (!group_by_keys_data.has_function)
+        return;
+
+    GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
+    GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
+
+    modified.reserve(group_by_keys.size());
+
+    /// filling the result
+    for (const auto & group_key : group_by_keys)
+        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
+            modified.push_back(group_key);
+
+    /// modifying the input
+    group_by->children = modified;
 }
 
 void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
@@ -800,7 +757,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
 
     if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
         optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
@@ -835,13 +792,13 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         optimizeAnyFunctions(query);
 
     if (settings.optimize_normalize_count_variants)
-        optimizeCountConstantAndSumOne(query);
-
-    if (settings.optimize_multiif_to_if)
-        optimizeMultiIfToIf(query);
+        optimizeCountConstantAndSumOne(query, context);
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
+
+    if (settings.optimize_rewrite_array_exists_to_has)
+        optimizeArrayExistsFunctions(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
@@ -852,9 +809,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
-    {
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
-    }
 
     /// Remove duplicate ORDER BY and DISTINCT from subqueries.
     if (settings.optimize_duplicate_order_by_and_distinct)
@@ -889,9 +844,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
-
-    if (settings.optimize_syntax_fuse_functions)
-        optimizeFuseQuantileFunctions(query);
 
     if (settings.optimize_or_like_chain
         && settings.allow_hyperscan
