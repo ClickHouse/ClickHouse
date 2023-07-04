@@ -13,6 +13,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 
+
 namespace DB
 {
 
@@ -56,14 +57,14 @@ namespace DB
             {
                 if constexpr (nullOnErrors)
                 {
-                    const GregorianDate<> gd(vec_from[i]);
+                    const GregorianDate gd(vec_from[i]);
                     (*vec_null_map_to)[i] = gd.tryWrite(write_buffer);
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    const GregorianDate<> gd(vec_from[i]);
+                    const GregorianDate gd(vec_from[i]);
                     gd.write(write_buffer);
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();

@@ -80,8 +80,8 @@ namespace DB
                 {
                     try
                     {
-                        const GregorianDate<> date(read_buffer);
-                        vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
+                        const GregorianDate date(read_buffer);
+                        vec_to[i] = static_cast<typename ToDataType::FieldType>(date.toModifiedJulianDay());
                         vec_null_map_to[i] = false;
                     }
                     catch (const Exception & e)
@@ -97,8 +97,8 @@ namespace DB
                 }
                 else
                 {
-                    const GregorianDate<> date(read_buffer);
-                    vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
+                    const GregorianDate date(read_buffer);
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(date.toModifiedJulianDay());
                 }
             }
 
