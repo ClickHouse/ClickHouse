@@ -6697,6 +6697,22 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     return res;
 }
 
+ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select)
+{
+    const auto & analysis_result = select.getAnalysisResult();
+    const auto & before_where = analysis_result.before_where;
+    const auto & where_column_name = analysis_result.where_column_name;
+
+    ActionDAGNodes filter_nodes;
+    if (auto additional_filter_info = select.getAdditionalQueryInfo())
+        filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+
+    if (before_where)
+        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+
+    return filter_nodes;
+}
+
 
 std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const
@@ -6778,19 +6794,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_info.prepared_sets);
 
     const auto & analysis_result = select.getAnalysisResult();
-
     query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
 
-    const auto & before_where = analysis_result.before_where;
-    const auto & where_column_name = analysis_result.where_column_name;
-
     /// For PK analysis
-    ActionDAGNodes added_filter_nodes;
-    if (auto additional_filter_info = select.getAdditionalQueryInfo())
-        added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
-
-    if (before_where)
-        added_filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+    ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(select);
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,

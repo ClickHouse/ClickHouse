@@ -852,37 +852,32 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         else if (auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
                  storage_merge_tree && settings.parallel_replicas_min_number_of_rows_per_replica)
         {
+            auto query_info_copy = query_info;
             /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
             addPrewhereAliasActions();
             auto & prewhere_info = analysis_result.prewhere_info;
             if (prewhere_info)
             {
-                query_info.prewhere_info = prewhere_info;
+                query_info_copy.prewhere_info = prewhere_info;
                 if (query.prewhere() && !query.where())
-                    query_info.prewhere_info->need_filter = true;
+                    query_info_copy.prewhere_info->need_filter = true;
             }
 
-            ActionDAGNodes added_filter_nodes;
-            if (additional_filter_info)
-                added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
-
-            if (analysis_result.before_where)
-                added_filter_nodes.nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
+            ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
 
             auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-
             auto local_limits = getStorageLimits(*context, options);
-
-            if (!query.distinct && !query.limit_with_ties && !query.prewhere() && !query.where() && query_info.filter_asts.empty()
+            if (!query.distinct && !query.limit_with_ties && !query.prewhere() && !query.where() && query_info_copy.filter_asts.empty()
                 && !query.groupBy() && !query.having() && !query.orderBy() && !query.limitBy() && !query.join()
                 && !query_analyzer->hasAggregation() && !query_analyzer->hasWindow() && query.limitLength()
                 && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             {
-                query_info.limit = limit_length + limit_offset;
+                query_info_copy.limit = limit_length + limit_offset;
             }
             /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-            UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info, added_filter_nodes);
+            UInt64 rows_to_read
+                = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info_copy, added_filter_nodes);
             /// Note that we treat an estimation of 0 rows as a real estimation of no data to be read
             size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
             LOG_TRACE(

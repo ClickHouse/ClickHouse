@@ -48,6 +48,7 @@ namespace DB
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
 class AlterCommands;
+class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
@@ -1061,6 +1062,9 @@ public:
 
     /// TODO: make enabled by default in the next release if no problems found.
     bool allowRemoveStaleMovingParts() const;
+
+    /// Generate DAG filters based on query info (for PK analysis)
+    static struct ActionDAGNodes getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select);
 
     /// Estimate the number of rows to read based on primary key analysis (which could be very rough)
     /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
