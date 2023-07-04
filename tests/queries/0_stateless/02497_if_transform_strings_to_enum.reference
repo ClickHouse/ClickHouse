@@ -405,6 +405,16 @@ QUERY id: 0
     TABLE id: 7, table_name: system.numbers
   LIMIT
     CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
+other
+other
+other
+other
+other
+other
+other
+other
+other
+other
 SELECT transform(number, [NULL], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
 FROM
 (
