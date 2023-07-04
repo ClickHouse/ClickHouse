@@ -120,11 +120,12 @@
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
-            "docker/test/stateless",
-            "docker/test/integration/base",
             "docker/test/fuzzer",
+            "docker/test/integration/base",
             "docker/test/keeper-jepsen",
-            "docker/test/server-jepsen"
+            "docker/test/server-jepsen",
+            "docker/test/sqllogic",
+            "docker/test/stateless"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {

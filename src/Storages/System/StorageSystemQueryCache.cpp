@@ -29,7 +29,7 @@ StorageSystemQueryCache::StorageSystemQueryCache(const StorageID & table_id_)
 
 void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    auto query_cache = context->getQueryCache();
+    QueryCachePtr query_cache = context->getQueryCache();
 
     if (!query_cache)
         return;
