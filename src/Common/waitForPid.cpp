@@ -41,7 +41,7 @@ enum PollPidResult
         #define SYS_pidfd_open 434
     #elif defined(__aarch64__)
         #define SYS_pidfd_open 434
-    #elif defined(__ppc64__)
+    #elif defined(__powerpc64__)
         #define SYS_pidfd_open 434
     #elif defined(__riscv)
         #define SYS_pidfd_open 434

@@ -11,7 +11,6 @@
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -530,24 +529,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         threadpool_size);
 }
 
-void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
-{
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
-}
-
-NameSet DiskObjectStorage::getCacheLayersNames() const
-{
-    NameSet cache_layers;
-    auto current_object_storage = object_storage;
-    while (current_object_storage->supportsCache())
-    {
-        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
-        cache_layers.insert(cached_object_storage->getCacheConfigName());
-        current_object_storage = cached_object_storage->getWrappedObjectStorage();
-    }
-    return cache_layers;
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
@@ -579,15 +560,25 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
-void DiskObjectStorage::writeFileUsingCustomWriteObject(
-    const String & path,
-    WriteMode mode,
-    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-        custom_write_object_function)
+Strings DiskObjectStorage::getBlobPath(const String & path) const
+{
+    auto objects = getStorageObjects(path);
+    Strings res;
+    res.reserve(objects.size() + 1);
+    for (const auto & object : objects)
+        res.emplace_back(object.remote_path);
+    String objects_namespace = object_storage->getObjectsNamespace();
+    if (!objects_namespace.empty())
+        res.emplace_back(objects_namespace);
+    return res;
+}
+
+void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     LOG_TEST(log, "Write file: {}", path);
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
+    transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
+    transaction->commit();
 }
 
 void DiskObjectStorage::applyNewSettings(

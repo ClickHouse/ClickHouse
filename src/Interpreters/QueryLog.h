@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Settings.h>
@@ -64,6 +65,7 @@ struct QueryLogElement
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
+    std::set<String> query_partitions;
     std::set<String> query_projections;
     std::set<String> query_views;
 

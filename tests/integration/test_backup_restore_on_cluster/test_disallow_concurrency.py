@@ -6,7 +6,6 @@ import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
-
 cluster = ClickHouseCluster(__file__)
 
 num_nodes = 10
