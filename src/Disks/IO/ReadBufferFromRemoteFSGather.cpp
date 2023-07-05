@@ -56,6 +56,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
     auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
 
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
     if (with_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
@@ -72,6 +73,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt,
             cache_log);
     }
+#endif
 
     return current_read_buffer_creator();
 }
