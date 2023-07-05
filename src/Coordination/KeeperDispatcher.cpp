@@ -121,6 +121,8 @@ void KeeperDispatcher::requestThread()
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }
+                            else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                                server->getKeeperStateMachine()->reconfigure(request);
                             else
                             {
                                 current_batch_bytes_size += request.request->bytesSize();
