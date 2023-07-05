@@ -5,7 +5,7 @@ you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
+distributed under the License is distributed on an Keyword::AS IS BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
@@ -20,11 +20,11 @@ namespace DB
 
 bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_watch("WATCH");
+    ParserKeyword s_watch(Keyword::WATCH);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
-    ParserKeyword s_events("EVENTS");
-    ParserKeyword s_limit("LIMIT");
+    ParserKeyword s_events(Keyword::EVENTS);
+    ParserKeyword s_limit(Keyword::LIMIT);
 
     ASTPtr database;
     ASTPtr table;

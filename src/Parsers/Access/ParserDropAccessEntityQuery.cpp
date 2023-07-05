@@ -32,7 +32,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -40,7 +40,7 @@ namespace
 
 bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"DROP"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::DROP}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -48,7 +48,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
 
     bool if_exists = false;
-    if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
         if_exists = true;
 
     Strings names;

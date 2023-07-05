@@ -17,7 +17,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
             return parseRoleName(pos, expected, new_name);
@@ -28,7 +28,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
                 return false;
 
             ASTPtr new_settings_ast;
@@ -46,7 +46,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -57,14 +57,14 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH ROLE"}.ignore(pos, expected))
+        if (!ParserKeyword{Keyword::ATTACH_ROLE}.ignore(pos, expected))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER ROLE"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::ALTER_ROLE}.ignore(pos, expected))
             alter = true;
-        else if (!ParserKeyword{"CREATE ROLE"}.ignore(pos, expected))
+        else if (!ParserKeyword{Keyword::CREATE_ROLE}.ignore(pos, expected))
             return false;
     }
 
@@ -73,14 +73,14 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_NOT_EXISTS}.ignore(pos, expected))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::OR_REPLACE}.ignore(pos, expected))
             or_replace = true;
     }
 
