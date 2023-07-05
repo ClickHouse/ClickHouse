@@ -1573,11 +1573,13 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// For the case when there are no keys (all aggregate into one row).
     if (result.type == AggregatedDataVariants::Type::without_key)
     {
+#if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
             executeWithoutKeyImpl<true>(result.without_key, num_rows, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
         }
         else
+#endif
         {
             executeWithoutKeyImpl<false>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
         }
