@@ -218,3 +218,25 @@ def test_aggregate_query(started_cluster):
     print(rr)
 
     assert r == rr
+
+
+    print("local table select:")
+    r = node1.query("select uniq(id) ids,name from (select any(id) as id,name from local_table group by name order by id limit 10) where id in (select id from local_table1 where str like '%c%' and id in (select id from local_table where name like '%c%')) and id in (select id from local_table1 where str like '%b%') group by name order by ids limit 2 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("select uniq(id) ids,name from (select any(id) as id,name from distributed_table group by name order by id limit 10) where id GLOBAL in (select id from distributed_table1 where str like '%c%' and id GLOBAL in (select id from distributed_table where name like '%c%')) and id GLOBAL in (select id from distributed_table1 where str like '%b%') group by name order by ids limit 2 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    print(rr)
+
+    assert r == rr
+
+
+    print("local table select:")
+    r = node1.query("select uniq(id) ids,name from (select aaa.id as id,aaa.name as name from local_table join bbb on aaa.id=bbb.id limit 7) where id in (select id from local_table1 where str like '%c%' and id in (select id from local_table where name like '%c%')) and id in (select id from local_table1 where str = '%b%') group by name order by ids limit 2 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("select uniq(id) ids,name from (select aaa.id as id,aaa.name as name from distributed_table GLOBAL join bbb on aaa.id=bbb.id limit 7) where id GLOBAL in (select id from distributed_table1 where str like '%c%' and id GLOBAL in (select id from distributed_table where name like '%c%')) and id GLOBAL in (select id from distributed_table1 where str = '%b%') group by name order by ids limit 2 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    print(rr)
+
+    assert r == rr

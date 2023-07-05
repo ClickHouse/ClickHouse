@@ -396,9 +396,9 @@ public:
         buffer.write('\n');
         std::string str("Fragment " + std::to_string(fragment_id) + ", ");
         str += data_partition.toString();
-        str += "Data to:";
         if (dest_node && dest_node->fragment)
         {
+            str += ", Data to:";
             str += std::to_string(dest_node->fragment->getFragmentId()) + ", ";
         }
         buffer.write(str.c_str(), str.size());

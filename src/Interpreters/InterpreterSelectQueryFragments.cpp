@@ -23,6 +23,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQueryFragments.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -1091,7 +1092,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     else if (dynamic_cast<AggregatingStep *>(root_node.step.get()))
     {
         /// push down partial aggregating to lower level fragment
-        result = createAggregationFragment(child_fragments[0]);
+        result = createAggregationFragment(root_node.step, child_fragments[0]);
         all_fragments.emplace_back(result);
     }
     else if (needPushDownChild(root_node.step))
@@ -1287,7 +1288,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanSte
 }
 
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanFragmentPtr childFragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
 {
     // check size
     //    if (childFragment.getPlanRoot().getNumInstances() <= 1) {
@@ -1295,19 +1296,10 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
     //        return childFragment;
     //    }
 
-    auto & query = getSelectQuery();
-    const Settings & settings = context->getSettingsRef();
-    auto & expressions = analysis_result;
+    auto * aggregate_step = dynamic_cast<AggregatingStep *>(step.get());
 
-    bool aggregate_overflow_row =
-        expressions.need_aggregate &&
-        query.group_by_with_totals &&
-        settings.max_rows_to_group_by &&
-        settings.group_by_overflow_mode == OverflowMode::ANY &&
-        settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+    auto aggregating_step = aggregate_step->clone(false);
 
-    auto aggregating_step = executeAggregationImpl(
-        childFragment->getRootNode()->step->getOutputStream(), aggregate_overflow_row, false, query_info.input_order_info);
     childFragment->addStep(aggregating_step);
 
     DataPartition partition;
@@ -1327,12 +1319,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(PlanF
     // place a merge aggregation step in a new fragment
     PlanFragmentPtr merge_fragment = createParentFragment(childFragment, partition);
 
-    bool aggregate_final =
-        expressions.need_aggregate &&
-        !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
-
-    std::shared_ptr<MergingAggregatedStep> merge_agg_node = executeMergeAggregated(
-        merge_fragment->getCurrentDataStream(), aggregate_overflow_row, aggregate_final, expressions.use_grouping_set_key);
+    const Settings & settings = context->getSettingsRef();
+    std::shared_ptr<MergingAggregatedStep> merge_agg_node = aggregating_step->makeMergingAggregatedStep(merge_fragment->getCurrentDataStream(), settings);
 
     merge_fragment->addStep(std::move(merge_agg_node));
 
@@ -2560,9 +2548,18 @@ void InterpreterSelectQueryFragments::executeFetchColumns(QueryPlan & query_plan
         if (!subquery)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Subquery expected");
 
-        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            subquery, getSubqueryContext(context),
-            options.copy().subquery().noModify(), required_columns);
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+        {
+            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQueryFragments>(
+                subquery, getSubqueryContext(context),
+                options.copy().subquery().noModify(), required_columns);
+        }
+        else
+        {
+            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+                subquery, getSubqueryContext(context),
+                options.copy().subquery().noModify(), required_columns);
+        }
 
         interpreter_subquery->addStorageLimits(storage_limits);
 

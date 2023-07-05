@@ -174,7 +174,7 @@ private:
     PlanFragmentPtr createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments);
     PlanFragmentPtr createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment);
     PlanFragmentPtr createScanFragment(QueryPlanStepPtr step);
-    PlanFragmentPtr createAggregationFragment(PlanFragmentPtr childFragment);
+    PlanFragmentPtr createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment);
     PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition);
     PlanFragmentPtr createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment);
     PlanFragmentPtr createCreatingSetsFragment(Node & root_node, PlanFragmentPtrs child_fragments);
@@ -251,7 +251,7 @@ private:
     ActionsDAGPtr alias_actions;
 
     /// The subquery interpreter, if the subquery
-    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
+    std::unique_ptr<IInterpreterUnionOrSelectQuery> interpreter_subquery;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;

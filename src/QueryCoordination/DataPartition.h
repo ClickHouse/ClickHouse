@@ -51,6 +51,8 @@ struct DataPartition
             {
                 res += (key + ", ");
             }
+
+            res = res.substr(0, res.length() - 2);
         }
 
         return res;
