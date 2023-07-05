@@ -31,26 +31,39 @@ Chunk ORCBlockInputFormat::generate()
     block_missing_values.clear();
 
     if (!file_reader)
-        prepareReader();
+        prepareFileReader();
+
+    if (!stripe_reader)
+    {
+        if (!prepareStripeReader())
+            return {};
+    }
 
     if (is_stopped)
         return {};
 
-    for (; stripe_current < stripe_total && skip_stripes.contains(stripe_current); ++stripe_current)
-        ;
+    std::shared_ptr<arrow::RecordBatch> batch;
+    while (true)
+    {
+        /// Read from batch reader
+        auto batch_result = stripe_reader->ReadNext();
+        if (!batch_result.ok())
+            throw ParsingException(
+                ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to read from batch reader: {}", batch_result.status().ToString());
 
-    if (stripe_current >= stripe_total)
-        return {};
+        auto batch_with_meta = std::move(batch_result).ValueOrDie();
+        if (batch_with_meta.batch)
+        {
+            batch = std::move(batch_with_meta.batch);
+            break;
+        }
 
-    auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
-    if (!batch_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
+        /// No more batches in current stripe, prepare next stripe
+        if (!prepareStripeReader())
+            return {};
+    }
 
-    auto batch = batch_result.ValueOrDie();
-    if (!batch)
-        return {};
-
-    auto table_result = arrow::Table::FromRecordBatches({batch});
+    auto table_result = arrow::Table::FromRecordBatches({std::move(batch)});
     if (!table_result.ok())
         throw ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
@@ -58,14 +71,12 @@ Chunk ORCBlockInputFormat::generate()
     /// We should extract the number of rows directly from the stripe, because in case when
     /// record batch contains 0 columns (for example if we requested only columns that
     /// are not presented in data) the number of rows in record batch will be 0.
-    size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
-
     auto table = table_result.ValueOrDie();
-    if (!table || !num_rows)
+    if (!table)
         return {};
 
-    approx_bytes_read_for_chunk = file_reader->GetRawORCReader()->getStripe(stripe_current)->getDataLength();
-    ++stripe_current;
+    size_t num_rows = batch->num_rows();
+    approx_bytes_read_for_chunk = num_rows * current_stripe_info.length / current_stripe_info.num_rows;
 
     Chunk res;
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
@@ -80,6 +91,7 @@ void ORCBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
+    stripe_reader.reset();
     include_indices.clear();
     block_missing_values.clear();
 }
@@ -112,15 +124,15 @@ static void getFileReaderAndSchema(
     schema = std::move(read_schema_result).ValueOrDie();
 }
 
-void ORCBlockInputFormat::prepareReader()
+void ORCBlockInputFormat::prepareFileReader()
 {
     std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
     if (is_stopped)
         return;
 
-    stripe_total = static_cast<int>(file_reader->NumberOfStripes());
-    stripe_current = 0;
+    total_stripes = static_cast<int>(file_reader->NumberOfStripes());
+    current_stripe = 0;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
@@ -141,6 +153,38 @@ void ORCBlockInputFormat::prepareReader()
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
             include_indices.push_back(i);
     }
+}
+
+bool ORCBlockInputFormat::prepareStripeReader()
+{
+    assert(file_reader);
+
+    ++current_stripe;
+    for (; current_stripe < total_stripes && skip_stripes.contains(current_stripe); ++current_stripe)
+        ;
+
+    /// No more stripes to read
+    if (current_stripe >= total_stripes)
+        return false;
+
+    /// Seek to current stripe
+    current_stripe_info = file_reader->GetStripeInformation(current_stripe);
+    auto seek_result = file_reader->Seek(current_stripe_info.first_row_id);
+    if (!seek_result.ok())
+        throw ParsingException(
+            ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to seek stripe {}: {}", current_stripe, seek_result.ToString());
+
+    /// Create batch reader for current stripe
+    auto result = file_reader->NextStripeReader(format_settings.orc.row_batch_size, include_indices);
+    if (!result.ok())
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", result.status().ToString());
+
+    /// No more stripes to read
+    stripe_reader = std::move(result).ValueOrDie();
+    if (!stripe_reader)
+        return false;
+
+    return true;
 }
 
 ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

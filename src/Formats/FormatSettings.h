@@ -325,7 +325,6 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
-        UInt64 max_block_size = 8192;
     } orc;
 
     /// For capnProto format we should determine how to

@@ -180,7 +180,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
-    format_settings.orc.max_block_size = settings.input_format_orc_max_block_size;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
