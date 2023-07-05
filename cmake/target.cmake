@@ -44,6 +44,8 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_HDFS OFF CACHE INTERNAL "")
             set (ENABLE_MYSQL OFF CACHE INTERNAL "")
+            # It might be ok, but we need to update 'sysroot'
+            set (ENABLE_RUST OFF CACHE INTERNAL "")
         elseif (ARCH_S390X)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_SENTRY OFF CACHE INTERNAL "")
