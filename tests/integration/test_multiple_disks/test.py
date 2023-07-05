@@ -717,9 +717,10 @@ def test_background_move(start_cluster, name, engine):
 
         node1.query(f"SYSTEM STOP MERGES {name}")
 
+        first_part = None
         for i in range(5):
             data = []  # 5MB in total
-            for i in range(5):
+            for _ in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             # small jbod size is 40MB, so lets insert 5MB batch 5 times
             node1.query_with_retry(
@@ -728,7 +729,11 @@ def test_background_move(start_cluster, name, engine):
                 )
             )
 
-        first_part = get_oldest_part(node1, name)
+            # we are doing moves in parallel so we need to fetch the name of first part before we add new parts
+            if i == 0:
+                first_part = get_oldest_part(node1, name)
+
+        assert first_part is not None
 
         used_disks = get_used_disks_for_table(node1, name)
 
