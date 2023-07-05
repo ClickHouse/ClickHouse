@@ -412,6 +412,21 @@ void StackTrace::toStringEveryLine(std::function<void(std::string_view)> callbac
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
+void StackTrace::toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback)
+{
+    toStringEveryLineImpl(true, {frame_pointers, 0, static_cast<size_t>(std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback)
+{
+    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
+
+    StackTrace::FramePointers frame_pointers{};
+    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
+
+    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
+}
+
 using StackTraceCache = std::map<StackTraceTriple, String, std::less<>>;
 
 static StackTraceCache & cacheInstance()
