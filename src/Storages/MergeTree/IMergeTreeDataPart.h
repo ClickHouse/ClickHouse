@@ -116,6 +116,8 @@ public:
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
 
+    virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
+
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
@@ -248,6 +250,9 @@ public:
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
+
+    /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
+    bool old_part_with_no_metadata_version_on_disk = false;
 
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
