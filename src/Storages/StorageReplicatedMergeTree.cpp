@@ -3944,13 +3944,16 @@ void StorageReplicatedMergeTree::addLastSentPart(const MergeTreePartInfo & info)
 
 void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(size_t wait_ms)
 {
+    if (!shutdown_called.load())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Called waitForUniquePartsToBeFetchedByOtherReplicas before shutdown, it's a bug");
+
     if (wait_ms == 0)
     {
         LOG_INFO(log, "Will not wait for unique parts to be fetched by other replicas because wait time is zero");
         return;
     }
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeperIfTableShutDown();
 
     auto unique_parts_set = findReplicaUniqueParts(replica_name, zookeeper_path, format_version, zookeeper, log);
     if (unique_parts_set.empty())

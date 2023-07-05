@@ -374,6 +374,8 @@ public:
         return last_sent_parts;
     }
 
+    /// Wait required amount of milliseconds to give other replicas a chance to
+    /// download unique parts from our replica
     void waitForUniquePartsToBeFetchedByOtherReplicas(size_t wait_ms);
 
 private:
