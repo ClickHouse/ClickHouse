@@ -113,7 +113,10 @@ public:
 
     void startup() override;
     void shutdown() override;
-    void partialShutdown();
+
+    void flushAndPrepareForShutdown() override;
+
+    void partialShutdown(bool part_of_full_shutdown);
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
@@ -453,9 +456,9 @@ private:
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> shutdown_prepared_called {false};
 
-    static constexpr size_t LAST_SENT_PARS_WINDOW_SIZE = 1000;
-    std::mutex last_sent_parts_mutex;
+    mutable std::mutex last_sent_parts_mutex;
     std::condition_variable last_sent_parts_cv;
     std::deque<MergeTreePartInfo> last_sent_parts;
 
@@ -711,7 +714,7 @@ private:
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
-    static std::vector<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_);
+    static std::vector<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.

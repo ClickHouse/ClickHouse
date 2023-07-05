@@ -330,7 +330,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shutdown)
 {
     setReadonly(part_of_full_shutdown);
-    storage.partialShutdown();
+    storage.partialShutdown(part_of_full_shutdown);
 }
 
 

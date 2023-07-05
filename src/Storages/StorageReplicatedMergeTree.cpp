@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <ranges>
+#include <chrono>
 
 #include <base/hex.h>
 #include <base/interpolate.h>
@@ -3933,6 +3934,7 @@ void StorageReplicatedMergeTree::addLastSentPart(const MergeTreePartInfo & info)
     {
         std::lock_guard lock(last_sent_parts_mutex);
         last_sent_parts.emplace_back(info);
+        static constexpr size_t LAST_SENT_PARS_WINDOW_SIZE = 1000;
         while (last_sent_parts.size() > LAST_SENT_PARS_WINDOW_SIZE)
             last_sent_parts.pop_front();
     }
@@ -3950,24 +3952,32 @@ void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(si
 
     auto zookeeper = getZooKeeper();
 
-    auto unique_parts_set = findReplicaUniqueParts(replica_name, zookeeper_path, format_version, zookeeper);
+    auto unique_parts_set = findReplicaUniqueParts(replica_name, zookeeper_path, format_version, zookeeper, log);
     if (unique_parts_set.empty())
     {
         LOG_INFO(log, "Will not wait for unique parts to be fetched because we don't have any unique parts");
         return;
     }
+    else
+    {
+        LOG_INFO(log, "Will wait for {} unique parts to be fetched", unique_parts_set.size());
+    }
 
-    auto wait_predicate = [&] () -> void
+    auto wait_predicate = [&] () -> bool
     {
         bool all_fetched = true;
-        for (const auto & part : unique_parts_set)
+        for (auto it = unique_parts_set.begin(); it != unique_parts_set.end();)
         {
+            const auto & part = *it;
+
             bool found = false;
-            for (const auto & sent_part : last_sent_parts)
+            for (const auto & sent_part : last_sent_parts | std::views::reverse)
             {
                 if (sent_part.contains(part))
                 {
+                    LOG_TRACE(log, "Part {} was fetched by some replica", part.getPartNameForLogs());
                     found = true;
+                    it = unique_parts_set.erase(it);
                     break;
                 }
             }
@@ -3981,14 +3991,19 @@ void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(si
     };
 
     std::unique_lock lock(last_sent_parts_mutex);
-    if (!last_sent_parts_cv.wait_for(last_sent_parts_cv, std::chrono::duration_cast<std::chrono::milliseconds>(wait_ms), wait_predicate))
-        LOG_WARNING(log, "Failed to wait for unqiue parts to be fetched in {} ms, {} parts can be left on this replica", wait_ms, unqiue_parts_set.size());
+    if (!last_sent_parts_cv.wait_for(lock, std::chrono::milliseconds(wait_ms), wait_predicate))
+        LOG_WARNING(log, "Failed to wait for unqiue parts to be fetched in {} ms, {} parts can be left on this replica", wait_ms, unique_parts_set.size());
+    else
+        LOG_INFO(log, "Successfuly waited all the parts");
 }
 
-std::vector<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_)
+std::vector<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_)
 {
-    if (zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica_name_ / "is_active"))
+    if (!zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica_name_ / "is_active"))
+    {
+        LOG_INFO(log_, "Our replica is not active, nobody will try to fetch anything");
         return {};
+    }
 
     Strings replicas = zookeeper_->getChildren(fs::path(zookeeper_path_) / "replicas");
     Strings our_parts;
@@ -3996,39 +4011,53 @@ std::vector<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniquePart
     for (const String & replica : replicas)
     {
         if (!zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica / "is_active"))
+        {
+            LOG_TRACE(log_, "Replica {} is not active, skipping", replica);
             continue;
+        }
 
         Strings parts = zookeeper_->getChildren(fs::path(zookeeper_path_) / "replicas" / replica / "parts");
         if (replica == replica_name_)
         {
+            LOG_TRACE(log_, "Our replica parts collected {}", replica);
             our_parts = parts;
         }
         else
         {
+            LOG_TRACE(log_, "Fetching parts for replica {}", replica);
             data_parts_on_replicas.emplace_back(format_version_);
             for (const auto & part : parts)
             {
-                if (!data_parts_on_replicas.back().getContainingPart(part).empty())
+                if (data_parts_on_replicas.back().getContainingPart(part).empty())
                     data_parts_on_replicas.back().add(part);
             }
         }
     }
 
-    NameSet our_unique_parts;
+    std::vector<MergeTreePartInfo> our_unique_parts;
     for (const auto & part : our_parts)
     {
+        LOG_TRACE(log_, "Looking for part {}", part);
         bool found = false;
         for (const auto & active_parts_set : data_parts_on_replicas)
         {
             if (!active_parts_set.getContainingPart(part).empty())
             {
+                LOG_TRACE(log_, "Part {} found", part);
                 found = true;
                 break;
             }
         }
+
         if (!found)
-            our_unique_parts.insert(MergeTreePartInfo::fromPartName(part, format_version));
+        {
+            LOG_TRACE(log_, "Part not {} found", part);
+            our_unique_parts.emplace_back(MergeTreePartInfo::fromPartName(part, format_version_));
+        }
     }
+
+    if (!our_parts.empty() && our_unique_parts.empty())
+        LOG_TRACE(log_, "All parts found on replica");
 
     return our_unique_parts;
 }
@@ -4799,39 +4828,9 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 }
 
 
-void StorageReplicatedMergeTree::partialShutdown()
+void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
 {
-    ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
-
-    partial_shutdown_called = true;
-    partial_shutdown_event.set();
-    queue.notifySubscribersOnPartialShutdown();
-    replica_is_active_node = nullptr;
-
-    LOG_TRACE(log, "Waiting for threads to finish");
-    merge_selecting_task->deactivate();
-    queue_updating_task->deactivate();
-    mutations_updating_task->deactivate();
-    mutations_finalizing_task->deactivate();
-
-    cleanup_thread.stop();
-    async_block_ids_cache.stop();
-    part_check_thread.stop();
-
-    /// Stop queue processing
-    {
-        auto fetch_lock = fetcher.blocker.cancel();
-        auto merge_lock = merger_mutator.merges_blocker.cancel();
-        auto move_lock = parts_mover.moves_blocker.cancel();
-        background_operations_assignee.finish();
-    }
-
-    LOG_TRACE(log, "Threads finished");
-}
-
-void StorageReplicatedMergeTree::shutdown()
-{
-    if (shutdown_called.exchange(true))
+    if (shutdown_prepared_called.exchange(true))
         return;
 
     session_expired_callback_handler.reset();
@@ -4859,6 +4858,58 @@ void StorageReplicatedMergeTree::shutdown()
         queue.pull_log_blocker.cancelForever();
     }
     background_moves_assignee.finish();
+
+}
+
+void StorageReplicatedMergeTree::partialShutdown(bool part_of_full_shutdown)
+{
+    ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
+
+    partial_shutdown_called = true;
+    partial_shutdown_event.set();
+    queue.notifySubscribersOnPartialShutdown();
+    if (!part_of_full_shutdown)
+    {
+        LOG_DEBUG(log, "Reset active node, replica will be inactive");
+        replica_is_active_node = nullptr;
+    }
+    else
+        LOG_DEBUG(log, "Will not reset active node, it will be reset completely during full shutdown");
+
+    LOG_TRACE(log, "Waiting for threads to finish");
+    merge_selecting_task->deactivate();
+    queue_updating_task->deactivate();
+    mutations_updating_task->deactivate();
+    mutations_finalizing_task->deactivate();
+
+    cleanup_thread.stop();
+    async_block_ids_cache.stop();
+    part_check_thread.stop();
+
+    /// Stop queue processing
+    {
+        auto fetch_lock = fetcher.blocker.cancel();
+        auto merge_lock = merger_mutator.merges_blocker.cancel();
+        auto move_lock = parts_mover.moves_blocker.cancel();
+        background_operations_assignee.finish();
+    }
+
+    LOG_TRACE(log, "Threads finished");
+}
+
+void StorageReplicatedMergeTree::shutdown()
+{
+    if (shutdown_called.exchange(true))
+        return;
+
+    if (!shutdown_prepared_called.load())
+        flushAndPrepareForShutdown();
+
+    auto settings_ptr = getSettings();
+    LOG_DEBUG(log, "Data parts exchange still exists {}", data_parts_exchange_endpoint != nullptr);
+    waitForUniquePartsToBeFetchedByOtherReplicas(settings_ptr->wait_for_unique_parts_send_before_shutdown_ms.totalMilliseconds());
+
+    replica_is_active_node = nullptr;
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)

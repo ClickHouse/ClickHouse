@@ -1286,7 +1286,7 @@ try
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
-                updateServers(*config, server_pool, async_metrics, servers);
+                updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
 
             global_context->updateStorageConfiguration(*config);
@@ -1388,10 +1388,15 @@ try
 
     }
 
-    for (auto & server : servers_to_start_before_tables)
     {
-        server.start();
-        LOG_INFO(log, "Listening for {}", server.getDescription());
+        std::lock_guard lock(servers_lock);
+        createInterserverServers(config(), interserver_listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ false);
+
+        for (auto & server : servers_to_start_before_tables)
+        {
+            server.start();
+            LOG_INFO(log, "Listening for {}", server.getDescription());
+        }
     }
 
     /// Initialize access storages.
@@ -1688,7 +1693,7 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers);
+            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
@@ -1954,7 +1959,6 @@ HTTPContextPtr Server::httpContext() const
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
     const Strings & listen_hosts,
-    const Strings & interserver_listen_hosts,
     bool listen_try,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
@@ -2176,6 +2180,23 @@ void Server::createServers(
                     httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
+}
+
+void Server::createInterserverServers(
+    Poco::Util::AbstractConfiguration & config,
+    const Strings & interserver_listen_hosts,
+    bool listen_try,
+    Poco::ThreadPool & server_pool,
+    AsynchronousMetrics & async_metrics,
+    std::vector<ProtocolServerAdapter> & servers,
+    bool start_servers)
+{
+    const Settings & settings = global_context->getSettingsRef();
+
+    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
@@ -2224,14 +2245,14 @@ void Server::createServers(
 #endif
         });
     }
-
 }
 
 void Server::updateServers(
     Poco::Util::AbstractConfiguration & config,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
-    std::vector<ProtocolServerAdapter> & servers)
+    std::vector<ProtocolServerAdapter> & servers,
+    std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
     Poco::Logger * log = &logger();
 
@@ -2256,12 +2277,18 @@ void Server::updateServers(
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
     Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
-
+    std::vector<ProtocolServerAdapter *> all_servers;
     for (auto & server : servers)
+        all_servers.push_back(&server);
+
+    for (auto & server : servers_to_start_before_tables)
+        all_servers.push_back(&server);
+
+    for (auto * server : all_servers)
     {
-        if (!server.isStopping())
+        if (!server->isStopping())
         {
-            std::string port_name = server.getPortName();
+            std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
             if (port_name.starts_with("protocols."))
@@ -2299,25 +2326,26 @@ void Server::updateServers(
                 /// NOTE: better to compare using getPortName() over using
                 /// dynamic_cast<> since HTTPServer is also used for prometheus and
                 /// internal replication communications.
-                is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+                is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
             }
 
             if (!has_host)
-                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
+                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
             bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
             if (force_restart)
-                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());
+                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server->getDescription());
 
-            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber() || force_restart)
+            if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {
-                server.stop();
-                LOG_INFO(log, "Stopped listening for {}", server.getDescription());
+                server->stop();
+                LOG_INFO(log, "Stopped listening for {}", server->getDescription());
             }
         }
     }
 
-    createServers(config, listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    createInterserverServers(config, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
 
     std::erase_if(servers, std::bind_front(check_server, ""));
 }
