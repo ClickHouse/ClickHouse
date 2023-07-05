@@ -773,8 +773,9 @@ public:
                     size_t chunk_size = input_format->getApproxBytesReadForChunk();
                     if (!chunk_size)
                         chunk_size = chunk.bytes();
-                    updateRowsProgressApprox(
-                        *this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    if (chunk_size)
+                        updateRowsProgressApprox(
+                            *this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
                 }
                 return chunk;
             }
@@ -865,7 +866,7 @@ Pipe StorageFile::read(
     if (progress_callback)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, format_name, getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
     for (size_t i = 0; i < num_streams; ++i)
     {

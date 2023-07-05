@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const String & format_name, const NamesAndTypesList & virtuals)
+ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, bool supports_subset_of_columns, const NamesAndTypesList & virtuals)
 {
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
@@ -33,9 +33,9 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
         info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
     /// Set requested columns that should be read from data.
-    info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), columns_to_read);
+    info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
 
-    if (format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name))
+    if (supports_subset_of_columns)
     {
         /// If only virtual columns were requested, just read the smallest column.
         if (columns_to_read.empty())

@@ -720,7 +720,8 @@ Chunk StorageS3Source::generate()
                 size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
                 if (!chunk_size)
                     chunk_size = chunk.bytes();
-                updateRowsProgressApprox(*this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                if (chunk_size)
+                    updateRowsProgressApprox(*this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)
@@ -1059,7 +1060,7 @@ Pipe StorageS3::read(
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
         query_configuration, distributed_processing, local_context, query_info.query, virtual_block);
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, query_configuration.format, getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
     for (size_t i = 0; i < num_streams; ++i)
