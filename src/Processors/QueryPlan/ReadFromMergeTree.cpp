@@ -1299,13 +1299,10 @@ static void buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
-void ReadFromMergeTree::onAddFilterFinish()
+void ReadFromMergeTree::applyFilters()
 {
-    if (!filter_nodes.nodes.empty())
-    {
-        auto filter_actions_dag = buildFilterDAG(context, prewhere_info, filter_nodes, query_info);
-        buildIndexes(indexes, filter_actions_dag, data, context, query_info, metadata_for_reading);
-    }
+    auto filter_actions_dag = buildFilterDAG(context, prewhere_info, filter_nodes, query_info);
+    buildIndexes(indexes, filter_actions_dag, data, context, query_info, metadata_for_reading);
 }
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(

@@ -239,6 +239,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadKeys(const Block & requ
         WriteBufferFromOStream out_buffer(os);
         auto output_format = getContext()->getOutputFormat(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
         formatBlock(output_format, requested_block);
+        out_buffer.finalize();
     };
     return QueryPipeline(loadBase(uri, out_stream_callback));
 }

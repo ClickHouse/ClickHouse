@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source /usr/share/clickhouse-test/ci/utils.lib
+
 function attach_gdb_to_clickhouse()
 {
     # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
@@ -38,5 +40,5 @@ quit
     gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log &
     sleep 5
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
-    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+    run_with_retry 60 clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'"
 }
