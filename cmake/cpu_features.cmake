@@ -95,7 +95,7 @@ elseif (ARCH_AMD64)
     option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
     option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
     option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
-    option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
+    option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 1)
     option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
     option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
     option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
@@ -224,7 +224,7 @@ elseif (ARCH_AMD64)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
-    set (TEST_FLAG "-mavx2")
+    set (TEST_FLAG "-mavx2 -mprefer-vector-width=128")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <immintrin.h>
