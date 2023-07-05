@@ -556,7 +556,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 if (arg.is_const)
                     prev_off[arg_num] = 0;
             }
-            if(!current_has_nullable)
+            if (!current_has_nullable)
                 all_has_nullable = false;
         }
 
