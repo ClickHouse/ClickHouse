@@ -1,6 +1,6 @@
-#include "DataTypeInterval.h"
-#include "DataTypeFactory.h"
-#include "Serializations/SerializationInterval.h"
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInterval.h>
 
 namespace DB
 {
