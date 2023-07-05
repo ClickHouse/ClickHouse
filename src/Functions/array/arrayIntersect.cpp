@@ -1,3 +1,5 @@
+#include <cmath>
+#include <cstdio>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -19,10 +21,12 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include "Common/Exception.h"
+#include "Common/logger_useful.h"
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
+#include <sys/syslog.h>
 
 
 namespace DB
@@ -511,11 +515,12 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         map.clear();
 
         bool all_has_nullable = all_nullable;
+        bool current_has_nullable = false;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
             const auto & arg = arrays.args[arg_num];
-            bool current_has_nullable = false;
+            current_has_nullable = false;
 
             size_t off;
             // const array has only one row
@@ -550,46 +555,19 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 }
             }
 
-            prev_off[arg_num] = off;
-            if (arg.is_const)
-                prev_off[arg_num] = 0;
-
-            if (!current_has_nullable)
+            if (arg_num)
+            {
+                prev_off[arg_num] = off;
+                if (arg.is_const)
+                    prev_off[arg_num] = 0;
+            }
+            if(!current_has_nullable)
                 all_has_nullable = false;
         }
 
-        if (all_has_nullable)
-        {
-            ++result_offset;
-            result_data.insertDefault();
-            null_map.push_back(1);
-        }
-
-        for (const auto & pair : map)
-        {
-            if (pair.getMapped() == args)
-            {
-                ++result_offset;
-                // if constexpr (is_numeric_column)
-                //     result_data.insertValue(pair.getKey());
-                // else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                //     result_data.insertData(pair.getKey().data, pair.getKey().size);
-                // else
-                //     result_data.deserializeAndInsertFromArena(pair.getKey().data);
-
-                // if (all_nullable)
-                //     null_map.push_back(0);
-            }
-        }
-        // result_offsets.getElement(row) = result_offset;
-    }
-
-    for (size_t row = 0; row < rows; ++row)
-    {
-        bool all_has_nullable = all_nullable;
         for (size_t arg_num = 0; arg_num < 1; ++arg_num)
         {
-            bool current_has_nullable = false;
+            all_has_nullable = all_nullable;
             const auto & arg = arrays.args[arg_num];
             size_t off;
             // const array has only one row
@@ -598,29 +576,23 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             else
                 off = (*arg.offsets)[row];
 
-            prev_off[arg_num] = off;
-            if (arg.is_const)
-                prev_off[arg_num] = 0;
-            // throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", result_offset);
-            for (size_t res_num = 0; res_num < result_offset; ++res_num)
+            for (auto i : collections::range(prev_off[arg_num], off))
             {
-                if (arg.null_map && (*arg.null_map)[row])
+                typename Map::LookupResult pair = nullptr;
+                if (arg.null_map && (*arg.null_map)[i])
                     current_has_nullable = true;
-
-                typename Map::LookupResult pair;
-
-                if constexpr (is_numeric_column)
+                else if constexpr (is_numeric_column)
                 {
-                    pair = map.find(columns[arg_num]->getElement(res_num));
+                    pair = map.find(columns[arg_num]->getElement(i));
                 }
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                    pair = map.find(columns[arg_num]->getDataAt(res_num));
+                    pair = map.find(columns[arg_num]->getDataAt(i));
                 else
                 {
                     const char * data = nullptr;
-                    pair = map.find(columns[arg_num]->serializeValueIntoArena(res_num, arena, data));
+                    pair = map.find(columns[arg_num]->serializeValueIntoArena(i, arena, data));
                 }
-
+                
                 prev_off[arg_num] = off;
                 if (arg.is_const)
                     prev_off[arg_num] = 0;
@@ -628,47 +600,46 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 if (!current_has_nullable)
                     all_has_nullable = false;
 
-                if (pair->getMapped() == args)//for (const auto & pair : map)
+                if (pair && pair->getMapped() == args)
                 {
+                    ++pair->getMapped();
+                    ++result_offset;
                     if constexpr (is_numeric_column)
                     {
-                        if (pair->getKey() == columns[arg_num]->getElement(res_num))
+                        if (pair->getKey() == columns[arg_num]->getElement(i))
                         {
-                            // ++result_offset;
                             result_data.insertValue(pair->getKey());
                         } 
                     }
                     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     {
-                        if (pair->getKey() == columns[arg_num]->getDataAt(res_num))
+                        if (pair->getKey() == columns[arg_num]->getDataAt(i))
                         {
-                            // ++result_offset;
                             result_data.insertData(pair->getKey().data, pair->getKey().size);
                         } 
                     }
                     else
                     {
                         const char * data = nullptr;
-                        if (pair->getKey() == columns[arg_num]->serializeValueIntoArena(res_num, arena, data))
+                        if (pair->getKey() == columns[arg_num]->serializeValueIntoArena(i, arena, data))
                         {
-                            // ++result_offset;
                             result_data.deserializeAndInsertFromArena(pair->getKey().data);
                         } 
                     }
                     if (all_nullable)
                         null_map.push_back(0);
+                    // std::cerr << "========== " << current_has_nullable << std::endl;
                 }
-            }
-            if (all_has_nullable)
-            {
-                ++result_offset;
-                result_data.insertDefault();
-                null_map.push_back(1);
+                if (all_has_nullable)
+                {
+                    ++result_offset;
+                    result_data.insertDefault();
+                    null_map.push_back(1);
+                }
             }
             result_offsets.getElement(row) = result_offset;
 
-
-    }
+        }
     }
     ColumnPtr result_column = std::move(result_data_ptr);
     if (all_nullable)
