@@ -349,10 +349,7 @@ bool CSVFormatReader::checkForSuffix()
 
 bool CSVFormatReader::checkForEndOfLine()
 {
-    if (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r')
-        return true;
-    else
-        return false;
+    return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
