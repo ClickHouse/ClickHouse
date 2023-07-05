@@ -13,6 +13,11 @@ namespace arrow::adapters::orc
     class ORCFileReader;
 }
 
+namespace arrow
+{
+    class RecordBatchReader;
+}
+
 namespace DB
 {
 
@@ -56,6 +61,7 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;
+    std::shared_ptr<arrow::RecordBatchReader> current_record_batch_reader;
 
     int stripe_total = 0;
     int stripe_current = 0;
