@@ -313,7 +313,7 @@ KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
 
-    const auto& request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
+    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
     const int64_t zxid = request_for_session.zxid;
 

@@ -88,7 +88,10 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
-    KeeperStorage & getStorageForUnitTests() TSA_NO_THREAD_SAFETY_ANALYSIS
+    // This should be used only for tests or keeper-data-dumper because it violates
+    // TSA -- we can't acquire the lock outside of this class or return a storage under lock
+    // in a reasonable way.
+    KeeperStorage & getStorageUnsafe() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         return *storage;
     }

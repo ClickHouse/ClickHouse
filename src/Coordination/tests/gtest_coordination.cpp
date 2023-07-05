@@ -1616,8 +1616,8 @@ void testLogAndStateMachine(
         restore_machine->commit(i, changelog.entry_at(i)->get_buf());
     }
 
-    auto & source_storage = state_machine->getStorageForUnitTests();
-    auto & restored_storage = restore_machine->getStorageForUnitTests();
+    auto & source_storage = state_machine->getStorageUnsafe();
+    auto & restored_storage = restore_machine->getStorageUnsafe();
 
     EXPECT_EQ(source_storage.container.size(), restored_storage.container.size());
     for (size_t i = 1; i < total_logs + 1; ++i)
@@ -1719,7 +1719,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
     state_machine->pre_commit(1, entry_c->get_buf());
     state_machine->commit(1, entry_c->get_buf());
-    const auto & storage = state_machine->getStorageForUnitTests();
+    const auto & storage = state_machine->getStorageUnsafe();
 
     EXPECT_EQ(storage.ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
@@ -1768,7 +1768,7 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageForUnitTests().uncommitted_state;
+    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
     ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
 
     // commit log entries
@@ -1831,7 +1831,7 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageForUnitTests().uncommitted_state;
+    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
     auto node = uncommitted_state.getNode(node_path);
 
     ASSERT_NE(node, nullptr);
