@@ -15,6 +15,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
+#include <IO/WriteBufferFromHTTPBuilder.h>
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
@@ -27,6 +28,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -460,10 +462,32 @@ StorageURLSink::StorageURLSink(
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
+    Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+    if (auto proxy_config_opt = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https"))
+    {
+        auto proxy_config = proxy_config_opt.value();
+
+        poco_proxy_config.host = proxy_config.host;
+        poco_proxy_config.port = proxy_config.port;
+        poco_proxy_config.protocol = proxy_config.scheme;
+    }
+
+    auto write_buffer = WriteBufferFromHTTPBuilder()
+        .withURI(Poco::URI(uri))
+        .withMethod(http_method)
+        .withContentType(content_type)
+        .withContentEncoding(content_encoding)
+        .withAdditionalHeaders(headers)
+        .withTimeouts(timeouts)
+        .withProxyConfiguration(poco_proxy_config)
+        .build();
+
     write_buf = wrapWriteBufferWithCompressionMethod(
-        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts),
+        std::move(write_buffer),
         compression_method,
-        3);
+        3
+    );
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
 

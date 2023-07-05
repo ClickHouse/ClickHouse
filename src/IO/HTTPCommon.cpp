@@ -61,7 +61,13 @@ namespace
             throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
+    HTTPSessionPtr makeHTTPSessionImpl(
+        const std::string & host,
+        UInt16 port,
+        bool https,
+        bool keep_alive,
+        bool resolve_host = true,
+        Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {})
     {
         HTTPSessionPtr session;
 
@@ -89,6 +95,9 @@ namespace
 
         /// doesn't work properly without patch
         session->setKeepAlive(keep_alive);
+
+        session->setProxyConfig(proxy_config);
+
         return session;
     }
 
@@ -283,13 +292,18 @@ void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host)
+HTTPSessionPtr makeHTTPSession(
+    const Poco::URI & uri,
+    const ConnectionTimeouts & timeouts,
+    bool resolve_host,
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config
+)
 {
     const std::string & host = uri.getHost();
     UInt16 port = uri.getPort();
     bool https = isHTTPS(uri);
 
-    auto session = makeHTTPSessionImpl(host, port, https, false, resolve_host);
+    auto session = makeHTTPSessionImpl(host, port, https, false, resolve_host, proxy_config);
     setTimeouts(*session, timeouts);
     return session;
 }
