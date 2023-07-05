@@ -341,6 +341,7 @@ bool CSVFormatReader::readField(
     if (is_last_file_column && format_settings.csv.ignore_extra_columns)
     {
         // Skip all fields to next line.
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         while (checkChar(format_settings.csv.delimiter, *buf))
         {
             skipField();
