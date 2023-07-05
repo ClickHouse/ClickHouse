@@ -122,6 +122,7 @@ public:
     virtual DataPartStorageIteratorPtr iterate() const = 0;
 
     /// Get metadata for a file inside path dir.
+    virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
     virtual size_t getFileSize(const std::string & file_name) const = 0;
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
