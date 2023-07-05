@@ -36,6 +36,7 @@
 01455_shard_leaf_max_rows_bytes_to_read
 01495_subqueries_in_with_statement
 01504_rocksdb
+01526_client_start_and_exit
 01527_dist_sharding_key_dictGet_reload
 01528_allow_nondeterministic_optimize_skip_unused_shards
 01540_verbatim_partition_pruning
@@ -50,6 +51,7 @@
 01624_soft_constraints
 01651_bugs_from_15889
 01656_test_query_log_factories_info
+01676_clickhouse_client_autocomplete
 01681_bloom_filter_nullable_column
 01700_system_zookeeper_path_in
 01710_projection_additional_filters
