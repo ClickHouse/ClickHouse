@@ -40,4 +40,6 @@ def test_start_and_stop_replica_send(started_cluster):
     node1.query("SET max_partitions_per_insert_block = 0;")
     node1.query("SYSTEM START DISTRIBUTED SENDS distributed_table;")
     node1.query("SYSTEM FLUSH SETTINGS DISTRIBUTED distributed_table;")
+
+    # Write only to this node when start distributed sends
     assert node1.query("SELECT COUNT() FROM distributed_table").rstrip() == "2"
