@@ -201,7 +201,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
-        
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
