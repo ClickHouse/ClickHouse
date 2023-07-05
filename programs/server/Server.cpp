@@ -1390,6 +1390,10 @@ try
 
     {
         std::lock_guard lock(servers_lock);
+        /// We should start interserver communications before (and more imporant shutdown after) tables.
+        /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
+        /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
+        /// communicate with zookeeper, execute merges, etc.
         createInterserverServers(config(), interserver_listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ false);
 
         for (auto & server : servers_to_start_before_tables)
@@ -1516,10 +1520,13 @@ try
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
             size_t current_connections = 0;
-            for (auto & server : servers_to_start_before_tables)
             {
-                server.stop();
-                current_connections += server.currentConnections();
+                std::lock_guard lock(servers_lock);
+                for (auto & server : servers_to_start_before_tables)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
             }
 
             if (current_connections)
@@ -2345,9 +2352,10 @@ void Server::updateServers(
     }
 
     createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
-    createInterserverServers(config, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    createInterserverServers(config, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ true);
 
     std::erase_if(servers, std::bind_front(check_server, ""));
+    std::erase_if(servers_to_start_before_tables, std::bind_front(check_server, ""));
 }
 
 }
