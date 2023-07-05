@@ -1,2 +1,2 @@
-default	::1	9181	0	0	3	1	1
+default	::1	9181	0	0	0	1	1	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS']
 zookeeper2	::1	9181	0	0	0	1
