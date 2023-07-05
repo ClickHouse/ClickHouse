@@ -711,7 +711,7 @@ def test_background_move(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy='moving_jbod_with_external'
+            SETTINGS storage_policy='moving_jbod_with_external, max_replicated_merges_in_queue=0'
         """
         )
 
@@ -784,7 +784,7 @@ def test_start_stop_moves(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy='moving_jbod_with_external'
+            SETTINGS storage_policy='moving_jbod_with_external', max_replicated_merges_in_queue=0
         """
         )
 
