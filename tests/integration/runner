@@ -351,6 +351,8 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
                 env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
+            elif image == "clickhouse/nginx-dav":
+                env_tags += "-e {}={} ".format("DOCKER_NGINX_DAV_TAG", tag)
             else:
                 logging.info("Unknown image %s" % (image))
 

@@ -37,19 +37,20 @@ from upload_result_helper import upload_results
 
 
 # When update, update
-# integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
+# tests/integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
 IMAGES = [
+    "clickhouse/dotnet-client",
+    "clickhouse/integration-helper",
+    "clickhouse/integration-test",
     "clickhouse/integration-tests-runner",
+    "clickhouse/kerberized-hadoop",
+    "clickhouse/kerberos-kdc",
     "clickhouse/mysql-golang-client",
     "clickhouse/mysql-java-client",
     "clickhouse/mysql-js-client",
     "clickhouse/mysql-php-client",
+    "clickhouse/nginx-dav",
     "clickhouse/postgresql-java-client",
-    "clickhouse/integration-test",
-    "clickhouse/kerberos-kdc",
-    "clickhouse/kerberized-hadoop",
-    "clickhouse/integration-helper",
-    "clickhouse/dotnet-client",
 ]
 
 
