@@ -598,6 +598,8 @@ Block ActionsDAG::updateHeader(Block header) const
     }
 
     ColumnsWithTypeAndName result_columns;
+
+
     result_columns.reserve(outputs.size());
 
     struct Frame
@@ -1874,10 +1876,10 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
-/// Take a node which result is predicate.
+/// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
-/// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
+/// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjunctionNodes conjunction;
@@ -2111,9 +2113,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
-                filter_name,
-                dumpDAG());
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
 
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
@@ -2140,18 +2142,29 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.rejected.size() == 1 && !conjunction.rejected.front()->result_type->equals(*predicate->result_type)
-        && conjunction.allowed.front()->type == ActionType::COLUMN)
-    {
-        // No further optimization can be done
+
+    if (conjunction.allowed.empty())
         return nullptr;
+
+    chassert(predicate->result_type);
+
+    if (conjunction.rejected.size() == 1)
+    {
+        chassert(conjunction.rejected.front()->result_type);
+
+        if (conjunction.allowed.front()->type == ActionType::COLUMN
+            && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
+        {
+            /// No further optimization can be done
+            return nullptr;
+        }
     }
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 
-    /// Now, when actions are created, update current DAG.
+    /// Now, when actions are created, update the current DAG.
 
     if (conjunction.rejected.empty())
     {

@@ -26,7 +26,6 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -67,6 +66,8 @@ public:
     // allow_missing - whether the transaction we want to rollback can be missing from storage
     // (can happen in case of exception during preprocessing)
     void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
+
+    void rollbackRequestNoLock(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
@@ -126,7 +127,7 @@ private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    std::string latest_snapshot_path;
+    SnapshotFileInfo latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;

@@ -542,7 +542,7 @@ LIMIT 10;
 10 rows in set. Elapsed: 5.956 sec. Processed 14.69 billion rows, 126.19 GB (2.47 billion rows/s., 21.19 GB/s.)
 ```
 
-11. Let's see which subreddits had the biggest increase in commnents from 2018 to 2019:
+11. Let's see which subreddits had the biggest increase in comments from 2018 to 2019:
 
 ```sql
 SELECT
@@ -718,4 +718,3 @@ ORDER BY quarter ASC;
 └────────────┴────────────┴───────────┴──────────┘
 
 70 rows in set. Elapsed: 325.835 sec. Processed 14.69 billion rows, 2.57 TB (45.08 million rows/s., 7.87 GB/s.)
-```

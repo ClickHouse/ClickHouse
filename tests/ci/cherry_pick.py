@@ -71,11 +71,11 @@ This pull-request will be merged automatically as it reaches the mergeable state
 ### If the PR was closed and then reopened
 
 If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
-necessary. Manually merging will do nothing, since `{label_backports_created}` \
+necessary. Manually merging will do nothing, since `{backport_created_label}` \
 prevents the original PR {pr_url} from being processed.
 
 If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
-You may also need to delete the `{label_backports_created}` label from the original PR.
+You may also need to delete the `{backport_created_label}` label from the original PR.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.

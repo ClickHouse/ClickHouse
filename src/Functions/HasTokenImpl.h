@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Common/StringSearcher.h>
 #include <Core/ColumnNumbers.h>
 
 
@@ -9,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -44,51 +46,47 @@ struct HasTokenImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        try
+        if (!ASCIICaseSensitiveTokenSearcher::isValidNeedle(pattern.data(), pattern.size()))
         {
-            /// Parameter `pattern` is supposed to be a literal of letters and/or numbers.
-            /// Otherwise, an exception from the constructor of `TokenSearcher` is thrown.
-            /// If no exception is thrown at that point, then no further error cases may occur.
-            TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
             if (res_null)
-                std::ranges::fill(res_null->getData(), false);
-
-            /// The current index in the array of strings.
-            size_t i = 0;
-            /// We will search for the next occurrence in all rows at once.
-            while (pos < end && end != (pos = searcher.search(pos, end - pos)))
-            {
-                /// Let's determine which index it refers to.
-                while (begin + haystack_offsets[i] <= pos)
-                {
-                    res[i] = negate;
-                    ++i;
-                }
-
-                /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + pattern.size() < begin + haystack_offsets[i])
-                    res[i] = !negate;
-                else
-                    res[i] = negate;
-
-                pos = begin + haystack_offsets[i];
-                ++i;
-            }
-
-            /// Tail, in which there can be no substring.
-            if (i < res.size())
-                memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
-        }
-        catch (...)
-        {
-            if (!res_null)
-                throw;
-            else
             {
                 std::ranges::fill(res, 0);
                 std::ranges::fill(res_null->getData(), true);
+                return;
             }
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
         }
+
+        TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
+        if (res_null)
+            std::ranges::fill(res_null->getData(), false);
+
+        /// The current index in the array of strings.
+        size_t i = 0;
+        /// We will search for the next occurrence in all rows at once.
+        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        {
+            /// Let's determine which index it refers to.
+            while (begin + haystack_offsets[i] <= pos)
+            {
+                res[i] = negate;
+                ++i;
+            }
+
+            /// We check that the entry does not pass through the boundaries of strings.
+            if (pos + pattern.size() < begin + haystack_offsets[i])
+                res[i] = !negate;
+            else
+                res[i] = negate;
+
+            pos = begin + haystack_offsets[i];
+            ++i;
+        }
+
+        /// Tail, in which there can be no substring.
+        if (i < res.size())
+            memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
     }
 
     template <typename... Args>

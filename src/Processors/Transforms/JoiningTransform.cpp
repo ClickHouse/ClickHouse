@@ -189,6 +189,7 @@ void JoiningTransform::transform(Chunk & chunk)
     }
     else
         block = readExecute(chunk);
+
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
@@ -310,16 +311,8 @@ void FillingRightJoinSideTransform::work()
 }
 
 
-DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
-    Block left_header_,
-    Block output_header_,
-    size_t max_block_size_,
-    JoinPtr join_)
-    : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
-    , left_header(left_header_)
-    , output_header(output_header_)
-    , max_block_size(max_block_size_)
-    , join(join_)
+DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(Block output_header)
+    : IProcessor(InputPorts{Block()}, OutputPorts{output_header})
 {
 }
 
@@ -373,7 +366,6 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
         if (!data.chunk.hasChunkInfo())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
         task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
-
     }
     else
     {
@@ -394,62 +386,18 @@ void DelayedJoinedBlocksWorkerTransform::work()
 {
     if (!task)
         return;
-    Block block;
-    if (!left_delayed_stream_finished)
-    {
-        block = task->delayed_blocks->next();
 
-        if (!block)
-        {
-            left_delayed_stream_finished = true;
-            block = nextNonJoinedBlock();
-        }
-    }
-    else
-    {
-        block = nextNonJoinedBlock();
-    }
+    Block block = task->delayed_blocks->next();
+
     if (!block)
     {
-        resetTask();
+        task.reset();
         return;
     }
 
     // Add block to the output
     auto rows = block.rows();
     output_chunk.setColumns(block.getColumns(), rows);
-}
-
-void DelayedJoinedBlocksWorkerTransform::resetTask()
-{
-    task.reset();
-    left_delayed_stream_finished = false;
-    setup_non_joined_stream = false;
-    non_joined_delayed_stream = nullptr;
-}
-
-Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
-{
-    if (!setup_non_joined_stream)
-    {
-        setup_non_joined_stream = true;
-        // Before read from non-joined stream, all blocks in left file reader must have been joined.
-        // For example, in HashJoin, it may return invalid mismatch rows from non-joined stream before
-        // the all blocks in left file reader have been finished, since the used flags are incomplete.
-        // To make only one processor could read from non-joined stream seems be a easy way.
-        if (task && task->left_delayed_stream_finish_counter->isLast())
-        {
-            if (!non_joined_delayed_stream)
-            {
-                non_joined_delayed_stream = join->getNonJoinedBlocks(left_header, output_header, max_block_size);
-            }
-        }
-    }
-    if (non_joined_delayed_stream)
-    {
-        return non_joined_delayed_stream->next();
-    }
-    return {};
 }
 
 DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_)
@@ -485,9 +433,6 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
     if (finished)
     {
-        // Since have memory limit, cannot handle all buckets parallelly by different
-        // DelayedJoinedBlocksWorkerTransform. So send the same task to all outputs.
-        // Wait for all DelayedJoinedBlocksWorkerTransform be idle before getting next bucket.
         for (auto & output : outputs)
         {
             if (output.isFinished())
@@ -503,14 +448,10 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
     if (delayed_blocks)
     {
-        // This counter is used to ensure that only the last DelayedJoinedBlocksWorkerTransform
-        // could read right non-joined blocks from the join.
-        auto left_delayed_stream_finished_counter = std::make_shared<JoiningTransform::FinishCounter>(outputs.size());
         for (auto & output : outputs)
         {
             Chunk chunk;
-            auto task = std::make_shared<DelayedBlocksTask>(delayed_blocks, left_delayed_stream_finished_counter);
-            chunk.setChunkInfo(task);
+            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
             output.push(std::move(chunk));
         }
         delayed_blocks = nullptr;

@@ -75,6 +75,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         columns,
         ConstraintsDescription{},
         String{},
+        global_context->getSettingsRef().rename_files_after_processing,
     };
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);

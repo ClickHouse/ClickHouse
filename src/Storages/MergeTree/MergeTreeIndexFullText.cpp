@@ -92,7 +92,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -624,7 +624,11 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    auto prepared_set = right_argument.tryGetPreparedSet(data_types);
+    auto future_set = right_argument.tryGetPreparedSet(data_types);
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

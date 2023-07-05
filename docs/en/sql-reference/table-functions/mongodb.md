@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/mongodb
-sidebar_position: 42
+sidebar_position: 135
 sidebar_label: mongodb
 ---
 

@@ -16,7 +16,6 @@ namespace Util
 namespace MongoDB
 {
     class Connection;
-    class Cursor;
 }
 }
 

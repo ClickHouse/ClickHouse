@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -99,11 +100,13 @@ class FunctionFromUnixTimestamp64 : public IFunction
 private:
     size_t target_scale;
     const char * name;
+    const bool allow_nonconst_timezone_arguments;
 public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_)
-        : target_scale(target_scale_), name(name_)
-    {
-    }
+    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context)
+        : target_scale(target_scale_)
+        , name(name_)
+        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+    {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -121,7 +124,7 @@ public:
 
         std::string timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
 
         return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }
