@@ -2,8 +2,10 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInterval.h>
 
+
 namespace DB
 {
+
 SerializationPtr DataTypeInterval::doGetDefaultSerialization() const { return std::make_shared<SerializationInterval>(kind); }
 
 bool DataTypeInterval::equals(const IDataType & rhs) const
@@ -25,4 +27,5 @@ void registerDataTypeInterval(DataTypeFactory & factory)
     factory.registerSimpleDataType("IntervalQuarter", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Quarter)); });
     factory.registerSimpleDataType("IntervalYear", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Year)); });
 }
+
 }
