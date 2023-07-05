@@ -112,11 +112,35 @@ public:
         bool need_check_structure);
 
     void startup() override;
+
+    /// To many shutdown methods....
+    ///
+    /// Partial shutdown called if we loose connection to zookeeper.
+    /// Table can also recover after partial shutdown and continue
+    /// to work. This method can be called regularly.
+    void partialShutdown(bool part_of_full_shutdown);
+
+    /// These two methods are called during final table shutdown (DROP/DETACH/overall server shutdown).
+    /// The shutdown process is splitted into two methods to make it more soft and fast. In database shutdown()
+    /// looks like:
+    /// for (table : tables)
+    ///     table->flushAndPrepareForShutdown()
+    ///
+    /// for (table : tables)
+    ///     table->shutdown()
+    ///
+    /// So we stop producting all the parts first for all tables (fast operation). And after we can wait in shutdown()
+    /// for other replicas to download parts.
+    ///
+    /// In flushAndPrepareForShutdown we cancel all part-producing operations:
+    /// merges, fetches, moves and so on. If it wasn't called before shutdown() -- shutdown() will
+    /// call it (defensive programming).
+    void flushAndPrepareForShutdown() override;
+    /// In shutdown we completly terminate table -- remove
+    /// is_active node and interserver handler. Also optionally
+    /// wait until other replicas will download some parts from our replica.
     void shutdown() override;
 
-    void flushAndPrepareForShutdown() override;
-
-    void partialShutdown(bool part_of_full_shutdown);
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);

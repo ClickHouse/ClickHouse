@@ -4870,6 +4870,11 @@ void StorageReplicatedMergeTree::partialShutdown(bool part_of_full_shutdown)
     queue.notifySubscribersOnPartialShutdown();
     if (!part_of_full_shutdown)
     {
+        /// If we are going to completely shutdown table we allow other
+        /// replicas to fetch parts which are unique for our replica.
+        ///
+        /// Replicas try to fetch part only in case the source replica is active,
+        /// so don't reset handler here.
         LOG_DEBUG(log, "Reset active node, replica will be inactive");
         replica_is_active_node = nullptr;
     }
