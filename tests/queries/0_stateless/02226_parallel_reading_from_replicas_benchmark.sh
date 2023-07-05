@@ -17,6 +17,8 @@ opts=(
     --allow_experimental_parallel_reading_from_replicas 1
     --parallel_replicas_for_non_replicated_merge_tree 1
     --max_parallel_replicas 3
+    --use_hedged_requests 0
+    --cluster_for_parallel_replicas parallel_replicas
 
     --iterations 1
 )
