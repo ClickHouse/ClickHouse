@@ -53,7 +53,9 @@ select * from ttl_00933_1 order by d;
 
 -- const DateTime TTL positive
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl now()-1000) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2000-10-10 00:00:00'::DateTime)
+engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;
@@ -61,7 +63,7 @@ select * from ttl_00933_1;
 
 -- const DateTime TTL negative
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl now()+1000) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2100-10-10 00:00:00'::DateTime) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;
@@ -69,7 +71,7 @@ select * from ttl_00933_1;
 
 -- const Date TTL positive
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl today()-1) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2000-10-10'::Date) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;
@@ -77,7 +79,7 @@ select * from ttl_00933_1;
 
 -- const Date TTL negative
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl today()+1) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2100-10-10'::Date) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;

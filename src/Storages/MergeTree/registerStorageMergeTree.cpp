@@ -572,7 +572,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, args.attach);
         }
 
         if (args.query.columns_list && args.query.columns_list->indices)
@@ -595,7 +595,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, args.attach);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
