@@ -1,7 +1,6 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/SymbolIndex.h>
-#include <base/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -151,6 +150,7 @@ void collectSymbolsFromProgramHeaders(
          * It's address is the shared lib's address + the virtual address
          */
         const ElfW(Dyn) * dyn_begin = reinterpret_cast<const ElfW(Dyn) *>(info->dlpi_addr + info->dlpi_phdr[header_index].p_vaddr);
+        __msan_unpoison(&dyn_begin, sizeof(dyn_begin));
 
         /// For unknown reason, addresses are sometimes relative sometimes absolute.
         auto correct_address = [](ElfW(Addr) base, ElfW(Addr) ptr)
@@ -385,6 +385,7 @@ void collectSymbolsFromELF(
     build_id = our_build_id;
 #else
     /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison(info, sizeof(*info));
     __msan_unpoison_string(info->dlpi_name);
 
     object_name = info->dlpi_name;
