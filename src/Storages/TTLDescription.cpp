@@ -60,6 +60,10 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
     /// Do not apply this check in ATTACH queries for compatibility reasons.
     if (!is_attach)
     {
+        if (ttl_expression->getRequiredColumns().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TTL expression {} does not depend on any of the columns of the table", result_column_name);
+
         for (const auto & action : ttl_expression->getActions())
         {
             if (action.node->type == ActionsDAG::ActionType::FUNCTION)
