@@ -160,7 +160,7 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     if (use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    auto buf = createReadBufferFromFileBase(path, local_read_settings);
+    auto buf = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
 
     if (getFileSizeFromReadBuffer(*buf) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
@@ -510,9 +510,6 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     current_file_segment->use();
     implementation_buffer = getImplementationBuffer(*current_file_segment);
 
-    if (read_type == ReadType::CACHED)
-        current_file_segment->incrementHitsCount();
-
     LOG_TEST(
         log, "New segment range: {}, old range: {}",
         current_file_segment->range().toString(), completed_range.toString());
@@ -855,9 +852,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(file_segments->front());
-
-        if (read_type == ReadType::CACHED)
-            file_segments->front().incrementHitsCount();
+        file_segments->front().use();
     }
 
     chassert(!internal_buffer.empty());
