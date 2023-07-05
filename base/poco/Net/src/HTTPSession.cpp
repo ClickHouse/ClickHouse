@@ -13,8 +13,8 @@
 
 
 #include "Poco/Net/HTTPSession.h"
-#include "Poco/Net/HTTPBufferAllocator.h"
 #include "Poco/Net/NetException.h"
+#include "Poco/Net/HTTPBasicStreamBuf.h"
 #include <cstring>
 
 
@@ -68,14 +68,6 @@ HTTPSession::HTTPSession(const StreamSocket& socket, bool keepAlive):
 
 HTTPSession::~HTTPSession()
 {
-	try
-	{
-		if (_pBuffer) HTTPBufferAllocator::deallocate(_pBuffer, HTTPBufferAllocator::BUFFER_SIZE);
-	}
-	catch (...)
-	{
-		poco_unexpected();
-	}
 	try
 	{
 		close();
@@ -177,10 +169,10 @@ void HTTPSession::refill()
 {
 	if (!_pBuffer)
 	{
-		_pBuffer = HTTPBufferAllocator::allocate(HTTPBufferAllocator::BUFFER_SIZE);
+		_pBuffer = std::make_unique<char[]>(HTTP_DEFAULT_BUFFER_SIZE);
 	}
-	_pCurrent = _pEnd = _pBuffer;
-	int n = receive(_pBuffer, HTTPBufferAllocator::BUFFER_SIZE);
+	_pCurrent = _pEnd = _pBuffer.get();
+	int n = receive(_pBuffer.get(), HTTP_DEFAULT_BUFFER_SIZE);
 	_pEnd += n;
 }
 
@@ -199,7 +191,7 @@ void HTTPSession::connect(const SocketAddress& address)
 	_socket.setNoDelay(true);
 	// There may be leftover data from a previous (failed) request in the buffer,
 	// so we clear it.
-	_pCurrent = _pEnd = _pBuffer;
+	_pCurrent = _pEnd = _pBuffer.get();
 }
 
 

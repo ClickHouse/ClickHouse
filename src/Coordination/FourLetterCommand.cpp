@@ -297,6 +297,7 @@ String ConfCommand::run()
 
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
 
@@ -542,7 +543,7 @@ String CleanResourcesCommand::run()
 
 String FeatureFlagsCommand::run()
 {
-    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->feature_flags;
+    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->getFeatureFlags();
 
     StringBuffer ret;
 
