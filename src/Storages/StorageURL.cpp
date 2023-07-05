@@ -400,6 +400,17 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         const auto settings = context->getSettings();
 
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        if (auto proxy_config_opt = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https"))
+        {
+            auto proxy_config = proxy_config_opt.value();
+
+            poco_proxy_config.host = proxy_config.host;
+            poco_proxy_config.port = proxy_config.port;
+            poco_proxy_config.protocol = proxy_config.scheme;
+        }
+
         try
         {
             auto res = std::make_unique<ReadWriteBufferFromHTTP>(
@@ -415,7 +426,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 &context->getRemoteHostFilter(),
                 delay_initialization,
                 /* use_external_buffer */ false,
-                /* skip_url_not_found_error */ skip_url_not_found_error);
+                /* skip_url_not_found_error */ skip_url_not_found_error,
+                /* file_info */ std::nullopt,
+                poco_proxy_config);
 
             if (context->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {
