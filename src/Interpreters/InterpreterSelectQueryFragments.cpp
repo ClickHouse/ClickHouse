@@ -999,6 +999,11 @@ bool needPushDownChild(QueryPlanStepPtr step)
         return true;
     }
 
+    if (dynamic_cast<RollupStep *>(step.get()) || dynamic_cast<CubeStep *>(step.get()))
+    {
+        return true;
+    }
+
     if (dynamic_cast<ExpressionStep *>(step.get()))
     {
         return step->getStepDescription() != "Before LIMIT BY";
@@ -1304,7 +1309,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(Query
 
     DataPartition partition;
 //    if (expressions.group_by_elements_actions.empty())
-    if (query_analyzer->aggregationKeys().empty())
+    if (query_analyzer->aggregationKeys().empty() || aggregating_step->withCubeOrRollup())
     {
         partition.type = PartitionType::UNPARTITIONED;
     }
@@ -1975,12 +1980,10 @@ void InterpreterSelectQueryFragments::executeSinglePlan(QueryPlan & query_plan, 
     // code for "second_stage" that has to execute the rest.
     if (expressions.need_aggregate)
     {
-        executeAggregation(
-            query_plan, expressions.before_aggregation, aggregate_overflow_row, query_info.input_order_info);
+        bool aggregate_final = !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
-        bool aggregate_final =
-            expressions.need_aggregate &&
-            !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
+        executeAggregation(
+            query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
 
         if (!aggregate_final)
         {
@@ -2548,18 +2551,9 @@ void InterpreterSelectQueryFragments::executeFetchColumns(QueryPlan & query_plan
         if (!subquery)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Subquery expected");
 
-        if (context->getSettingsRef().allow_experimental_query_coordination)
-        {
-            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQueryFragments>(
-                subquery, getSubqueryContext(context),
-                options.copy().subquery().noModify(), required_columns);
-        }
-        else
-        {
-            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                subquery, getSubqueryContext(context),
-                options.copy().subquery().noModify(), required_columns);
-        }
+        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQueryFragments>(
+            subquery, getSubqueryContext(context),
+            options.copy().subquery().noModify(), required_columns);
 
         interpreter_subquery->addStorageLimits(storage_limits);
 
@@ -2789,7 +2783,7 @@ static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryE
     return result;
 }
 
-void InterpreterSelectQueryFragments::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, InputOrderInfoPtr group_by_info)
+void InterpreterSelectQueryFragments::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
     auto expression_before_aggregation = std::make_shared<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
@@ -2798,7 +2792,7 @@ void InterpreterSelectQueryFragments::executeAggregation(QueryPlan & query_plan,
     if (options.is_projection_query)
         return;
 
-    query_plan.addStep(executeAggregationImpl(query_plan.getCurrentDataStream(), overflow_row, true, group_by_info));
+    query_plan.addStep(executeAggregationImpl(query_plan.getCurrentDataStream(), overflow_row, final, group_by_info));
 
     addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {expression});
 }
@@ -2850,6 +2844,7 @@ std::shared_ptr<AggregatingStep> InterpreterSelectQueryFragments::executeAggrega
 
     const bool should_produce_results_in_order_of_bucket_number = true;
 
+    const auto & query = getSelectQuery();
     auto aggregating_step = std::make_shared<AggregatingStep>(
         output_stream,
         std::move(aggregator_params),
@@ -2865,36 +2860,12 @@ std::shared_ptr<AggregatingStep> InterpreterSelectQueryFragments::executeAggrega
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings.enable_memory_bound_merging_of_aggregation_results,
-        !group_by_info && settings.force_aggregation_in_order);
+        !group_by_info && settings.force_aggregation_in_order,
+        query.group_by_with_totals,
+        query.group_by_with_rollup,
+        query.group_by_with_cube);
 
     return aggregating_step;
-}
-
-std::shared_ptr<MergingAggregatedStep> InterpreterSelectQueryFragments::executeMergeAggregated(const DataStream & output_stream, bool overflow_row, bool final, bool has_grouping_sets)
-{
-    /// If aggregate projection was chosen for table, avoid adding MergeAggregated.
-    /// It is already added by storage (because of performance issues).
-    /// TODO: We should probably add another one processing stage for storage?
-    ///       WithMergeableStateAfterAggregation is not ok because, e.g., it skips sorting after aggregation.
-    if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
-        return nullptr;
-
-    /// Used to determine if we should use memory bound merging strategy.
-    auto group_by_sort_description
-        = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
-
-    const bool should_produce_results_in_order_of_bucket_number = true;
-
-    return executeMergeAggregatedImpl(
-        output_stream,
-        overflow_row,
-        final,
-        has_grouping_sets,
-        context->getSettingsRef(),
-        query_analyzer->aggregationKeys(),
-        query_analyzer->aggregates(),
-        should_produce_results_in_order_of_bucket_number,
-        std::move(group_by_sort_description));
 }
 
 

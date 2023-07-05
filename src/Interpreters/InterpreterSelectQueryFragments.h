@@ -183,9 +183,8 @@ private:
     void executeFetchColumns(QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
-        QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, InputOrderInfoPtr group_by_info);
+        QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     std::shared_ptr<AggregatingStep> executeAggregationImpl(const DataStream & output_stream, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    std::shared_ptr<MergingAggregatedStep> executeMergeAggregated(const DataStream & output_stream, bool overflow_row, bool final, bool has_grouping_sets);
 
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);

@@ -80,6 +80,11 @@ public:
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
+    bool withCubeOrRollup() const
+    {
+        return with_totals || with_rollup || with_cube;
+    }
+
     std::shared_ptr<AggregatingStep> clone(bool final_) const
     {
         std::shared_ptr<AggregatingStep> clone_step = std::make_shared<AggregatingStep>(
@@ -97,7 +102,10 @@ public:
             group_by_sort_description,
             should_produce_results_in_order_of_bucket_number,
             memory_bound_merging_of_aggregation_results_enabled,
-            explicit_sorting_required_for_aggregation_in_order);
+            explicit_sorting_required_for_aggregation_in_order,
+            with_totals,
+            with_rollup,
+            with_cube);
 
         return clone_step;
     }
