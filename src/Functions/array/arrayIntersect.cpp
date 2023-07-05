@@ -1,5 +1,3 @@
-#include <cmath>
-#include <cstdio>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -20,13 +18,10 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
-#include <sys/syslog.h>
 
 
 namespace DB
