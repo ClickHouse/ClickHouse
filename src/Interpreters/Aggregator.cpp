@@ -1576,7 +1576,7 @@ bool Aggregator::executeOnBlock(Columns columns,
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            executeWithoutKeyImpl<true>(result.without_key, num_rows, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
+            executeWithoutKeyImpl<true>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
         }
         else
 #endif
