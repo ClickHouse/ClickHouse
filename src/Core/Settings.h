@@ -373,6 +373,8 @@ class IColumn;
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
     M(Seconds, max_execution_time, 0, "If query run time exceeded the specified number of seconds, the behavior will be determined by the 'timeout_overflow_mode' which by default is - throw an exception. Note that the timeout is checked and query can stop only in designated places during data processing. It currently cannot stop during merging of aggregation states or during query analysis, and the actual run time will be higher than the value of this setting.", 0) \
     M(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
+    M(Seconds, max_execution_time_leaf, 0, "Similar semantic to max_execution_time but only apply on leaf node for distributed queries, the time our behavior will be determined by 'timeout_overflow_mode_leaf' which by default is - throw an exception", 0) \
+    M(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, "What to do when the leaf limit is exceeded.", 0) \
     \
     M(UInt64, min_execution_speed, 0, "Minimum number of execution rows per second.", 0) \
     M(UInt64, max_execution_speed, 0, "Maximum number of execution rows per second.", 0) \
