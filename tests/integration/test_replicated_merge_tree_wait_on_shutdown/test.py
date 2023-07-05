@@ -80,5 +80,5 @@ def test_shutdown_and_wait(start_cluster):
 
     # It can happend that the second replica is superfast
     assert node1.contains_in_log(
-        "Successfuly waited all the parts"
+        "Successfully waited all the parts"
     ) or node1.contains_in_log("All parts found on replica")
