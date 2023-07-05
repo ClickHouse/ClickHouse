@@ -9,12 +9,19 @@ import time
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", main_configs=["config/merge_tree_conf.xml"], with_zookeeper=True, stay_alive=True
+    "node1",
+    main_configs=["config/merge_tree_conf.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
 )
 
 node2 = cluster.add_instance(
-    "node2", main_configs=["config/merge_tree_conf.xml"], with_zookeeper=True, stay_alive=True
+    "node2",
+    main_configs=["config/merge_tree_conf.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
 )
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -27,9 +34,10 @@ def start_cluster():
 
 
 def test_shutdown_and_wait(start_cluster):
-
     for i, node in enumerate([node1, node2]):
-        node.query(f"CREATE TABLE test_table (value UInt64) ENGINE=ReplicatedMergeTree('/test/table', 'r{i}') ORDER BY tuple()")
+        node.query(
+            f"CREATE TABLE test_table (value UInt64) ENGINE=ReplicatedMergeTree('/test/table', 'r{i}') ORDER BY tuple()"
+        )
 
     node1.query("INSERT INTO test_table VALUES (0)")
     node2.query("SYSTEM SYNC REPLICA test_table")
@@ -71,4 +79,6 @@ def test_shutdown_and_wait(start_cluster):
     assert node2.query("SELECT count() FROM system.replication_queue") == "0\n"
 
     # It can happend that the second replica is superfast
-    assert node1.contains_in_log("Successfuly waited all the parts") or node1.contains_in_log("All parts found on replica")
+    assert node1.contains_in_log(
+        "Successfuly waited all the parts"
+    ) or node1.contains_in_log("All parts found on replica")
