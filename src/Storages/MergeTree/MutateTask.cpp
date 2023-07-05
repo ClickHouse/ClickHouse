@@ -301,14 +301,16 @@ getColumnsForNewDataPart(
         auto it = renamed_columns_from_to.find(name);
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
-        if (!storage_columns_set.contains(new_name))
+        /// Column can be removed only in this data part by CLEAR COLUMN query.
+        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
             continue;
 
         /// In compact part we read all columns and all of them are in @updated_header.
         /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
-        if (!updated_header.has(new_name) && isWidePart(source_part))
+        if (!updated_header.has(new_name))
         {
-            new_serialization_infos.emplace(new_name, old_info);
+            if (isWidePart(source_part))
+                new_serialization_infos.emplace(new_name, old_info);
             continue;
         }
 
