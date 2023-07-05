@@ -912,8 +912,8 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinRISCV64:
-    needs: [ DockerHubPush, FastTest, StyleCheck ]
-    runs-on: [ self-hosted, builder ]
+    needs: [DockerHubPush, FastTest, StyleCheck]
+    runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
         run: |
