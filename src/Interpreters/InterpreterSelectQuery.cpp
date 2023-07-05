@@ -836,68 +836,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         need_analyze_again = true;
     }
 
-    if (storage
-        /// While only analyzing we don't know anything about parts, so any decision about parallel would be wrong
-        && !options.only_analyze && can_analyze_again && settings.max_parallel_replicas > 1
-        && settings.allow_experimental_parallel_reading_from_replicas > 0 && settings.parallel_replicas_custom_key.value.empty())
-    {
-        if (getTrivialCount(0).has_value())
-        {
-            /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("max_parallel_replicas", UInt64{0});
-            need_analyze_again = true;
-            LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
-        }
-        else if (auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-                 storage_merge_tree && settings.parallel_replicas_min_number_of_rows_per_replica)
-        {
-            auto query_info_copy = query_info;
-            /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
-            addPrewhereAliasActions();
-            auto & prewhere_info = analysis_result.prewhere_info;
-            if (prewhere_info)
-            {
-                query_info_copy.prewhere_info = prewhere_info;
-                if (query.prewhere() && !query.where())
-                    query_info_copy.prewhere_info->need_filter = true;
-            }
-
-            ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
-
-            auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-            auto local_limits = getStorageLimits(*context, options);
-            if (!query.distinct && !query.limit_with_ties && !query.prewhere() && !query.where() && query_info_copy.filter_asts.empty()
-                && !query.groupBy() && !query.having() && !query.orderBy() && !query.limitBy() && !query.join()
-                && !query_analyzer->hasAggregation() && !query_analyzer->hasWindow() && query.limitLength()
-                && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-            {
-                query_info_copy.limit = limit_length + limit_offset;
-            }
-            /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-            UInt64 rows_to_read
-                = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info_copy, added_filter_nodes);
-            /// Note that we treat an estimation of 0 rows as a real estimation of no data to be read
-            size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
-            LOG_TRACE(
-                log, "Estimated {} rows to read, which is work enough for {} parallel replicas", rows_to_read, number_of_replicas_to_use);
-
-            if (number_of_replicas_to_use <= 1)
-            {
-                context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                context->setSetting("max_parallel_replicas", UInt64{0});
-                need_analyze_again = true;
-                LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
-            }
-            else if (number_of_replicas_to_use < settings.max_parallel_replicas)
-            {
-                /// TODO: Confirm that reducing the number of parallel replicas doesn't require a re-analysis
-                context->setSetting("max_parallel_replicas", number_of_replicas_to_use);
-                LOG_DEBUG(log, "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
-            }
-        }
-    }
+    if (can_analyze_again)
+        need_analyze_again |= adjustParallelReplicasAfterAnalysis();
 
     if (need_analyze_again)
     {
@@ -945,6 +885,72 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header, true);
+}
+
+bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
+{
+    const Settings & settings = context->getSettingsRef();
+    ASTSelectQuery & query = getSelectQuery();
+
+    /// While only_analyze we don't know anything about parts, so any decision about how many parallel replicas to use would be wrong
+    if (!storage || options.only_analyze || settings.max_parallel_replicas <= 1
+        || settings.allow_experimental_parallel_reading_from_replicas == 0 || !settings.parallel_replicas_custom_key.value.empty())
+        return false;
+
+    if (getTrivialCount(0).has_value())
+    {
+        /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("max_parallel_replicas", UInt64{0});
+        LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
+        return true;
+    }
+
+    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    if (!storage_merge_tree || settings.parallel_replicas_min_number_of_rows_per_replica == 0)
+        return false;
+
+    auto query_info_copy = query_info;
+
+    /// There is a couple of instances where we there might be a lower limit on the rows to read
+    /// * The settings.max_rows_to_read setting
+    /// * A LIMIT in a simple query (see maxBlockSizeByLimit)
+    UInt64 max_rows = maxBlockSizeByLimit();
+    if (settings.max_rows_to_read)
+        max_rows = max_rows ? std::min(max_rows, settings.max_rows_to_read.value) : settings.max_rows_to_read;
+    query_info_copy.limit = max_rows;
+
+    /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
+    addPrewhereAliasActions();
+    auto & prewhere_info = analysis_result.prewhere_info;
+    if (prewhere_info)
+    {
+        query_info_copy.prewhere_info = prewhere_info;
+        if (query.prewhere() && !query.where())
+            query_info_copy.prewhere_info->need_filter = true;
+    }
+    /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
+    UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info_copy, added_filter_nodes);
+    /// Note that we treat an estimation of 0 rows as a real estimation of no data to be read
+    size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
+    LOG_TRACE(log, "Estimated {} rows to read, which is work enough for {} parallel replicas", rows_to_read, number_of_replicas_to_use);
+
+    if (number_of_replicas_to_use <= 1)
+    {
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("max_parallel_replicas", UInt64{0});
+        LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
+        return true;
+    }
+    else if (number_of_replicas_to_use < settings.max_parallel_replicas)
+    {
+        context->setSetting("max_parallel_replicas", number_of_replicas_to_use);
+        LOG_DEBUG(log, "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
+        /// No need to reanalyze
+    }
+    return false;
 }
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
@@ -2354,6 +2360,41 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     }
 }
 
+/** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
+ *  but LIMIT is specified, and limit + offset < max_block_size,
+ *  then as the block size we will use limit + offset (not to read more from the table than requested),
+ *  and also set the number of threads to 1.
+ */
+UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
+{
+    const auto & query = query_ptr->as<const ASTSelectQuery &>();
+
+    auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+
+    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
+     *  but LIMIT is specified, and limit + offset < max_block_size,
+     *  then as the block size we will use limit + offset (not to read more from the table than requested),
+     *  and also set the number of threads to 1.
+     */
+    if (!query.distinct
+       && !query.limit_with_ties
+       && !query.prewhere()
+       && !query.where()
+       && query_info.filter_asts.empty()
+       && !query.groupBy()
+       && !query.having()
+       && !query.orderBy()
+       && !query.limitBy()
+       && !query.join()
+       && !query_analyzer->hasAggregation()
+       && !query_analyzer->hasWindow()
+       && query.limitLength()
+       && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+        return limit_length + limit_offset;
+
+    return 0;
+}
+
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
@@ -2424,9 +2465,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 
     UInt64 max_block_size = settings.max_block_size;
-
-    auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-
     auto local_limits = getStorageLimits(*context, options);
 
     /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
@@ -2434,29 +2472,16 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
      */
-    if (!query.distinct
-        && !query.limit_with_ties
-        && !query.prewhere()
-        && !query.where()
-        && query_info.filter_asts.empty()
-        && !query.groupBy()
-        && !query.having()
-        && !query.orderBy()
-        && !query.limitBy()
-        && !query.join()
-        && !query_analyzer->hasAggregation()
-        && !query_analyzer->hasWindow()
-        && query.limitLength()
-        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+    if (UInt64 max_block_limited = maxBlockSizeByLimit())
     {
-        if (limit_length + limit_offset < max_block_size)
+        if (max_block_limited < max_block_size)
         {
-            max_block_size = std::max<UInt64>(1, limit_length + limit_offset);
+            max_block_size = std::max<UInt64>(1, max_block_limited);
             max_threads_execute_query = max_streams = 1;
         }
-        if (limit_length + limit_offset < local_limits.local_limits.size_limits.max_rows)
+        if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
         {
-            query_info.limit = limit_length + limit_offset;
+            query_info.limit = max_block_limited;
         }
     }
 
