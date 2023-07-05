@@ -179,10 +179,9 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "riscv64",
-            "bundled": "bundled",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
+            "comment": "",
         },
     },
     "builds_report_config": {
