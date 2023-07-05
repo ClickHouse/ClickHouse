@@ -1,0 +1,13 @@
+CREATE TABLE t(a UInt64)
+ENGINE = MergeTree
+ORDER BY a;
+
+INSERT INTO t SELECT * FROM numbers_mt(1e3);
+OPTIMIZE TABLE t FINAL;
+
+EXPLAIN PIPELINE
+SELECT a
+FROM t
+GROUP BY a
+FORMAT PrettySpace
+SETTINGS optimize_aggregation_in_order = 1;
