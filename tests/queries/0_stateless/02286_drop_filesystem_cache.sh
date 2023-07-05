@@ -67,9 +67,4 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
                                    ON data_paths.cache_path = caches.cache_path"
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_022862"
-
-    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_022862 (key UInt32, value String)
-                                Engine=MergeTree()
-                                ORDER BY key
-                                SETTINGS storage_policy='${STORAGE_POLICY}_2', min_bytes_for_wide_part = 10485760"
 done
