@@ -136,38 +136,19 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     const auto & arr = getNullMapData();
-    const bool is_null = arr[n];
     static constexpr auto s = sizeof(arr[0]);
     char * pos;
     if (is_string)
     {
-        auto data = nested_column->getDataAt(n);
-        size_t string_size = data.size + 1;
-        auto memory_size = is_null ? s : s + sizeof(string_size) + string_size;
-        pos = arena.allocContinue(memory_size, begin);
-        memcpy(pos, &arr[n], s);
-        if (!is_null)
-        {
-            memcpy(pos + s, &string_size, sizeof(string_size));
-            memcpy(pos + s + sizeof(string_size), data.data, string_size);
-        }
-        return StringRef(pos, memory_size);
+        const auto * column_string = static_cast<const ColumnString *>(nested_column.get());
+        return column_string->serializeValueIntoArena(n, arena, begin, &arr[n]);
     }
     else if (is_fixed_size_column)
     {
-        auto data = nested_column->getDataAt(n);
-        auto size = data.size;
-        auto memory_size = is_null ? s : s + size;
-        pos = arena.allocContinue(memory_size, begin);
-        memcpy(pos, &arr[n], s);
-        if (!is_null)
-        {
-            memcpy(pos + s, data.data, size);
-        }
-        return StringRef(pos, memory_size);
+        return nested_column->serializeValueIntoArena(n, arena, begin, &arr[n]);
     }
     else
     {
