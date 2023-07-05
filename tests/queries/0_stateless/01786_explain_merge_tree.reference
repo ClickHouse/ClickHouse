@@ -10,7 +10,7 @@
         Keys: 
           y
           bitAnd(z, 3)
-        Condition: and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1])))
+        Condition: and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1]))
         Parts: 3/4
         Granules: 10/11
       PrimaryKey
@@ -46,7 +46,7 @@
                 {
                   "Type": "Partition",
                   "Keys": ["y", "bitAnd(z, 3)"],
-                  "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1])))",
+                  "Condition": "and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1]))",
                   "Initial Parts": 4,
                   "Selected Parts": 3,
                   "Initial Granules": 11,

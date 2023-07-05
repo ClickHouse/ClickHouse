@@ -108,7 +108,7 @@ def get_run_command(
 
     env_str = " ".join(envs)
     volume_with_broken_test = (
-        f"--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
+        f"--volume={repo_tests_path}/analyzer_tech_debt.txt:/analyzer_tech_debt.txt"
         if "analyzer" in check_name
         else ""
     )

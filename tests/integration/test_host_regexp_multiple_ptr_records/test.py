@@ -1,5 +1,7 @@
 import pytest
+import socket
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from time import sleep
 import os
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -32,10 +34,26 @@ def started_cluster():
         cluster.shutdown()
 
 
+def check_ptr_record(ip, hostname):
+    try:
+        host, aliaslist, ipaddrlist = socket.gethostbyaddr(ip)
+        if hostname.lower() == host.lower():
+            return True
+    except socket.herror:
+        pass
+    return False
+
+
 def setup_dns_server(ip):
     domains_string = "test3.example.com test2.example.com test1.example.com"
     example_file_path = f'{ch_server.env_variables["COREDNS_CONFIG_DIR"]}/example.com'
     run_and_check(f"echo '{ip} {domains_string}' > {example_file_path}", shell=True)
+
+    # DNS server takes time to reload the configuration.
+    for try_num in range(10):
+        if all(check_ptr_record(ip, host) for host in domains_string.split()):
+            break
+        sleep(1)
 
 
 def setup_ch_server(dns_server_ip):

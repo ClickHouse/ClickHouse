@@ -40,7 +40,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     size_t current_index = 0;
     while (RE2::FindAndConsume(&input, enum_or_range, &matched))
     {
-        std::string buffer = matched.ToString();
+        std::string buffer{matched};
         oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
         if (buffer.find(',') == std::string::npos)
