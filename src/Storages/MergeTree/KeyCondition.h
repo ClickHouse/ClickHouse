@@ -165,8 +165,7 @@ struct PlainRanges
 
     explicit PlainRanges(const Range & range);
 
-    explicit PlainRanges(Ranges & ranges_, bool may_have_intersection = false, bool ordered = true);
-    explicit PlainRanges(Ranges && ranges_, bool may_have_intersection = false, bool ordered = true);
+    explicit PlainRanges(const Ranges & ranges_, bool may_have_intersection = false, bool ordered = true);
 
     PlainRanges unionWith(const PlainRanges & other);
     PlainRanges intersectWith(const PlainRanges & other);
@@ -175,7 +174,7 @@ struct PlainRanges
     /// Example:
     ///         [1, 3], [2, 4], [6, 8] -> [1, 4], [6, 8]
     ///         [1, 3], [2, 4], (4, 5] -> [1, 4], [5, 5]
-    static Ranges makePlainFromUnordered(Ranges & ranges_);
+    static Ranges makePlainFromUnordered(Ranges ranges_);
     static Ranges makePlainFromOrdered(const Ranges & ranges_);
 
     static bool compareByLeftBound(const Range & lhs, const Range & rhs);

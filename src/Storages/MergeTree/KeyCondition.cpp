@@ -282,20 +282,12 @@ PlainRanges::PlainRanges(const Range & range)
 }
 
 
-PlainRanges::PlainRanges(Ranges & ranges_, bool may_have_intersection, bool ordered)
+PlainRanges::PlainRanges(const Ranges & ranges_, bool may_have_intersection, bool ordered)
 {
     if (may_have_intersection)
         ranges = ordered ? makePlainFromOrdered(ranges_) : makePlainFromUnordered(ranges_);
     else
-        ranges = std::move(ranges_);
-}
-
-PlainRanges::PlainRanges(Ranges && ranges_, bool may_have_intersection, bool ordered)
-{
-    if (may_have_intersection)
-        ranges = ordered ? makePlainFromOrdered(ranges_) : makePlainFromUnordered(ranges_);
-    else
-        ranges = std::move(ranges_);
+        ranges = ranges_;
 }
 
 Ranges PlainRanges::makePlainFromOrdered(const Ranges & ranges_)
@@ -308,7 +300,7 @@ Ranges PlainRanges::makePlainFromOrdered(const Ranges & ranges_)
     for (size_t i = 1; i < ranges_.size(); ++i)
     {
         const auto & cur = ranges_[i];
-        if (!ret.empty() && ret.back().intersectsRange(cur))
+        if (ret.back().intersectsRange(cur))
             ret.back() = *ret.back().unionWith(cur);
         else
             ret.push_back(cur);
@@ -317,7 +309,7 @@ Ranges PlainRanges::makePlainFromOrdered(const Ranges & ranges_)
     return ret;
 }
 
-Ranges PlainRanges::makePlainFromUnordered(Ranges & ranges_)
+Ranges PlainRanges::makePlainFromUnordered(Ranges ranges_)
 {
     if (ranges_.size() <= 1)
         return ranges_;
