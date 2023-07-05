@@ -254,6 +254,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
     }
 
+    /// Special method for ReplicatedMergeTree and DatabaseReplicated
+    virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
+
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const
     {
