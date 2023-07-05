@@ -836,17 +836,6 @@ void FileCache::removeFileSegment(const Key & key, size_t offset)
     locked_key->removeFileSegment(offset);
 }
 
-void FileCache::removeFileSegment(const Key & key, size_t offset)
-{
-    assertInitialized();
-
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL);
-    if (!locked_key)
-        return;
-
-    locked_key->removeFileSegment(offset);
-}
-
 void FileCache::removePathIfExists(const String & path)
 {
     removeKeyIfExists(createKeyForPath(path));

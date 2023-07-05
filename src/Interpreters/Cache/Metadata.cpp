@@ -598,21 +598,6 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool allow_thr
     return removeFileSegmentImpl(it, file_segment->lock(), allow_throw);
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
-{
-    auto it = key_metadata->find(offset);
-    if (it == key_metadata->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
-
-    return removeFileSegmentImpl(it, segment_lock);
-}
-
-KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock)
-{
-    auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock(), allow_throw);
-}
-
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock, bool allow_throw)
 {
     auto it = key_metadata->find(offset);
