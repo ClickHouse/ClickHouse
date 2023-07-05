@@ -7,7 +7,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
-#include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -163,12 +162,10 @@ public:
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr tryGetDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabaseUnlocked(const String & database_name) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(const String & database_name) const;
     Databases getDatabases() const;
-    Databases getDatabasesUnlocked() const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
@@ -266,7 +263,6 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     // As names we pass all the possible names that can be offered to user.
-    void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
 
