@@ -167,6 +167,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
+        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_darwin_arm:
         cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
@@ -181,6 +182,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake"
         )
+        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_arm:
         cc = compiler[: -len(ARM_SUFFIX)]
         cmake_flags.append(

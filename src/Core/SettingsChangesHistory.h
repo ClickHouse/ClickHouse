@@ -85,6 +85,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"use_with_fill_by_sorting_prefix", false, true, "Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with different values in sorting prefix are filled independently"},
               {"output_format_parquet_compliant_nested_types", false, true, "Change an internal field name in output Parquet file schema."}}},
     {"23.4", {{"allow_suspicious_indices", true, false, "If true, index can defined with identical expressions"},
+              {"allow_nonconst_timezone_arguments", true, false, "Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()."},
               {"connect_timeout_with_failover_ms", 50, 1000, "Increase default connect timeout because of async connect"},
               {"connect_timeout_with_failover_secure_ms", 100, 1000, "Increase default secure connect timeout because of async connect"},
               {"hedged_connection_timeout_ms", 100, 50, "Start new connection in hedged requests after 50 ms instead of 100 to correspond with previous connect timeout"}}},

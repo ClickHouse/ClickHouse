@@ -44,7 +44,7 @@ namespace MongoDB
     /// as its value.
     {
     public:
-        typedef SharedPtr<ObjectId> Ptr;
+        using Ptr = SharedPtr<ObjectId>;
 
         explicit ObjectId(const std::string & id);
         /// Creates an ObjectId from a string.

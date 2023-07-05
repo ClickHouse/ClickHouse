@@ -90,7 +90,7 @@ private:
 
     bool completeFileSegmentAndGetNext();
 
-    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
+    void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
 
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
@@ -146,8 +146,6 @@ private:
     ProfileEvents::Counters current_file_segment_counters;
 
     FileCache::QueryContextHolderPtr query_context_holder;
-
-    bool is_persistent;
 
     std::shared_ptr<FilesystemCacheLog> cache_log;
 };

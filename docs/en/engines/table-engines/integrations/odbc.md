@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/odbc
-sidebar_position: 2
+sidebar_position: 150
 sidebar_label: ODBC
 ---
 

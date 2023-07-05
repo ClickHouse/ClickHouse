@@ -68,7 +68,8 @@ namespace
         if (https)
         {
 #if USE_SSL
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
+            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
+            /// For more information about SNI, see the https://en.wikipedia.org/wiki/Server_Name_Indication
             auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
             if (resolve_host)
                 https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
@@ -184,6 +185,24 @@ namespace
         std::mutex mutex;
         std::unordered_map<Key, PoolPtr, Hasher> endpoints_pool;
 
+        void updateHostIfIpChanged(Entry & session, const String & new_ip)
+        {
+            const auto old_ip = session->getResolvedHost().empty() ? session->getHost() : session->getResolvedHost();
+
+            if (new_ip != old_ip)
+            {
+                session->reset();
+                if (session->getResolvedHost().empty())
+                {
+                    session->setHost(new_ip);
+                }
+                else
+                {
+                    session->setResolvedHost(new_ip);
+                }
+            }
+        }
+
     protected:
         HTTPSessionPool() = default;
 
@@ -238,13 +257,7 @@ namespace
 
                     if (resolve_host)
                     {
-                        /// Host can change IP
-                        const auto ip = DNSResolver::instance().resolveHost(host).toString();
-                        if (ip != session->getHost())
-                        {
-                            session->reset();
-                            session->setHost(ip);
-                        }
+                        updateHostIfIpChanged(session, DNSResolver::instance().resolveHost(host).toString());
                     }
                 }
                 /// Reset the message, once it has been printed,

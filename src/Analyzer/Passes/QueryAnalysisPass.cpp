@@ -2383,7 +2383,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
 
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
@@ -4767,13 +4766,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
-        if (table_node && dynamic_cast<StorageSet *>(table_node->getStorage().get()) != nullptr)
+        if (table_node)
         {
-            /// If table is already prepared set, we do not replace it with subquery
+            /// If table is already prepared set, we do not replace it with subquery.
+            /// If table is not a StorageSet, we'll create plan to build set in the Planner.
         }
-        else if (table_node || table_function_node)
+        else if (table_function_node)
         {
-            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            const auto & storage_snapshot = table_function_node->getStorageSnapshot();
             auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
 
             size_t columns_to_select_size = columns_to_select.size();
@@ -5209,14 +5209,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
-            auto set = makeSetForConstantValue(first_argument_constant_type,
+            const auto & settings = scope.context->getSettingsRef();
+
+            auto result_block = getSetElementsForConstantValue(first_argument_constant_type,
                 second_argument_constant_literal,
                 second_argument_constant_type,
-                scope.context->getSettingsRef());
+                settings.transform_null_in);
+
+            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+
+            auto set = std::make_shared<Set>(size_limits_for_set, 0, settings.transform_null_in);
+
+            set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
+            set->insertFromBlock(result_block.getColumnsWithTypeAndName());
+            set->finishInsert();
+
+            auto future_set = std::make_shared<FutureSetFromStorage>(std::move(set));
 
             /// Create constant set column for constant folding
 
-            auto column_set = ColumnSet::create(1, FutureSet(std::move(set)));
+            auto column_set = ColumnSet::create(1, std::move(future_set));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
 

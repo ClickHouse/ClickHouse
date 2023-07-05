@@ -710,8 +710,6 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
         metadata_transaction->createMetadataFile(path, blob_name, object_size);
     else
         metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
-
-    metadata_transaction->commit();
 }
 
 

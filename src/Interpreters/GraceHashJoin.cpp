@@ -304,10 +304,8 @@ void GraceHashJoin::initBuckets()
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-
     bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-    auto kind = table_join->kind();
-    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)) && table_join->oneDisjunct();
+    return !is_asof && isInnerOrLeft(table_join->kind()) && table_join->oneDisjunct();
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
@@ -327,6 +325,7 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
+
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
@@ -386,11 +385,23 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
 
 void GraceHashJoin::addBucket(Buckets & destination)
 {
-    auto & left_file = tmp_data->createStream(left_sample_block);
-    auto & right_file = tmp_data->createStream(prepareRightBlock(right_sample_block));
+    // There could be exceptions from createStream, In ci tests
+    // there is a certain probability of failure in allocating memory, see memory_tracker_fault_probability.
+    // It may terminate this thread and leave a broken hash_join, and another thread cores when it tries to
+    // use the broken hash_join. So we print an exception message here to help debug.
+    try
+    {
+        auto & left_file = tmp_data->createStream(left_sample_block);
+        auto & right_file = tmp_data->createStream(prepareRightBlock(right_sample_block));
 
-    BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), left_file, right_file, log);
-    destination.emplace_back(std::move(new_bucket));
+        BucketPtr new_bucket = std::make_shared<FileBucket>(destination.size(), left_file, right_file, log);
+        destination.emplace_back(std::move(new_bucket));
+    }
+    catch (...)
+    {
+        LOG_ERROR(&Poco::Logger::get("GraceHashJoin"), "Can't create bucket. current buckets size: {}", destination.size());
+        throw;
+    }
 }
 
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
@@ -471,30 +482,18 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
 
     return hash_join_is_empty;
 }
-/// Each bucket are handled by the following steps
-/// 1. build hash_join by the right side blocks.
-/// 2. join left side with the hash_join,
-/// 3. read right non-joined blocks from hash_join.
-/// buckets are handled one by one, each hash_join will not be release before the right non-joined blocks are emitted.
-///
-/// There is a finished counter in JoiningTransform/DelayedJoinedBlocksWorkerTransform,
-/// only one processor could take the non-joined blocks from right stream, and ensure all rows from
-/// left stream have been emitted before this.
-IBlocksStreamPtr
-GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
+
+IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
 {
-    return hash_join->getNonJoinedBlocks(left_sample_block_, result_sample_block_, max_block_size_);
+    /// We do no support returning non joined blocks here.
+    /// TODO: They _should_ be reported by getDelayedBlocks instead
+    return nullptr;
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
 {
 public:
-    explicit DelayedBlocks(
-        size_t current_bucket_,
-        Buckets buckets_,
-        InMemoryJoinPtr hash_join_,
-        const Names & left_key_names_,
-        const Names & right_key_names_)
+    explicit DelayedBlocks(size_t current_bucket_, Buckets buckets_, InMemoryJoinPtr hash_join_, const Names & left_key_names_, const Names & right_key_names_)
         : current_bucket(current_bucket_)
         , buckets(std::move(buckets_))
         , hash_join(std::move(hash_join_))
@@ -512,15 +511,12 @@ public:
 
         do
         {
-            // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
-            // There is a lock inside left_reader.read().
             block = left_reader.read();
             if (!block)
             {
                 return {};
             }
 
-            // block comes from left_reader, need to join with right table to get the result.
             Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
             block = std::move(blocks[current_idx]);
 
@@ -571,13 +567,17 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
-    size_t prev_keys_num = 0;
-    // If there is only one bucket, don't take this check.
-    if (hash_join && buckets.size() > 1)
+    if (hash_join)
     {
-        // Use previous hash_join's keys number to estimate next hash_join's size is reasonable.
-        prev_keys_num = hash_join->getTotalRowCount();
+        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
+        for (auto & block : right_blocks)
+        {
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets, bucket_idx);
+        }
     }
+
+    hash_join = makeInMemoryJoin();
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
     {
@@ -591,7 +591,6 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
@@ -602,6 +601,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
+
         return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }
 
@@ -611,9 +611,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
-GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(size_t reserve_num)
+GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin()
 {
-    return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row, reserve_num);
+    return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -623,6 +623,7 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
+    block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
     Block current_block;
@@ -637,23 +638,14 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     if (current_block.rows() > 0)
     {
         std::lock_guard lock(hash_join_mutex);
-
+        auto current_buckets = getCurrentBuckets();
+        if (!isPowerOf2(current_buckets.size())) [[unlikely]]
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Broken buckets. its size({}) is not power of 2", current_buckets.size());
+        }
         if (!hash_join)
             hash_join = makeInMemoryJoin();
 
-        // buckets size has been changed in other threads. Need to scatter current_block again.
-        // rehash could only happen under hash_join_mutex's scope.
-        auto current_buckets = getCurrentBuckets();
-        if (buckets_snapshot.size() != current_buckets.size())
-        {
-            LOG_TRACE(log, "mismatch buckets size. previous:{}, current:{}", buckets_snapshot.size(), getCurrentBuckets().size());
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, current_buckets.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, current_buckets, bucket_index);
-            current_block = std::move(blocks[bucket_index]);
-            if (!current_block.rows())
-                return;
-        }
-        auto prev_keys_num = hash_join->getTotalRowCount();
         hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
 
         if (!hasMemoryOverflow(hash_join))
@@ -661,9 +653,10 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
 
         current_block = {};
 
+        // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
+        buckets_snapshot = rehashBuckets(current_buckets.size() * 2);
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
-
-        buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
+        hash_join = nullptr;
 
         {
             Blocks current_blocks;
@@ -681,7 +674,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join = makeInMemoryJoin(prev_keys_num);
+        hash_join = makeInMemoryJoin();
 
         if (current_block.rows() > 0)
             hash_join->addJoinedBlock(current_block, /* check_limits = */ false);

@@ -41,6 +41,12 @@ void UpdatableSession<TSessionFactory>::updateSession(const Poco::URI & uri)
 }
 
 template <typename TSessionFactory>
+typename UpdatableSession<TSessionFactory>::SessionPtr UpdatableSession<TSessionFactory>::createDetachedSession(const Poco::URI & uri)
+{
+    return session_factory->buildNewSession(uri);
+}
+
+template <typename TSessionFactory>
 std::shared_ptr<UpdatableSession<TSessionFactory>> UpdatableSession<TSessionFactory>::clone(const Poco::URI & uri)
 {
     return std::make_shared<UpdatableSession<TSessionFactory>>(uri, max_redirects, session_factory);
@@ -89,21 +95,11 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::withPartialContent(const 
 }
 
 template <typename UpdatableSessionPtr>
-size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getRangeBegin() const { return read_range.begin.value_or(0); }
+size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getOffset() const { return read_range.begin.value_or(0) + offset_from_begin_pos; }
 
 template <typename UpdatableSessionPtr>
-size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getOffset() const { return getRangeBegin() + offset_from_begin_pos; }
-
-template <typename UpdatableSessionPtr>
-std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
-    UpdatableSessionPtr & current_session, Poco::URI uri_, Poco::Net::HTTPResponse & response,
-    const std::string & method_, bool for_object_info)
+void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::prepareRequest(Poco::Net::HTTPRequest & request, Poco::URI uri_, std::optional<HTTPRange> range) const
 {
-    // With empty path poco will send "POST  HTTP/1.1" its bug.
-    if (uri_.getPath().empty())
-        uri_.setPath("/");
-
-    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     request.setHost(uri_.getHost()); // use original, not resolved host name in header
 
     if (out_stream_callback)
@@ -111,15 +107,8 @@ std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
     else if (method == Poco::Net::HTTPRequest::HTTP_POST)
         request.setContentLength(0);    /// No callback - no body
 
-    for (auto & [header, value] : http_header_entries)
+    for (const auto & [header, value] : http_header_entries)
         request.set(header, value);
-
-    std::optional<HTTPRange> range;
-    if (!for_object_info)
-    {
-        if (withPartialContent(read_range))
-            range = HTTPRange{getOffset(), read_range.end};
-    }
 
     if (range)
     {
@@ -134,6 +123,25 @@ std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
 
     if (!credentials.getUsername().empty())
         credentials.authenticate(request);
+}
+
+template <typename UpdatableSessionPtr>
+std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
+    UpdatableSessionPtr & current_session, Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_, bool for_object_info)
+{
+    // With empty path poco will send "POST  HTTP/1.1" its bug.
+    if (uri_.getPath().empty())
+        uri_.setPath("/");
+
+    std::optional<HTTPRange> range;
+    if (!for_object_info)
+    {
+        if (withPartialContent(read_range))
+            range = HTTPRange{getOffset(), read_range.end};
+    }
+
+    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+    prepareRequest(request, uri_, range);
 
     LOG_TRACE(log, "Sending request to {}", uri_.toString());
 
@@ -174,6 +182,14 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getFileSize()
         return *file_info->file_size;
 
     throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
+}
+
+template <typename UpdatableSessionPtr>
+bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::supportsReadAt()
+{
+    if (!file_info)
+        file_info = getFileInfo();
+    return method == Poco::Net::HTTPRequest::HTTP_GET && file_info->seekable;
 }
 
 template <typename UpdatableSessionPtr>
@@ -405,7 +421,7 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::initialize()
         {
             /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
             /// will affect only performance, so a warning is enough.
-            LOG_WARNING(log, "Unable to read with range header: [{}, {}]", getRangeBegin(), *read_range.end);
+            LOG_WARNING(log, "Unable to read with range header: [{}, {}]", read_range.begin.value_or(0), *read_range.end);
         }
     }
 
@@ -538,8 +554,8 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
                 throw;
 
             /** Retry request unconditionally if nothing has been read yet.
-                 * Otherwise if it is GET method retry with range header.
-                 */
+                    * Otherwise if it is GET method retry with range header.
+                    */
             bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
             if (!can_retry_request)
                 throw;
@@ -572,6 +588,83 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
     working_buffer = internal_buffer;
     offset_from_begin_pos += working_buffer.size();
     return true;
+}
+
+template <typename UpdatableSessionPtr>
+size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback)
+{
+    /// Caller must have checked supportsReadAt().
+    /// This ensures we've sent at least one HTTP request and populated saved_uri_redirect.
+    chassert(file_info && file_info->seekable);
+
+    if (n == 0)
+        return 0;
+
+    Poco::URI uri_ = saved_uri_redirect.value_or(uri);
+    if (uri_.getPath().empty())
+        uri_.setPath("/");
+
+    size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
+
+    for (size_t attempt = 0;; ++attempt)
+    {
+        bool last_attempt = attempt + 1 >= settings.http_max_tries;
+
+        Poco::Net::HTTPRequest request(method, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        prepareRequest(request, uri_, HTTPRange { .begin = offset, .end = offset + n - 1});
+
+        LOG_TRACE(log, "Sending request to {} for range [{}, {})", uri_.toString(), offset, offset + n);
+
+        auto sess = session->createDetachedSession(uri_);
+
+        Poco::Net::HTTPResponse response;
+        std::istream * result_istr;
+
+        try
+        {
+            sess->sendRequest(request);
+            result_istr = receiveResponse(*sess, request, response, /*allow_redirects*/ false);
+
+            if (response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT &&
+                (offset != 0 || offset + n < *file_info->file_size))
+                throw Exception(
+                    ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                    "Expected 206 Partial Content, got {} when reading {} range [{}, {})",
+                    toString(response.getStatus()), uri_.toString(), offset, offset + n);
+
+            bool cancelled;
+            size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
+
+            return r;
+        }
+        catch (const Poco::Exception & e)
+        {
+            sess->attachSessionData(e.message());
+
+            LOG_ERROR(
+                log,
+                "HTTP request (positioned) to `{}` with range [{}, {}) failed at try {}/{}: {}",
+                uri_.toString(), offset, offset + n, attempt + 1, settings.http_max_tries,
+                e.what());
+
+            /// Decide whether to retry.
+
+            if (last_attempt)
+                throw;
+
+            /// Too many open files - non-retryable.
+            if (e.code() == POCO_EMFILE)
+                throw;
+
+            if (const auto * h = dynamic_cast<const HTTPException*>(&e);
+                h && !isRetriableError(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(h->getHTTPStatus())))
+                throw;
+
+            sleepForMilliseconds(milliseconds_to_wait);
+            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
+            continue;
+        }
+    }
 }
 
 template <typename UpdatableSessionPtr>
@@ -793,75 +886,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
         skip_not_found_url_,
         file_info_) {}
 
-RangedReadWriteBufferFromHTTPFactory::RangedReadWriteBufferFromHTTPFactory(
-    Poco::URI uri_,
-    std::string method_,
-    OutStreamCallback out_stream_callback_,
-    ConnectionTimeouts timeouts_,
-    const Poco::Net::HTTPBasicCredentials & credentials_,
-    UInt64 max_redirects_,
-    size_t buffer_size_,
-    ReadSettings settings_,
-    HTTPHeaderEntries http_header_entries_,
-    const RemoteHostFilter * remote_host_filter_,
-    bool delay_initialization_,
-    bool use_external_buffer_,
-    bool skip_not_found_url_)
-    : uri(uri_)
-    , method(std::move(method_))
-    , out_stream_callback(out_stream_callback_)
-    , timeouts(std::move(timeouts_))
-    , credentials(credentials_)
-    , max_redirects(max_redirects_)
-    , buffer_size(buffer_size_)
-    , settings(std::move(settings_))
-    , http_header_entries(std::move(http_header_entries_))
-    , remote_host_filter(remote_host_filter_)
-    , delay_initialization(delay_initialization_)
-    , use_external_buffer(use_external_buffer_)
-    , skip_not_found_url(skip_not_found_url_) {}
-
-std::unique_ptr<SeekableReadBuffer> RangedReadWriteBufferFromHTTPFactory::getReader()
-{
-    return std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        method,
-        out_stream_callback,
-        timeouts,
-        credentials,
-        max_redirects,
-        buffer_size,
-        settings,
-        http_header_entries,
-        remote_host_filter,
-        delay_initialization,
-        use_external_buffer,
-        skip_not_found_url,
-        file_info);
-}
-
-size_t RangedReadWriteBufferFromHTTPFactory::getFileSize()
-{
-    auto s = getFileInfo().file_size;
-    if (!s)
-        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
-    return *s;
-}
-
-bool RangedReadWriteBufferFromHTTPFactory::checkIfActuallySeekable()
-{
-    return getFileInfo().seekable;
-}
-
-HTTPFileInfo RangedReadWriteBufferFromHTTPFactory::getFileInfo()
-{
-    if (!file_info)
-        file_info = static_cast<ReadWriteBufferFromHTTP*>(getReader().get())->getFileInfo();
-    return *file_info;
-}
-
-String RangedReadWriteBufferFromHTTPFactory::getFileName() const { return uri.toString(); }
-
 
 PooledSessionFactory::PooledSessionFactory(
     const ConnectionTimeouts & timeouts_, size_t per_endpoint_pool_size_)
@@ -890,6 +914,7 @@ PooledReadWriteBufferFromHTTP::PooledReadWriteBufferFromHTTP(
         method_,
         out_stream_callback_,
         buffer_size_) {}
+
 
 template class UpdatableSession<SessionFactory>;
 template class UpdatableSession<PooledSessionFactory>;
