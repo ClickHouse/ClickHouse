@@ -632,7 +632,7 @@ Pipe StorageAzureBlob::read(
             query_info.query, virtual_block, local_context, nullptr);
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, configuration.format, getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageAzureBlobSource>(
@@ -994,8 +994,9 @@ Chunk StorageAzureBlobSource::generate()
                 size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
                 if (!chunk_size)
                     chunk_size = chunk.bytes();
-                updateRowsProgressApprox(
-                    *this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                if (chunk_size)
+                    updateRowsProgressApprox(
+                        *this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)

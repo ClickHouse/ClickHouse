@@ -440,7 +440,8 @@ Chunk HDFSSource::generate()
                 size_t chunk_size = input_format->getApproxBytesReadForChunk();
                 if (!chunk_size)
                     chunk_size = chunk.bytes();
-                updateRowsProgressApprox(*this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                if (chunk_size)
+                    updateRowsProgressApprox(*this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             for (const auto & virtual_column : requested_virtual_columns)
@@ -602,7 +603,7 @@ private:
 
 bool StorageHDFS::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe StorageHDFS::read(
@@ -640,7 +641,7 @@ Pipe StorageHDFS::read(
         });
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, format_name, getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)

@@ -290,7 +290,7 @@ StorageURLSource::StorageURLSource(
         input_format = FormatFactory::instance().getInput(
             format,
             *read_buf,
-            info.format_header,
+            block_for_format,
             context,
             max_block_size,
             format_settings,
@@ -346,8 +346,9 @@ Chunk StorageURLSource::generate()
                 size_t chunk_size = input_format->getApproxBytesReadForChunk();
                 if (!chunk_size)
                     chunk_size = chunk.bytes();
-                updateRowsProgressApprox(
-                    *this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                if (chunk_size)
+                    updateRowsProgressApprox(
+                        *this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
             }
 
             const String & path{curr_uri.getPath()};
@@ -765,7 +766,7 @@ Pipe IStorageURLBase::read(
         num_streams = 1;
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, format_name, getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -777,7 +778,13 @@ Pipe IStorageURLBase::read(
             read_from_format_info,
             iterator_wrapper,
             getReadMethod(),
-            getReadPOSTDataCallback(column_names, read_from_format_info.columns_description, query_info, local_context, processed_stage, max_block_size),
+            getReadPOSTDataCallback(
+                read_from_format_info.columns_description.getNamesOfPhysical(),
+                read_from_format_info.columns_description,
+                query_info,
+                local_context,
+                processed_stage,
+                max_block_size),
             format_name,
             format_settings,
             getName(),
@@ -804,19 +811,6 @@ Pipe StorageURLWithFailover::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
     auto iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, done = false]() mutable
@@ -827,7 +821,7 @@ Pipe StorageURLWithFailover::read(
         return uri_options;
     });
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, format_name, getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         read_from_format_info,

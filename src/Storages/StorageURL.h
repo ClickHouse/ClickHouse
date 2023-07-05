@@ -47,8 +47,6 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
-
     NamesAndTypesList getVirtuals() const override;
 
     static ColumnsDescription getTableStructureFromData(
@@ -109,6 +107,8 @@ protected:
         size_t max_block_size) const;
 
     bool supportsSubsetOfColumns() const override;
+
+    bool supportsSubcolumns() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 

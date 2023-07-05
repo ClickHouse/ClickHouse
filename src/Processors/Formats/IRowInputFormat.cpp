@@ -97,7 +97,6 @@ Chunk IRowInputFormat::generate()
 
     size_t num_rows = 0;
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
-
     try
     {
         RowReadExtension info;
