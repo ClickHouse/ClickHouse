@@ -74,7 +74,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
     format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
     format_settings.csv.allow_check_deserialize = settings.input_format_csv_allow_check_deserialize;
-    format_settings.csv.allow_set_default_if_deserialize_failed = settings.input_format_csv_allow_set_default_if_deserialize_failed;
+    format_settings.csv.set_default_if_deserialize_failed = settings.input_format_csv_set_default_if_deserialize_failed;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
