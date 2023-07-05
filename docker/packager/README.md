@@ -6,7 +6,7 @@ Usage:
 Build deb package with `clang-14` in `debug` mode:
 ```
 $ mkdir deb/test_output
-$ ./packager --output-dir deb/test_output/ --package-type deb --compiler=clang-14 --debug-build
+$ ./packager --output-dir deb/test_output/ --package-type deb --compiler=clang-14 --build-type=debug
 $ ls -l deb/test_output
 -rw-r--r-- 1 root root      3730 clickhouse-client_22.2.2+debug_all.deb
 -rw-r--r-- 1 root root  84221888 clickhouse-common-static_22.2.2+debug_amd64.deb
