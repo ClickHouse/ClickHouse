@@ -472,6 +472,9 @@ MergeTreeSetIndex::MergeTreeSetIndex(const ContextPtr & context, const Columns &
     // for (const auto & vv : indexes_mapping)
     //     std::cerr << vv.key_index << ' ' << vv.tuple_index << std::endl;
 
+    /// We prefer the key condition with shorter function chain. For example,
+    /// if the predicate is (x, f(x)) in ((x1, x2), (x3, x4)) then we prefer the condition
+    /// x in (x1, x3) instead of f(x) IN (x2, x4)
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
