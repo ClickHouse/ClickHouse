@@ -74,19 +74,22 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
-    const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
+    const FileSegment & file_segment, CachedOnDiskReadBufferFromFile::ReadType type)
 {
     if (!cache_log)
         return;
 
+    const auto range = file_segment.range();
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
         .source_file_path = source_file_path,
-        .file_segment_range = { file_segment_range.left, file_segment_range.right },
+        .file_segment_range = { range.left, range.right },
         .requested_range = { first_offset, read_until_position },
-        .file_segment_size = file_segment_range.size(),
+        .file_segment_key = file_segment.key().toString(),
+        .file_segment_offset = file_segment.offset(),
+        .file_segment_size = range.size(),
         .read_from_cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
@@ -495,7 +498,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     auto completed_range = current_file_segment->range();
 
     if (cache_log)
-        appendFilesystemCacheLog(completed_range, read_type);
+        appendFilesystemCacheLog(*current_file_segment, read_type);
 
     chassert(file_offset_of_buffer_end > completed_range.right);
 
@@ -518,7 +521,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
     if (cache_log && file_segments && !file_segments->empty())
     {
-        appendFilesystemCacheLog(file_segments->front().range(), read_type);
+        appendFilesystemCacheLog(file_segments->front(), read_type);
     }
 }
 
