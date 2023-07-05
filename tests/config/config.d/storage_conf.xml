@@ -1,7 +1,6 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <!-- s3 disks -->
             <s3_disk>
                 <type>s3</type>
                 <path>s3_disk/</path>
@@ -10,7 +9,6 @@
                 <secret_access_key>clickhouse</secret_access_key>
                 <request_timeout_ms>20000</request_timeout_ms>
             </s3_disk>
-            <!-- cache for s3 disks -->
             <s3_cache>
                 <type>cache</type>
                 <disk>s3_disk</disk>
@@ -88,13 +86,6 @@
                     </main>
                 </volumes>
             </s3_cache_multi>
-            <s3_cache_small>
-                <volumes>
-                    <main>
-                        <disk>s3_cache_small</disk>
-                    </main>
-                </volumes>
-            </s3_cache_small>
             <local_cache>
                 <volumes>
                     <main>
