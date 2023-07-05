@@ -184,7 +184,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    void onAddFilterFinish() override;
+    void applyFilters() override;
 
 private:
     void fillData(MutableColumns & res_columns);
@@ -421,7 +421,7 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 }
 
 
-void ReadFromSystemZooKeeper::onAddFilterFinish()
+void ReadFromSystemZooKeeper::applyFilters()
 {
     paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 }
