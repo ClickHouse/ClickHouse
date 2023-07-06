@@ -2299,7 +2299,9 @@ void ClientBase::runInteractive()
         catch (const ErrnoException & e)
         {
             if (e.getErrno() != EEXIST)
-                throw;
+            {
+                std::cerr << getCurrentExceptionMessage(false) << '\n';
+            }
         }
     }
 
