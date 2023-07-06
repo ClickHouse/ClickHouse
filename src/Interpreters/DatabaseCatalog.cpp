@@ -445,6 +445,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
     {
+        std::string exception_message;
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
@@ -506,16 +507,18 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
-    DatabasePtr db;
+    bool exc = false;
+    DatabasePtr database;
     {
         std::lock_guard lock{databases_mutex};
         assert(!database_name.empty());
-        db = databases.find(database_name)->second;
+        if (databases.end() == databases.find(database_name) && database_name != "default")
+            exc = true;
     }
-    if (!db)
+    if (exc)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -530,6 +533,11 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
+    assertDatabaseDoesntExistUnlocked(database_name);
+}
+
+void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
+{
     assert(!database_name.empty());
     if (databases.end() != databases.find(database_name))
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", backQuoteIfNeed(database_name));
@@ -537,8 +545,8 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 
 void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
 {
-    assertDatabaseDoesntExist(database_name);
     std::lock_guard lock{databases_mutex};
+    assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
