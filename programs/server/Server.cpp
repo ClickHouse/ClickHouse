@@ -1146,7 +1146,16 @@ try
             size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
 
             size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
-            if (merges_mutations_memory_usage_soft_limit == 0 || merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+            if (merges_mutations_memory_usage_soft_limit == 0)
+            {
+                merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+                LOG_INFO(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            }
+            else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
                 merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
                 LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
