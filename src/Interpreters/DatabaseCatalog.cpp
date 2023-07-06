@@ -217,6 +217,8 @@ void DatabaseCatalog::shutdownImpl()
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
+    /// Because some databases might use them until their shutdown is called, but calling shutdown
+    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
     std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
     {
@@ -354,7 +356,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+
     if (!table)
         database = nullptr;
 
