@@ -136,7 +136,6 @@ public:
 
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void pushClusterUpdates(ClusterUpdateActions&& actions);
-    bool clusterUpdateQueueEmpty() const;
     bool reconfigEnabled() const;
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)

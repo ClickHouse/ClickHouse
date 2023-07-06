@@ -1,7 +1,6 @@
 #include "RaftServerConfig.h"
-#include <charconv>
-#include <system_error>
 #include <unordered_set>
+#include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
 
 namespace DB
@@ -32,7 +31,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
         return std::nullopt;
 
     Int32 id;
-    if (std::from_chars(std::next(id_str.begin(), 7), id_str.end(), id).ec != std::error_code{})
+    if (!tryParse(id, std::next(id_str.begin(), 7)))
         return std::nullopt;
     if (id <= 0)
         return std::nullopt;
@@ -44,7 +43,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
     const std::string_view port = endpoint.substr(port_delimiter + 1);
 
     uint16_t port_tmp;
-    if (std::from_chars(port.begin(), port.end(), port_tmp).ec != std::error_code{})
+    if (!tryParse(port_tmp, port))
         return std::nullopt;
 
     RaftServerConfig out{id, endpoint};
@@ -59,7 +58,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
         return out;
 
     const std::string_view priority = parts[3];
-    if (std::from_chars(priority.begin(), priority.end(), out.priority).ec != std::error_code{})
+    if (!tryParse(out.priority, priority))
         return std::nullopt;
     if (out.priority < 0)
         return std::nullopt;

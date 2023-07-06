@@ -309,7 +309,7 @@ void KeeperStateMachine::reconfigure(const KeeperStorage::RequestForSession& req
 }
 
 KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
-    const KeeperStorage::RequestForSession& request_for_session)
+    const KeeperStorage::RequestForSession & request_for_session)
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
 
@@ -333,8 +333,6 @@ KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
     KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
-    if (!dispatcher.clusterUpdateQueueEmpty())
-        return bad_request(ZRECONFIGINPROGRESS);
     if (request.version != -1)
         return bad_request(ZBADVERSION);
 
