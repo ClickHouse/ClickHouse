@@ -90,7 +90,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_gethostname.c"
     "${LIBRARY_DIR}/lib/gopher.c"
     "${LIBRARY_DIR}/lib/http_proxy.c"
-    "${LIBRARY_DIR}/lib/asyn-thread.c"
+    "${LIBRARY_DIR}/lib/asyn-ares.c"
     "${LIBRARY_DIR}/lib/curl_gssapi.c"
     "${LIBRARY_DIR}/lib/http_ntlm.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_wb.c"
@@ -163,7 +163,6 @@ target_compile_definitions (_curl PRIVATE
     HAVE_CONFIG_H
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
-    USE_ARES
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
