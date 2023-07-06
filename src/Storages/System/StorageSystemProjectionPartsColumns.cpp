@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -66,7 +67,8 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
+        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
     }
     )
 {
@@ -247,6 +249,13 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.data_uncompressed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
+            if (columns_mask[src_index++])
+            {
+                if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
+                else
+                    columns[res_index++]->insertDefault();
+            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());

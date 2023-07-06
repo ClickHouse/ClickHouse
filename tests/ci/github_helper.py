@@ -111,7 +111,7 @@ class GitHub(github.Github):
             # See https://github.com/PyGithub/PyGithub/issues/2202,
             # obj._rawData doesn't spend additional API requests
             # pylint: disable=protected-access
-            repo_url = issue._rawData["repository_url"]  # type: ignore
+            repo_url = issue._rawData["repository_url"]
             if repo_url not in repos:
                 repos[repo_url] = issue.repository
             prs.append(

@@ -142,36 +142,45 @@ private:
 class StorageAzureBlobSource : public ISource, WithContext
 {
 public:
-    class Iterator : WithContext
+    class IIterator : public WithContext
     {
     public:
-        Iterator(
+        IIterator(ContextPtr context_):WithContext(context_) {}
+        virtual ~IIterator() = default;
+        virtual RelativePathWithMetadata next() = 0;
+        virtual size_t getTotalSize() const = 0;
+
+        RelativePathWithMetadata operator ()() { return next(); }
+    };
+
+    class GlobIterator : public IIterator
+    {
+    public:
+        GlobIterator(
             AzureObjectStorage * object_storage_,
             const std::string & container_,
-            std::optional<Strings> keys_,
-            std::optional<String> blob_path_with_globs_,
+            String blob_path_with_globs_,
             ASTPtr query_,
             const Block & virtual_header_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs_);
 
-        RelativePathWithMetadata next();
-        size_t getTotalSize() const;
-        ~Iterator() = default;
+        RelativePathWithMetadata next() override;
+        size_t getTotalSize() const override;
+        ~GlobIterator() override = default;
 
      private:
         AzureObjectStorage * object_storage;
         std::string container;
-        std::optional<Strings> keys;
-        std::optional<String> blob_path_with_globs;
+        String blob_path_with_globs;
         ASTPtr query;
         ASTPtr filter_ast;
         Block virtual_header;
 
-        std::atomic<size_t> index = 0;
+        size_t index = 0;
         std::atomic<size_t> total_size = 0;
 
-        std::optional<RelativePathsWithMetadata> blobs_with_metadata;
+        RelativePathsWithMetadata blobs_with_metadata;
         RelativePathsWithMetadata * outer_blobs;
         ObjectStorageIteratorPtr object_storage_iterator;
         bool recursive{false};
@@ -179,9 +188,40 @@ public:
         std::unique_ptr<re2::RE2> matcher;
 
         void createFilterAST(const String & any_key);
-        std::atomic<bool> is_finished = false;
-        std::atomic<bool> is_initialized = false;
+        bool is_finished = false;
+        bool is_initialized = false;
         std::mutex next_mutex;
+    };
+
+    class KeysIterator : public IIterator
+    {
+    public:
+        KeysIterator(
+            AzureObjectStorage * object_storage_,
+            const std::string & container_,
+            Strings keys_,
+            ASTPtr query_,
+            const Block & virtual_header_,
+            ContextPtr context_,
+            RelativePathsWithMetadata * outer_blobs_);
+
+        RelativePathWithMetadata next() override;
+        size_t getTotalSize() const override;
+        ~KeysIterator() override = default;
+
+    private:
+        AzureObjectStorage * object_storage;
+        std::string container;
+        RelativePathsWithMetadata keys;
+
+        ASTPtr query;
+        ASTPtr filter_ast;
+        Block virtual_header;
+
+        std::atomic<size_t> index = 0;
+        std::atomic<size_t> total_size = 0;
+
+        RelativePathsWithMetadata * outer_blobs;
     };
 
     StorageAzureBlobSource(
@@ -196,7 +236,7 @@ public:
         String compression_hint_,
         AzureObjectStorage * object_storage_,
         const String & container_,
-        std::shared_ptr<Iterator> file_iterator_);
+        std::shared_ptr<IIterator> file_iterator_);
 
     ~StorageAzureBlobSource() override;
 
@@ -217,7 +257,7 @@ private:
     String compression_hint;
     AzureObjectStorage * object_storage;
     String container;
-    std::shared_ptr<Iterator> file_iterator;
+    std::shared_ptr<IIterator> file_iterator;
 
     struct ReaderHolder
     {
@@ -225,10 +265,12 @@ private:
         ReaderHolder(
             String path_,
             std::unique_ptr<ReadBuffer> read_buf_,
+            std::shared_ptr<IInputFormat> input_format_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
             : path(std::move(path_))
             , read_buf(std::move(read_buf_))
+            , input_format(input_format_)
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -249,6 +291,7 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
+            input_format = std::move(other.input_format);
             read_buf = std::move(other.read_buf);
             path = std::move(other.path);
             return *this;
@@ -259,9 +302,14 @@ private:
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
         const String & getPath() const { return path; }
 
+        const std::unique_ptr<ReadBuffer> & getReadBuffer() const { return read_buf; }
+
+        const std::shared_ptr<IInputFormat> & getFormat() const { return input_format; }
+
     private:
         String path;
         std::unique_ptr<ReadBuffer> read_buf;
+        std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
@@ -277,6 +325,7 @@ private:
     UInt64 total_rows_approx_max = 0;
     size_t total_rows_count_times = 0;
     UInt64 total_rows_approx_accumulated = 0;
+    size_t total_objects_size = 0;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();

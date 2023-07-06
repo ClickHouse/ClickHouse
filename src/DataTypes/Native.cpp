@@ -123,9 +123,9 @@ llvm::Value * nativeCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type,
     }
     else if (to_type->isNullable())
     {
-        auto * from_native_type = toNativeType(b, from_type);
+        auto * to_native_type = toNativeType(b, to_type);
         auto * inner = nativeCast(b, from_type, value, removeNullable(to_type));
-        return b.CreateInsertValue(llvm::Constant::getNullValue(from_native_type), inner, {0});
+        return b.CreateInsertValue(llvm::Constant::getNullValue(to_native_type), inner, {0});
     }
     else
     {
