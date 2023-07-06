@@ -79,8 +79,8 @@ namespace JoinStuff
         {
             assert(flags[nullptr].size() <= size);
             need_flags = true;
-            // For one disjunct clause case, we don't need to reinit each time we call addJoinedBlock.
-            // and there is no value inserted in this JoinUsedFlags before addJoinedBlock finish.
+            // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
+            // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.
             // So we reinit only when the hash table is rehashed to a larger size.
             if (flags.empty() || flags[nullptr].size() < size) [[unlikely]]
             {
@@ -714,7 +714,7 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
@@ -766,7 +766,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
     size_t total_bytes = 0;
     {
         if (storage_join_lock)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addJoinedBlock called when HashJoin locked to prevent updates");
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
