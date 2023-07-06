@@ -36,6 +36,7 @@ public:
     void shutdown(bool part_of_full_shutdown);
 
     void run();
+
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
