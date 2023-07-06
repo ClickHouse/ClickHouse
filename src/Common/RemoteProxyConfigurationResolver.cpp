@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
     const Poco::URI & endpoint_,
     String proxy_scheme_,

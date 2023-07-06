@@ -17,17 +17,22 @@ def run_resolver(cluster):
     )
     cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
         cluster.add_instance(
-            "proxy_list_node", main_configs=["configs/config.d/proxy_list.xml"], with_minio=True
+            "proxy_list_node",
+            main_configs=["configs/config.d/proxy_list.xml"],
+            with_minio=True
         )
 
         # cluster.add_instance(
-        #     "remote_proxy_node", main_configs=["configs/config.d/proxy_remote.xml"], with_minio=True
+        #     "remote_proxy_node",
+        #     main_configs=["configs/config.d/proxy_remote.xml"],
+        #     with_minio=True
         # )
 
         logging.info("Starting cluster...")
@@ -41,6 +46,7 @@ def cluster():
     finally:
         cluster.shutdown()
 
+
 def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"}):
     for i in range(10):
         logs = cluster.get_container_logs(proxy_instance)
@@ -51,6 +57,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
             time.sleep(1)
         else:
             assert False, "http method not found in logs"
+
 
 def test_s3_with_proxy_list(cluster):
     node = cluster.instances["proxy_list_node"]
@@ -64,7 +71,9 @@ def test_s3_with_proxy_list(cluster):
     )
 
     assert (
-        node.query("SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values")
+        node.query(
+            "SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values"
+        )
         == "('color','red'),('size','10')"
     )
 
@@ -84,7 +93,9 @@ def test_s3_with_proxy_list(cluster):
 #     )
 #
 #     assert (
-#         node.query("SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values")
+#         node.query(
+#               "SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values"
+#         )
 #         == "('color','red'),('size','10')"
 #     )
 #
