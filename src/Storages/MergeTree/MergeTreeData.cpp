@@ -7196,7 +7196,10 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
         if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
+        {
+            query_info.parallel_replicas_disabled = true;
             return QueryProcessingStage::Enum::FetchColumns;
+        }
 
         /// ReplicatedMergeTree
         if (supportsReplication())
