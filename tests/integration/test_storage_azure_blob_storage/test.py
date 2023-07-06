@@ -25,7 +25,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["configs/named_collections.xml"],
-            user_configs=["configs/disable_profilers.xml"],
+            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
         cluster.start()
