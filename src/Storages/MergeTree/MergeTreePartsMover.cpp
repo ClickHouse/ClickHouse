@@ -263,7 +263,10 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
-    auto active_part = data->getActiveContainingPart(cloned_part.part->name);
+    /// `getActiveContainingPart` and `swapActivePart` are called under the same lock
+    /// to prevent part becoming inactive between calls
+    auto part_lock = data->lockParts();
+    auto active_part = data->getActiveContainingPart(cloned_part.part->name, part_lock);
 
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part.part->name)
@@ -284,7 +287,7 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     cloned_part.part->renameTo(active_part->name, false);
 
     /// TODO what happen if server goes down here?
-    data->swapActivePart(cloned_part.part);
+    data->swapActivePart(cloned_part.part, part_lock);
 
     LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
