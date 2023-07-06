@@ -187,8 +187,8 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        IAST::Hash hash = child->getTreeHash();
-        UInt64 first_half_of_hash = hash.first;
+        const IAST::Hash hash = child->getTreeHash();
+        const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

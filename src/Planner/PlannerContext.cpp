@@ -114,8 +114,8 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const QueryTreeNodePtr & set_source_node)
 {
-    auto set_source_hash = set_source_node->getTreeHash();
-    return "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
+    const auto set_source_hash = set_source_node->getTreeHash();
+    return "__set_" + toString(set_source_hash);
 }
 
 }
