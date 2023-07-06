@@ -209,7 +209,9 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+    if (!query_info.parallel_replicas_disabled &&
+        local_context->canUseParallelReplicasOnInitiator() &&
+        local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
         auto table_id = getStorageID();
 
@@ -240,7 +242,10 @@ void StorageMergeTree::read(
     }
     else
     {
-        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+        const bool enable_parallel_reading =
+            !query_info.parallel_replicas_disabled &&
+            local_context->canUseParallelReplicasOnFollower() &&
+            local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
 
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
@@ -929,43 +934,69 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
-    if (!canEnqueueBackgroundTask())
+    auto is_background_memory_usage_ok = [](String * disable_reason) -> bool
     {
-        if (out_disable_reason)
-            *out_disable_reason = fmt::format("Current background tasks memory usage ({}) is more than the limit ({})",
+        if (canEnqueueBackgroundTask())
+            return true;
+        if (disable_reason)
+            *disable_reason = fmt::format("Current background tasks memory usage ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()));
-    }
-    else if (partition_id.empty())
-    {
-        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-        bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
+        return false;
+    };
 
-        /// TTL requirements is much more strict than for regular merge, so
-        /// if regular not possible, than merge with ttl is not also not
-        /// possible.
-        if (max_source_parts_size > 0)
+    if (partition_id.empty())
+    {
+        if (is_background_memory_usage_ok(out_disable_reason))
         {
-            select_decision = merger_mutator.selectPartsToMerge(
-                future_part,
-                aggressive,
-                max_source_parts_size,
-                can_merge,
-                merge_with_ttl_allowed,
-                txn,
-                out_disable_reason);
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
+            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
+
+            /// TTL requirements is much more strict than for regular merge, so
+            /// if regular not possible, than merge with ttl is not also not
+            /// possible.
+            if (max_source_parts_size > 0)
+            {
+                select_decision = merger_mutator.selectPartsToMerge(
+                    future_part,
+                    aggressive,
+                    max_source_parts_size,
+                    can_merge,
+                    merge_with_ttl_allowed,
+                    txn,
+                    out_disable_reason);
+            }
+            else if (out_disable_reason)
+                *out_disable_reason = "Current value of max_source_parts_size is zero";
         }
-        else if (out_disable_reason)
-            *out_disable_reason = "Current value of max_source_parts_size is zero";
     }
     else
     {
         while (true)
         {
-            select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_part, can_merge, partition_id, final, metadata_snapshot, txn, out_disable_reason, optimize_skip_merged_partitions);
             auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
+
+            if (!is_background_memory_usage_ok(out_disable_reason))
+            {
+                constexpr auto poll_interval = std::chrono::seconds(1);
+                Int64 attempts = timeout / poll_interval;
+                bool ok = false;
+                for (Int64 i = 0; i < attempts; ++i)
+                {
+                    std::this_thread::sleep_for(poll_interval);
+                    if (is_background_memory_usage_ok(out_disable_reason))
+                    {
+                        ok = true;
+                        break;
+                    }
+                }
+                if (!ok)
+                    break;
+            }
+
+            select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                future_part, can_merge, partition_id, final, metadata_snapshot, txn, out_disable_reason, optimize_skip_merged_partitions);
 
             /// If final - we will wait for currently processing merges to finish and continue.
             if (final
