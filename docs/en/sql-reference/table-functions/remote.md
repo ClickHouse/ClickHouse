@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/remote
-sidebar_position: 40
+sidebar_position: 175
 sidebar_label: remote
 ---
 
@@ -89,10 +89,10 @@ SELECT * FROM remote_table;
 ```
 
 ### Migration of tables from one system to another:
-This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`. 
+This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`.
 
 #### On the source ClickHouse system (the system that currently hosts the data)
-- Verify the source database and table name (`imdb.actors`)  
+- Verify the source database and table name (`imdb.actors`)
   ```sql
   show databases
   ```
