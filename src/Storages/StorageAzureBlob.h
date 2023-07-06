@@ -65,7 +65,7 @@ public:
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
 

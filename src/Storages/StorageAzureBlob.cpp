@@ -257,7 +257,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
         auto configuration = StorageAzureBlob::getConfiguration(engine_args, args.getLocalContext());
-        auto client = StorageAzureBlob::createClient(configuration);
+        auto client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -309,35 +309,41 @@ void registerStorageAzureBlob(StorageFactory & factory)
     });
 }
 
-AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration)
+static bool containerExists(std::unique_ptr<BlobServiceClient> &blob_service_client, std::string container_name)
+{
+    Azure::Storage::Blobs::ListBlobContainersOptions options;
+    options.Prefix = container_name;
+    options.PageSizeHint = 1;
+
+    auto containers_list_response = blob_service_client->ListBlobContainers(options);
+    auto containers_list = containers_list_response.BlobContainers;
+
+    for (const auto & container : containers_list)
+    {
+        if (container_name == container.Name)
+            return true;
+    }
+    return false;
+}
+
+AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only)
 {
     AzureClientPtr result;
 
     if (configuration.is_connection_string)
     {
         std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(configuration.connection_url));
-
-        Azure::Storage::Blobs::ListBlobContainersOptions options;
-        options.Prefix = configuration.container;
-        options.PageSizeHint = 1;
-
-        auto containers_list_response = blob_service_client->ListBlobContainers(options);
-        auto containers_list = containers_list_response.BlobContainers;
-
-        bool container_exists = false;
-        for (const auto & container : containers_list)
-        {
-            if (configuration.container == container.Name)
-            {
-                container_exists = true;
-                break;
-            }
-        }
-
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
+        bool container_exists = containerExists(blob_service_client,configuration.container);
 
         if (!container_exists)
         {
+            if (is_read_only)
+                throw Exception(
+                    ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "AzureBlobStorage container does not exist '{}'",
+                    configuration.blob_path);
+
             result->CreateIfNotExists();
         }
     }
@@ -360,22 +366,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
         }
 
-        Azure::Storage::Blobs::ListBlobContainersOptions options;
-        options.Prefix = configuration.container;
-        options.PageSizeHint = 1;
-
-        auto containers_list_response = blob_service_client->ListBlobContainers(options);
-        auto containers_list = containers_list_response.BlobContainers;
-
-        bool container_exists = false;
-        for (const auto & container : containers_list)
-        {
-            if (configuration.container == container.Name)
-            {
-                container_exists = true;
-                break;
-            }
-        }
+        bool container_exists = containerExists(blob_service_client,configuration.container);
 
         if (container_exists)
         {
@@ -398,6 +389,11 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
         else
         {
+            if (is_read_only)
+                throw Exception(
+                    ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "AzureBlobStorage container does not exist '{}'",
+                    configuration.blob_path);
             result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
         }
     }
@@ -470,7 +466,7 @@ void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
-            "S3 key '{}' contains globs, so the table is in readonly mode",
+            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode",
             configuration.blob_path);
     }
 
@@ -1259,7 +1255,7 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
             return nullptr;
         }
 
-        /// S3 file iterator could get new keys after new iteration, check them in schema cache.
+        ///AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache.
         if (ctx->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
         {
             columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, ctx);

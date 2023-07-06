@@ -27,9 +27,9 @@ namespace ErrorCodes
 
 
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
+        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
     auto storage = std::make_shared<StorageMongoDB>(
     StorageID(configuration->database, table_name),
     configuration->host,
@@ -46,7 +46,7 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
     return storage;
 }
 
-ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     return parseColumnsListFromString(structure, context);
 }
