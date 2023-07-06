@@ -24,6 +24,8 @@
 #include <base/unaligned.h>
 #include <Common/Exception.h>
 
+#include <city.h>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -247,11 +249,11 @@ inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
     return arr;
 }
 
-inline std::pair<UInt64, UInt64> getSipHash128AsLoHi(SipHash & sip_hash)
+inline CityHash_v1_0_2::uint128 getSipHash128AsLoHi(SipHash & sip_hash)
 {
-    std::pair<UInt64, UInt64> lo_hi;
-    sip_hash.get128(lo_hi.first, lo_hi.second);
-    return lo_hi;
+    CityHash_v1_0_2::uint128 result;
+    sip_hash.get128(result.low64, result.high64);
+    return result;
 }
 
 inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)

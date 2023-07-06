@@ -371,8 +371,8 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
 
     const auto res128 = getSipHash128AsLoHi(hash_state);
     size_t res = 0;
-    boost::hash_combine(res, res128.first);
-    boost::hash_combine(res, res128.second);
+    boost::hash_combine(res, res128.low64);
+    boost::hash_combine(res, res128.high64);
     return res;
 }
 
