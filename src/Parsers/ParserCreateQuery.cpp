@@ -311,7 +311,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
                 if(!primary_key_from_columns)
                     primary_key_from_columns = makeASTFunction("tuple");
                 auto column_identifier = std::make_shared<ASTIdentifier>(cd->name);
-                primary_key_from_columns->children.push_back(column_identifier);
+                primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
             }
             columns->children.push_back(elem);
         }
@@ -710,6 +710,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->primary_key = query->columns_list->primary_key;
+
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
