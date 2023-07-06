@@ -90,20 +90,6 @@ namespace Crypto
         std::string groupName() const;
         /// Returns the EC key group name.
 
-        void save(const std::string & publicKeyFile, const std::string & privateKeyFile = "", const std::string & privateKeyPassphrase = "")
-            const;
-        /// Exports the public and private keys to the given files.
-        ///
-        /// If an empty filename is specified, the corresponding key
-        /// is not exported.
-
-        void
-        save(std::ostream * pPublicKeyStream, std::ostream * pPrivateKeyStream = 0, const std::string & privateKeyPassphrase = "") const;
-        /// Exports the public and private key to the given streams.
-        ///
-        /// If a null pointer is passed for a stream, the corresponding
-        /// key is not exported.
-
         static std::string getCurveName(int nid = -1);
         /// Returns elliptical curve name corresponding to
         /// the given nid; if nid is not found, returns
@@ -150,22 +136,6 @@ namespace Crypto
     {
         return OBJ_nid2sn(groupId());
     }
-
-
-    inline void
-    ECKeyImpl::save(const std::string & publicKeyFile, const std::string & privateKeyFile, const std::string & privateKeyPassphrase) const
-    {
-        EVPPKey(_pEC).save(publicKeyFile, privateKeyFile, privateKeyPassphrase);
-    }
-
-
-    inline void
-    ECKeyImpl::save(std::ostream * pPublicKeyStream, std::ostream * pPrivateKeyStream, const std::string & privateKeyPassphrase) const
-    {
-        EVPPKey(_pEC).save(pPublicKeyStream, pPrivateKeyStream, privateKeyPassphrase);
-    }
-
-
 }
 } // namespace Poco::Crypto
 

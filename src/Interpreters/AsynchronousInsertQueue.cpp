@@ -18,6 +18,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/DateLUT.h>
@@ -40,6 +41,7 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
+    extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -105,9 +107,10 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_)
     : bytes(std::move(bytes_))
     , query_id(std::move(query_id_))
+    , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
 }
@@ -116,6 +119,15 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
 {
     if (finished.exchange(true))
         return;
+
+    {
+        // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
+        // Entries data must be destroyed in context of user who runs async insert.
+        // Each entry in the list may correspond to a different user,
+        // so we need to switch current thread's MemoryTracker.
+        UserMemoryTrackerSwitcher switcher(user_memory_tracker);
+        bytes = "";
+    }
 
     if (exception_)
     {
@@ -178,9 +190,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
+    pool.scheduleOrThrowOnError([key, global_context, my_data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
     {
-        processData(key, std::move(*data), std::move(global_context));
+        processData(key, std::move(*my_data), std::move(global_context));
     });
 }
 
@@ -236,7 +248,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -444,7 +456,9 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        total_rows += executor.execute(*buffer);
+        auto bytes_size = entry->bytes.size();
+        size_t num_rows = executor.execute(*buffer);
+        total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
 
         /// Keep buffer, because it still can be used
@@ -458,7 +472,8 @@ try
             elem.event_time_microseconds = timeInMicroseconds(entry->create_time);
             elem.query = key.query;
             elem.query_id = entry->query_id;
-            elem.bytes = entry->bytes.size();
+            elem.bytes = bytes_size;
+            elem.rows = num_rows;
             elem.exception = current_exception;
             current_exception.clear();
 
@@ -479,6 +494,7 @@ try
 
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
+    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     auto finish_entries = [&]
     {

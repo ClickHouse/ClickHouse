@@ -167,6 +167,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
+        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_darwin_arm:
         cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
@@ -181,6 +182,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake"
         )
+        result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_arm:
         cc = compiler[: -len(ARM_SUFFIX)]
         cmake_flags.append(
@@ -362,17 +364,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-15",
-            "clang-15-darwin",
-            "clang-15-darwin-aarch64",
-            "clang-15-aarch64",
-            "clang-15-aarch64-v80compat",
-            "clang-15-ppc64le",
-            "clang-15-amd64-compat",
-            "clang-15-freebsd",
-            "gcc-11",
+            "clang-16",
+            "clang-16-darwin",
+            "clang-16-darwin-aarch64",
+            "clang-16-aarch64",
+            "clang-16-aarch64-v80compat",
+            "clang-16-ppc64le",
+            "clang-16-amd64-compat",
+            "clang-16-freebsd",
         ),
-        default="clang-15",
+        default="clang-16",
         help="a compiler to use",
     )
     parser.add_argument(

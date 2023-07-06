@@ -15,7 +15,7 @@ from pure_http_client import ClickHouseClient
 client = ClickHouseClient()
 
 # test table without partition
-client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part NO DELAY")
+client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part SYNC")
 client.query(
     """
 CREATE TABLE t_async_insert_dedup_no_part (
@@ -35,7 +35,7 @@ client.query(
 )
 result = client.query("select count(*) from t_async_insert_dedup_no_part")
 print(result, flush=True)
-client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part NO DELAY")
+client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part SYNC")
 
 
 # generate data and push to queue
@@ -95,7 +95,7 @@ def fetch_and_insert_data(q, client):
 
 
 # main process
-client.query("DROP TABLE IF EXISTS t_async_insert_dedup NO DELAY")
+client.query("DROP TABLE IF EXISTS t_async_insert_dedup SYNC")
 client.query(
     """
 CREATE TABLE t_async_insert_dedup (
@@ -161,6 +161,6 @@ result = int(result.split()[0])
 if result <= 0:
     raise Exception(f"AsyncInsertCacheHits should > 0, but got {result}")
 
-client.query("DROP TABLE IF EXISTS t_async_insert_dedup NO DELAY")
+client.query("DROP TABLE IF EXISTS t_async_insert_dedup SYNC")
 
 os._exit(os.EX_OK)

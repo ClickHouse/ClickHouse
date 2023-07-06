@@ -36,6 +36,10 @@ struct MongoDBEqualKeysSet
     static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> equal_keys{
         std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}, std::pair{"table", "collection"}};
 };
+struct RedisEqualKeysSet
+{
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> equal_keys{std::pair{"hostname", "host"}};
+};
 
 template <typename EqualKeys> struct NamedCollectionValidateKey
 {

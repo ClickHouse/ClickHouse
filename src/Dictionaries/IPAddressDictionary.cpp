@@ -541,7 +541,7 @@ template <>
 void IPAddressDictionary::addAttributeSize<String>(const Attribute & attribute)
 {
     addAttributeSize<StringRef>(attribute);
-    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->allocatedBytes();
 }
 
 void IPAddressDictionary::calculateBytesAllocated()

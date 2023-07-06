@@ -32,9 +32,12 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
 - `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 - `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+- `IDENTIFIED WITH bcrypt_password BY 'qwerty'`
+- `IDENTIFIED WITH bcrypt_hash BY 'hash'`
 - `IDENTIFIED WITH ldap SERVER 'server_name'`
 - `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 - `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
+- `IDENTIFIED BY 'qwerty'`
 
 ## Examples
 
@@ -54,19 +57,10 @@ There are multiple ways of user identification:
     The password is stored in a SQL text file in `/var/lib/clickhouse/access`, so it's not a good idea to use `plaintext_password`. Try `sha256_password` instead, as demonstrated next...
     :::
 
-3. The best option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
+3. The most common option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
 
     ```sql
     CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
-    ```
-
-    Notice ClickHouse generates and runs the following command for you:
-
-    ```response
-    CREATE USER name3
-    IDENTIFIED WITH sha256_hash
-    BY '8B3404953FCAA509540617F082DB13B3E0734F90FF6365C19300CC6A6EA818D6'
-    SALT 'D6489D8B5692D82FF944EA6415785A8A8A1AF33825456AFC554487725A74A609'
     ```
 
     The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
@@ -91,6 +85,34 @@ There are multiple ways of user identification:
     ```response
     CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
     ```
+
+5. The `bcrypt_password` is the most secure option for storing passwords. It uses the [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) algorithm, which is resilient against brute force attacks even if the password hash is compromised.
+
+    ```sql
+    CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
+    ```
+
+    The length of the password is limited to 72 characters with this method. The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
+
+    ```xml
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+    ```
+
+    The work factor must be between 4 and 31, with a default value of 12.
+
+6. The type of the password can also be omitted:
+
+    ```sql
+    CREATE USER name6 IDENTIFIED BY 'my_password'
+    ```
+
+    In this case, ClickHouse will use the default password type specified in the server configuration:
+
+    ```xml
+    <default_password_type>sha256_password</default_password_type>
+    ```
+
+    The available password types are: `plaintext_password`, `sha256_password`, `double_sha1_password`.
 
 ## User Host
 

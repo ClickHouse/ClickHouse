@@ -598,6 +598,8 @@ Block ActionsDAG::updateHeader(Block header) const
     }
 
     ColumnsWithTypeAndName result_columns;
+
+
     result_columns.reserve(outputs.size());
 
     struct Frame
@@ -1874,10 +1876,10 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
-/// Take a node which result is predicate.
+/// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
-/// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
+/// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjunctionNodes conjunction;
@@ -2111,9 +2113,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
-                filter_name,
-                dumpDAG());
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
 
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
@@ -2140,14 +2142,29 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.rejected.size() == 1 && WhichDataType{removeNullable(conjunction.rejected.front()->result_type)}.isFloat())
+
+    if (conjunction.allowed.empty())
         return nullptr;
+
+    chassert(predicate->result_type);
+
+    if (conjunction.rejected.size() == 1)
+    {
+        chassert(conjunction.rejected.front()->result_type);
+
+        if (conjunction.allowed.front()->type == ActionType::COLUMN
+            && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
+        {
+            /// No further optimization can be done
+            return nullptr;
+        }
+    }
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 
-    /// Now, when actions are created, update current DAG.
+    /// Now, when actions are created, update the current DAG.
 
     if (conjunction.rejected.empty())
     {
@@ -2191,55 +2208,26 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     else
     {
         /// Predicate is conjunction, where both allowed and rejected sets are not empty.
-        /// Replace this node to conjunction of rejected predicates.
 
         NodeRawConstPtrs new_children = std::move(conjunction.rejected);
 
-        if (new_children.size() == 1)
+        if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
         {
-            /// Rejected set has only one predicate.
-            if (new_children.front()->result_type->equals(*predicate->result_type))
-            {
-                /// If it's type is same, just add alias.
-                Node node;
-                node.type = ActionType::ALIAS;
-                node.result_name = predicate->result_name;
-                node.result_type = predicate->result_type;
-                node.children.swap(new_children);
-                *predicate = std::move(node);
-            }
-            else if (!WhichDataType{removeNullable(new_children.front()->result_type)}.isFloat())
-            {
-                /// If type is different, cast column.
-                /// This case is possible, cause AND can use any numeric type as argument.
-                /// But casting floats to UInt8 or Bool produces different results.
-                /// so we can't apply this optimization to them.
-                Node node;
-                node.type = ActionType::COLUMN;
-                node.result_name = predicate->result_type->getName();
-                node.column = DataTypeString().createColumnConst(0, node.result_name);
-                node.result_type = std::make_shared<DataTypeString>();
-
-                const auto * right_arg = &nodes.emplace_back(std::move(node));
-                const auto * left_arg = new_children.front();
-
-                predicate->children = {left_arg, right_arg};
-                auto arguments = prepareFunctionArguments(predicate->children);
-
-                FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
-
-                predicate->function_base = func_builder_cast->build(arguments);
-                predicate->function = predicate->function_base->prepare(arguments);
-            }
+            /// Rejected set has only one predicate. And the type is the same as the result_type.
+            /// Just add alias.
+            Node node;
+            node.type = ActionType::ALIAS;
+            node.result_name = predicate->result_name;
+            node.result_type = predicate->result_type;
+            node.children.swap(new_children);
+            *predicate = std::move(node);
         }
         else
         {
-            /// Predicate is function AND, which still have more then one argument.
-            /// Or there is only one argument that is a float and we can't just
-            /// remove the AND.
+            /// Predicate is function AND, which still have more then one argument
+            /// or it has one argument of the wrong type.
             /// Just update children and rebuild it.
-            predicate->children.swap(new_children);
-            if (WhichDataType{removeNullable(predicate->children.front()->result_type)}.isFloat())
+            if (new_children.size() == 1)
             {
                 Node node;
                 node.type = ActionType::COLUMN;
@@ -2247,8 +2235,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 node.column = DataTypeUInt8().createColumnConst(0, 1u);
                 node.result_type = std::make_shared<DataTypeUInt8>();
                 const auto * const_col = &nodes.emplace_back(std::move(node));
-                predicate->children.emplace_back(const_col);
+                new_children.emplace_back(const_col);
             }
+            predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());

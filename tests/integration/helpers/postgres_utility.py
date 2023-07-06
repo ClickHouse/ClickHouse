@@ -204,7 +204,7 @@ class PostgresManager:
         assert materialized_database in self.instance.query("SHOW DATABASES")
 
     def drop_materialized_db(self, materialized_database="test_database"):
-        self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database} NO DELAY")
+        self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database} SYNC")
         if materialized_database in self.created_materialized_postgres_db_list:
             self.created_materialized_postgres_db_list.remove(materialized_database)
         assert materialized_database not in self.instance.query("SHOW DATABASES")

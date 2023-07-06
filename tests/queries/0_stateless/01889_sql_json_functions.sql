@@ -20,6 +20,15 @@ select JSON_VALUE('{"a":"\\u263a"}', '$.a');
 select JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
 select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 SELECT JSON_VALUE('{"hello":["world","world2"]}', '$.hello') settings function_json_value_return_type_allow_complex=true;
+SELECT JSON_VALUE('{"1key":1}', '$.1key');
+SELECT JSON_VALUE('{"hello":1}', '$[hello]');
+SELECT JSON_VALUE('{"hello":1}', '$["hello"]');
+SELECT JSON_VALUE('{"hello":1}', '$[\'hello\']');
+SELECT JSON_VALUE('{"hello 1":1}', '$["hello 1"]');
+SELECT JSON_VALUE('{"1key":1}', '$..1key'); -- { serverError 36 }
+SELECT JSON_VALUE('{"1key":1}', '$1key'); -- { serverError 36 }
+SELECT JSON_VALUE('{"1key":1}', '$key'); -- { serverError 36 }
+SELECT JSON_VALUE('{"1key":1}', '$.[key]'); -- { serverError 36 }
 
 SELECT '--JSON_QUERY--';
 SELECT JSON_QUERY('{"hello":1}', '$');
@@ -33,6 +42,15 @@ SELECT JSON_QUERY('{"hello":{"world":"!"}}', '$.hello');
 SELECT JSON_QUERY( '{hello:{"world":"!"}}}', '$.hello'); -- invalid json => default value (empty string)
 SELECT JSON_QUERY('', '$.hello');
 SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_QUERY('{"1key":1}', '$.1key');
+SELECT JSON_QUERY('{"hello":1}', '$[hello]');
+SELECT JSON_QUERY('{"hello":1}', '$["hello"]');
+SELECT JSON_QUERY('{"hello":1}', '$[\'hello\']');
+SELECT JSON_QUERY('{"hello 1":1}', '$["hello 1"]');
+SELECT JSON_QUERY('{"1key":1}', '$..1key'); -- { serverError 36 }
+SELECT JSON_QUERY('{"1key":1}', '$1key'); -- { serverError 36 }
+SELECT JSON_QUERY('{"1key":1}', '$key'); -- { serverError 36 }
+SELECT JSON_QUERY('{"1key":1}', '$.[key]'); -- { serverError 36 }
 
 SELECT '--JSON_EXISTS--';
 SELECT JSON_EXISTS('{"hello":1}', '$');

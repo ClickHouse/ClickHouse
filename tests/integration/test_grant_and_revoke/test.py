@@ -20,6 +20,9 @@ def start_cluster():
         instance.query(
             "CREATE TABLE test.table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()"
         )
+        instance.query(
+            "CREATE TABLE test.table2(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()"
+        )
         instance.query("INSERT INTO test.table VALUES (1,5), (2,10)")
 
         yield cluster
@@ -584,4 +587,135 @@ def test_grant_with_replace_option():
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT INSERT ON test.table TO B"]
+    )
+
+
+def test_grant_current_grants():
+    instance.query("CREATE USER A")
+    instance.query(
+        "GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"
+    )
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"]
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO B"]
+    )
+
+    instance.query("CREATE USER C")
+    instance.query("GRANT CURRENT GRANTS(CREATE ON test.*) TO C", user="A")
+    assert instance.query("SHOW GRANTS FOR C") == TSV(
+        ["GRANT CREATE TABLE, CREATE VIEW ON test.* TO C"]
+    )
+
+    instance.query("DROP USER IF EXISTS C")
+    instance.query("CREATE USER C")
+    instance.query("GRANT CURRENT GRANTS(NONE ON *.*) TO C", user="A")
+    assert instance.query("SHOW GRANTS FOR C") == TSV([])
+
+
+def test_grant_current_grants_with_partial_revoke():
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON *.* TO A")
+    instance.query("REVOKE CREATE TABLE ON test.* FROM A")
+    instance.query("GRANT CREATE TABLE ON test.table TO A WITH GRANT OPTION")
+    instance.query("GRANT SELECT ON *.* TO A WITH GRANT OPTION")
+    instance.query("REVOKE SELECT ON test.* FROM A")
+    instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
+    instance.query("GRANT SELECT ON test.table2 TO A")
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT CREATE TABLE ON *.* TO A",
+            "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
+            "REVOKE SELECT, CREATE TABLE ON test.* FROM A",
+            "GRANT SELECT, CREATE TABLE ON test.table TO A WITH GRANT OPTION",
+            "GRANT SELECT ON test.table2 TO A",
+        ]
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT ON *.* TO B",
+            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SELECT, CREATE TABLE ON test.table TO B",
+        ]
+    )
+
+    instance.query("DROP USER IF EXISTS B")
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH GRANT OPTION", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT ON *.* TO B WITH GRANT OPTION",
+            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SELECT, CREATE TABLE ON test.table TO B WITH GRANT OPTION",
+        ]
+    )
+
+    instance.query("DROP USER IF EXISTS C")
+    instance.query("CREATE USER C")
+    instance.query("GRANT SELECT ON test.* TO B")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO C", user="B")
+    assert instance.query("SHOW GRANTS FOR C") == TSV(
+        [
+            "GRANT SELECT ON *.* TO C",
+            "GRANT CREATE TABLE ON test.table TO C",
+        ]
+    )
+
+    instance.query("DROP USER IF EXISTS B")
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS ON test.* TO B WITH GRANT OPTION", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT, CREATE TABLE ON test.table TO B WITH GRANT OPTION",
+        ]
+    )
+
+
+def test_current_grants_override():
+    instance.query("CREATE USER A")
+    instance.query("GRANT SELECT ON *.* TO A WITH GRANT OPTION")
+    instance.query("REVOKE SELECT ON test.* FROM A")
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
+            "REVOKE SELECT ON test.* FROM A",
+        ]
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        ["GRANT SELECT ON test.table TO B"]
+    )
+
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT ON *.* TO B",
+            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SELECT ON test.table TO B",
+        ]
+    )
+
+    instance.query("DROP USER IF EXISTS B")
+    instance.query("CREATE USER B")
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        ["GRANT SELECT ON test.table TO B"]
+    )
+
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT ON *.* TO B",
+            "REVOKE SELECT ON test.* FROM B",
+        ]
     )

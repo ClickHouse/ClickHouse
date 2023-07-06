@@ -71,11 +71,11 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder(std::make_shared<ExternalQueryBuilder>(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks))
     , sample_block{sample_block_}
     , context(context_)
     , pool{createPool(configuration)}
-    , load_all_query{query_builder.composeLoadAllQuery()}
+    , load_all_query{query_builder->composeLoadAllQuery()}
 {
 }
 
@@ -84,7 +84,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , dict_struct{other.dict_struct}
     , configuration{other.configuration}
     , invalidate_query_response{other.invalidate_query_response}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder(std::make_shared<ExternalQueryBuilder>(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks))
     , sample_block{other.sample_block}
     , context(Context::createCopy(other.context))
     , pool{createPool(configuration)}
@@ -99,12 +99,12 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
         std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeUpdateQuery(configuration.update_field, str_time);
+        return query_builder->composeUpdateQuery(configuration.update_field, str_time);
     }
     else
     {
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeLoadAllQuery();
+        return query_builder->composeLoadAllQuery();
     }
 }
 
@@ -121,13 +121,13 @@ QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 
 QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
+    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
 }
 
 
 QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
+    String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
 }
 

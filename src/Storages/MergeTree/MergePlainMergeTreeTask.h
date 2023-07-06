@@ -34,13 +34,13 @@ public:
         , task_result_callback(task_result_callback_)
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
-            priority += item->getBytesOnDisk();
+            priority.value += item->getBytesOnDisk();
     }
 
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() override;
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() override { return priority; }
 
     void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
     {
@@ -77,7 +77,7 @@ private:
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
-    UInt64 priority{0};
+    Priority priority;
 
     std::function<void(const ExecutionStatus &)> write_part_log;
     std::function<void()> transfer_profile_counters_to_initial_query;

@@ -582,6 +582,9 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
+    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
+    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
+
     /// Selecting best candidate.
     for (auto & candidate : candidates.real)
     {
@@ -597,12 +600,18 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         if (!analyzed)
             continue;
 
+        if (candidate.sum_marks > ordinary_reading_marks)
+            continue;
+
         if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
             best_candidate = &candidate;
     }
 
     if (!best_candidate)
+    {
+        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
         return false;
+    }
 
     QueryPlanStepPtr projection_reading;
     bool has_ordinary_parts;
@@ -631,7 +640,8 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         query_info_copy.prewhere_info = nullptr;
 
         projection_reading = reader.readFromParts(
-            {},
+            /* parts = */ {},
+            /* alter_conversions = */ {},
             best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
             query_info_copy,

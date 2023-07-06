@@ -42,11 +42,12 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
-    size_t max_block_size,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_,
     Graphite::Params params_,
     time_t time_of_merge_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), false, max_block_size)
+    , merged_data(header_.cloneEmptyColumns(), false, max_block_size_rows_, max_block_size_bytes_)
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)
 {

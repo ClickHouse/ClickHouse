@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {

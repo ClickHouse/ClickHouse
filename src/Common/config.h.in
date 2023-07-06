@@ -57,3 +57,5 @@
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_OPENSSL_INTREE
 #cmakedefine01 USE_ULID
+#cmakedefine01 FIU_ENABLE
+#cmakedefine01 USE_BCRYPT
