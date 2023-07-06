@@ -26,7 +26,7 @@ def cluster():
         cluster.add_instance(
             "proxy_list_node",
             main_configs=["configs/config.d/proxy_list.xml"],
-            with_minio=True
+            with_minio=True,
         )
 
         # cluster.add_instance(

@@ -850,7 +850,7 @@ HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::parseFileInfo(con
 
 }
 
-SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_ )
+SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : timeouts(timeouts_), proxy_config(proxy_config_) {}
 
 SessionFactory::SessionType SessionFactory::buildNewSession(const Poco::URI & uri)
