@@ -46,22 +46,21 @@ Chunk ORCBlockInputFormat::generate()
     while (true)
     {
         /// Read from batch reader
-        auto batch_result = stripe_reader->ReadNext();
+        auto batch_result = stripe_reader->Next();
         if (!batch_result.ok())
             throw ParsingException(
                 ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to read from batch reader: {}", batch_result.status().ToString());
 
-        auto batch_with_meta = std::move(batch_result).ValueOrDie();
-        if (batch_with_meta.batch)
-        {
-            batch = std::move(batch_with_meta.batch);
+        batch = std::move(batch_result).ValueOrDie();
+        if (batch)
             break;
-        }
 
         /// No more batches in current stripe, prepare next stripe
         if (!prepareStripeReader())
             return {};
     }
+
+    std::cout << "generate " << batch->num_rows() << " rows" << std::endl;
 
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
@@ -77,6 +76,7 @@ Chunk ORCBlockInputFormat::generate()
 
     size_t num_rows = batch->num_rows();
     approx_bytes_read_for_chunk = num_rows * current_stripe_info.length / current_stripe_info.num_rows;
+    std::cout << "approx_bytes_read_for_chunk:" << approx_bytes_read_for_chunk << std::endl;
 
     Chunk res;
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
@@ -132,7 +132,7 @@ void ORCBlockInputFormat::prepareFileReader()
         return;
 
     total_stripes = static_cast<int>(file_reader->NumberOfStripes());
-    current_stripe = 0;
+    current_stripe = -1;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
@@ -159,13 +159,19 @@ bool ORCBlockInputFormat::prepareStripeReader()
 {
     assert(file_reader);
 
+    // std::cout << "prepare stripe reader" << std::endl;
+
     ++current_stripe;
     for (; current_stripe < total_stripes && skip_stripes.contains(current_stripe); ++current_stripe)
         ;
 
     /// No more stripes to read
     if (current_stripe >= total_stripes)
+    {
+        // std::cout << "current_stripe:" << current_stripe << " total_stripes:" << total_stripes << std::endl;
+        // std::cout << "no more stripes to read" << std::endl;
         return false;
+    }
 
     /// Seek to current stripe
     current_stripe_info = file_reader->GetStripeInformation(current_stripe);
@@ -182,8 +188,12 @@ bool ORCBlockInputFormat::prepareStripeReader()
     /// No more stripes to read
     stripe_reader = std::move(result).ValueOrDie();
     if (!stripe_reader)
+    {
+        std::cout << "no more stripes to read2" << std::endl;
         return false;
+    }
 
+    std::cout << "prepare stripe reader finish" << std::endl;
     return true;
 }
 
