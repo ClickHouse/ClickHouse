@@ -780,11 +780,6 @@ void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
     }
 }
 
-bool KeeperDispatcher::clusterUpdateQueueEmpty() const
-{
-    return cluster_update_queue.empty();
-}
-
 bool KeeperDispatcher::reconfigEnabled() const
 {
     return server->reconfigEnabled();

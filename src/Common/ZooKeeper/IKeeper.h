@@ -82,7 +82,6 @@ enum class Error : int32_t
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
     ZINVALIDSTATE = -9,         /// Invalid zhandle state
-    ZRECONFIGINPROGRESS = -14,  /// Another reconfig is running
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than
