@@ -5,6 +5,7 @@
 namespace ProfileEvents
 {
 extern const Event ReadBufferSeekCancelConnection;
+extern const Event ReadWriteBufferFromHTTPPreservedSessions;
 }
 
 namespace DB
@@ -442,6 +443,7 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
     {
         /// Response was fully read.
         markSessionForReuse(session->getSession());
+        ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
         return false;
     }
 
@@ -568,6 +570,7 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
     {
         /// Eof is reached, i.e response was fully read.
         markSessionForReuse(session->getSession());
+        ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
         return false;
     }
 
@@ -623,8 +626,11 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
             size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
 
             if (!cancelled)
+            {
                 /// Response was fully read.
                 markSessionForReuse(sess);
+                ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
+            }
 
             return r;
         }
