@@ -46,7 +46,7 @@ void PlanFragment::unitePlanFragments(QueryPlanStepPtr step, std::vector<std::sh
     std::vector<PlanNode *> child_exchange_nodes;
     for (auto & fragment : fragments)
     {
-        auto exchange_step = std::make_shared<ExchangeDataStep>(fragment->getCurrentDataStream(), storage_limits_);
+        auto exchange_step = std::make_shared<ExchangeDataStep>(fragment_id, fragment->getCurrentDataStream(), storage_limits_);
         nodes.emplace_back(makeNewNode(exchange_step, {fragment->getRootNode()}));
 
         exchange_step->setPlanID(nodes.back().plan_id);
@@ -115,7 +115,7 @@ void PlanFragment::unitePlanFragments(
     for (size_t i = 0; i < child_fragments.size(); ++i)
     {
         auto & fragment = child_fragments[i];
-        auto exchange_step = std::make_shared<ExchangeDataStep>(fragment->getCurrentDataStream(), storage_limits_);
+        auto exchange_step = std::make_shared<ExchangeDataStep>(fragment_id, fragment->getCurrentDataStream(), storage_limits_);
         nodes.emplace_back(makeNewNode(exchange_step, {fragment->getRootNode()}));
 
         exchange_step->setPlanID(nodes.back().plan_id);
@@ -538,7 +538,7 @@ QueryPipeline PlanFragment::buildQueryPipeline(std::vector<DataSink::Channel> & 
             query_id = context->getInitialQueryId();
         }
         auto sink = std::make_shared<DataSink>(
-            pipeline.getHeader(), channels, output_partition, local_host, query_id, dest_fragment->getFragmentId(), dest_node->plan_id);
+            pipeline.getHeader(), channels, output_partition, local_host, query_id, dest_fragment->getFragmentID(), dest_node->plan_id);
 
         pipeline.complete(sink);
     }

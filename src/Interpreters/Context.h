@@ -280,6 +280,8 @@ private:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
+    Int32 fragment_id_counter = 0;
+
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -525,6 +527,11 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
     std::optional<UUID> getUserID() const;
+
+    Int32 getFragmentID()
+    {
+        return ++fragment_id_counter;
+    }
 
     void setQuotaKey(String quota_key_);
 

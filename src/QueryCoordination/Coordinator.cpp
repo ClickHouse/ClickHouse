@@ -17,7 +17,7 @@ void Coordinator::scheduleExecuteDistributedPlan()
     {
         for (auto & fragment : fragment_ids)
         {
-            LOG_INFO(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentId());
+            LOG_INFO(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
         }
     }
 
@@ -40,7 +40,7 @@ String Coordinator::assignFragmentToHost()
     String local_host_port;
     for (const auto & fragment : fragments)
     {
-        auto fragment_id = fragment->getFragmentId();
+        auto fragment_id = fragment->getFragmentID();
         id_fragment[fragment_id] = fragment;
 
         for (const auto & node : fragment->getNodes())
@@ -108,11 +108,11 @@ String Coordinator::assignFragmentToHost()
             /// dest_fragment scheduling by the left node
             if (dest_fragment->getChildren().size() > 1)
             {
-                if (fragment_id != dest_fragment->getChildren()[0]->getFragmentId())
+                if (fragment_id != dest_fragment->getChildren()[0]->getFragmentID())
                     continue;
             }
 
-            if (fragment_hosts_.contains(dest_fragment->getFragmentId()))
+            if (fragment_hosts_.contains(dest_fragment->getFragmentID()))
                 return this_fragment_hosts;
 
             if (!dest_fragment->isPartitioned())
@@ -120,15 +120,15 @@ String Coordinator::assignFragmentToHost()
                 if (!dest_fragment->getDestFragment()) /// root fragment
                 {
                     host_fragments[local_host_port].emplace_back(dest_fragment);
-                    fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_host_port);
-                    this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(local_host_port);
+                    fragment_hosts[dest_fragment->getFragmentID()].emplace_back(local_host_port);
+                    this_fragment_hosts[dest_fragment->getFragmentID()].emplace_back(local_host_port);
                 }
                 else
                 {
                     const auto & host = hosts[0];
                     host_fragments[host].emplace_back(dest_fragment);
-                    fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
-                    this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                    fragment_hosts[dest_fragment->getFragmentID()].emplace_back(host);
+                    this_fragment_hosts[dest_fragment->getFragmentID()].emplace_back(host);
                 }
 
                 continue;
@@ -136,12 +136,12 @@ String Coordinator::assignFragmentToHost()
 
             for (const auto & host : hosts)
             {
-                auto & dest_hosts = fragment_hosts[dest_fragment->getFragmentId()];
+                auto & dest_hosts = fragment_hosts[dest_fragment->getFragmentID()];
                 if (!std::count(dest_hosts.begin(), dest_hosts.end(), host))
                 {
                     host_fragments[host].emplace_back(dest_fragment);
                     dest_hosts.emplace_back(host);
-                    this_fragment_hosts[dest_fragment->getFragmentId()].emplace_back(host);
+                    this_fragment_hosts[dest_fragment->getFragmentID()].emplace_back(host);
                 }
             }
         }
@@ -217,7 +217,7 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
         Destinations data_to;
         if (dest_fragment)
         {
-            auto dest_fragment_id = dest_fragment->getFragmentId();
+            auto dest_fragment_id = dest_fragment->getFragmentID();
             data_to = fragment_hosts[dest_fragment_id];
 
             /// dest_fragment exchange data_from is current fragment hosts
@@ -256,7 +256,7 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
         FragmentsRequest fragments_request;
         for (const auto & fragment : fragments_for_send)
         {
-            const auto & [_, request] = *fragment_requests.find(fragment->getFragmentId());
+            const auto & [_, request] = *fragment_requests.find(fragment->getFragmentID());
             fragments_request.fragments_request.emplace_back(request);
             if (host == local_shard_host)
             {
@@ -298,11 +298,12 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
                     break;
                 }
                 package = host_connection[host]->receivePacket();
+                LOG_WARNING(log, "Try receive ready from {} actual receive {}", host, package.type);
                 try_num++;
             }
 
             if (package.type != Protocol::Server::FragmentsReady)
-                throw;
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Didn't receive ready from {}", host);
         }
     }
 }

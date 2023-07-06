@@ -982,24 +982,12 @@ PlanFragmentPtrs InterpreterSelectQueryFragments::createPlanFragments(const Quer
 {
     PlanFragmentPtrs res_fragments;
     createPlanFragments(single_plan, single_node_plan, res_fragments);
-
-    for (UInt32 i = 0; i < res_fragments.size(); ++i)
-    {
-        res_fragments[i]->setFragmentID(i);
-
-        res_fragments[i]->setFragmentID(res_fragments[i]->getRootNode());
-    }
     return res_fragments;
 }
 
 bool needPushDownChild(QueryPlanStepPtr step)
 {
     if (dynamic_cast<FilterStep *>(step.get()))
-    {
-        return true;
-    }
-
-    if (dynamic_cast<RollupStep *>(step.get()) || dynamic_cast<CubeStep *>(step.get()))
     {
         return true;
     }
@@ -1028,6 +1016,12 @@ bool isLimitRelated(QueryPlanStepPtr step)
     }
 
     return false;
+}
+
+bool isExtremesOrTotalsOrCubeOrRollup(QueryPlanStepPtr step)
+{
+    return dynamic_cast<ExtremesStep *>(step.get()) || dynamic_cast<RollupStep *>(step.get())
+        || dynamic_cast<CubeStep *>(step.get()) || dynamic_cast<TotalsHavingStep *>(step.get());
 }
 
 /* all extends IQueryPlanStep
@@ -1132,7 +1126,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     else if (dynamic_cast<UnionStep *>(root_node.step.get()))
     {
         DataPartition partition{.type = PartitionType::UNPARTITIONED};
-        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, partition);
+        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
         parent_fragment->unitePlanFragments(root_node.step, child_fragments);
 
         result = parent_fragment;
@@ -1147,6 +1141,12 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     {
         /// CreatingSetsStep need push to child_fragments[0], connect child_fragments[0] to child_fragments[1-N]
         result = createCreatingSetsFragment(root_node, child_fragments);
+    }
+    else if (isExtremesOrTotalsOrCubeOrRollup(root_node.step))
+    {
+        result = createUnpartitionedFragment(root_node.step, child_fragments[0]);
+        if (result)
+            all_fragments.emplace_back(result);
     }
     else
     {
@@ -1192,6 +1192,22 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createCreatingSetsFragment(Node
     return child_fragments[0];
 }
 
+PlanFragmentPtr InterpreterSelectQueryFragments::createUnpartitionedFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
+{
+    if (child_fragment->isPartitioned())
+    {
+        DataPartition partition{.type = PartitionType::UNPARTITIONED};
+        auto result = createParentFragment(child_fragment, partition);
+        result->addStep(step);
+        return result;
+    }
+    else
+    {
+        child_fragment->addStep(step);
+        return {};
+    }
+}
+
 PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment)
 {
     /// Just only impl hash shaffle join yet
@@ -1202,7 +1218,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanSte
 
     DataPartition rhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_right, .keys_size = join_clause.key_names_right.size(), .partition_by_bucket_num = false};
 
-    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, lhs_join_partition);
+    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), lhs_join_partition, context);
 
     PlanFragmentPtrs left_right_fragments;
     left_right_fragments.emplace_back(left_child_fragment);
@@ -1216,17 +1232,17 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanSte
     return parent_fragment;
 }
 
-void InterpreterSelectQueryFragments::processLimitRelated(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
+void InterpreterSelectQueryFragments::processLimitRelated(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
 {
-    childFragment->addStep(step);
+    child_fragment->addStep(step);
 
-    if (childFragment->getChildren().empty())
+    if (child_fragment->getChildren().empty())
         return;
 
-    if (!childFragment->getChildren()[0]->isPartitioned())
+    if (!child_fragment->getChildren()[0]->isPartitioned())
         return;
 
-    auto fragment = childFragment->getChildren()[0];
+    auto fragment = child_fragment->getChildren()[0];
     if (auto * expression_step = dynamic_cast<ExpressionStep *>(step.get()))
     {
         auto actions_dag = expression_step->getExpression()->clone();
@@ -1248,10 +1264,10 @@ void InterpreterSelectQueryFragments::processLimitRelated(QueryPlanStepPtr step,
         throw;
 }
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
 {
-    childFragment->addStep(step);
-    if (!childFragment->isPartitioned())
+    child_fragment->addStep(step);
+    if (!child_fragment->isPartitioned())
     {
         return {};
     }
@@ -1259,7 +1275,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlan
     auto * sort_step = dynamic_cast<SortingStep *>(step.get());
 
     /// Create a new fragment for a sort-merging exchange.
-    PlanFragmentPtr merge_fragment = createParentFragment(childFragment, DataPartition{.type = PartitionType::UNPARTITIONED});
+    PlanFragmentPtr merge_fragment = createParentFragment(child_fragment, DataPartition{.type = PartitionType::UNPARTITIONED});
     auto * exchange_node = merge_fragment->getRootNode(); /// exchange node
 
     const SortDescription & sort_description = sort_step->getSortDescription();
@@ -1285,7 +1301,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanSte
     DataPartition partition;
     partition.type = PartitionType::RANDOM;
 
-    auto fragment = std::make_shared<PlanFragment>(context, partition);
+    auto fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
     fragment->addStep(std::move(step));
     fragment->setFragmentInPlanTree(fragment->getRootNode());
     fragment->setCluster(context->getCluster("test_two_shards"));
@@ -1293,23 +1309,23 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanSte
 }
 
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr childFragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
 {
     // check size
-    //    if (childFragment.getPlanRoot().getNumInstances() <= 1) {
-    //        childFragment.addPlanRoot(node);
-    //        return childFragment;
+    //    if (child_fragment.getPlanRoot().getNumInstances() <= 1) {
+    //        child_fragment.addPlanRoot(node);
+    //        return child_fragment;
     //    }
 
     auto * aggregate_step = dynamic_cast<AggregatingStep *>(step.get());
 
     auto aggregating_step = aggregate_step->clone(false);
 
-    childFragment->addStep(aggregating_step);
+    child_fragment->addStep(aggregating_step);
 
     DataPartition partition;
 //    if (expressions.group_by_elements_actions.empty())
-    if (query_analyzer->aggregationKeys().empty() || aggregating_step->withCubeOrRollup())
+    if (query_analyzer->aggregationKeys().empty() || aggregating_step->withTotalsOrCubeOrRollup())
     {
         partition.type = PartitionType::UNPARTITIONED;
     }
@@ -1322,7 +1338,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(Query
     }
 
     // place a merge aggregation step in a new fragment
-    PlanFragmentPtr merge_fragment = createParentFragment(childFragment, partition);
+    PlanFragmentPtr merge_fragment = createParentFragment(child_fragment, partition);
 
     const Settings & settings = context->getSettingsRef();
     std::shared_ptr<MergingAggregatedStep> merge_agg_node = aggregating_step->makeMergingAggregatedStep(merge_fragment->getCurrentDataStream(), settings);
@@ -1334,9 +1350,10 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(Query
 
 PlanFragmentPtr InterpreterSelectQueryFragments::createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition)
 {
-    std::shared_ptr<ExchangeDataStep> exchange_step = std::make_shared<ExchangeDataStep>(child_fragment->getCurrentDataStream(), storage_limits);
+    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
 
-    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, partition);
+    std::shared_ptr<ExchangeDataStep> exchange_step
+        = std::make_shared<ExchangeDataStep>(parent_fragment->getFragmentID(), child_fragment->getCurrentDataStream(), storage_limits);
     parent_fragment->addStep(exchange_step);
     auto * exchange_node = parent_fragment->getRootNode(); /// exchange node
     parent_fragment->setFragmentInPlanTree(exchange_node);
@@ -2689,6 +2706,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
 
     for (const auto & actions_to_execute : result_actions_to_execute)
     {
+        if (!actions_to_execute)
+            continue;
+
         for (const auto & node : actions_to_execute->getNodes())
         {
             const auto & set_key = node.result_name;

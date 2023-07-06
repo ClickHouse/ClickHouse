@@ -245,7 +245,7 @@ Block InterpreterSelectWithUnionQueryFragments::getCurrentChildResultHeader(cons
             .getSampleBlock();
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        return InterpreterSelectQueryFragments(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+        return InterpreterSelectQueryFragments(ast_ptr_, context, options.copy().analyze().noModify(), fragment_id_counter).getSampleBlock();
     }
     else
         throw;
@@ -259,7 +259,7 @@ InterpreterSelectWithUnionQueryFragments::buildCurrentChildInterpreter(const AST
         return std::make_unique<InterpreterSelectWithUnionQueryFragments>(ast_ptr_, context, options, current_required_result_column_names);
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        return std::make_unique<InterpreterSelectQueryFragments>(ast_ptr_, context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectQueryFragments>(ast_ptr_, context, options, fragment_id_counter, current_required_result_column_names);
     }
     else
         throw;
@@ -356,7 +356,7 @@ void InterpreterSelectWithUnionQueryFragments::buildFragments()
         auto step = std::make_shared<UnionStep>(std::move(data_streams), max_threads);
 
         DataPartition partition{.type = PartitionType::UNPARTITIONED};
-        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context, partition);
+        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
         parent_fragment->unitePlanFragments(step, child_fragments);
 
         const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();

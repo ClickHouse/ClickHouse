@@ -62,7 +62,7 @@ void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vec
         auto & all_fragments = data->fragments_distributed;
         for (const auto & all_fragment : all_fragments)
         {
-            auto it = need_execute_fragments.find(all_fragment.fragment->getFragmentId());
+            auto it = need_execute_fragments.find(all_fragment.fragment->getFragmentID());
             if (it != need_execute_fragments.end())
             {
                 auto & request = it->second;
@@ -87,7 +87,7 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
     {
         for (auto & to : fragments_distributed.data_to)
         {
-            LOG_DEBUG(log, "Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentId(), to);
+            LOG_DEBUG(log, "Fragment {} will send data to {}", fragments_distributed.fragment->getFragmentID(), to);
         }
 
         /// for data sink
@@ -121,7 +121,7 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 
             auto connection = shard_info.pool->getOne(timeouts, &current_settings, target_host_port);
 
-            LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragments_distributed.fragment->getFragmentId(), connection->getDescription());
+            LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragments_distributed.fragment->getFragmentID(), connection->getDescription());
             channels.emplace_back(DataSink::Channel{.connection = connection, .is_local = (local_host == target_host_port)});
         }
 
@@ -173,12 +173,12 @@ void FragmentMgr::executeQueryPipelines(const String & query_id)
         auto & fragment = data->fragments_distributed[i].fragment;
         if (fragment->getDestFragment())
         {
-            onFinishCallBack call_back = [this, query_id = query_id, fragment_id = fragment->getFragmentId()]()
+            onFinishCallBack call_back = [this, query_id = query_id, fragment_id = fragment->getFragmentID()]()
             {
                 onFinish(query_id, fragment_id);
             };
 
-            LOG_DEBUG(log, "Fragment {} begin execute", fragment->getFragmentId());
+            LOG_DEBUG(log, "Fragment {} begin execute", fragment->getFragmentID());
             executors.execute(data->query_pipelines[i], call_back);
         }
     }
@@ -211,7 +211,7 @@ void FragmentMgr::rootQueryPipelineFinish(const String & query_id)
         {
             if (!fragment_distributed.fragment->getDestFragment())
             {
-                root_fragment_id.emplace(fragment_distributed.fragment->getFragmentId());
+                root_fragment_id.emplace(fragment_distributed.fragment->getFragmentID());
             }
         }
     }
@@ -229,7 +229,7 @@ std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDa
         std::lock_guard lock(data->mutex);
         for (auto & fragment : data->fragments_distributed)
         {
-            if (fragment.fragment->getFragmentId() == exchange_data_request.fragment_id)
+            if (fragment.fragment->getFragmentID() == exchange_data_request.fragment_id)
             {
                 const auto & receiver_key = FragmentDistributed::receiverKey(exchange_data_request.exchange_id, exchange_data_request.from_host);
                 auto receiver_it = fragment.receivers.find(receiver_key);
@@ -259,7 +259,7 @@ void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)
 
         for (auto & fragment : data->fragments_distributed)
         {
-            if (fragment.fragment->getFragmentId() == fragment_id)
+            if (fragment.fragment->getFragmentID() == fragment_id)
             {
                 fragment.is_finished = true;
             }

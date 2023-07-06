@@ -299,8 +299,8 @@ class PlanFragment : public std::enable_shared_from_this<PlanFragment>
 public:
     using Node = QueryPlan::Node;
 
-    explicit PlanFragment(ContextMutablePtr & context_, const DataPartition & partition)
-        : context(context_), data_partition(partition)
+    explicit PlanFragment(FragmentID fragment_id_, const DataPartition & partition, ContextMutablePtr & context_)
+        : fragment_id(fragment_id_), data_partition(partition), context(context_)
     {
     }
 
@@ -399,7 +399,7 @@ public:
         if (dest_node && dest_node->fragment)
         {
             str += ", Data to:";
-            str += std::to_string(dest_node->fragment->getFragmentId()) + ", ";
+            str += std::to_string(dest_node->fragment->getFragmentID()) + ", ";
         }
         buffer.write(str.c_str(), str.size());
         buffer.write('\n');
@@ -416,31 +416,7 @@ public:
 
     void setCluster(std::shared_ptr<Cluster> cluster_) { cluster = cluster_; }
 
-    void setFragmentID(Node * node)
-    {
-        if (!node || !node->step)
-        {
-            return;
-        }
-
-        if (auto * exchange_step = dynamic_cast<ExchangeDataStep *>(node->step.get()))
-        {
-            exchange_step->setFragmentID(getFragmentId());
-            return;
-        }
-
-        for (Node * child : node->children)
-        {
-            setFragmentID(child);
-        }
-    }
-
-    void setFragmentID(UInt32 id)
-    {
-        fragment_id = id;
-    }
-
-    Int32 getFragmentId() const { return fragment_id; }
+    Int32 getFragmentID() const { return fragment_id; }
 
     QueryPipeline buildQueryPipeline(std::vector<DataSink::Channel> & channels, const String & local_host);
 
@@ -509,8 +485,6 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
 
-    ContextMutablePtr context;
-
     // id for this plan fragment
     FragmentID fragment_id;
 
@@ -522,6 +496,8 @@ private:
     DataPartition data_partition;
 
     DataPartition output_partition;
+
+    ContextMutablePtr context;
 
     // if null, outputs the entire row produced by planRoot
     // ArrayList<Expr> outputExprs;

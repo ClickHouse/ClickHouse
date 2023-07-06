@@ -67,7 +67,7 @@
 //
 //            for (auto it = std::next(inputs_children.begin(), from_input); it != inputs_children.end(); ++it, ++from_input)
 //            {
-//                FragmentID to_fragment = (*it)->getFragmentId();
+//                FragmentID to_fragment = (*it)->getFragmentID();
 //                Hosts & hosts = fragment_hosts[to_fragment];
 //                auto output_port_number = to->getOutputPortNumber(&it->getOutputPort());
 //                Edge edge(0, true, from_input, output_port_number, &nodes[node]->post_updated_input_ports);
