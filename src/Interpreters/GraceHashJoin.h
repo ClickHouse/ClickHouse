@@ -101,15 +101,16 @@ private:
     bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
     bool hasMemoryOverflow(const BlocksList & blocks) const;
 
-    /// Create new bucket at the end of @destination.
-    void addBucket(Buckets & destination);
+    /// Add bucket_count new buckets
+    /// Throws if a bucket creation fails
+    void addBuckets(size_t bucket_count);
 
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
     ///
     /// NB: after @rehashBuckets there may be rows that are written to the buckets that they do not belong to.
     /// It is fine; these rows will be written to the corresponding buckets during the third stage.
-    Buckets rehashBuckets(size_t to_size);
+    Buckets rehashBuckets();
 
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
