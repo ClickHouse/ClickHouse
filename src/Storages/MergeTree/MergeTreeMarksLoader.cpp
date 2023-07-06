@@ -133,7 +133,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
-        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
@@ -147,25 +146,23 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     else
     {
-        for (size_t i = 0; i < marks_count; ++i)
+        size_t i = 0;
+        size_t granularity;
+        while (!reader->eof())
         {
-            if (reader->eof())
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
-                    mrk_path, marks_count, expected_uncompressed_size, i, reader->count());
-
-            size_t granularity;
             reader->readStrict(
                 reinterpret_cast<char *>(plain_marks.data() + i * columns_in_mark), columns_in_mark * sizeof(MarkInCompressedFile));
             readIntBinary(granularity, *reader);
+            ++i;
         }
 
-        if (!reader->eof())
+        if (i * mark_size != expected_uncompressed_size)
+        {
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Too many marks in file {}, marks expected {} (bytes size {})",
-                mrk_path, marks_count, expected_uncompressed_size);
+                "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
+                mrk_path, marks_count, expected_uncompressed_size, i, reader->count());
+        }
     }
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
