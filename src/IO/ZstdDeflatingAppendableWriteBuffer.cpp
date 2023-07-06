@@ -1,5 +1,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
+#include "IO/ReadBufferFromFileBase.h"
 #include <IO/ReadBufferFromFile.h>
 
 namespace DB
@@ -11,14 +12,16 @@ namespace ErrorCodes
 }
 
 ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
-    std::unique_ptr<WriteBufferFromFile> out_,
+    std::unique_ptr<WriteBufferFromFileBase> out_,
     int compression_level,
     bool append_to_existing_file_,
+    std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
     : BufferWithOwnMemory(buf_size, existing_memory, alignment)
     , out(std::move(out_))
+    , read_buffer_creator(std::move(read_buffer_creator_))
     , append_to_existing_file(append_to_existing_file_)
 {
     cctx = ZSTD_createCCtx();
@@ -194,13 +197,13 @@ void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 
 bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 {
-    ReadBufferFromFile reader(out->getFileName());
-    auto fsize = reader.getFileSize();
+    auto reader = read_buffer_creator();
+    auto fsize = reader->getFileSize();
     if (fsize > 3)
     {
         std::array<char, 3> result;
-        reader.seek(fsize - 3, SEEK_SET);
-        reader.readStrict(result.data(), 3);
+        reader->seek(fsize - 3, SEEK_SET);
+        reader->readStrict(result.data(), 3);
 
         /// If we don't have correct block in the end, then we need to add it manually.
         /// NOTE: maybe we can have the same bytes in case of data corruption/unfinished write.
