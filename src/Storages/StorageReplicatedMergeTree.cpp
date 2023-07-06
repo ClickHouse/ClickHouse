@@ -3366,6 +3366,10 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         {
             disable_reason = fmt::format("Not executing fetch of part {} because we still have broken part with that name. "
                                          "Waiting for the broken part to be removed first.", entry.new_part_name);
+
+            constexpr time_t min_interval_to_wakeup_cleanup_s = 30;
+            if (entry.last_postpone_time + min_interval_to_wakeup_cleanup_s < time(nullptr))
+                const_cast<StorageReplicatedMergeTree *>(this)->cleanup_thread.wakeup();
             return false;
         }
     }
@@ -3753,11 +3757,13 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     DataPartPtr broken_part;
     auto outdate_broken_part = [this, &broken_part]()
     {
-        if (broken_part)
+        if (!broken_part)
             return;
         DataPartsLock lock = lockParts();
         if (broken_part->getState() == DataPartState::Active)
             removePartsFromWorkingSet(NO_TRANSACTION_RAW, {broken_part}, true, &lock);
+        broken_part.reset();
+        cleanup_thread.wakeup();
     };
 
     /// We don't know exactly what happened to broken part
@@ -3767,6 +3773,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     auto partition_range = getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated},
                                                                          broken_part_info.partition_id);
+    Strings detached_parts;
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
@@ -3784,7 +3791,9 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         {
             part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
         }
+        detached_parts.push_back(part->name);
     }
+    LOG_WARNING(log, "Detached {} parts covered by broken part {}: {}", detached_parts.size(), part_name, fmt::join(detached_parts, ", "));
 
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
@@ -3873,10 +3882,14 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
         zkutil::KeeperMultiException::check(rc, ops, results);
 
+        String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
+        log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+        LOG_DEBUG(log, "Created entry {} to fetch missing part {}", log_entry->znode_name, part_name);
+        queue.insert(zookeeper, log_entry);
+
         /// Make the part outdated after creating the log entry.
         /// Otherwise, if we failed to create the entry, cleanup thread could remove the part from ZooKeeper (leading to diverged replicas)
         outdate_broken_part();
-        queue_updating_task->schedule();
         return;
     }
 }
