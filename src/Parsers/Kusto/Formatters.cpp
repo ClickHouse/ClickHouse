@@ -1,10 +1,10 @@
-#include "ParserKQLTimespan.h"
+#include "Formatters.h"
 
 #include <format>
 
 namespace DB
 {
-std::string ParserKQLTimespan::compose(const Int64 ticks)
+std::string formatKQLTimespan(const Int64 ticks)
 {
     static constexpr Int64 TICKS_PER_SECOND = 10000000;
     static constexpr auto TICKS_PER_MINUTE = TICKS_PER_SECOND * 60;

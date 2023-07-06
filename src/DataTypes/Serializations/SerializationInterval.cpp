@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
-#include <Parsers/Kusto/ParserKQLTimespan.h>
+#include <Parsers/Kusto/Formatters.h>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ void SerializationKustoInterval::serializeText(
 
     const auto & value = interval_column->getData()[row];
     const auto ticks = kind.toAvgNanoseconds() * value / 100;
-    const auto interval_as_string = ParserKQLTimespan::compose(ticks);
+    const auto interval_as_string = formatKQLTimespan(ticks);
     ostr.write(interval_as_string.c_str(), interval_as_string.length());
 }
 
