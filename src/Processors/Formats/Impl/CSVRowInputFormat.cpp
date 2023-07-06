@@ -155,18 +155,7 @@ CSVFormatReader::CSVFormatReader(PeekableReadBuffer & buf_, const FormatSettings
 void CSVFormatReader::skipFieldDelimiter()
 {
     skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
-
-    bool res = checkChar(format_settings.csv.delimiter, *buf);
-    if (res)
-        return;
-
-    if (!format_settings.csv.missing_as_default)
-    {
-        char err[2] = {format_settings.csv.delimiter, '\0'};
-        throwAtAssertionFailed(err, *buf);
-    }
-    else
-        current_row_has_missing_fields = true;
+    assertChar(format_settings.csv.delimiter, *buf);
 }
 
 template <bool read_string>
@@ -206,7 +195,6 @@ void CSVFormatReader::skipRowEndDelimiter()
         return;
 
     skipEndOfLine(*buf);
-    current_row_has_missing_fields = false;
 }
 
 void CSVFormatReader::skipHeaderRow()
@@ -295,6 +283,11 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
+bool CSVFormatReader::allowVariableNumberOfColumns()
+{
+    return format_settings.csv.allow_variable_number_of_colums;
+}
+
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
@@ -308,8 +301,6 @@ bool CSVFormatReader::readField(
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
 
-    bool res = false;
-
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
     if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
@@ -321,34 +312,18 @@ bool CSVFormatReader::readField(
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
         column.insertDefault();
-    }
-    else if (current_row_has_missing_fields)
-    {
-        column.insertDefault();
-    }
-    else if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-    {
-        /// If value is null but type is not nullable then use default value instead.
-        res = SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
-    }
-    else
-    {
-        /// Read the column normally.
-        serialization->deserializeTextCSV(column, *buf, format_settings);
-        res = true;
+        return false;
     }
 
-    if (is_last_file_column && format_settings.csv.ignore_extra_columns)
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
-        // Skip all fields to next line.
-        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
-        while (checkChar(format_settings.csv.delimiter, *buf))
-        {
-            skipField();
-            skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
-        }
+        /// If value is null but type is not nullable then use default value instead.
+        return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
     }
-    return res;
+
+    /// Read the column normally.
+    serialization->deserializeTextCSV(column, *buf, format_settings);
+    return true;
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
@@ -375,6 +350,11 @@ bool CSVFormatReader::checkForSuffix()
 
     buf->rollbackToCheckpoint();
     return false;
+}
+
+bool CSVFormatReader::checkForEndOfRow()
+{
+    return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
