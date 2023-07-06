@@ -10,7 +10,7 @@ namespace
 
 struct HasSubsequenceCaseSensitiveASCII
 {
-    static void toLowerIfNeed(std::string & /*s*/) { }
+    static void toLowerIfNeed(String & /*s*/) { }
 };
 
 struct NameHasSubsequence

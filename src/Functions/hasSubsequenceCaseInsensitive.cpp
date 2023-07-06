@@ -9,7 +9,7 @@ namespace
 
 struct HasSubsequenceCaseInsensitiveASCII
 {
-    static void toLowerIfNeed(std::string & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
+    static void toLowerIfNeed(String & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
 };
 
 struct NameHasSubsequenceCaseInsensitive
