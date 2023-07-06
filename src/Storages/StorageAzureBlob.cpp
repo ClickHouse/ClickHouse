@@ -342,7 +342,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                 throw Exception(
                     ErrorCodes::DATABASE_ACCESS_DENIED,
                     "AzureBlobStorage container does not exist '{}'",
-                    configuration.blob_path);
+                    configuration.container);
 
             result->CreateIfNotExists();
         }
@@ -393,7 +393,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                 throw Exception(
                     ErrorCodes::DATABASE_ACCESS_DENIED,
                     "AzureBlobStorage container does not exist '{}'",
-                    configuration.blob_path);
+                    configuration.container);
             result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
         }
     }
