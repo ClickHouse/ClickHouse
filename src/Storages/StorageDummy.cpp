@@ -5,6 +5,7 @@
 
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {

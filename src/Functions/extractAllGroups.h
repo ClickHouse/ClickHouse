@@ -94,7 +94,6 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        using StringPiece = typename Regexps::Regexp::StringPieceType;
         const Regexps::Regexp holder = Regexps::createRegexp<false, false, false>(needle);
         const auto & regexp = holder.getRE2();
 
@@ -111,7 +110,7 @@ public:
                             groups_count, std::to_string(MAX_GROUPS_COUNT - 1));
 
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<StringPiece, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
+        PODArrayWithStackMemory<std::string_view, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
@@ -160,7 +159,7 @@ public:
             /// Additional limit to fail fast on supposedly incorrect usage.
             const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
 
-            PODArray<StringPiece, 0> all_matches;
+            PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
             PODArray<size_t, 0> number_of_matches_per_row;
 

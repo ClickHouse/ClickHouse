@@ -8,8 +8,12 @@
 
 namespace DB
 {
+
 class CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
+class DownloadQueue;
+using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
@@ -44,6 +48,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         const Key & key_,
         const std::string & key_path_,
         CleanupQueue & cleanup_queue_,
+        DownloadQueue & download_queue_,
         Poco::Logger * log_,
         bool created_base_directory_ = false);
 
@@ -70,6 +75,7 @@ private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
+    DownloadQueue & download_queue;
     std::atomic<bool> created_base_directory = false;
     Poco::Logger * log;
 };
@@ -81,7 +87,7 @@ struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, 
 {
 public:
     using Key = FileCacheKey;
-    using IterateCacheMetadataFunc = std::function<void(const LockedKey &)>;
+    using IterateCacheMetadataFunc = std::function<void(LockedKey &)>;
 
     explicit CacheMetadata(const std::string & path_);
 
@@ -100,6 +106,7 @@ public:
     enum class KeyNotFoundPolicy
     {
         THROW,
+        THROW_LOGICAL,
         CREATE_EMPTY,
         RETURN_NULL,
     };
@@ -111,12 +118,19 @@ public:
 
     void doCleanup();
 
+    void downloadThreadFunc();
+
+    void cancelDownload();
+
 private:
     CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
     mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
+    const DownloadQueuePtr download_queue;
     Poco::Logger * log;
+
+    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
 };
 
 
@@ -156,13 +170,18 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    void removeAllReleasable();
+    void removeAll(bool if_releasable = true);
 
     KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
+    KeyMetadata::iterator removeFileSegment(size_t offset);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
+    void addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
+
     bool isLastOwnerOfFileSegment(size_t offset) const;
+
+    std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
 
     void removeFromCleanupQueue();
 
@@ -171,6 +190,8 @@ struct LockedKey : private boost::noncopyable
     std::string toString() const;
 
 private:
+    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &);
+
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
 };
