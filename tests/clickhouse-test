@@ -2384,7 +2384,7 @@ def main(args):
     sys.exit(exit_code.value)
 
 
-def find_binary(name):
+def find_executable(name):
     if os.access(name, os.X_OK):
         return name
     paths = os.environ.get("PATH").split(":")
@@ -2402,7 +2402,6 @@ def find_binary(name):
         return bin_path
 
     raise Exception(f"{name} was not found in PATH")
-
 
 def find_clickhouse_command(binary, command):
     symlink = binary + "-" + command
@@ -2434,7 +2433,7 @@ def parse_args():
         "-b",
         "--binary",
         default="clickhouse",
-        type=find_binary,
+        type=find_executable,
         help="Path to clickhouse binary or name of binary in PATH",
     )
     parser.add_argument(
