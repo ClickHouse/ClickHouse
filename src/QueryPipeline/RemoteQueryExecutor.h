@@ -304,10 +304,6 @@ private:
 
     /// Reads packet by packet
     Block readPackets();
-
-    /// Block does not support passing 0 columns but non-zero rows.
-    /// We need to ensure that this is not happening.
-    static void assertHeaderIsNotEmpty(const Block & header);
 };
 
 }
