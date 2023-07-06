@@ -83,7 +83,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
-ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {

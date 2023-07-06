@@ -764,7 +764,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructure(getContext());
+        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
     {

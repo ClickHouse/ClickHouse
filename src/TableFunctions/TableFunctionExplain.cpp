@@ -91,7 +91,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     query = std::move(explain_query);
 }
 
-ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
     ColumnsDescription columns_description;
@@ -123,7 +123,7 @@ static Block executeMonoBlock(QueryPipeline & pipeline)
 }
 
 StoragePtr TableFunctionExplain::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     /// To support settings inside explain subquery.
     auto mutable_context = Context::createCopy(context);
@@ -132,7 +132,7 @@ StoragePtr TableFunctionExplain::executeImpl(
     Block block = executeMonoBlock(blockio.pipeline);
 
     StorageID storage_id(getDatabaseName(), table_name);
-    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context), std::move(block));
+    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context, is_insert_query), std::move(block));
     storage->startup();
     return storage;
 }

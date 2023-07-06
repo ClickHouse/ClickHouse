@@ -43,7 +43,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     dictionary_name = checkAndGetLiteralArgument<String>(args[0], "dictionary_name");
 }
 
-ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
     std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
@@ -76,10 +76,10 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(
-    const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription) const
+    const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
     StorageID dict_id(getDatabaseName(), table_name);
-    auto dictionary_table_structure = getActualTableStructure(context);
+    auto dictionary_table_structure = getActualTableStructure(context, is_insert_query);
 
     auto result = std::make_shared<StorageDictionary>(
         dict_id, dictionary_name, std::move(dictionary_table_structure), String{}, StorageDictionary::Location::Custom, context);
