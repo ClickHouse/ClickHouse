@@ -7,7 +7,8 @@
 #include <IO/OpenedFile.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
+
+#include <city.h>
 
 
 namespace ProfileEvents
@@ -86,7 +87,7 @@ public:
     OpenedFilePtr get(const std::string & path, int flags)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::OpenedFileCacheMicroseconds);
-        const auto bucket = sipHash64(path) % buckets;
+        const auto bucket = CityHash_v1_0_2::CityHash64(path) % buckets;
         return impls[bucket].get(path, flags);
     }
 
