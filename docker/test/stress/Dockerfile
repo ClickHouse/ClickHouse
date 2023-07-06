@@ -30,4 +30,4 @@ ENV DATASETS="hits visits"
 ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-CMD ["/bin/bash", "/run.sh"]
+CMD ["/bin/bash", "-c", "/run.sh | ts '%Y-%m-%d %H:%M:%S'"]
