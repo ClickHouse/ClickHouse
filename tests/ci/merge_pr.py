@@ -154,7 +154,7 @@ def get_workflows_for_head(repo: Repository, head_sha: str) -> List[WorkflowRun]
     return list(
         PaginatedList(
             WorkflowRun,
-            repo._requester,  # type:ignore # pylint:disable=protected-access
+            repo._requester,  # pylint:disable=protected-access
             f"{repo.url}/actions/runs",
             {"head_sha": head_sha},
             list_item="workflow_runs",
