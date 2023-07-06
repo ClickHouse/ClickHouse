@@ -19,7 +19,6 @@ namespace DB
 
     namespace ErrorCodes
     {
-        extern const int CANNOT_FORMAT_DATETIME;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
 
