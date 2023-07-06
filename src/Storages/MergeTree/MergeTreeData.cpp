@@ -2137,20 +2137,20 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     /// Please don't use "zero-copy replication" (a non-production feature) in production.
     /// It is not ready for production usage. Don't use it.
 
-    bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
+    /// It also is disabled for any object storage, because it can lead to race conditions on blob removal.
+    /// (see comment at `clearPartsFromFilesystemImpl`).
+    bool need_remove_parts_in_order = false;
 
-    if (need_remove_parts_in_order)
+    if (supportsReplication())
     {
-        bool has_zero_copy_disk = false;
         for (const auto & disk : getDisks())
         {
-            if (disk->supportZeroCopyReplication())
+            if (disk->isRemote())
             {
-                has_zero_copy_disk = true;
+                need_remove_parts_in_order = true;
                 break;
             }
         }
-        need_remove_parts_in_order = has_zero_copy_disk;
     }
 
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
@@ -2394,17 +2394,27 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     std::mutex part_names_mutex;
     auto runner = threadPoolCallbackRunner<void>(getPartsCleaningThreadPool().get(), "PartsCleaning");
 
-    /// This flag disallow straightforward concurrent parts removal. It's required only in case
-    /// when we have parts on zero-copy disk + at least some of them were mutated.
+    /** Straightforward concurrent parts removal can be applied for the case
+      * when we have parts on object storage disk + at least some of them were mutated
+      * (thus, can contains hardlinks to files in the previous parts).
+      * If we are deleting parts that contains hardlinks to the same file we may face into race condition
+      * and delete only local metadata files, but not the blobs on object storage.
+      * Given that, we remove in parallel only "independent" parts that don't have such hardlinks.
+      * Note that it also may be applicable for the regular MergeTree, fixed only for Replicated.
+      *
+      * To avoid this we need to fix race conditions on parts and blob removal.
+      */
     bool remove_parts_in_order = false;
-    if (settings->allow_remote_fs_zero_copy_replication && dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr)
+    if (dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr)
     {
         remove_parts_in_order = std::any_of(
             parts_to_remove.begin(), parts_to_remove.end(),
-            [] (const auto & data_part) { return data_part->isStoredOnRemoteDiskWithZeroCopySupport() && data_part->info.getMutationVersion() > 0; }
+            [] (const auto & data_part)
+            {
+                return data_part->isStoredOnRemoteDisk() && data_part->info.getMutationVersion() > 0;
+            }
         );
     }
-
 
     if (!remove_parts_in_order)
     {
@@ -2441,7 +2451,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
     LOG_DEBUG(
-        log, "Removing {} parts from filesystem (concurrently): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
+        log, "Removing {} parts from filesystem (concurrently in order): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
 
     /// We have "zero copy replication" parts and we are going to remove them in parallel.
     /// The problem is that all parts in a mutation chain must be removed sequentially to avoid "key does not exits" issues.
