@@ -199,12 +199,16 @@ public:
 class LogSeriesLimiter
 {
     static std::mutex mutex;
-
-    /// Hash(logger_name) -> (allowed_count, interval_s)
-    static std::unordered_map<UInt64, std::tuple<size_t, time_t>> series_settings TSA_GUARDED_BY(mutex);
+    static time_t last_cleanup;
 
     /// Hash(logger_name) -> (last_logged_time_s, accepted, muted)
-    static std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>> series_loggers TSA_GUARDED_BY(mutex);
+    using SeriesRecords = std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>>;
+
+    static SeriesRecords & getSeriesRecords() TSA_REQUIRES(mutex)
+    {
+        static SeriesRecords records;
+        return records;
+    }
 
     Poco::Logger * logger = nullptr;
     bool accepted = false;

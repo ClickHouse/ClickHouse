@@ -77,9 +77,8 @@ void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
 }
 
 
-std::unordered_map<UInt64, std::tuple<size_t, time_t>> LogSeriesLimiter::series_settings;
-std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>> LogSeriesLimiter::series_loggers;
 std::mutex LogSeriesLimiter::mutex;
+time_t LogSeriesLimiter::last_cleanup = 0;
 
 LogSeriesLimiter::LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_)
     : logger(logger_)
@@ -101,33 +100,33 @@ LogSeriesLimiter::LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_
 
     std::lock_guard lock(mutex);
 
-    if (series_settings.contains(name_hash))
+    if (last_cleanup == 0)
+        last_cleanup = now;
+
+    auto & series_records = getSeriesRecords();
+
+    static const time_t cleanup_delay_s = 600;
+    if (last_cleanup + cleanup_delay_s >= now)
     {
-        auto & settings = series_settings[name_hash];
-        auto & [allowed_count, interval_s] = settings;
-        chassert(allowed_count_ == allowed_count);
-        chassert(interval_s_ == interval_s);
-    }
-    else
-    {
-        series_settings[name_hash] = std::make_tuple(allowed_count_, interval_s_);
+        time_t old = now - cleanup_delay_s;
+        std::erase_if(series_records, [old](const auto & elem) { return get<0>(elem.second) < old; });
+        last_cleanup = now;
     }
 
     auto register_as_first = [&] () TSA_REQUIRES(mutex)
     {
         assert(allowed_count_ > 0);
         accepted = true;
-        series_loggers[name_hash] = std::make_tuple(now, 1, 1);
+        series_records[name_hash] = std::make_tuple(now, 1, 1);
     };
 
-
-    if (!series_loggers.contains(name_hash))
+    if (!series_records.contains(name_hash))
     {
         register_as_first();
         return;
     }
 
-    auto & [last_time, accepted_count, total_count] = series_loggers[name_hash];
+    auto & [last_time, accepted_count, total_count] = series_records[name_hash];
     if (last_time + interval_s_ <= now)
     {
         debug_message = fmt::format(
