@@ -63,6 +63,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     if (parts_set.contains(name))
         return;
 
+    LOG_TRACE(log, "Enqueueing {} for check after after {}s", name, delay_to_check_seconds);
     parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
     parts_set.insert(name);
     task->schedule();
@@ -423,7 +424,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 }
 
 
-CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & part_name)
+CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after)
 {
     LOG_INFO(log, "Checking part {}", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
@@ -438,7 +439,11 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
             break;
 
         case ReplicatedCheckResult::RecheckLater:
-            enqueuePart(part_name, result.recheck_after);
+            /// NOTE We cannot enqueue it from the check thread itself
+            if (recheck_after)
+                *recheck_after = result.recheck_after;
+            else
+                enqueuePart(part_name, result.recheck_after);
             break;
 
         case ReplicatedCheckResult::DetachUnexpected:
@@ -471,10 +476,22 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
 
             /// Part is not in ZooKeeper and not on disk (so there's nothing to detach or remove from ZooKeeper).
             /// Probably we cannot execute some entry from the replication queue (so don't need to enqueue another one).
-            /// Either all replicas having the part are not active, or the part is lost forever.
+            /// Either all replicas having the part are not active...
             bool found_something = searchForMissingPartOnOtherReplicas(part_name);
-            if (!found_something)
-                onPartIsLostForever(part_name);
+            if (found_something)
+                break;
+
+            /// ... or the part is lost forever
+            bool handled_lost_part = onPartIsLostForever(part_name);
+            if (handled_lost_part)
+                break;
+
+            /// We failed to create empty part, need retry
+            constexpr time_t retry_after_seconds = 30;
+            if (recheck_after)
+                *recheck_after = retry_after_seconds;
+            else
+                enqueuePart(part_name, retry_after_seconds);
 
             break;
         }
@@ -483,7 +500,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
     return result.status;
 }
 
-void ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part_name)
+bool ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part_name)
 {
     auto lost_part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
     if (lost_part_info.level != 0 || lost_part_info.mutation != 0)
@@ -499,7 +516,7 @@ void ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
             for (const String & source_part_name : source_parts)
                 enqueuePart(source_part_name);
 
-            return;
+            return true;
         }
     }
 
@@ -512,13 +529,11 @@ void ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
             */
         LOG_ERROR(log, "Part {} is lost forever.", part_name);
         ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
+        return true;
     }
-    else
-    {
-        LOG_WARNING(log, "Cannot create empty part {} instead of lost. Will retry later", part_name);
-        constexpr time_t retry_after_seconds = 30;
-        enqueuePart(part_name, retry_after_seconds);
-    }
+
+    LOG_WARNING(log, "Cannot create empty part {} instead of lost. Will retry later", part_name);
+    return false;
 }
 
 
@@ -533,42 +548,29 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         /// Take part from the queue for verification.
         PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
-        time_t min_check_time = std::numeric_limits<time_t>::max();
 
         {
             std::lock_guard lock(parts_mutex);
 
-            if (parts_queue.empty())
+            if (parts_queue.empty() && !parts_set.empty())
             {
-                if (!parts_set.empty())
-                {
-                    parts_set.clear();
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty parts_set with empty parts_queue. This is a bug.");
-                }
+                parts_set.clear();
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty parts_set with empty parts_queue. This is a bug.");
             }
-            else
-            {
-                for (auto it = parts_queue.begin(); it != parts_queue.end(); ++it)
-                {
-                    if (it->second <= current_time)
-                    {
-                        selected = it;
-                        break;
-                    }
 
-                    if (it->second < min_check_time)
-                    {
-                        min_check_time = it->second;
-                        selected = it;
-                    }
-                }
-            }
+            selected = std::find_if(parts_queue.begin(), parts_queue.end(), [current_time](const auto & elem)
+            {
+                return elem.second <= current_time;
+            });
+            if (selected == parts_queue.end())
+                return;
+
+            /// Move selected part to the end of the queue
+            parts_queue.splice(parts_queue.end(), parts_queue, selected);
         }
 
-        if (selected == parts_queue.end())
-            return;
-
-        checkPartAndFix(selected->first);
+        std::optional<time_t> recheck_after;
+        checkPartAndFix(selected->first, &recheck_after);
 
         if (need_stop)
             return;
@@ -580,6 +582,11 @@ void ReplicatedMergeTreePartCheckThread::run()
             if (parts_queue.empty())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part from parts_queue. This is a bug.");
+            }
+            else if (recheck_after.has_value())
+            {
+                LOG_TRACE(log, "Will recheck part {} after after {}s", selected->first, *recheck_after);
+                selected->second = time(nullptr) + *recheck_after;
             }
             else
             {
@@ -596,7 +603,7 @@ void ReplicatedMergeTreePartCheckThread::run()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+        if (Coordination::isHardwareError(e.code))
             return;
 
         task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);

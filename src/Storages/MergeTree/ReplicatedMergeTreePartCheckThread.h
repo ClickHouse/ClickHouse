@@ -65,7 +65,7 @@ public:
     size_t size() const;
 
     /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name);
+    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr);
 
     ReplicatedCheckResult checkPartImpl(const String & part_name);
 
@@ -77,7 +77,7 @@ public:
 private:
     void run();
 
-    void onPartIsLostForever(const String & part_name);
+    bool onPartIsLostForever(const String & part_name);
 
     std::pair<bool, MergeTreeDataPartPtr> findLocalPart(const String & part_name);
 
