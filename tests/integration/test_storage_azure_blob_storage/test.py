@@ -612,6 +612,7 @@ def test_filter_using_file(cluster):
     query = f"select count(*) from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont', 'test_partition_tf_*.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') WHERE _file='test_partition_tf_3.csv'"
     assert azure_query(node, query) == "1\n"
 
+
 def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
     query = f"select * from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont_not_exists', 'test_table.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
