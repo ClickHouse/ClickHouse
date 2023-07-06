@@ -186,9 +186,9 @@ private:
 
         /// MongoDB does not support UInt64 type, so just cast it to Int64
         if (which.isNativeUInt())
-            document.add(name, static_cast<Int64>(column.getUInt(idx)));
+            document.add(name, static_cast<Poco::Int64>(column.getUInt(idx)));
         else if (which.isNativeInt())
-            document.add(name, static_cast<Int64>(column.getInt(idx)));
+            document.add(name, static_cast<Poco::Int64>(column.getInt(idx)));
         else if (which.isFloat32())
             document.add(name, static_cast<Float64>(column.getFloat32(idx)));
         else if (which.isFloat64())
