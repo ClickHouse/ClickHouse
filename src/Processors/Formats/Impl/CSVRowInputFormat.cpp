@@ -285,7 +285,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
 bool CSVFormatReader::allowVariableNumberOfColumns()
 {
-    return format_settings.csv.allow_variable_number_of_colums;
+    return format_settings.csv.allow_variable_number_of_columns;
 }
 
 bool CSVFormatReader::readField(

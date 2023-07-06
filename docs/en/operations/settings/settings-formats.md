@@ -931,7 +931,7 @@ Result
 ```text
 "  string  "
 ```
-### input_format_csv_allow_variable_number_of_colums {#input_format_csv_allow_variable_number_of_colums}
+### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
 ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
 
