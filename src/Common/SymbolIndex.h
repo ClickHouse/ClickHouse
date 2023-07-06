@@ -9,9 +9,14 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/MultiVersion.h>
+#include <Common/Arena.h>
+
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 /** Allow to quickly find symbol name from address.
   * Used as a replacement for "dladdr" function which is extremely slow.
@@ -86,7 +91,16 @@ public:
 
         /// Resources (embedded binary data) are located by symbols in form of _binary_name_start and _binary_name_end.
         Resources resources;
+
+        /// If we load symbols from external source, the string contents will be stored here.
+        Arena chars;
+        bool sorted = false;
+
+        void readSymbols(ReadBuffer & in);
     };
+
+    void writeSymbols(WriteBuffer & out) const;
+
 private:
     Data data;
 

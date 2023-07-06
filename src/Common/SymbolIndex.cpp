@@ -1,6 +1,11 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/SymbolIndex.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <base/hex.h>
 
 #include <algorithm>
@@ -129,8 +134,7 @@ void updateResources(ElfW(Addr) base_address, std::string_view object_name, std:
 /// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(
     dl_phdr_info * info,
-    std::vector<SymbolIndex::Symbol> & symbols,
-    SymbolIndex::Resources & resources)
+    SymbolIndex::Data & data)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
@@ -247,10 +251,10 @@ void collectSymbolsFromProgramHeaders(
 
                     /// We are not interested in empty symbols.
                     if (elf_sym[sym_index].st_size)
-                        symbols.push_back(symbol);
+                        data.symbols.push_back(symbol);
 
                     /// But resources can be represented by a pair of empty symbols (indicating their boundaries).
-                    updateResources(base_address, info->dlpi_name, symbol.name, symbol.address_begin, resources);
+                    updateResources(base_address, info->dlpi_name, symbol.name, symbol.address_begin, data.resources);
                 }
 
                 break;
@@ -349,10 +353,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
 void collectSymbolsFromELF(
     dl_phdr_info * info,
-    std::vector<SymbolIndex::Symbol> & symbols,
-    std::vector<SymbolIndex::Object> & objects,
-    SymbolIndex::Resources & resources,
-    String & build_id)
+    SymbolIndex::Data & data)
 {
     String object_name;
     String our_build_id;
@@ -377,8 +378,8 @@ void collectSymbolsFromELF(
         if (our_build_id.empty())
             our_build_id = Elf(object_name).getBuildID();
 
-        if (build_id.empty())
-            build_id = our_build_id;
+        if (data.build_id.empty())
+            data.build_id = our_build_id;
     }
 #endif
 
@@ -409,15 +410,15 @@ void collectSymbolsFromELF(
         object_name = local_debug_info_path;
     else if (exists_not_empty(debug_info_path))
         object_name = debug_info_path;
-    else if (build_id.size() >= 2)
+    else if (data.build_id.size() >= 2)
     {
         // Check if there is a .debug file in .build-id folder. For example:
         // /usr/lib/debug/.build-id/e4/0526a12e9a8f3819a18694f6b798f10c624d5c.debug
         String build_id_hex;
-        build_id_hex.resize(build_id.size() * 2);
+        build_id_hex.resize(data.build_id.size() * 2);
 
         char * pos = build_id_hex.data();
-        for (auto c : build_id)
+        for (auto c : data.build_id)
         {
             writeHexByteLowercase(c, pos);
             pos += 2;
@@ -460,14 +461,29 @@ void collectSymbolsFromELF(
     object.address_begin = reinterpret_cast<const void *>(info->dlpi_addr);
     object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + object.elf->size());
     object.name = object_name;
-    objects.push_back(std::move(object));
+    data.objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols, resources);
+    /// Already loaded.
+    if (data.sorted)
+        return;
 
-    /// Unneeded if they were parsed from "program headers" of loaded objects.
+    if (auto clickhouse_symbols = data.objects.back().elf->findSectionByName(".clickhouse.symbols"))
+    {
+        ReadBufferFromMemory section(clickhouse_symbols->begin(), clickhouse_symbols->size());
+        CompressedReadBuffer in(section);
+        data.readSymbols(in);
+        std::cerr << "Read from section\n";
+        return;
+    }
+    else
+    {
+        searchAndCollectSymbolsFromELFSymbolTable(info, *data.objects.back().elf, SHT_SYMTAB, ".strtab", data.symbols, data.resources);
+
+        /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols, resources);
+        searchAndCollectSymbolsFromELFSymbolTable(info, *data.objects.back().elf, SHT_DYNSYM, ".dynstr", symbols, resources);
 #endif
+    }
 }
 
 
@@ -479,8 +495,8 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, data.symbols, data.resources);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.resources, data.build_id);
+    collectSymbolsFromProgramHeaders(info, data);
+    collectSymbolsFromELF(info, data);
 
     /* Continue iterations */
     return 0;
@@ -513,14 +529,17 @@ void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
-    ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
-
-    /// We found symbols both from loaded program headers and from ELF symbol tables.
-    data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
+    if (!data.sorted)
     {
-        return a.address_begin == b.address_begin && a.address_end == b.address_end;
-    }), data.symbols.end());
+        ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
+        ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
+
+        /// We found symbols both from loaded program headers and from ELF symbol tables.
+        data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
+        {
+            return a.address_begin == b.address_begin && a.address_end == b.address_end;
+        }), data.symbols.end());
+    }
 }
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
@@ -560,11 +579,43 @@ MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
     return instanceImpl().get();
 }
 
-void SymbolIndex::reload()
+void SymbolIndex::writeSymbols(WriteBuffer & out) const
 {
-    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    /// Also drop stacktrace cache.
-    StackTrace::dropCache();
+    writeBinary(data.symbols.size(), out);
+    for (const Symbol & symbol : data.symbols)
+    {
+        writePODBinary(symbol.address_begin, out);
+        writePODBinary(symbol.address_end, out);
+        writeStringBinary(symbol.name, out);
+    }
+}
+
+void SymbolIndex::Data::readSymbols(ReadBuffer & in)
+{
+    size_t size = 0;
+    readBinary(size, in);
+    symbols.clear();
+    symbols.reserve(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        Symbol symbol;
+
+        readPODBinary(symbol.address_begin, in);
+        readPODBinary(symbol.address_end, in);
+
+        size_t string_size = 0;
+        readVarUInt(string_size, in);
+
+        char * pos = chars.alloc(size + 1);
+        in.readStrict(pos, string_size);
+        pos[string_size] = 0;
+
+        symbol.name = pos;
+
+        symbols.emplace_back(symbol);
+    }
+
+    sorted = true;
 }
 
 }

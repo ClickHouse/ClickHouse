@@ -27,59 +27,59 @@
 
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER
-int mainEntryClickHouseServer(int argc, char ** argv);
+int mainEntryClickHouseServer(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_CLIENT
-int mainEntryClickHouseClient(int argc, char ** argv);
+int mainEntryClickHouseClient(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_LOCAL
-int mainEntryClickHouseLocal(int argc, char ** argv);
+int mainEntryClickHouseLocal(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_BENCHMARK
-int mainEntryClickHouseBenchmark(int argc, char ** argv);
+int mainEntryClickHouseBenchmark(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
-int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseExtractFromConfig(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_COMPRESSOR
-int mainEntryClickHouseCompressor(int argc, char ** argv);
+int mainEntryClickHouseCompressor(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_FORMAT
-int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseFormat(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_COPIER
-int mainEntryClickHouseClusterCopier(int argc, char ** argv);
+int mainEntryClickHouseClusterCopier(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
-int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseObfuscator(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_GIT_IMPORT
-int mainEntryClickHouseGitImport(int argc, char ** argv);
+int mainEntryClickHouseGitImport(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeper(int argc, char ** argv);
+int mainEntryClickHouseKeeper(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
+int mainEntryClickHouseKeeperConverter(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-int mainEntryClickHouseKeeperClient(int argc, char ** argv);
+int mainEntryClickHouseKeeperClient(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseStaticFilesDiskUploader(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_SU
-int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseSU(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
-int mainEntryClickHouseInstall(int argc, char ** argv);
-int mainEntryClickHouseStart(int argc, char ** argv);
-int mainEntryClickHouseStop(int argc, char ** argv);
-int mainEntryClickHouseStatus(int argc, char ** argv);
-int mainEntryClickHouseRestart(int argc, char ** argv);
+int mainEntryClickHouseInstall(int, char **);
+int mainEntryClickHouseStart(int, char **);
+int mainEntryClickHouseStop(int, char **);
+int mainEntryClickHouseStatus(int, char **);
+int mainEntryClickHouseRestart(int, char **);
 #endif
 #if ENABLE_CLICKHOUSE_DISKS
-int mainEntryClickHouseDisks(int argc, char ** argv);
+int mainEntryClickHouseDisks(int, char **);
 #endif
 
 int mainEntryClickHouseHashBinary(int, char **)
@@ -89,6 +89,9 @@ int mainEntryClickHouseHashBinary(int, char **)
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
+
+int mainEntryClickHouseDumpSymbols(int, char **);
+
 
 namespace
 {
@@ -153,6 +156,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
+    {"dump-symbols", mainEntryClickHouseDumpSymbols},
 #if ENABLE_CLICKHOUSE_DISKS
     {"disks", mainEntryClickHouseDisks},
 #endif

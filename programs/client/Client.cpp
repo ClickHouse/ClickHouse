@@ -17,8 +17,6 @@
 #include "Core/Protocol.h"
 #include "Parsers/formatAST.h"
 
-#include <base/find_symbols.h>
-
 #include <Access/AccessControl.h>
 
 #include "config_version.h"
