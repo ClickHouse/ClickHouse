@@ -203,6 +203,9 @@ def update_configs(
 
 
 def test_stuck_replica(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs()
 
     cluster.pause_container("node_1")
@@ -233,6 +236,9 @@ def test_stuck_replica(started_cluster):
 
 
 def test_long_query(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs()
 
     # Restart to reset pool states.
@@ -249,12 +255,18 @@ def test_long_query(started_cluster):
 
 
 def test_send_table_status_sleep(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(node_1_sleep_in_send_tables_status=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
 
 def test_send_table_status_sleep2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_tables_status=sleep_time,
         node_2_sleep_in_send_tables_status=sleep_time,
@@ -264,12 +276,18 @@ def test_send_table_status_sleep2(started_cluster):
 
 
 def test_send_data(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(node_1_sleep_in_send_data=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
 
 def test_send_data2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_data=sleep_time, node_2_sleep_in_send_data=sleep_time
     )
@@ -278,6 +296,9 @@ def test_send_data2(started_cluster):
 
 
 def test_combination1(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_tables_status=sleep_time,
         node_2_sleep_in_send_data=sleep_time,
@@ -287,6 +308,9 @@ def test_combination1(started_cluster):
 
 
 def test_combination2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=sleep_time,
@@ -296,6 +320,9 @@ def test_combination2(started_cluster):
 
 
 def test_combination3(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=1000,
@@ -306,6 +333,9 @@ def test_combination3(started_cluster):
 
 
 def test_combination4(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_tables_status=1000,
         node_1_sleep_in_send_data=sleep_time,
@@ -317,6 +347,9 @@ def test_combination4(started_cluster):
 
 
 def test_receive_timeout1(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     # Check the situation when first two replicas get receive timeout
     # in establishing connection, but the third replica is ok.
     update_configs(
@@ -329,6 +362,9 @@ def test_receive_timeout1(started_cluster):
 
 
 def test_receive_timeout2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     # Check the situation when first replica get receive timeout
     # in packet receiving but there are replicas in process of
     # connection establishing.
@@ -342,6 +378,9 @@ def test_receive_timeout2(started_cluster):
 
 
 def test_initial_receive_timeout(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     # Check the situation when replicas don't respond after
     # receiving query (so, no packets were send to initiator)
     update_configs(
@@ -360,6 +399,9 @@ def test_initial_receive_timeout(started_cluster):
 
 
 def test_async_connect(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs()
 
     NODES["node"].restart_clickhouse()
@@ -390,6 +432,9 @@ def test_async_connect(started_cluster):
 
 
 def test_async_query_sending(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_after_receiving_query=5000,
         node_2_sleep_after_receiving_query=5000,

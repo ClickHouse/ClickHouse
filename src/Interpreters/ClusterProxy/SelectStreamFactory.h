@@ -26,6 +26,8 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 struct StorageID;
 
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 namespace ClusterProxy
 {
 

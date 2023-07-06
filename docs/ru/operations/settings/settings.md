@@ -4127,6 +4127,63 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 
 Значение по умолчанию: `false`
 
+## session_timezone {#session_timezone}
+
+Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан часовой пояс, будут интерпретированы как относящиеся к указанной зоне.
+При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
+
+Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
+
+Примеры:
+```sql
+SELECT timeZone(), serverTimezone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
+```
+
+```sql
+SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+
+Asia/Novosibirsk	Europe/Berlin
+```
+
+```sql
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
+```
+
+Возможные значения:
+
+-    Любая зона из `system.time_zones`, например `Europe/Berlin`, `UTC` или `Zulu`
+
+Значение по умолчанию: `''`.
+
+:::warning
+Иногда при формировании значений типа `DateTime` и `DateTime64` параметр  `session_timezone` может быть проигнорирован.
+Это может привести к путанице. Пример и пояснение см. ниже.
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timezone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timezone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+Это происходит из-за различного происхождения значения, используемого для сравнения:
+- В первом запросе функция `toDateTime()`, создавая значение типа `DateTime`, принимает во внимание параметр `session_timezone` из контекста запроса;
+- Во втором запросе `DateTime` формируется из строки неявно, наследуя тип колонки `d` (в том числе и числовой пояс), и параметр `session_timezone` игнорируется.
+
+**Смотрите также**
+
+- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+
 ## rename_files_after_processing
 
 - **Тип:** Строка

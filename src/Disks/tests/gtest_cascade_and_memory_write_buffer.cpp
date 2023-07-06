@@ -166,6 +166,7 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
             });
 
         cascade.write(src.data(), src.size());
+        cascade.finalize();
         EXPECT_EQ(cascade.count(), src.size());
     }
 
@@ -222,6 +223,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         {
             MemoryWriteBuffer buf(s - 1);
             EXPECT_THROW(buf.write(data.data(), data.size()), MemoryWriteBuffer::CurrentBufferExhausted);
+            buf.finalize();
         }
     }
 

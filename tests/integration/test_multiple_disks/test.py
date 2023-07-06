@@ -846,7 +846,7 @@ def test_start_stop_moves(start_cluster, name, engine):
         node1.query("SYSTEM START MOVES {}".format(name))
 
         # wait sometime until background backoff finishes
-        retry = 30
+        retry = 60
         i = 0
         while not sum(1 for x in used_disks if x == "jbod1") <= 2 and i < retry:
             time.sleep(1)
