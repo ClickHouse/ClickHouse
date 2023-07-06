@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "Common/Exception.h"
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
@@ -507,15 +508,14 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
-    bool exc = false;
-    DatabasePtr database;
+    DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
         assert(!database_name.empty());
-        if (databases.end() == databases.find(database_name) && database_name != "default")
-            exc = true;
+        if (auto it = databases.find(database_name); it != databases.end())
+            db = it->second;
     }
-    if (exc)
+    if (!db)
     {
         DatabaseNameHints hints(*this);
         std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
@@ -560,16 +560,25 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 {
     if (database_name == TEMPORARY_DATABASE)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
-
+    assert(!database_name.empty());
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        db = databases.find(database_name)->second;
+        if (auto it = databases.find(database_name); it != databases.end())
+        {
+            db = it->second;
+
+            UUID db_uuid = db->getUUID();
+            if (db_uuid != UUIDHelpers::Nil)
+                removeUUIDMapping(db_uuid);
+            databases.erase(database_name);
+
+        }
     }
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -579,13 +588,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
         }
     }
-
-    UUID db_uuid = db->getUUID();
-    if (db_uuid != UUIDHelpers::Nil)
-        removeUUIDMapping(db_uuid);
-    std::lock_guard lock{databases_mutex};
-    databases.erase(database_name);
-
     if (check_empty)
     {
         try
@@ -601,11 +603,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
-
     db->shutdown();
-
     if (drop)
     {
+        UUID db_uuid = db->getUUID();
+
         /// Delete the database.
         db->drop(local_context);
 
@@ -619,7 +621,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
     }
-
     return db;
 }
 
@@ -648,7 +649,9 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        db = databases.find(database_name)->second;
+        assert(!database_name.empty());
+        if (auto it = databases.find(database_name); it != databases.end())
+            db = it->second;
     }
 
     if (!db)
