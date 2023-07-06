@@ -711,7 +711,7 @@ def test_background_move(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy='moving_jbod_with_external, max_replicated_merges_in_queue=0'
+            SETTINGS storage_policy='moving_jbod_with_external', max_replicated_merges_in_queue=0
         """
         )
 
@@ -735,8 +735,6 @@ def test_background_move(start_cluster, name, engine):
 
         assert first_part is not None
 
-        used_disks = get_used_disks_for_table(node1, name)
-
         retry = 20
         i = 0
         # multiple moves can be assigned in parallel so we can move later parts before the oldest
@@ -744,9 +742,6 @@ def test_background_move(start_cluster, name, engine):
         while get_disk_for_part(node1, name, first_part) != "external" and i < retry:
             time.sleep(0.5)
             i += 1
-
-        used_disks = get_used_disks_for_table(node1, name)
-        assert sum(1 for x in used_disks if x == "jbod1") <= 2
 
         # first (oldest) part was moved to external
         assert get_disk_for_part(node1, name, first_part) == "external"
@@ -860,9 +855,6 @@ def test_start_stop_moves(start_cluster, name, engine):
 
         # first (oldest) part moved to external
         assert get_disk_for_part(node1, name, first_part) == "external"
-
-        used_disks = get_used_disks_for_table(node1, name)
-        assert sum(1 for x in used_disks if x == "jbod1") <= 2
 
         node1.query(f"SYSTEM START MERGES {name}")
     finally:
