@@ -827,7 +827,7 @@ Pipe StorageURLWithFailover::read(
         read_from_format_info,
         iterator_wrapper,
         getReadMethod(),
-        getReadPOSTDataCallback(column_names, read_from_format_info.columns_description, query_info, local_context, processed_stage, max_block_size),
+        getReadPOSTDataCallback(read_from_format_info.columns_description.getNamesOfPhysical(), read_from_format_info.columns_description, query_info, local_context, processed_stage, max_block_size),
         format_name,
         format_settings,
         getName(),

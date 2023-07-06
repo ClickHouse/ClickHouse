@@ -48,9 +48,18 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
         else
         {
             std::unordered_set<String> columns_to_read_set;
+            /// Save original order of columns.
+            std::vector<String> new_columns_to_read;
             for (const auto & column_to_read : info.requested_columns)
-                columns_to_read_set.insert(column_to_read.getNameInStorage());
-            columns_to_read = Strings(columns_to_read_set.begin(), columns_to_read_set.end());
+            {
+                auto name = column_to_read.getNameInStorage();
+                if (!columns_to_read_set.contains(name))
+                {
+                    columns_to_read_set.insert(name);
+                    new_columns_to_read.push_back(name);
+                }
+            }
+            columns_to_read = std::move(new_columns_to_read);
         }
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }

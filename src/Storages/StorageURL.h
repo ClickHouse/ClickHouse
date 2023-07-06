@@ -108,8 +108,6 @@ protected:
 
     bool supportsSubsetOfColumns() const override;
 
-    bool supportsSubcolumns() const override { return true; }
-
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
@@ -277,6 +275,8 @@ public:
     {
         return storage_snapshot->metadata->getSampleBlock();
     }
+
+    bool supportsSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
