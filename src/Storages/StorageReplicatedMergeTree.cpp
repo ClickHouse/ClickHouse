@@ -4000,7 +4000,7 @@ void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(St
 
     std::unique_lock lock(last_sent_parts_mutex);
     if (!last_sent_parts_cv.wait_until(lock, shutdown_deadline_, wait_predicate))
-        LOG_WARNING(log, "Failed to wait for unique parts to be fetched in {} ms, {} parts can be left on this replica", wait_ms, unique_parts_set.size());
+        LOG_INFO(log, "Failed to wait for unique parts to be fetched in {} ms, {} parts can be left on this replica", wait_ms, unique_parts_set.size());
     else
         LOG_INFO(log, "Successfully waited all the parts");
 }
