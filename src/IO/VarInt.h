@@ -97,13 +97,13 @@ inline char * writeVarInt(Int64 x, char * ostr)
 namespace impl
 {
 
-template <bool fast>
+template <bool check_eof>
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
     for (size_t i = 0; i < 9; ++i)
     {
-        if constexpr (!fast)
+        if constexpr (check_eof)
             if (istr.eof()) [[unlikely]]
                 throwReadAfterEOF();
 
@@ -121,8 +121,8 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     if (istr.buffer().end() - istr.position() >= 9)
-        return impl::readVarUInt<true>(x, istr);
-    return impl::readVarUInt<false>(x, istr);
+        return impl::readVarUInt<false>(x, istr);
+    return impl::readVarUInt<true>(x, istr);
 }
 
 inline void readVarUInt(UInt64 & x, std::istream & istr)
