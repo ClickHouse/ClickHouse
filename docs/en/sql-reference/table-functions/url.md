@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/url
-sidebar_position: 41
+sidebar_position: 200
 sidebar_label: url
 ---
 

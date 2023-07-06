@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/s3Cluster
-sidebar_position: 55
+sidebar_position: 181
 sidebar_label: s3Cluster
 title: "s3Cluster Table Function"
 ---
@@ -31,18 +31,18 @@ Select the data from all the files in the `/root/data/clickhouse` and `/root/dat
 
 ``` sql
 SELECT * FROM s3Cluster(
-    'cluster_simple', 
-    'http://minio1:9001/root/data/{clickhouse,database}/*', 
-    'minio', 
-    'minio123', 
-    'CSV', 
+    'cluster_simple',
+    'http://minio1:9001/root/data/{clickhouse,database}/*',
+    'minio',
+    'minio123',
+    'CSV',
     'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
 ) ORDER BY (name, value, polygon);
 ```
 
 Count the total amount of rows in all files in the cluster `cluster_simple`:
 
-:::tip    
+:::tip
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 

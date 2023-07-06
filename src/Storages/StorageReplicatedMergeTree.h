@@ -108,7 +108,8 @@ public:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
-        RenamingRestrictions renaming_restrictions_);
+        RenamingRestrictions renaming_restrictions_,
+        bool need_check_structure);
 
     void startup() override;
     void shutdown() override;
@@ -529,7 +530,7 @@ private:
       */
     void createNewZooKeeperNodes();
 
-    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
+    bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, bool strict_check = true);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.

@@ -419,10 +419,11 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             }
             catch (const Exception & e)
             {
-                /// Don't count the part as broken if there is not enough memory to load it.
-                /// In fact, there can be many similar situations.
-                /// But it is OK, because there is a safety guard against deleting too many parts.
-                if (isNotEnoughMemoryErrorCode(e.code()))
+                /// Don't count the part as broken if we got known retryable exception.
+                /// In fact, there can be other similar situations because not all
+                /// of the exceptions are classified as retryable/non-retryable. But it is OK,
+                /// because there is a safety guard against deleting too many parts.
+                if (isRetryableException(e))
                     throw;
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);

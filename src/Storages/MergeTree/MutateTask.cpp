@@ -153,20 +153,22 @@ static void splitAndModifyMutationCommands(
                     /// But we don't know for sure what happened.
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
-                    /// StorageMergeTree does not have metadata version
-                    if (table_metadata_version <= part_metadata_version && part->storage.supportsReplication())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                        "in table {} with metadata version {}",
-                                        part->name, part_metadata_version, column.name,
-                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
 
-                    if (part_metadata_version < table_metadata_version)
+                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
+                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
                                     part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                         continue;
                     }
+
+                    /// StorageMergeTree does not have metadata version
+                    if (part->storage.supportsReplication())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
+                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                 }
 
                 for_interpreter.emplace_back(
@@ -706,6 +708,7 @@ void finalizeMutatedPart(
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
+        out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out));
@@ -717,6 +720,7 @@ void finalizeMutatedPart(
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
+        out_hashing.finalize();
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
         new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_ttl));
@@ -727,6 +731,7 @@ void finalizeMutatedPart(
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));
@@ -847,7 +852,7 @@ struct MutationContext
 
     MergeTreeTransactionPtr txn;
 
-    MergeTreeData::HardlinkedFiles hardlinked_files;
+    HardlinkedFiles hardlinked_files;
 
     bool need_prefix = true;
 
@@ -1798,7 +1803,12 @@ bool MutateTask::prepare()
         if (ctx->need_prefix)
             prefix = "tmp_clone_";
 
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
+        };
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params);
         part->getDataPartStorage().beginTransaction();
 
         ctx->temporary_directory_lock = std::move(lock);
@@ -1927,7 +1937,7 @@ bool MutateTask::prepare()
     return true;
 }
 
-const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
+const HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
 }
