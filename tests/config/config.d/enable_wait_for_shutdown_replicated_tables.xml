@@ -1,5 +1,5 @@
 <clickhouse>
     <merge_tree>
-        <wait_for_unique_parts_send_before_shutdown_ms>1000</wait_for_unique_parts_send_before_shutdown_ms>
+        <wait_for_unique_parts_send_before_shutdown_ms>3000</wait_for_unique_parts_send_before_shutdown_ms>
     </merge_tree>
 </clickhouse>
