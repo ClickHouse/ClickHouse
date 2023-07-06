@@ -52,7 +52,6 @@ public:
     using MatchVec = std::vector<Match>;
 
     using RegexType = std::conditional_t<thread_safe, re2::RE2, re2_st::RE2>;
-    using StringPieceType = std::conditional_t<thread_safe, re2::StringPiece, re2_st::StringPiece>;
 
     OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0); /// NOLINT
     /// StringSearcher store pointers to required_substring, it must be updated on move.
