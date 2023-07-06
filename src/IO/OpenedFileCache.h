@@ -90,6 +90,13 @@ public:
         return impls[bucket].get(path, flags);
     }
 
+    void remove(const std::string & path, int flags)
+    {
+        Key key(path, flags);
+        std::lock_guard lock(mutex);
+        files.erase(key);
+    }
+
     static OpenedFileCache & instance()
     {
         static OpenedFileCache res;
