@@ -350,6 +350,7 @@ void TCPHandler::runImpl()
                 /// Send block to the client - input storage structure.
                 state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
+                sendTimezone();
             });
 
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
@@ -588,7 +589,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ true));
+                LOG_ERROR(log, getExceptionMessageAndPattern(e, send_exception_with_stack_trace));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -763,7 +764,6 @@ void TCPHandler::processInsertQuery()
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
-
         sendLogs();
 
         while (readDataNext())
@@ -1062,6 +1062,20 @@ void TCPHandler::sendInsertProfileEvents()
 
     sendProfileEvents();
 }
+
+void TCPHandler::sendTimezone()
+{
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
+        return;
+
+    const String & tz = query_context->getSettingsRef().session_timezone.value;
+
+    LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
+    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+    writeStringBinary(tz, *out);
+    out->next();
+}
+
 
 bool TCPHandler::receiveProxyHeader()
 {
@@ -1775,7 +1789,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));

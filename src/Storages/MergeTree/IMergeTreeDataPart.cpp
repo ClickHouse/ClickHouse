@@ -138,7 +138,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
-        out_hashing.next();
+        out_hashing.finalize();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
         out->preFinalize();
@@ -973,24 +973,9 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
     }
 }
 
-void IMergeTreeDataPart::writeDeleteOnDestroyMarker()
-{
-    static constexpr auto marker_path = "delete-on-destroy.txt";
-
-    try
-    {
-        getDataPartStorage().createFile(marker_path);
-    }
-    catch (Poco::Exception & e)
-    {
-        LOG_ERROR(storage.log, "{} (while creating DeleteOnDestroy marker: {})",
-            e.what(), (fs::path(getDataPartStorage().getFullPath()) / marker_path).string());
-    }
-}
-
 void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 {
-    getDataPartStorage().removeFileIfExists("delete-on-destroy.txt");
+    getDataPartStorage().removeFileIfExists(DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED);
 }
 
 void IMergeTreeDataPart::removeVersionMetadata()
@@ -1068,7 +1053,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
         partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
         minmax_idx = std::make_shared<MinMaxIndex>(min_date, max_date);
     }
@@ -1377,6 +1362,10 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+        old_part_with_no_metadata_version_on_disk = true;
+        if (storage.supportsReplication())
+            LOG_WARNING(storage.log, "Part {} doesn't have metadata version on disk, setting it to {}. "
+                    "It's okay if the part was created by an old version of ClickHouse", name, loaded_metadata_version);
     }
 
     setColumns(loaded_columns, infos, loaded_metadata_version);
@@ -1779,12 +1768,6 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    auto storage_settings = storage.getSettings();
-
-    /// In case of zero-copy replication we copy directory instead of hardlinks
-    /// because hardlinks tracking doesn't work for detached parts.
-    bool copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication;
-
     /// Avoid unneeded duplicates of broken parts if we try to detach the same broken part multiple times.
     /// Otherwise it may pollute detached/ with dirs with _tryN suffix and we will fail to remove broken part after 10 attempts.
     bool broken = !prefix.empty();
@@ -1792,13 +1775,19 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     if (!maybe_path_in_detached)
         return nullptr;
 
+    /// In case of zero-copy replication we copy directory instead of hardlinks
+    /// because hardlinks tracking doesn't work for detached parts.
+    auto storage_settings = storage.getSettings();
+    IDataPartStorage::ClonePartParams params
+    {
+        .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .make_source_readonly = true
+    };
     return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
-        /*make_source_readonly=*/ true,
         /*save_metadata_callback=*/ {},
-        copy_instead_of_hardlink,
-        /*files_to_copy_instead_of_hardlinks=*/ {});
+        params);
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
