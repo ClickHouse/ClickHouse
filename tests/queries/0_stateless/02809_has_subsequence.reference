@@ -1,3 +1,4 @@
+hasSubsequence / const / const
 1
 1
 1
@@ -10,7 +11,17 @@
 0
 0
 0
-1
+hasSubsequence / const / string
 1
 1
 0
+hasSubsequence / string / const
+1
+1
+0
+hasSubsequence / string / string
+1
+1
+0
+hasSubsequenceCaseInsensitive / const / const
+1
