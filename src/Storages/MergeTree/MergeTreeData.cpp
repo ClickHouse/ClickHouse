@@ -2651,7 +2651,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
-        LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+        LOG_WARNING(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
         old_name.clear();
     }
 

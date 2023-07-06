@@ -1260,8 +1260,7 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
     return res;
 }
 
-static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicatedMergeTree * storage, const Strings & parts_in_zk,
-                                                           MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const
 {
 #ifdef ABORT_ON_LOGICAL_ERROR
     constexpr bool paranoid_check_for_covered_parts_default = true;
@@ -1275,15 +1274,15 @@ static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicat
         return;
 
     /// FIXME https://github.com/ClickHouse/ClickHouse/issues/51182
-    if (storage->getSettings()->use_metadata_cache)
+    if (getSettings()->use_metadata_cache)
         return;
 
     ActiveDataPartSet active_set(format_version);
     for (const auto & part_name : parts_in_zk)
         active_set.add(part_name);
 
-    const auto disks = storage->getStoragePolicy()->getDisks();
-    auto path = storage->getRelativeDataPath();
+    const auto disks = getStoragePolicy()->getDisks();
+    auto path = getRelativeDataPath();
 
     for (const auto & part_name : parts_in_zk)
     {
@@ -1295,6 +1294,9 @@ static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicat
         for (const DiskPtr & disk : disks)
             if (disk->exists(fs::path(path) / part_name))
                 found = true;
+
+        if (!found)
+            found = std::find(parts_to_fetch.begin(), parts_to_fetch.end(), part_name) != parts_to_fetch.end();
 
         if (!found)
         {
@@ -1310,7 +1312,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     auto zookeeper = getZooKeeper();
 
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
-    paranoidCheckForCoveredPartsInZooKeeperOnStart(this, expected_parts_vec, format_version, log);
 
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
@@ -1344,6 +1345,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const String & missing_name : expected_parts)
         if (!getActiveContainingPart(missing_name))
             parts_to_fetch.push_back(missing_name);
+
+    paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
