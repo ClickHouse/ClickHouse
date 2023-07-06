@@ -5,4 +5,5 @@
         <!-- Default is 60 seconds, but let's make tests more aggressive -->
         <merge_tree_clear_old_temporary_directories_interval_seconds>5</merge_tree_clear_old_temporary_directories_interval_seconds>
     </merge_tree>
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>
