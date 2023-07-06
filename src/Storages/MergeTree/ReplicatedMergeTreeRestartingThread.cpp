@@ -329,8 +329,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shutdown)
 {
-    setReadonly(part_of_full_shutdown);
-    storage.partialShutdown(part_of_full_shutdown);
+    setReadonly(/* on_shutdown = */ part_of_full_shutdown);
+    storage.partialShutdown();
 }
 
 
@@ -341,8 +341,7 @@ void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
     task->deactivate();
     LOG_TRACE(log, "Restarting thread finished");
 
-    /// Stop other tasks.
-    partialShutdown(part_of_full_shutdown);
+    setReadonly(part_of_full_shutdown);
 }
 
 void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)

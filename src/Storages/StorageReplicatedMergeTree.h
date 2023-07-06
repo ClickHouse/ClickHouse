@@ -118,7 +118,7 @@ public:
     /// Partial shutdown called if we loose connection to zookeeper.
     /// Table can also recover after partial shutdown and continue
     /// to work. This method can be called regularly.
-    void partialShutdown(bool part_of_full_shutdown);
+    void partialShutdown();
 
     /// These two methods are called during final table shutdown (DROP/DETACH/overall server shutdown).
     /// The shutdown process is split into two methods to make it more soft and fast. In database shutdown()
@@ -368,15 +368,11 @@ public:
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
     void addLastSentPart(const MergeTreePartInfo & info);
-    std::deque<MergeTreePartInfo> getLastSentParts() const
-    {
-        std::lock_guard lock(last_sent_parts_mutex);
-        return last_sent_parts;
-    }
 
     /// Wait required amount of milliseconds to give other replicas a chance to
     /// download unique parts from our replica
-    void waitForUniquePartsToBeFetchedByOtherReplicas(size_t wait_ms);
+    using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
+    void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -483,6 +479,8 @@ private:
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> shutdown_prepared_called {false};
+    std::optional<ShutdownDeadline> shutdown_deadline;
+
 
     mutable std::mutex last_sent_parts_mutex;
     std::condition_variable last_sent_parts_cv;
@@ -740,7 +738,7 @@ private:
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
-    static std::vector<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
+    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.

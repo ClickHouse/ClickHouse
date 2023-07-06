@@ -61,6 +61,7 @@ configure
 
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -90,6 +91,7 @@ configure
 
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
