@@ -301,18 +301,26 @@ public:
 
     StorageHDFS::PathWithInfo next()
     {
-        size_t current_index = index.fetch_add(1);
-        if (current_index >= uris.size())
-            return {"", {}};
+        String uri;
+        hdfsFileInfo * hdfs_info;
+        do
+        {
+            size_t current_index = index.fetch_add(1);
+            if (current_index >= uris.size())
+                return {"", {}};
 
-        auto uri = uris[current_index];
-        auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-        auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
+            uri = uris[current_index];
+            auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
+            hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
+        }
+        /// Skip non-existed files.
+        while (String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
+
         std::optional<StorageHDFS::PathInfo> info;
         if (hdfs_info)
         {
             info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
-            if (file_progress_callback && hdfs_info)
+            if (file_progress_callback)
                 file_progress_callback(FileProgress(0, hdfs_info->mSize));
         }
 
