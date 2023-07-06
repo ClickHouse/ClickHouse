@@ -26,6 +26,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Disks/DiskLocal.h>
 
 namespace DB
 {
@@ -108,25 +109,22 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
+    KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
     KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
-    , keeper_context{std::make_shared<KeeperContext>()}
+    , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-    keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
-    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
-
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
         snapshots_queue_,
-        configuration_and_settings_->snapshot_storage_path,
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
@@ -136,10 +134,10 @@ KeeperServer::KeeperServer(
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
         "keeper_server",
-        configuration_and_settings_->log_storage_path,
-        configuration_and_settings_->state_file_path,
+        "state",
         config,
-        coordination_settings);
+        coordination_settings,
+        keeper_context);
 }
 
 /**
@@ -415,7 +413,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     launchRaftServer(config, enable_ipv6);
 
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
+    keeper_context->setServerState(KeeperContext::Phase::RUNNING);
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -430,7 +428,7 @@ void KeeperServer::shutdownRaftServer()
 
     raft_instance->shutdown();
 
-    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+    keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
         raft_instance->create_snapshot();

@@ -1322,7 +1322,7 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
-## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
@@ -3193,6 +3193,40 @@ Result:
 ```response
 ┌─statement────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## default_temporary_table_engine {#default_temporary_table_engine}
+
+Same as [default_table_engine](#default_table_engine) but for temporary tables.
+
+Default value: `Memory`.
+
+In this example, any new temporary table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+SET default_temporary_table_engine = 'Log';
+
+CREATE TEMPORARY TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TEMPORARY TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TEMPORARY TABLE default.my_table
 (
     `x` UInt32,
     `y` UInt32

@@ -31,10 +31,9 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk Cache requires non-empty `path` field (cache base path) in config");
 
     max_elements = config.getUInt64(config_prefix + ".max_elements", FILECACHE_DEFAULT_MAX_ELEMENTS);
+
     if (config.has(config_prefix + ".max_file_segment_size"))
         max_file_segment_size = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".max_file_segment_size"));
-    else
-        max_file_segment_size = FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE;
 
     cache_on_write_operations = config.getUInt64(config_prefix + ".cache_on_write_operations", false);
     enable_filesystem_query_cache_limit = config.getUInt64(config_prefix + ".enable_filesystem_query_cache_limit", false);
@@ -44,10 +43,12 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
 
     if (config.has(config_prefix + ".bypass_cache_threashold"))
         bypass_cache_threashold = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".bypass_cache_threashold"));
-    else
-         bypass_cache_threashold = FILECACHE_BYPASS_THRESHOLD;
 
-    boundary_alignment = config.getUInt64(config_prefix + ".boundary_alignment", DBMS_DEFAULT_BUFFER_SIZE);
+    if (config.has(config_prefix + ".boundary_alignment"))
+        boundary_alignment = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".boundary_alignment"));
+
+    if (config.has(config_prefix + ".background_download_threads"))
+        background_download_threads = config.getUInt(config_prefix + ".background_download_threads");
 
     delayed_cleanup_interval_ms = config.getUInt64(config_prefix + ".delayed_cleanup_interval_ms", FILECACHE_DELAYED_CLEANUP_INTERVAL_MS);
 }

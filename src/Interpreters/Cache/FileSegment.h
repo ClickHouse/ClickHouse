@@ -156,6 +156,8 @@ public:
 
     String getPathInLocalCache() const;
 
+    int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
+
     /**
      * ========== Methods for _any_ file segment's owner ========================
      */
@@ -174,8 +176,6 @@ public:
     size_t getHitsCount() const { return hits_count; }
 
     size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
 
     size_t getCurrentWriteOffset(bool sync) const;
 

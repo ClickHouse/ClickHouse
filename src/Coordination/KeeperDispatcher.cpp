@@ -38,8 +38,6 @@ namespace ProfileEvents
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 
@@ -238,13 +236,13 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot));
 
-            if (snapshot_path.empty())
+            if (snapshot_file_info.path.empty())
                 continue;
 
             if (isLeader())
-                snapshot_s3.uploadSnapshot(snapshot_path);
+                snapshot_s3.uploadSnapshot(snapshot_file_info);
         }
         catch (...)
         {
@@ -336,28 +334,39 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3, [this](const KeeperStorage::RequestForSession & request_for_session)
-    {
-        /// check if we have queue of read requests depending on this request to be committed
-        std::lock_guard lock(read_request_queue_mutex);
-        if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
+    keeper_context->initialize(config);
+
+    server = std::make_unique<KeeperServer>(
+        configuration_and_settings,
+        config,
+        responses_queue,
+        snapshots_queue,
+        keeper_context,
+        snapshot_s3,
+        [this](const KeeperStorage::RequestForSession & request_for_session)
         {
-            auto & xid_to_request_queue = it->second;
-
-            if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid); request_queue_it != xid_to_request_queue.end())
+            /// check if we have queue of read requests depending on this request to be committed
+            std::lock_guard lock(read_request_queue_mutex);
+            if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
             {
-                for (const auto & read_request : request_queue_it->second)
-                {
-                    if (server->isLeaderAlive())
-                        server->putLocalReadRequest(read_request);
-                    else
-                        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                }
+                auto & xid_to_request_queue = it->second;
 
-                xid_to_request_queue.erase(request_queue_it);
+                if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
+                    request_queue_it != xid_to_request_queue.end())
+                {
+                    for (const auto & read_request : request_queue_it->second)
+                    {
+                        if (server->isLeaderAlive())
+                            server->putLocalReadRequest(read_request);
+                        else
+                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                    }
+
+                    xid_to_request_queue.erase(request_queue_it);
+                }
             }
-        }
-    });
+        });
 
     try
     {
@@ -766,35 +775,37 @@ void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
     keeper_stats.updateLatency(process_time_ms);
 }
 
-static uint64_t getDirSize(const fs::path & dir)
+static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
 {
     checkStackSize();
-    if (!fs::exists(dir))
-        return 0;
 
-    fs::directory_iterator it(dir);
-    fs::directory_iterator end;
-
-    uint64_t size{0};
-    while (it != end)
+    uint64_t size = 0;
+    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        if (it->is_regular_file())
-            size += fs::file_size(*it);
+        if (disk->isFile(it->path()))
+            size += disk->getFileSize(it->path());
         else
-            size += getDirSize(it->path());
-        ++it;
+            size += getTotalSize(disk, it->path());
     }
+
     return size;
 }
 
 uint64_t KeeperDispatcher::getLogDirSize() const
 {
-    return getDirSize(configuration_and_settings->log_storage_path);
+    auto log_disk = keeper_context->getLogDisk();
+    auto size = getTotalSize(log_disk);
+
+    auto latest_log_disk = keeper_context->getLatestLogDisk();
+    if (log_disk != latest_log_disk)
+        size += getTotalSize(latest_log_disk);
+
+    return size;
 }
 
 uint64_t KeeperDispatcher::getSnapDirSize() const
 {
-    return getDirSize(configuration_and_settings->snapshot_storage_path);
+    return getTotalSize(keeper_context->getSnapshotDisk());
 }
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
