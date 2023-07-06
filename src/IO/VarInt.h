@@ -13,72 +13,58 @@ namespace DB
 /// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
 
 [[noreturn]] void throwReadAfterEOF();
-[[noreturn]] void throwValueTooLargeForVarIntEncoding(UInt64 x);
 
-
-/// NOTE: Due to historical reasons, only values up to 1<<63-1 can be safely encoded/decoded (bigger values are not idempotent under
-/// encoding/decoding). This cannot be changed without breaking backward compatibility (some drivers, e.g. clickhouse-rs (Rust), have the
-/// same limitation, others support the full 1<<64 range, e.g. clickhouse-driver (Python))
-constexpr UInt64 VAR_UINT_MAX = (1ULL<<63) - 1;
 
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
-    if (x > VAR_UINT_MAX) [[unlikely]]
-        throwValueTooLargeForVarIntEncoding(x);
-
-    for (size_t i = 0; i < 9; ++i)
+    while (x > 0x7F)
     {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
+        uint8_t byte = 0x80 | (x & 0x7F);
 
         ostr.nextIfAtEnd();
         *ostr.position() = byte;
         ++ostr.position();
 
         x >>= 7;
-        if (!x)
-            return;
     }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+
+    ostr.nextIfAtEnd();
+    *ostr.position() = final_byte;
+    ++ostr.position();
 }
 
 inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 {
-    if (x > VAR_UINT_MAX) [[unlikely]]
-        throwValueTooLargeForVarIntEncoding(x);
-
-    for (size_t i = 0; i < 9; ++i)
+    while (x > 0x7F)
     {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
+        uint8_t byte = 0x80 | (x & 0x7F);
         ostr.put(byte);
 
         x >>= 7;
-        if (!x)
-            return;
     }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+    ostr.put(final_byte);
 }
 
 inline char * writeVarUInt(UInt64 x, char * ostr)
 {
-    if (x > VAR_UINT_MAX) [[unlikely]]
-        throwValueTooLargeForVarIntEncoding(x);
-
-    for (size_t i = 0; i < 9; ++i)
+    while (x > 0x7F)
     {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
+        uint8_t byte = 0x80 | (x & 0x7F);
 
         *ostr = byte;
         ++ostr;
 
         x >>= 7;
-        if (!x)
-            return ostr;
     }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+
+    *ostr = final_byte;
+    ++ostr;
 
     return ostr;
 }
@@ -101,7 +87,7 @@ template <bool check_eof>
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 0; i < 10; ++i)
     {
         if constexpr (check_eof)
             if (istr.eof()) [[unlikely]]
@@ -120,7 +106,7 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
-    if (istr.buffer().end() - istr.position() >= 9)
+    if (istr.buffer().end() - istr.position() >= 10)
         return impl::readVarUInt<false>(x, istr);
     return impl::readVarUInt<true>(x, istr);
 }
@@ -128,7 +114,7 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 inline void readVarUInt(UInt64 & x, std::istream & istr)
 {
     x = 0;
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 0; i < 10; ++i)
     {
         UInt64 byte = istr.get();
         x |= (byte & 0x7F) << (7 * i);
@@ -143,7 +129,7 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
     const char * end = istr + size;
 
     x = 0;
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 0; i < 10; ++i)
     {
         if (istr == end) [[unlikely]]
             throwReadAfterEOF();
@@ -220,7 +206,8 @@ inline size_t getLengthOfVarUInt(UInt64 x)
         : (x < (1ULL << 42) ? 6
         : (x < (1ULL << 49) ? 7
         : (x < (1ULL << 56) ? 8
-        : 9)))))));
+        : (x < (1ULL << 63) ? 9
+        : 10))))))));
 }
 
 
