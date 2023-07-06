@@ -1727,7 +1727,7 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 "  string  "
 ```
 
-## input_format_csv_allow_variable_number_of_colums {#input_format_csv_allow_variable_number_of_colums}
+## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
 Игнорировать дополнительные столбцы (если файл содержит больше столбцов чем ожидается) и рассматривать отсутствующие поля в CSV в качестве значений по умолчанию.
 
