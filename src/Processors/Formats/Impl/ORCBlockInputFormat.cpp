@@ -63,7 +63,7 @@ Chunk ORCBlockInputFormat::generate()
             return {};
     }
 
-    auto table_result = arrow::Table::FromRecordBatches({std::move(batch)});
+    auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
         throw ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
@@ -71,7 +71,7 @@ Chunk ORCBlockInputFormat::generate()
     /// We should extract the number of rows directly from the stripe, because in case when
     /// record batch contains 0 columns (for example if we requested only columns that
     /// are not presented in data) the number of rows in record batch will be 0.
-    auto table = table_result.ValueOrDie();
+    auto table = std::move(table_result).ValueOrDie();
     if (!table)
         return {};
 
