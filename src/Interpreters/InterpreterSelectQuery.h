@@ -158,7 +158,8 @@ private:
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
     void addPrewhereAliasActions();
-    bool shouldMoveToPrewhere();
+    void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
+    bool shouldMoveToPrewhere() const;
 
     Block getSampleBlockImpl();
 

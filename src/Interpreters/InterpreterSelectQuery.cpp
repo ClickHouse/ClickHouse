@@ -907,35 +907,34 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     }
 
     auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-    if (!storage_merge_tree || settings.parallel_replicas_min_number_of_rows_per_replica == 0)
+    if (!storage_merge_tree || settings.parallel_replicas_min_number_of_rows_per_replica <= 1)
         return false;
 
     auto query_info_copy = query_info;
+    auto analysis_copy = analysis_result;
 
-    /// There is a couple of instances where we there might be a lower limit on the rows to read
-    /// * The settings.max_rows_to_read setting
-    /// * A LIMIT in a simple query (see maxBlockSizeByLimit)
+    /// There is a couple of instances where there might be a lower limit on the rows to be read
+    /// * The max_rows_to_read setting
+    /// * A LIMIT in a simple query (see maxBlockSizeByLimit())
     UInt64 max_rows = maxBlockSizeByLimit();
     if (settings.max_rows_to_read)
         max_rows = max_rows ? std::min(max_rows, settings.max_rows_to_read.value) : settings.max_rows_to_read;
     query_info_copy.limit = max_rows;
 
-    /// TODO: Improve this block as this should only happen once, right? vvvvvvvvvvvvvvvvvvvvvv
-    addPrewhereAliasActions();
-    auto & prewhere_info = analysis_result.prewhere_info;
-    if (prewhere_info)
+    /// Apply filters to prewhere and add them to the query_info so we can filter out parts efficiently during row estimation
+    applyFiltersToPrewhereInAnalysis(analysis_copy);
+    if (analysis_copy.prewhere_info)
     {
-        query_info_copy.prewhere_info = prewhere_info;
+        query_info_copy.prewhere_info = analysis_copy.prewhere_info;
         if (query.prewhere() && !query.where())
             query_info_copy.prewhere_info->need_filter = true;
     }
-    /// END OF TODO BLOCK ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
     UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info_copy, added_filter_nodes);
-    /// Note that we treat an estimation of 0 rows as a real estimation of no data to be read
+    /// Note that we treat an estimation of 0 rows as a real estimation
     size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
-    LOG_TRACE(log, "Estimated {} rows to read, which is work enough for {} parallel replicas", rows_to_read, number_of_replicas_to_use);
+    LOG_TRACE(log, "Estimated {} rows to read. It is enough work for {} parallel replicas", rows_to_read, number_of_replicas_to_use);
 
     if (number_of_replicas_to_use <= 1)
     {
@@ -2128,43 +2127,48 @@ void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     }
 }
 
-bool InterpreterSelectQuery::shouldMoveToPrewhere()
+bool InterpreterSelectQuery::shouldMoveToPrewhere() const
 {
     const Settings & settings = context->getSettingsRef();
-    const ASTSelectQuery & query = getSelectQuery();
+    const ASTSelectQuery & query = query_ptr->as<const ASTSelectQuery &>();
     return settings.optimize_move_to_prewhere && (!query.final() || settings.optimize_move_to_prewhere_if_final);
 }
 
-void InterpreterSelectQuery::addPrewhereAliasActions()
+/// Note that this is const and accepts the analysis ref to be able to use it to do analysis for parallel replicas
+/// without affecting the final analysis multiple times
+void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const
 {
-    auto & expressions = analysis_result;
-    if (expressions.filter_info)
+    if (!analysis.filter_info)
+        return;
+
+    if (!analysis.prewhere_info)
     {
-        if (!expressions.prewhere_info)
+        const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
+        if (does_storage_support_prewhere && shouldMoveToPrewhere())
         {
-            const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
-            if (does_storage_support_prewhere && shouldMoveToPrewhere())
-            {
-                /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-                expressions.prewhere_info = std::make_shared<PrewhereInfo>(
-                    std::move(expressions.filter_info->actions),
-                    std::move(expressions.filter_info->column_name));
-                expressions.prewhere_info->prewhere_actions->projectInput(false);
-                expressions.prewhere_info->remove_prewhere_column = expressions.filter_info->do_remove_column;
-                expressions.prewhere_info->need_filter = true;
-                expressions.filter_info = nullptr;
-            }
-        }
-        else
-        {
-            /// Add row level security actions to prewhere.
-            expressions.prewhere_info->row_level_filter = std::move(expressions.filter_info->actions);
-            expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
-            expressions.prewhere_info->row_level_filter->projectInput(false);
-            expressions.filter_info = nullptr;
+            /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
+            analysis.prewhere_info
+                = std::make_shared<PrewhereInfo>(std::move(analysis.filter_info->actions), std::move(analysis.filter_info->column_name));
+            analysis.prewhere_info->prewhere_actions->projectInput(false);
+            analysis.prewhere_info->remove_prewhere_column = analysis.filter_info->do_remove_column;
+            analysis.prewhere_info->need_filter = true;
+            analysis.filter_info = nullptr;
         }
     }
+    else
+    {
+        /// Add row level security actions to prewhere.
+        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
+        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
+        analysis.prewhere_info->row_level_filter->projectInput(false);
+        analysis.filter_info = nullptr;
+    }
+}
 
+
+void InterpreterSelectQuery::addPrewhereAliasActions()
+{
+    applyFiltersToPrewhereInAnalysis(analysis_result);
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 
