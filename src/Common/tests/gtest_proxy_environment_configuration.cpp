@@ -14,7 +14,7 @@ TEST(ProxyEnvironmentConfiguration, TestHTTP)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    auto configuration = resolver.resolve(false).value();
+    auto configuration = resolver.resolve(false);
 
     ASSERT_EQ(configuration.host, proxy_server.getHost());
     ASSERT_EQ(configuration.port, proxy_server.getPort());
@@ -27,7 +27,11 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPNoEnv)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    ASSERT_FALSE(resolver.resolve(false).has_value());
+    auto configuration = resolver.resolve(false);
+
+    ASSERT_EQ(configuration.host, "");
+    ASSERT_EQ(configuration.scheme, "");
+    ASSERT_EQ(configuration.port, 0u);
 }
 
 TEST(ProxyEnvironmentConfiguration, TestHTTPs)
@@ -36,7 +40,7 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPs)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    auto configuration = resolver.resolve(true).value();
+    auto configuration = resolver.resolve(true);
 
     ASSERT_EQ(configuration.host, proxy_server.getHost());
     ASSERT_EQ(configuration.port, proxy_server.getPort());
@@ -49,5 +53,9 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPsNoEnv)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    ASSERT_FALSE(resolver.resolve(true).has_value());
+    auto configuration = resolver.resolve(true);
+
+    ASSERT_EQ(configuration.host, "");
+    ASSERT_EQ(configuration.scheme, "");
+    ASSERT_EQ(configuration.port, 0u);
 }

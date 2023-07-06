@@ -16,8 +16,13 @@ ProxyListConfigurationResolver::ProxyListConfigurationResolver(std::vector<Poco:
 {
 }
 
-std::optional<ProxyConfiguration> ProxyListConfigurationResolver::resolve(bool)
+ProxyConfiguration ProxyListConfigurationResolver::resolve(bool)
 {
+    if (proxies.empty())
+    {
+        return {};
+    }
+
     /// Avoid atomic increment if number of proxies is 1.
     size_t index = proxies.size() > 1 ? (access_counter++) % proxies.size() : 0;
 

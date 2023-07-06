@@ -13,7 +13,7 @@ class ProxyListConfigurationResolver : public ProxyConfigurationResolver
 public:
     explicit ProxyListConfigurationResolver(std::vector<Poco::URI> proxies_);
 
-    std::optional<ProxyConfiguration> resolve(bool https) override;
+    ProxyConfiguration resolve(bool https) override;
 
     void errorReport(const ProxyConfiguration &) override {}
 

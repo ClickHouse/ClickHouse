@@ -5,17 +5,13 @@ namespace DB::S3
 
 ClientConfigurationPerRequest ProxyConfigurationResolverAdapter::getConfiguration(const Aws::Http::HttpRequest & request)
 {
-    if (auto proxy_configuration_opt = resolver->resolve(request.GetUri().GetScheme() == Aws::Http::Scheme::HTTPS))
-    {
-        auto proxy_configuration = proxy_configuration_opt.value();
-        return ClientConfigurationPerRequest {
-            Aws::Http::SchemeMapper::FromString(proxy_configuration.scheme.c_str()),
-            proxy_configuration.host,
-            proxy_configuration.port
-        };
-    }
+    auto proxy_configuration = resolver->resolve(request.GetUri().GetScheme() == Aws::Http::Scheme::HTTPS);
 
-    return {};
+    return ClientConfigurationPerRequest {
+        Aws::Http::SchemeMapper::FromString(proxy_configuration.scheme.c_str()),
+        proxy_configuration.host,
+        proxy_configuration.port
+    };
 }
 
 void ProxyConfigurationResolverAdapter::errorReport(const ClientConfigurationPerRequest & config)

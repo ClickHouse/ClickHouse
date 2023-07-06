@@ -21,7 +21,7 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 {
 }
 
-std::optional<ProxyConfiguration> RemoteProxyConfigurationResolver::resolve(bool)
+ProxyConfiguration RemoteProxyConfigurationResolver::resolve(bool)
 {
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
@@ -94,7 +94,7 @@ std::optional<ProxyConfiguration> RemoteProxyConfigurationResolver::resolve(bool
     catch (...)
     {
         tryLogCurrentException("AWSClient", "Failed to obtain proxy");
-        return std::nullopt;
+        return {};
     }
 }
 

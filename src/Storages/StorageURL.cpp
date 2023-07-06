@@ -402,14 +402,11 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
 
-        if (auto proxy_config_opt = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https"))
-        {
-            auto proxy_config = proxy_config_opt.value();
+        auto proxy_config = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https");
 
-            poco_proxy_config.host = proxy_config.host;
-            poco_proxy_config.port = proxy_config.port;
-            poco_proxy_config.protocol = proxy_config.scheme;
-        }
+        poco_proxy_config.host = proxy_config.host;
+        poco_proxy_config.port = proxy_config.port;
+        poco_proxy_config.protocol = proxy_config.scheme;
 
         try
         {
@@ -477,14 +474,11 @@ StorageURLSink::StorageURLSink(
 
     Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
 
-    if (auto proxy_config_opt = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https"))
-    {
-        auto proxy_config = proxy_config_opt.value();
+    auto proxy_config = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https");
 
-        poco_proxy_config.host = proxy_config.host;
-        poco_proxy_config.port = proxy_config.port;
-        poco_proxy_config.protocol = proxy_config.scheme;
-    }
+    poco_proxy_config.host = proxy_config.host;
+    poco_proxy_config.port = proxy_config.port;
+    poco_proxy_config.protocol = proxy_config.scheme;
 
     auto write_buffer = WriteBufferFromHTTPBuilder()
         .withURI(Poco::URI(uri))

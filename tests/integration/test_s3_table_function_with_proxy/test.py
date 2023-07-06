@@ -22,22 +22,20 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
-        # cluster.add_instance("minio_node", with_minio=True)
+        cluster.add_instance(
+            "proxy_list_node", main_configs=["configs/config.d/proxy_list.xml"], with_minio=True
+        )
 
         # cluster.add_instance(
-        #     "proxy_list_node", main_configs=["configs/config.d/proxy_list.xml"]
+        #     "remote_proxy_node", main_configs=["configs/config.d/proxy_remote.xml"], with_minio=True
         # )
-
-        cluster.add_instance(
-            "remote_proxy_node", main_configs=["configs/config.d/proxy_remote.xml"], with_minio=True
-        )
 
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
-        run_resolver(cluster)
-        logging.info("Proxy resolver started")
+        # run_resolver(cluster)
+        # logging.info("Proxy resolver started")
 
         yield cluster
     finally:
@@ -54,28 +52,8 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
         else:
             assert False, "http method not found in logs"
 
-# def test_s3_with_proxy_list(cluster):
-#     node = cluster.instances["proxy_list_node"]
-#
-#     node.query(
-#         """
-#         INSERT INTO FUNCTION
-#         s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV', 'key String, value String')
-#         VALUES ('color','red'),('size','10')
-#         """
-#     )
-#
-#     assert (
-#         node.query("SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values")
-#         == "('color','red'),('size','10')"
-#     )
-#
-#     for proxy in ["proxy1", "proxy2"]:
-#         check_proxy_logs(cluster, proxy, ["PUT", "GET"])
-
-
-def test_s3_with_remote_resolver(cluster):
-    node = cluster.instances["remote_proxy_node"]
+def test_s3_with_proxy_list(cluster):
+    node = cluster.instances["proxy_list_node"]
 
     node.query(
         """
@@ -92,3 +70,23 @@ def test_s3_with_remote_resolver(cluster):
 
     for proxy in ["proxy1", "proxy2"]:
         check_proxy_logs(cluster, proxy, ["PUT", "GET"])
+
+
+# def test_s3_with_remote_resolver(cluster):
+#     node = cluster.instances["remote_proxy_node"]
+#
+#     node.query(
+#         """
+#         INSERT INTO FUNCTION
+#         s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV', 'key String, value String')
+#         VALUES ('color','red'),('size','10')
+#         """
+#     )
+#
+#     assert (
+#         node.query("SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values")
+#         == "('color','red'),('size','10')"
+#     )
+#
+#     for proxy in ["proxy1", "proxy2"]:
+#         check_proxy_logs(cluster, proxy, ["PUT", "GET"])
