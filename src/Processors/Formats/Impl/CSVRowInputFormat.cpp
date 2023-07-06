@@ -354,6 +354,7 @@ bool CSVFormatReader::checkForSuffix()
 
 bool CSVFormatReader::checkForEndOfRow()
 {
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
 }
 
