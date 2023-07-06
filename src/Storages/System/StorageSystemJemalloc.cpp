@@ -95,8 +95,8 @@ NamesAndTypesList StorageSystemJemallocBins::getNamesAndTypes()
         { "index",          std::make_shared<DataTypeUInt16>() },
         { "large",          std::make_shared<DataTypeUInt8>() },
         { "size",           std::make_shared<DataTypeUInt64>() },
-        { "nmalloc",        std::make_shared<DataTypeInt64>() },
-        { "ndalloc",        std::make_shared<DataTypeInt64>() },
+        { "allocations",    std::make_shared<DataTypeInt64>() },
+        { "deallocations",  std::make_shared<DataTypeInt64>() },
     };
 }
 
