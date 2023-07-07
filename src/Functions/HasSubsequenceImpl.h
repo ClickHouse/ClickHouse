@@ -1,124 +1,109 @@
 #pragma once
+
+#include <Columns/ColumnString.h>
+#include <Functions/GatherUtils/Sources.h>
+#include <Functions/GatherUtils/Sinks.h>
+#include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/Sinks.h>
 namespace DB
 {
 namespace
 {
-template <typename Name, typename Impl>
-struct HasSubsequenceImpl
-{
-    using ResultType = UInt8;
 
-    static constexpr bool use_default_implementation_for_constants = false;
-    static constexpr bool supports_start_pos = false;
+using namespace GatherUtils;
+
+template <typename Name, typename Impl>
+class FunctionsHasSubsequenceImpl : public IFunction
+{
+public:
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {};}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsHasSubsequenceImpl>(); }
 
-    static void vectorConstant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
-        const String & needle,
-        const ColumnPtr & /*start_pos*/,
-        PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * /*res_null*/)
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    bool useDefaultImplementationForConstants() const override { return false; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {};}
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (needle.empty())
-        {
-            for (auto & r : res)
-                r = 1;
-            return;
-        }
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
 
-        ColumnString::Offset prev_haystack_offset = 0;
-        for (size_t i = 0; i < haystack_offsets.size(); ++i)
-        {
-            size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
-            const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
-            res[i] = hasSubsequence(haystack, haystack_size, needle.c_str(), needle.size());
-            prev_haystack_offset = haystack_offsets[i];
-        }
+        if (!isString(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
+
+        return std::make_shared<DataTypeNumber<UInt8>>();
     }
 
-    static void vectorVector(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
-        const ColumnString::Chars & needle_data,
-        const ColumnString::Offsets & needle_offsets,
-        const ColumnPtr & /*start_pos*/,
-        PaddedPODArray<UInt8> & res,
-        ColumnUInt8 * /*res_null*/)
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        ColumnString::Offset prev_haystack_offset = 0;
-        ColumnString::Offset prev_needle_offset = 0;
+        const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & column_needle = arguments[1].column;
 
-        size_t size = haystack_offsets.size();
+        const ColumnConst * haystack_const_string = checkAndGetColumnConst<ColumnString>(column_haystack.get());
+        const ColumnConst * needle_const_string = checkAndGetColumnConst<ColumnString>(column_needle.get());
+        const ColumnString * haystack_string = checkAndGetColumn<ColumnString>(&*column_haystack);
+        const ColumnString * needle_string = checkAndGetColumn<ColumnString>(&*column_needle);
 
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
-            size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+        auto col_res = ColumnVector<UInt8>::create();
+        typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
+        vec_res.resize(input_rows_count);
 
-            if (0 == needle_size)
-            {
-                res[i] = 1;
-            }
-            else
-            {
-                const char * needle = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
-                const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
-                res[i] = hasSubsequence(haystack, haystack_size, needle, needle_size);
-            }
+        if (haystack_string && needle_string)
+            execute(StringSource{*haystack_string}, StringSource{*needle_string}, vec_res);
+        else if (haystack_string && needle_const_string)
+            execute(StringSource{*haystack_string}, ConstSource<StringSource>{*needle_const_string}, vec_res);
+        else if (haystack_const_string && needle_string)
+            execute(ConstSource<StringSource>{*haystack_const_string}, StringSource{*needle_string}, vec_res);
+        else if (haystack_const_string && needle_const_string)
+            execute(ConstSource<StringSource>{*haystack_const_string}, ConstSource<StringSource>{*needle_const_string}, vec_res);
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {}, first argument of function {} must be a string",
+                arguments[0].column->getName(),
+                getName());
 
-            prev_haystack_offset = haystack_offsets[i];
-            prev_needle_offset = needle_offsets[i];
-        }
+        return col_res;
     }
 
-    static void constantVector(
-        const String & haystack,
-        const ColumnString::Chars & needle_data,
-        const ColumnString::Offsets & needle_offsets,
-        const ColumnPtr & /*start_pos*/,
-        PaddedPODArray<UInt8> & res,
-        ColumnUInt8 * /*res_null*/)
+private:
+
+    template <typename SourceHaystack, typename SourceNeedle>
+    void execute(
+        SourceHaystack && haystacks,
+        SourceNeedle && needles,
+        PaddedPODArray<UInt8> & res_data) const
     {
-        ColumnString::Offset prev_needle_offset = 0;
+        size_t row_num = 0;
 
-        size_t size = needle_offsets.size();
-
-        for (size_t i = 0; i < size; ++i)
+        while (!haystacks.isEnd())
         {
-            size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+            [[maybe_unused]] auto haystack_slice = haystacks.getWhole();
+            [[maybe_unused]] auto needle_slice = needles.getWhole();
 
-            if (0 == needle_size)
-            {
-                res[i] = 1;
-            }
-            else
-            {
-                const char * needle = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
-                res[i] = hasSubsequence(haystack.c_str(), haystack.size(), needle, needle_size);
-            }
-            prev_needle_offset = needle_offsets[i];
-        }
-    }
+            auto haystack = std::string(reinterpret_cast<const char *>(haystack_slice.data), haystack_slice.size);
+            auto needle = std::string(reinterpret_cast<const char *>(needle_slice.data), needle_slice.size);
 
-    static void constantConstant(
-        String haystack,
-        String needle,
-        const ColumnPtr & /*start_pos*/,
-        PaddedPODArray<UInt8> & res,
-        ColumnUInt8 * /*res_null*/)
-    {
-        size_t size = res.size();
-        Impl::toLowerIfNeed(haystack);
-        Impl::toLowerIfNeed(needle);
+            Impl::toLowerIfNeed(haystack);
+            Impl::toLowerIfNeed(needle);
 
-        UInt8 result = hasSubsequence(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            res[i] = result;
+            res_data[row_num] = hasSubsequence(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+            haystacks.next();
+            needles.next();
+            ++row_num;
         }
     }
 
@@ -129,18 +114,6 @@ struct HasSubsequenceImpl
             if (needle[j] == haystack[i])
                 ++j;
         return j == needle_size;
-    }
-
-    template <typename... Args>
-    static void vectorFixedConstant(Args &&...)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
-    }
-
-    template <typename... Args>
-    static void vectorFixedVector(Args &&...)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
 };
 

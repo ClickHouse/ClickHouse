@@ -18,7 +18,7 @@ struct NameHasSubsequenceUTF8
     static constexpr auto name = "hasSubsequenceUTF8";
 };
 
-using FunctionHasSubsequenceUTF8 = FunctionsStringSearch<HasSubsequenceImpl<NameHasSubsequenceUTF8, HasSubsequenceCaseSensitiveUTF8>>;
+using FunctionHasSubsequenceUTF8 = FunctionsHasSubsequenceImpl<NameHasSubsequenceUTF8, HasSubsequenceCaseSensitiveUTF8>;
 }
 
 REGISTER_FUNCTION(hasSubsequenceUTF8)
