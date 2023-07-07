@@ -1269,7 +1269,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     {
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
         txn = TransactionLog::instance().beginTransaction();
-        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ true};
+        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
     bool has_mutations = false;
