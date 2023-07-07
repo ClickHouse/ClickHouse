@@ -94,7 +94,10 @@ RUN mkdir /tmp/ccache \
     && rm -rf /tmp/ccache
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.4.1
+ARG SCCACHE_VERSION=v0.5.4
+ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
+# sccache requires a value for the region. So by default we use The Default Region
+ENV SCCACHE_REGION=us-east-1
 RUN arch=${TARGETARCH:-amd64} \
   && case $arch in \
     amd64) rarch=x86_64 ;; \
