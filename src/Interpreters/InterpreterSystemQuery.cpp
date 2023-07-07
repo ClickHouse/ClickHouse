@@ -370,18 +370,7 @@ BlockIO InterpreterSystemQuery::execute()
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                if (query.key_to_drop.empty())
-                {
-                    cache->removeAllReleasable();
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                    if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
-                    else
-                        cache->removeKey(key);
-                }
+                cache->removeAllReleasable();
             }
             break;
         }
