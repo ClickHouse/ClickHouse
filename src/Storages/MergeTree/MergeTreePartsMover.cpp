@@ -233,9 +233,15 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
         disk->createDirectories(path_to_clone);
 
-        cloned_part_storage = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
 
-        if (!cloned_part_storage)
+        if (zero_copy_part)
+        {
+            /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
+            zero_copy_part->is_temp = false;    /// Do not remove it in dtor
+            cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
+        }
+        else
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, log);
@@ -263,7 +269,10 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
-    auto active_part = data->getActiveContainingPart(cloned_part.part->name);
+    /// `getActiveContainingPart` and `swapActivePart` are called under the same lock
+    /// to prevent part becoming inactive between calls
+    auto part_lock = data->lockParts();
+    auto active_part = data->getActiveContainingPart(cloned_part.part->name, part_lock);
 
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part.part->name)
@@ -284,7 +293,7 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     cloned_part.part->renameTo(active_part->name, false);
 
     /// TODO what happen if server goes down here?
-    data->swapActivePart(cloned_part.part);
+    data->swapActivePart(cloned_part.part, part_lock);
 
     LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
