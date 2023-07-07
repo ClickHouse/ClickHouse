@@ -21,7 +21,7 @@ spawn bash -c "$command"
 expect 1
 EOF
 
-    rg -F $'\x1b' "$file_name" && cat "$file_name" || echo "ASCII text"
+    grep -F $'\x1b' "$file_name" && cat "$file_name" || echo "ASCII text"
 }
 
 run "$CLICKHOUSE_CLIENT -q 'SELECT 1' 2>$file_name"
