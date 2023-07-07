@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <use_hedged_requests>1</use_hedged_requests>
+            <async_query_sending_for_remote>0</async_query_sending_for_remote>
+        </default>
+    </profiles>
+</clickhouse>
