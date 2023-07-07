@@ -77,6 +77,13 @@ def test_s3_with_proxy_list(cluster):
         == "('color','red'),('size','10')"
     )
 
+    assert (
+            node.query(
+                "SELECT * FROM url('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'CSV') FORMAT Values"
+            )
+            == "('color','red'),('size','10')"
+    )
+
     for proxy in ["proxy1", "proxy2"]:
         check_proxy_logs(cluster, proxy, ["PUT", "GET"])
 
