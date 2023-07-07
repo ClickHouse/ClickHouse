@@ -107,8 +107,8 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
-    std::string delete_key;
-    std::optional<size_t> delete_offset;
+    std::string key_to_drop;
+    std::optional<size_t> offset_to_drop;
 
     String backup_name;
 
