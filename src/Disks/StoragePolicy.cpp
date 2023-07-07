@@ -304,7 +304,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
         if (!new_volume_names.contains(volume->getName()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "New storage policy {} shall contain volumes of old one ({})",
+                "New storage policy {} shall contain volumes of the old storage policy {}",
                 backQuote(new_storage_policy->getName()),
                 backQuote(name));
 
@@ -316,7 +316,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
             if (!new_disk_names.contains(disk->getName()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "New storage policy {} shall contain disks of old one ({})",
+                    "New storage policy {} shall contain disks of the old storage policy {}",
                     backQuote(new_storage_policy->getName()),
                     backQuote(name));
     }
