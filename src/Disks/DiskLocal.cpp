@@ -417,29 +417,12 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
     return typeid(one) == typeid(another);
 }
 
-void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
-{
-    if (isSameDiskType(*this, *to_disk))
-    {
-        fs::path to = fs::path(to_disk->getPath()) / to_path;
-        fs::path from = fs::path(disk_path) / from_path;
-        if (from_path.ends_with('/'))
-            from = from.parent_path();
-        if (fs::is_directory(from))
-            to /= from.filename();
-
-        fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
-    }
-    else
-        copyThroughBuffers(from_path, to_disk, to_path, /* copy_root_dir */ true); /// Base implementation.
-}
-
 void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
     if (isSameDiskType(*this, *to_disk))
-        fs::copy(from_dir, to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
+        fs::copy(fs::path(disk_path) / from_dir, fs::path(to_disk->getPath()) / to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     else
-        copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false); /// Base implementation.
+        IDisk::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
@@ -448,7 +431,7 @@ SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 }
 
 
-void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &)
+void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & disk_map)
 {
     String new_disk_path;
     UInt64 new_keep_free_space_bytes;
@@ -460,10 +443,13 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
 
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
+
+    IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
-DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-    : IDisk(name_)
+DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
+                     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    : IDisk(name_, config, config_prefix)
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
     , logger(&Poco::Logger::get("DiskLocal"))
@@ -472,11 +458,22 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
 }
 
 DiskLocal::DiskLocal(
-    const String & name_, const String & path_, UInt64 keep_free_space_bytes_, ContextPtr context, UInt64 local_disk_check_period_ms)
-    : DiskLocal(name_, path_, keep_free_space_bytes_)
+    const String & name_, const String & path_, UInt64 keep_free_space_bytes_, ContextPtr context,
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    : DiskLocal(name_, path_, keep_free_space_bytes_, config, config_prefix)
 {
+    auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
     if (local_disk_check_period_ms > 0)
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
+}
+
+DiskLocal::DiskLocal(const String & name_, const String & path_)
+    : IDisk(name_)
+    , disk_path(path_)
+    , keep_free_space_bytes(0)
+    , logger(&Poco::Logger::get("DiskLocal"))
+    , data_source_description(getLocalDataSourceDescription(disk_path))
+{
 }
 
 DataSourceDescription DiskLocal::getDataSourceDescription() const
@@ -720,7 +717,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
-            = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
+            = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(context, skip_access_check);
         return disk;
     };
