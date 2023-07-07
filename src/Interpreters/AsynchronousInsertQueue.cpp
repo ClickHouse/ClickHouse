@@ -421,12 +421,10 @@ try
     auto insert_query_id = insert_context->getCurrentQueryId();
     auto query_start_time = std::chrono::system_clock::now();
     Stopwatch start_watch{CLOCK_MONOTONIC};
-    ClientInfo & client_info = insert_context->getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-    client_info.initial_query_start_time = timeInSeconds(query_start_time);
-    client_info.initial_query_start_time_microseconds = timeInMicroseconds(query_start_time);
-    client_info.current_query_id = insert_query_id;
-    client_info.initial_query_id = insert_query_id;
+    insert_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    insert_context->setInitialQueryStartTime(query_start_time);
+    insert_context->setCurrentQueryId(insert_query_id);
+    insert_context->setInitialQueryId(insert_query_id);
     size_t log_queries_cut_to_length = insert_context->getSettingsRef().log_queries_cut_to_length;
     String query_for_logging = insert_query.hasSecretParts()
         ? insert_query.formatForLogging(log_queries_cut_to_length)

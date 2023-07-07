@@ -5079,7 +5079,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
-    ++query_context->getClientInfo().distributed_depth;
+    query_context->increaseDistributedDepth();
 
     for (const auto & replicas : src_cluster->getShardsAddresses())
     {
