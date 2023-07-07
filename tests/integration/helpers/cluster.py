@@ -72,6 +72,7 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
+
 # to create docker-compose env file
 def _create_env_file(path, variables):
     logging.debug(f"Env {variables} stored in {path}")
