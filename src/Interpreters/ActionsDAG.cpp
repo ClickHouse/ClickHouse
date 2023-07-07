@@ -465,7 +465,11 @@ void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
 {
     std::unordered_set<const Node *> visited_nodes;
+    std::unordered_set<const Node *> used_inputs;
     std::stack<Node *> stack;
+
+    for (const auto * input : inputs)
+        used_inputs.insert(input);
 
     for (const auto * node : outputs)
     {
@@ -484,7 +488,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
             stack.push(&node);
         }
 
-        if (node.type == ActionType::INPUT && !allow_remove_inputs)
+        if (node.type == ActionType::INPUT && !allow_remove_inputs && used_inputs.contains(&node))
             visited_nodes.insert(&node);
     }
 
