@@ -32,10 +32,10 @@ public:
 
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
-    virtual bool addJoinedBlock(const Block &, bool) override;
+    virtual bool addBlockToJoin(const Block &, bool) override;
     virtual void checkTypesOfKeys(const Block &) const override;
 
-    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
+    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
 
