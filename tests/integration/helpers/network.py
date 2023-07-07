@@ -32,6 +32,9 @@ class PartitionManager:
             {"destination": instance.ip_address, "source_port": 2181, "action": action}
         )
 
+    def dump_rules(self):
+        return _NetworkManager.get().dump_rules()
+
     def restore_instance_zk_connections(self, instance, action="DROP"):
         self._check_instance(instance)
 
@@ -157,6 +160,10 @@ class _NetworkManager:
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
+    def dump_rules(self):
+        cmd = ["iptables", "-L", "DOCKER-USER"]
+        return self._exec_run(cmd, privileged=True)
+
     @staticmethod
     def clean_all_user_iptables_rules():
         for i in range(1000):
@@ -212,8 +219,8 @@ class _NetworkManager:
 
     def __init__(
         self,
-        container_expire_timeout=50,
-        container_exit_timeout=60,
+        container_expire_timeout=120,
+        container_exit_timeout=120,
         docker_api_version=os.environ.get("DOCKER_API_VERSION"),
     ):
         self.container_expire_timeout = container_expire_timeout
