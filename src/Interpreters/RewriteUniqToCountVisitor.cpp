@@ -14,16 +14,49 @@
 namespace DB
 {
 
+using Aliases = std::unordered_map<String, ASTPtr>;
+
 namespace
 {
 
 bool matchFnUniq(String func_name)
 {
     auto name = Poco::toLower(func_name);
-    return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined" || name == "uniqCombined64";
+    return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
+        || name == "uniqCombined64";
 }
 
-bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs)
+bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, Aliases & alias)
+{
+    if (lhs->getTreeHash() == rhs->getTreeHash())
+    {
+        return true;
+    }
+    else
+    {
+        auto * lhs_idf = lhs->as<ASTIdentifier>();
+        auto * rhs_idf = rhs->as<ASTIdentifier>();
+        if (lhs_idf && rhs_idf)
+        {
+            /// compound identifiers, such as: <t.name, name>
+            if (lhs_idf->shortName() == rhs_idf->shortName())
+                return true;
+
+            /// translate alias
+            if (alias.find(lhs_idf->shortName()) != alias.end())
+                lhs_idf = alias.find(lhs_idf->shortName())->second->as<ASTIdentifier>();
+
+            if (alias.find(rhs_idf->shortName()) != alias.end())
+                rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
+
+            if (lhs_idf->shortName() == rhs_idf->shortName())
+                return true;
+        }
+    }
+    return false;
+}
+
+bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs, Aliases & alias)
 {
     if (!lhs || !rhs)
         return false;
@@ -31,27 +64,23 @@ bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs)
         return false;
     for (size_t i = 0; i < lhs->children.size(); i++)
     {
-        if (lhs->children[i]->formatForLogging() != rhs->children[i]->formatForLogging()) // TODO not a elegant way
+        if (!expressionEquals(lhs->children[i], rhs->children[i], alias))
             return false;
     }
     return true;
 }
 
-/// Test whether lhs contains all expr in rhs.
-bool expressionListContainsAll(ASTExpressionList * lhs, ASTExpressionList * rhs)
+/// Test whether lhs contains all expressions in rhs.
+bool expressionListContainsAll(ASTExpressionList * lhs, ASTExpressionList * rhs, Aliases alias)
 {
     if (!lhs || !rhs)
         return false;
     if (lhs->children.size() < rhs->children.size())
         return false;
-    std::vector<String> lhs_strs;
-    for (const auto & le : lhs->children)
-    {
-        lhs_strs.emplace_back(le->formatForLogging());
-    }
     for (const auto & re : rhs->children)
     {
-        if (std::find(lhs_strs.begin(), lhs_strs.end(), re->formatForLogging()) != lhs_strs.end())
+        auto predicate = [&re, &alias](ASTPtr & le) { return expressionEquals(le, re, alias); };
+        if (std::find_if(lhs->children.begin(), lhs->children.end(), predicate) == lhs->children.end())
             return false;
     }
     return true;
@@ -72,46 +101,60 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
         return;
     if (selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children.size() != 1)
         return;
-    auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
+    auto * table_expr = selectq->tables()
+                            ->as<ASTTablesInSelectQuery>()
+                            ->children[0]
+                            ->as<ASTTablesInSelectQueryElement>()
+                            ->children[0]
+                            ->as<ASTTableExpression>();
     if (!table_expr || table_expr->children.size() != 1 || !table_expr->subquery)
         return;
     auto * subquery = table_expr->subquery->as<ASTSubquery>();
     if (!subquery)
         return;
-    auto * sub_selectq = subquery->children[0]->as<ASTSelectWithUnionQuery>()->children[0]->as<ASTExpressionList>()->children[0]->as<ASTSelectQuery>();
+    auto * sub_selectq = subquery->children[0]
+                             ->as<ASTSelectWithUnionQuery>()->children[0]
+                             ->as<ASTExpressionList>()->children[0]
+                             ->as<ASTSelectQuery>();
     if (!sub_selectq)
         return;
+    auto sub_expr_list = sub_selectq->select();
+    if (!sub_expr_list)
+        return;
 
-    auto match_distinct = [&]() -> bool
+    /// collect subquery select expressions alias
+    std::unordered_map<String, ASTPtr> alias;
+    for (auto expr : sub_expr_list->children)
+    {
+        if (!expr->tryGetAlias().empty())
+            alias.insert({expr->tryGetAlias(), expr});
+    }
+
+    auto match_subquery_with_distinct = [&]() -> bool
     {
         if (!sub_selectq->distinct)
             return false;
-        auto sub_expr_list = sub_selectq->select();
-        if (!sub_expr_list)
-            return false;
         /// uniq expression list == subquery group by expression list
-        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), sub_expr_list->as<ASTExpressionList>()))
+        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), sub_expr_list->as<ASTExpressionList>(), alias))
             return false;
         return true;
     };
 
-    auto match_group_by = [&]() -> bool
+    auto match_subquery_with_group_by = [&]() -> bool
     {
-        auto group_by = sub_selectq->groupBy();
+        auto group_by = sub_selectq->groupBy(); // TODO group by type
         if (!group_by)
             return false;
-        auto sub_expr_list = sub_selectq->select();
-        if (!sub_expr_list)
-            return false;
-        /// uniq expression list == subquery group by expression list 
-        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), group_by->as<ASTExpressionList>()))
+        /// uniq expression list == subquery group by expression list
+        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), group_by->as<ASTExpressionList>(), alias))
             return false;
         /// subquery select expression list must contain all columns in uniq expression list
-        expressionListContainsAll(sub_expr_list->as<ASTExpressionList>(), func->children[0]->as<ASTExpressionList>());
+        if (!expressionListContainsAll(sub_expr_list->as<ASTExpressionList>(), func->children[0]->as<ASTExpressionList>(), alias))
+            return false;
         return true;
     };
 
-    if (match_distinct() || match_group_by())
+    if (match_subquery_with_distinct() || match_subquery_with_group_by())
         expr_list->children[0] = makeASTFunction("count");
 }
 
