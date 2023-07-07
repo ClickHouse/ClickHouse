@@ -39,7 +39,7 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     fs::path path{file_path};
     std::tm buf;
     localtime_r(&now, &buf);
-    std::stringstream ss;
+    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss << std::put_time(&buf, file_path.c_str());
     return path.replace_filename(ss.str());
 }
