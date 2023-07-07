@@ -560,13 +560,6 @@ MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
     return instanceImpl().get();
 }
 
-void SymbolIndex::reload()
-{
-    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    /// Also drop stacktrace cache.
-    StackTrace::dropCache();
-}
-
 }
 
 #endif
