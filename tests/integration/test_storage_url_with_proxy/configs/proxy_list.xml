@@ -1,5 +1,0 @@
-<clickhouse>
-    <proxy>
-        <uri>http://proxy1</uri>
-    </proxy>
-</clickhouse>
