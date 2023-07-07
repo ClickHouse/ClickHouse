@@ -322,7 +322,6 @@ struct ToTimeImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl;
 };
@@ -394,7 +393,6 @@ struct ToStartOfSecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -442,7 +440,6 @@ struct ToStartOfMillisecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -486,7 +483,6 @@ struct ToStartOfMicrosecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -524,7 +520,6 @@ struct ToStartOfNanosecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -723,28 +718,6 @@ struct ToYearImpl
         return time_zone.toYear(DayNum(d));
     }
 
-    static inline constexpr bool hasPreimage() { return true; }
-
-    static inline RangeOrNull getPreimage(const IDataType & type, const Field & point)
-    {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
-
-        auto year = point.get<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
-
-        const DateLUTImpl & date_lut = DateLUT::instance();
-
-        auto start_time = date_lut.makeDateTime(year, 1, 1, 0, 0, 0);
-        auto end_time = date_lut.addYears(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                type.getName(), name);
-    }
-
     using FactorTransform = ZeroTransform;
 };
 
@@ -818,7 +791,6 @@ struct ToQuarterImpl
     {
         return time_zone.toQuarter(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -843,7 +815,6 @@ struct ToMonthImpl
     {
         return time_zone.toMonth(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -869,7 +840,6 @@ struct ToDayOfMonthImpl
         return time_zone.toDayOfMonth(DayNum(d));
     }
 
-    static inline constexpr bool hasPreimage() { return false; }
     using FactorTransform = ToStartOfMonthImpl;
 };
 
@@ -917,7 +887,6 @@ struct ToDayOfYearImpl
     {
         return time_zone.toDayOfYear(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -942,7 +911,6 @@ struct ToHourImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl;
 };
@@ -971,7 +939,6 @@ struct TimezoneOffsetImpl
         throwDateTimeIsNotSupported(name);
     }
 
-    static inline constexpr bool hasPreimage() { return false; }
     using FactorTransform = ToTimeImpl;
 };
 
@@ -995,7 +962,6 @@ struct ToMinuteImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfHourImpl;
 };
@@ -1020,7 +986,6 @@ struct ToSecondImpl
     {
         throwDateTimeIsNotSupported(name);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfMinuteImpl;
 };
@@ -1045,7 +1010,6 @@ struct ToISOYearImpl
     {
         return time_zone.toISOYear(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1102,7 +1066,6 @@ struct ToISOWeekImpl
     {
         return time_zone.toISOWeek(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToISOYearImpl;
 };
@@ -1145,7 +1108,6 @@ struct ToRelativeYearNumImpl
     {
         return time_zone.toYear(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1177,7 +1139,6 @@ struct ToRelativeQuarterNumImpl
     {
         return time_zone.toRelativeQuarterNum(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1209,7 +1170,6 @@ struct ToRelativeMonthNumImpl
     {
         return time_zone.toRelativeMonthNum(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1241,7 +1201,6 @@ struct ToRelativeWeekNumImpl
     {
         return time_zone.toRelativeWeekNum(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1273,7 +1232,6 @@ struct ToRelativeDayNumImpl
     {
         return static_cast<DayNum>(d);
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1311,7 +1269,6 @@ struct ToRelativeHourNumImpl
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1343,7 +1300,6 @@ struct ToRelativeMinuteNumImpl
     {
         return static_cast<UInt32>(time_zone.toRelativeMinuteNum(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1372,7 +1328,6 @@ struct ToRelativeSecondNumImpl
     {
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1396,31 +1351,6 @@ struct ToYYYYMMImpl
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMM(DayNum(d));
-    }
-    static inline constexpr bool hasPreimage() { return true; }
-
-    static inline RangeOrNull getPreimage(const IDataType & type, const Field & point)
-    {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
-
-        auto year_month = point.get<UInt64>();
-        auto year = year_month / 100;
-        auto month = year_month % 100;
-
-        if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
-            return std::nullopt;
-
-        const DateLUTImpl & date_lut = DateLUT::instance();
-
-        auto start_time = date_lut.makeDateTime(year, month, 1, 0, 0, 0);
-        auto end_time = date_lut.addMonths(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                type.getName(), name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1446,7 +1376,6 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(DayNum(d));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
@@ -1471,7 +1400,6 @@ struct ToYYYYMMDDhhmmssImpl
     {
         return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
     }
-    static inline constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
 };
