@@ -26,7 +26,7 @@ path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database='$CLI
 $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" || exit
 rm -f "$path/ab.proj/data.bin"
 
-$CLICKHOUSE_CLIENT -q "select 3, sum(b) from projection_broken_parts_1 group by a;" 2>/dev/null
+$CLICKHOUSE_CLIENT -q "select 3, sum(b) from projection_broken_parts_1 group by a format Null;" 2>/dev/null
 
 num_tries=0
 while ! $CLICKHOUSE_CLIENT -q "select 4, sum(b) from projection_broken_parts_1 group by a format Null;" 2>/dev/null; do
