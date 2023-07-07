@@ -2,7 +2,6 @@
 # Tags: race
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
@@ -15,16 +14,16 @@ $CLICKHOUSE_CLIENT -q "insert into mt values (3)"
 
 function thread_insert()
 {
-    while true; do
-        # It might be the case that the threads are terminated and exited, but some children didn't and they are still sending queries when we are dropping tables.
-        # That's why the "Table doesn't exist" error is allowed, while other errors don't.
-        $CLICKHOUSE_CLIENT -q "insert into mt values (rand())" 2>&1 | tr -d '\n' | rg -v "Table .+ doesn't exist";
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+        $CLICKHOUSE_CLIENT -q "insert into mt values (rand())";
     done
 }
 
 function thread_detach_attach()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         $CLICKHOUSE_CLIENT -q "alter table mt detach partition id 'all'";
         $CLICKHOUSE_CLIENT -q "alter table mt attach partition id 'all'";
     done
@@ -32,7 +31,8 @@ function thread_detach_attach()
 
 function thread_drop_detached()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         $CLICKHOUSE_CLIENT --allow_drop_detached 1 -q "alter table mt drop detached partition id 'all'";
     done
 }
@@ -43,10 +43,10 @@ export -f thread_drop_detached;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread_insert &
-timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
-timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
-timeout $TIMEOUT bash -c thread_drop_detached 2> /dev/null &
+thread_insert $TIMEOUT &
+thread_detach_attach $TIMEOUT 2> /dev/null &
+thread_detach_attach $TIMEOUT 2> /dev/null &
+thread_drop_detached $TIMEOUT 2> /dev/null &
 
 wait
 
