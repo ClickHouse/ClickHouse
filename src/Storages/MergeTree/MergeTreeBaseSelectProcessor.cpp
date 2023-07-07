@@ -644,6 +644,7 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
         if (prewhere_info->prewhere_actions)
         {
             block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
+            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "updateHeader()\n{}", block.dumpStructure());
 
             auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
             if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -654,6 +655,7 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
 
             if (prewhere_info->remove_prewhere_column)
             {
+                LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "remove_column_name\n{}", prewhere_info->prewhere_column_name);
                 block.erase(prewhere_info->prewhere_column_name);
             }
             else if (prewhere_info->need_filter)
