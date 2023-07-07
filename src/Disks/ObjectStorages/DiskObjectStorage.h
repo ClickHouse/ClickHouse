@@ -33,8 +33,8 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
-        bool send_metadata_,
-        uint64_t thread_pool_size_);
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -150,7 +150,11 @@ public:
     Strings getBlobPath(const String & path) const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+    void copyFile( /// NOLINT
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const WriteSettings & settings = {}) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
@@ -196,8 +200,6 @@ public:
     NameSet getCacheLayersNames() const override;
 #endif
 
-    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
-
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
 
@@ -223,7 +225,6 @@ private:
     bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
-    size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
