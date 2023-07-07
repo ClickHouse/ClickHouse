@@ -1101,6 +1101,7 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            updateCurrentThreadIdAfterFork();
             logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
