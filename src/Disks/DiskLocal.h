@@ -19,13 +19,17 @@ public:
     friend class DiskLocalCheckThread;
     friend class DiskLocalReservation;
 
-    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_);
+    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
+              const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
     DiskLocal(
         const String & name_,
         const String & path_,
         UInt64 keep_free_space_bytes_,
         ContextPtr context,
-        UInt64 local_disk_check_period_ms);
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix);
+
+    DiskLocal(const String & name_, const String & path_);
 
     const String & getPath() const override { return disk_path; }
 
@@ -62,8 +66,6 @@ public:
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
-
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
