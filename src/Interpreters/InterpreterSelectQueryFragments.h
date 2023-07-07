@@ -172,13 +172,13 @@ private:
 
     PlanFragmentPtrs createPlanFragments(const QueryPlan & single_plan, Node & single_node_plan);
     PlanFragmentPtr createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments);
-    PlanFragmentPtr createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment);
-    PlanFragmentPtr createScanFragment(QueryPlanStepPtr step);
-    PlanFragmentPtr createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment);
+    PlanFragmentPtr createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments);
+    PlanFragmentPtr createScanFragment(QueryPlanStepPtr step, PlanFragmentPtrs & all_fragments);
+    PlanFragmentPtr createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments);
     PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition);
-    PlanFragmentPtr createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment);
+    PlanFragmentPtr createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment, PlanFragmentPtrs & all_fragments);
     PlanFragmentPtr createCreatingSetsFragment(Node & root_node, PlanFragmentPtrs child_fragments);
-    PlanFragmentPtr createUnpartitionedFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment);
+    PlanFragmentPtr createUnpartitionedFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments);
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryPlan & query_plan);

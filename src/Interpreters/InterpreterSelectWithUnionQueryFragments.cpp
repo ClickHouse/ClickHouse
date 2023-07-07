@@ -245,7 +245,7 @@ Block InterpreterSelectWithUnionQueryFragments::getCurrentChildResultHeader(cons
             .getSampleBlock();
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        return InterpreterSelectQueryFragments(ast_ptr_, context, options.copy().analyze().noModify(), fragment_id_counter).getSampleBlock();
+        return InterpreterSelectQueryFragments(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
     }
     else
         throw;
@@ -259,7 +259,7 @@ InterpreterSelectWithUnionQueryFragments::buildCurrentChildInterpreter(const AST
         return std::make_unique<InterpreterSelectWithUnionQueryFragments>(ast_ptr_, context, options, current_required_result_column_names);
     else if (ast_ptr_->as<ASTSelectQuery>())
     {
-        return std::make_unique<InterpreterSelectQueryFragments>(ast_ptr_, context, options, fragment_id_counter, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectQueryFragments>(ast_ptr_, context, options, current_required_result_column_names);
     }
     else
         throw;

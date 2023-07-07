@@ -1085,14 +1085,12 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     /// ReadFromMergeTree
     if (dynamic_cast<ReadFromMergeTree *>(root_node.step.get()))
     {
-        result = createScanFragment(root_node.step);
-        all_fragments.emplace_back(result);
+        result = createScanFragment(root_node.step, all_fragments);
     }
     else if (dynamic_cast<AggregatingStep *>(root_node.step.get()))
     {
         /// push down partial aggregating to lower level fragment
-        result = createAggregationFragment(root_node.step, child_fragments[0]);
-        all_fragments.emplace_back(result);
+        result = createAggregationFragment(root_node.step, child_fragments[0], all_fragments);
     }
     else if (needPushDownChild(root_node.step))
     {
@@ -1103,11 +1101,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     }
     else if (dynamic_cast<SortingStep *>(root_node.step.get()))
     {
-        result = createOrderByFragment(root_node.step, child_fragments[0]);
-        if (result)
-            all_fragments.emplace_back(result);
-        else
-            result = child_fragments[0];
+        result = createOrderByFragment(root_node.step, child_fragments[0], all_fragments);
     }
     else if (isLimitRelated(root_node.step))
     {
@@ -1119,9 +1113,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
         if (child_fragments.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step children fragment size {}", child_fragments.size());
 
-        result = createJoinFragment(root_node.step, child_fragments[0], child_fragments[1]);
-        if (result)
-            all_fragments.emplace_back(result);
+        result = createJoinFragment(root_node.step, child_fragments[0], child_fragments[1], all_fragments);
     }
     else if (dynamic_cast<UnionStep *>(root_node.step.get()))
     {
@@ -1144,9 +1136,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     }
     else if (isExtremesOrTotalsOrCubeOrRollup(root_node.step))
     {
-        result = createUnpartitionedFragment(root_node.step, child_fragments[0]);
-        if (result)
-            all_fragments.emplace_back(result);
+        result = createUnpartitionedFragment(root_node.step, child_fragments[0], all_fragments);
     }
     else
     {
@@ -1192,23 +1182,25 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createCreatingSetsFragment(Node
     return child_fragments[0];
 }
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createUnpartitionedFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createUnpartitionedFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments)
 {
     if (child_fragment->isPartitioned())
     {
         DataPartition partition{.type = PartitionType::UNPARTITIONED};
         auto result = createParentFragment(child_fragment, partition);
         result->addStep(step);
+
+        all_fragments.emplace_back(result);
         return result;
     }
     else
     {
         child_fragment->addStep(step);
-        return {};
+        return child_fragment;
     }
 }
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment, PlanFragmentPtrs & all_fragments)
 {
     /// Just only impl hash shaffle join yet
 
@@ -1228,6 +1220,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createJoinFragment(QueryPlanSte
 
     left_child_fragment->setOutputPartition(lhs_join_partition);
     right_child_fragment->setOutputPartition(rhs_join_partition);
+
+    all_fragments.emplace_back(parent_fragment);
 
     return parent_fragment;
 }
@@ -1264,12 +1258,12 @@ void InterpreterSelectQueryFragments::processLimitRelated(QueryPlanStepPtr step,
         throw;
 }
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments)
 {
     child_fragment->addStep(step);
     if (!child_fragment->isPartitioned())
     {
-        return {};
+        return child_fragment;
     }
 
     auto * sort_step = dynamic_cast<SortingStep *>(step.get());
@@ -1292,11 +1286,13 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createOrderByFragment(QueryPlan
     auto * exchange_step = dynamic_cast<ExchangeDataStep *>(exchange_node->step.get());
     exchange_step->setSortInfo(sort_info);
 
+    all_fragments.emplace_back(merge_fragment);
+
     return merge_fragment;
 }
 
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanStepPtr step)
+PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanStepPtr step, PlanFragmentPtrs & all_fragments)
 {
     DataPartition partition;
     partition.type = PartitionType::RANDOM;
@@ -1305,11 +1301,13 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createScanFragment(QueryPlanSte
     fragment->addStep(std::move(step));
     fragment->setFragmentInPlanTree(fragment->getRootNode());
     fragment->setCluster(context->getCluster("test_two_shards"));
+
+    all_fragments.emplace_back(fragment);
     return fragment;
 }
 
 
-PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment)
+PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments)
 {
     // check size
     //    if (child_fragment.getPlanRoot().getNumInstances() <= 1) {
@@ -1344,6 +1342,8 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createAggregationFragment(Query
     std::shared_ptr<MergingAggregatedStep> merge_agg_node = aggregating_step->makeMergingAggregatedStep(merge_fragment->getCurrentDataStream(), settings);
 
     merge_fragment->addStep(std::move(merge_agg_node));
+
+    all_fragments.emplace_back(merge_fragment);
 
     return merge_fragment;
 }

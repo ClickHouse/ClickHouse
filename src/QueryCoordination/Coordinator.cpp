@@ -100,7 +100,7 @@ String Coordinator::assignFragmentToHost()
         std::unordered_map<FragmentID, std::vector<String>> this_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts_)
         {
-            auto dest_fragment = fragments[fragment_id]->getDestFragment();
+            auto dest_fragment = id_fragment[fragment_id]->getDestFragment();
 
             if (!dest_fragment)
                 return this_fragment_hosts;
