@@ -67,7 +67,9 @@ static void splitAndModifyMutationCommands(
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
-        NameSet mutated_columns, dropped_columns;
+        NameSet mutated_columns;
+        NameSet dropped_columns;
+
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
@@ -258,6 +260,10 @@ getColumnsForNewDataPart(
             storage_columns.emplace_back(column);
     }
 
+    NameSet storage_columns_set;
+    for (const auto & [name, _] : storage_columns)
+        storage_columns_set.insert(name);
+
     for (const auto & command : all_commands)
     {
         if (command.type == MutationCommand::UPDATE)
@@ -292,15 +298,19 @@ getColumnsForNewDataPart(
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, old_info] : serialization_infos)
     {
-        if (removed_columns.contains(name))
-            continue;
-
         auto it = renamed_columns_from_to.find(name);
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
+        /// Column can be removed only in this data part by CLEAR COLUMN query.
+        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+            continue;
+
+        /// In compact part we read all columns and all of them are in @updated_header.
+        /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
         if (!updated_header.has(new_name))
         {
-            new_serialization_infos.emplace(new_name, old_info);
+            if (isWidePart(source_part))
+                new_serialization_infos.emplace(new_name, old_info);
             continue;
         }
 
