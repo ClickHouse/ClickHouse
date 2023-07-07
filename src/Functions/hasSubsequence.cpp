@@ -18,7 +18,7 @@ struct NameHasSubsequence
     static constexpr auto name = "hasSubsequence";
 };
 
-using FunctionHasSubsequence = FunctionsStringSearch<HasSubsequenceImpl<NameHasSubsequence, HasSubsequenceCaseSensitiveASCII>>;
+using FunctionHasSubsequence = FunctionsHasSubsequenceImpl<NameHasSubsequence, HasSubsequenceCaseSensitiveASCII>;
 }
 
 REGISTER_FUNCTION(hasSubsequence)
