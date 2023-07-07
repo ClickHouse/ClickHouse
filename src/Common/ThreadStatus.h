@@ -224,7 +224,7 @@ private:
 
     Poco::Logger * log = nullptr;
 
-    bool check_current_thread_on_destruction;
+    [[maybe_unused]] bool check_current_thread_on_destruction;
 
 public:
     explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
