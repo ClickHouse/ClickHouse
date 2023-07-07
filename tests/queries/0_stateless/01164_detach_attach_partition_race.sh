@@ -2,8 +2,11 @@
 # Tags: race
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -q "drop table if exists mt"
 
 $CLICKHOUSE_CLIENT -q "create table mt (n int) engine=MergeTree order by n settings parts_to_throw_insert=1000"
 $CLICKHOUSE_CLIENT -q "insert into mt values (1)"
@@ -13,7 +16,9 @@ $CLICKHOUSE_CLIENT -q "insert into mt values (3)"
 function thread_insert()
 {
     while true; do
-        $CLICKHOUSE_CLIENT -q "insert into mt values (rand())";
+        # It might be the case that the threads are terminated and exited, but some children didn't and they are still sending queries when we are dropping tables.
+        # That's why the "Table doesn't exist" error is allowed, while other errors don't.
+        $CLICKHOUSE_CLIENT -q "insert into mt values (rand())" 2>&1 | tr -d '\n' | rg -v "Table .+ doesn't exist";
     done
 }
 
