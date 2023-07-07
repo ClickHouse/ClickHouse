@@ -1201,12 +1201,12 @@ Keys:
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 
-Both log and error log file names (only file names, not directories) support date and time format placeholders.
+Both log and error log file names (only file names, not directories) support date and time format specifiers.
 
-**Placeholders**
-Using the following placeholders, you can define a pattern for the resulting file name. “Example” column shows formatting result for `2023-07-06 18:32:07`.
+**Format specifiers**
+Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
 
-| Placeholder | Description                                                                                                         | Example                  |
+| Specifier   | Description                                                                                                         | Example                  |
 |-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
 | %%          | Literal %                                                                                                           | %                        |
 | %n          | New-line character                                                                                                  |                          |
