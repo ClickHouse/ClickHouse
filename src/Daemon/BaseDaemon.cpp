@@ -314,6 +314,11 @@ private:
         /// That way we will have some duplicated info in the log but we don't loose important info
         /// in case of double fault.
 
+        LOG_FATAL(log, "########## Short fault info ############");
+        LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {}",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash,
+                thread_num, sig);
+
         std::string signal_description = "Unknown signal";
 
         /// Some of these are not really signals, but our own indications on failure reason.
@@ -324,18 +329,14 @@ private:
         else if (sig >= 0)
             signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
+        LOG_FATAL(log, "Signal description: {}", signal_description);
+
         String error_message;
 
         if (sig != SanitizerTrap)
             error_message = signalToErrorMessage(sig, info, *context);
         else
             error_message = "Sanitizer trap.";
-
-        LOG_FATAL(log, "########## Short fault info ############");
-
-        LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash,
-                thread_num, signal_description, sig);
 
         LOG_FATAL(log, fmt::runtime(error_message));
 
