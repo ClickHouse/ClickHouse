@@ -376,10 +376,11 @@ private:
     /// even when the storage returned only one stream of data for reading?
     /// It is beneficial, for example, when you read from a file quickly,
     /// but then do heavy computations on returned blocks.
-    /// This is enabled by default, but in some cases shouldn't be done.
-    /// For example, when you read from system.numbers instead of system.numbers_mt,
-    /// you still expect the data to be processed sequentially.
-    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return true; }
+    ///
+    /// This is enabled by default, but in some cases shouldn't be done (for
+    /// example it is disabled for all system tables, since it is pretty
+    /// useless).
+    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
     /// Other version of read which adds reading step to query plan.
