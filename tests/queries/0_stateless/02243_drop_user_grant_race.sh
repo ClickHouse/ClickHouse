@@ -29,7 +29,7 @@ function create_drop_grant()
 export -f create_drop_grant
 
 TIMEOUT=10
-clickhouse_client_loop_timeout $TIMEOUT create_drop_grant 2> /dev/null &
+timeout $TIMEOUT bash -c $TIMEOUT create_drop_grant 2> /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT --user kek_02243 -q "SELECT * FROM test" 2>&1| grep -Fa "Exception: " | grep -Eo ACCESS_DENIED | uniq

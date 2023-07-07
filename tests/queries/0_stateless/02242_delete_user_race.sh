@@ -44,9 +44,9 @@ TIMEOUT=10
 
 for (( i = 0 ; i < 100; ++i ))
 do
-    clickhouse_client_loop_timeout $TIMEOUT create_and_login_user 2> /dev/null &
-    clickhouse_client_loop_timeout $TIMEOUT delete_user 2> /dev/null &
-    clickhouse_client_loop_timeout $TIMEOUT set_role 2> /dev/null &
+    timeout $TIMEOUT bash -c create_and_login_user 2> /dev/null &
+    timeout $TIMEOUT bash -c delete_user 2> /dev/null &
+    timeout $TIMEOUT bash -c set_role 2> /dev/null &
 done
 
 wait
