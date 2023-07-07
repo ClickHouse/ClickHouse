@@ -459,9 +459,10 @@ public:
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool) const override
     {
         std::vector<DataSet *> data_vec;
+        data_vec.resize(places.size());
 
-        for (auto place : places)
-            data_vec.emplace_back(& this->data(place).set);
+        for (unsigned long i = 0; i < data_vec.size(); i++)
+            data_vec[i] = &this->data(places[i]).set;
 
         DataSet::parallelizeMergePrepare(data_vec, thread_pool);
     }
