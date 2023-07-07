@@ -1,5 +1,7 @@
 #include <IO/S3/ProxyConfigurationResolverAdapter.h>
 
+#if USE_AWS_S3
+
 namespace DB::S3
 {
 
@@ -24,3 +26,5 @@ void ProxyConfigurationResolverAdapter::errorReport(const ClientConfigurationPer
 }
 
 }
+
+#endif

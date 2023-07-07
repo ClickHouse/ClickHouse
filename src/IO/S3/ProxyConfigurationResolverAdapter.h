@@ -1,9 +1,11 @@
 #pragma once
 
-#include <IO/S3/ProxyConfiguration.h>
-#include <Common/ProxyConfigurationResolver.h>
+#include "config.h"
 
 #if USE_AWS_S3
+
+#include <IO/S3/ProxyConfiguration.h>
+#include <Common/ProxyConfigurationResolver.h>
 
 namespace DB::S3
 {
