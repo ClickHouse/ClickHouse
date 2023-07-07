@@ -6,6 +6,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+
 namespace DB
 {
 
@@ -150,7 +152,15 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     RemoveBatchRequest remove_paths;
     bool keep_all_batch_data;
     NameSet file_names_remove_metadata_only;
-    StoredObjects objects_to_remove;
+
+    struct ObjectsToRemove
+    {
+        StoredObjects objects;
+        UnlinkMetadataFileOperationOutcomePtr unlink_outcome;
+    };
+
+    std::vector<ObjectsToRemove> objects_to_remove;
+
     bool remove_from_cache = false;
 
     RemoveManyObjectStorageOperation(
@@ -174,7 +184,6 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     {
         for (const auto & [path, if_exists] : remove_paths)
         {
-
             if (!metadata_storage.exists(path))
             {
                 if (if_exists)
@@ -188,14 +197,12 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
             try
             {
-                uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
-                auto objects = metadata_storage.getStorageObjects(path);
-
-                tx->unlinkMetadata(path);
-
-                /// File is really redundant
-                if (hardlink_count == 0 && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    std::move(objects.begin(), objects.end(), std::back_inserter(objects_to_remove));
+                auto unlink_outcome = tx->unlinkMetadata(path);
+                if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
+                {
+                    auto objects = metadata_storage.getStorageObjects(path);
+                    objects_to_remove.emplace_back(ObjectsToRemove{std::move(objects), std::move(unlink_outcome)});
+                }
             }
             catch (const Exception & e)
             {
@@ -215,15 +222,21 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
     void undo() override
     {
-
     }
 
     void finalize() override
     {
+        StoredObjects remove_from_remote;
+        for (auto && [objects, unlink_outcome] : objects_to_remove)
+        {
+            if (unlink_outcome->num_hardlinks == 0)
+                std::move(objects.begin(), objects.end(), std::back_inserter(remove_from_remote));
+        }
+
         /// Read comment inside RemoveObjectStorageOperation class
         /// TL;DR Don't pay any attention to 404 status code
-        if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+        if (!remove_from_remote.empty())
+            object_storage.removeObjectsIfExist(remove_from_remote);
     }
 };
 
