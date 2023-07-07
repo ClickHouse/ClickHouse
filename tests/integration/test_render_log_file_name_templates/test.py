@@ -30,12 +30,8 @@ def started_cluster():
 
 def test_check_file_names(started_cluster):
     now = datetime.now()
-    log_file = (
-        log_dir + f"clickhouse-server-{now.strftime('%Y')}-{now.strftime('%m')}.log"
-    )
-    err_log_file = (
-        log_dir + f"clickhouse-server-{now.strftime('%Y')}-{now.strftime('%m')}.err.log"
-    )
+    log_file = log_dir + f"clickhouse-server-{now.strftime('%Y-%m')}.log"
+    err_log_file = log_dir + f"clickhouse-server-{now.strftime('%Y-%m')}.err.log"
     logging.debug(f"log_file {log_file} err_log_file {err_log_file}")
 
     for name, instance in started_cluster.instances.items():
