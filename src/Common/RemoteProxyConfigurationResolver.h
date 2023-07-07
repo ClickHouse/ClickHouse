@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <mutex>
+
 #include <Common/ProxyConfigurationResolver.h>
 #include <Poco/URI.h>
 
