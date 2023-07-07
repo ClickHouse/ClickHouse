@@ -33,7 +33,7 @@ function create_and_login_user()
 
 function set_role()
 {
-    $CLICKHOUSE_CLIENT -q "SET ROLE test_role_02242 TO test_user_02242" ||:
+    $CLICKHOUSE_CLIENT -q "SET DEFAULT ROLE test_role_02242 TO test_user_02242" ||:
 }
 
 export -f delete_user
