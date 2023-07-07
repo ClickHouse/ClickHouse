@@ -65,11 +65,18 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
     std::string getInfoForLog() const override { return fmt::format("PureMetadataObjectStorageOperation"); }
 };
 
+
+struct ObjectsToRemove
+{
+    StoredObjects objects;
+    UnlinkMetadataFileOperationOutcomePtr unlink_outcome;
+};
+
 struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
     bool delete_metadata_only;
-    StoredObjects objects_to_remove;
+    ObjectsToRemove objects_to_remove;
     bool if_exists;
     bool remove_from_cache = false;
 
@@ -105,15 +112,12 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
         try
         {
-            uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
             auto objects = metadata_storage.getStorageObjects(path);
 
-            tx->unlinkMetadata(path);
+            auto unlink_outcome = tx->unlinkMetadata(path);
 
-            if (hardlink_count == 0)
-            {
-                objects_to_remove = std::move(objects);
-            }
+            if (unlink_outcome)
+                objects_to_remove = ObjectsToRemove{std::move(objects), std::move(unlink_outcome)};
         }
         catch (const Exception & e)
         {
@@ -142,8 +146,11 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         /// due to network error or similar. And when it will retry an operation it may receive
         /// a 404 HTTP code. We don't want to threat this code as a real error for deletion process
         /// (e.g. throwing some exceptions) and thus we just use method `removeObjectsIfExists`
-        if (!delete_metadata_only && !objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+        if (!delete_metadata_only && !objects_to_remove.objects.empty()
+            && objects_to_remove.unlink_outcome->num_hardlinks == 0)
+        {
+            object_storage.removeObjectsIfExist(objects_to_remove.objects);
+        }
     }
 };
 
@@ -152,12 +159,6 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     RemoveBatchRequest remove_paths;
     bool keep_all_batch_data;
     NameSet file_names_remove_metadata_only;
-
-    struct ObjectsToRemove
-    {
-        StoredObjects objects;
-        UnlinkMetadataFileOperationOutcomePtr unlink_outcome;
-    };
 
     std::vector<ObjectsToRemove> objects_to_remove;
 
@@ -197,10 +198,10 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
             try
             {
+                auto objects = metadata_storage.getStorageObjects(path);
                 auto unlink_outcome = tx->unlinkMetadata(path);
                 if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
                 {
-                    auto objects = metadata_storage.getStorageObjects(path);
                     objects_to_remove.emplace_back(ObjectsToRemove{std::move(objects), std::move(unlink_outcome)});
                 }
             }
@@ -244,10 +245,9 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
-    std::unordered_map<std::string, StoredObjects> objects_to_remove;
+    std::unordered_map<std::string, ObjectsToRemove> objects_to_remove_by_path;
     bool keep_all_batch_data;
     NameSet file_names_remove_metadata_only;
-    StoredObjects objects_to_remove_from_cache;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -274,14 +274,11 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         {
             try
             {
-                uint32_t hardlink_count = metadata_storage.getHardlinkCount(path_to_remove);
                 auto objects_paths = metadata_storage.getStorageObjects(path_to_remove);
-
-                tx->unlinkMetadata(path_to_remove);
-
-                if (hardlink_count == 0)
+                auto unlink_outcome = tx->unlinkMetadata(path_to_remove);
+                if (unlink_outcome)
                 {
-                    objects_to_remove[path_to_remove] = std::move(objects_paths);
+                    objects_to_remove_by_path[path_to_remove] = ObjectsToRemove{std::move(objects_paths), std::move(unlink_outcome)};
                 }
             }
             catch (const Exception & e)
@@ -331,11 +328,12 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         if (!keep_all_batch_data)
         {
             StoredObjects remove_from_remote;
-            for (auto && [local_path, remote_paths] : objects_to_remove)
+            for (auto && [local_path, objects_to_remove] : objects_to_remove_by_path)
             {
                 if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
                 {
-                    std::move(remote_paths.begin(), remote_paths.end(), std::back_inserter(remove_from_remote));
+                    if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
+                        std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
                 }
             }
             /// Read comment inside RemoveObjectStorageOperation class
