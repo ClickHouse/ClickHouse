@@ -593,8 +593,32 @@ public:
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
 
-    ClientInfo & getClientInfo() { return client_info; }
+    /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
+
+    /// Modify stored in the context information about the client executing a query.
+    void setClientInfo(const ClientInfo & client_info_);
+    void setClientName(const String & client_name);
+    void setClientInterface(ClientInfo::Interface interface);
+    void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setClientConnectionId(uint32_t connection_id);
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setForwardedFor(const String & forwarded_for);
+    void setQueryKind(ClientInfo::QueryKind query_kind);
+    void setQueryKindInitial();
+    void setQueryKindReplicatedDatabaseInternal();
+    void setCurrentUserName(const String & current_user_name);
+    void setCurrentAddress(const Poco::Net::SocketAddress & current_address);
+    void setInitialUserName(const String & initial_user_name);
+    void setInitialAddress(const Poco::Net::SocketAddress & initial_address);
+    void setInitialQueryId(const String & initial_query_id);
+    void setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time);
+    void setQuotaClientKey(const String & quota_key);
+    void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica);
+    void increaseDistributedDepth();
+    const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
+    OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
 
     enum StorageNamespace
     {

@@ -3850,6 +3850,129 @@ void Context::resetInputCallbacks()
 }
 
 
+void Context::setClientInfo(const ClientInfo & client_info_)
+{
+    client_info = client_info_;
+    need_recalculate_access = true;
+}
+
+void Context::setClientName(const String & client_name)
+{
+    client_info.client_name = client_name;
+}
+
+void Context::setClientInterface(ClientInfo::Interface interface)
+{
+    client_info.interface = interface;
+    need_recalculate_access = true;
+}
+
+void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
+{
+    client_info.client_version_major = client_version_major;
+    client_info.client_version_minor = client_version_minor;
+    client_info.client_version_patch = client_version_patch;
+    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+}
+
+void Context::setClientConnectionId(uint32_t connection_id_)
+{
+    client_info.connection_id = connection_id_;
+}
+
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+{
+    client_info.http_method = http_method;
+    client_info.http_user_agent = http_user_agent;
+    client_info.http_referer = http_referer;
+    need_recalculate_access = true;
+}
+
+void Context::setForwardedFor(const String & forwarded_for)
+{
+    client_info.forwarded_for = forwarded_for;
+    need_recalculate_access = true;
+}
+
+void Context::setQueryKind(ClientInfo::QueryKind query_kind)
+{
+    client_info.query_kind = query_kind;
+}
+
+void Context::setQueryKindInitial()
+{
+    /// TODO: Try to combine this function with setQueryKind().
+    client_info.setInitialQuery();
+}
+
+void Context::setQueryKindReplicatedDatabaseInternal()
+{
+    /// TODO: Try to combine this function with setQueryKind().
+    client_info.is_replicated_database_internal = true;
+}
+
+void Context::setCurrentUserName(const String & current_user_name)
+{
+    /// TODO: Try to combine this function with setUser().
+    client_info.current_user = current_user_name;
+    need_recalculate_access = true;
+}
+
+void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
+{
+    client_info.current_address = current_address;
+    need_recalculate_access = true;
+}
+
+void Context::setInitialUserName(const String & initial_user_name)
+{
+    client_info.initial_user = initial_user_name;
+    need_recalculate_access = true;
+}
+
+void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
+{
+    client_info.initial_address = initial_address;
+}
+
+void Context::setInitialQueryId(const String & initial_query_id)
+{
+    client_info.initial_query_id = initial_query_id;
+}
+
+void Context::setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time)
+{
+    client_info.initial_query_start_time = timeInSeconds(initial_query_start_time);
+    client_info.initial_query_start_time_microseconds = timeInMicroseconds(initial_query_start_time);
+}
+
+void Context::setQuotaClientKey(const String & quota_key_)
+{
+    client_info.quota_key = quota_key_;
+    need_recalculate_access = true;
+}
+
+void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
+{
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+}
+
+void Context::setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica)
+{
+    client_info.collaborate_with_initiator = collaborate_with_initiator;
+    client_info.count_participating_replicas = all_replicas_count;
+    client_info.number_of_current_replica = number_of_current_replica;
+}
+
+void Context::increaseDistributedDepth()
+{
+    ++client_info.distributed_depth;
+}
+
+
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
