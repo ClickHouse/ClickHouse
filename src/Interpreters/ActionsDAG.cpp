@@ -1365,7 +1365,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     first.mergeInplace(std::move(second));
 
-    /// Drop unused inputs and, probably, some actions.
+    /// Some actions could become unused. Do not drop inputs to preserve the header.
     first.removeUnusedActions(false);
 
     return std::make_shared<ActionsDAG>(std::move(first));
