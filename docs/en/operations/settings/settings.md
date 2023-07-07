@@ -17,7 +17,8 @@ Default value: 0.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SELECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -30,7 +31,7 @@ insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```sql
 SELECT *
 FROM table_1
-SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 ```
 ```response
 ┌─x─┬─y────┐
@@ -50,7 +51,8 @@ Default value: `''`.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SElECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -3193,6 +3195,40 @@ Result:
 ```response
 ┌─statement────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## default_temporary_table_engine {#default_temporary_table_engine}
+
+Same as [default_table_engine](#default_table_engine) but for temporary tables.
+
+Default value: `Memory`.
+
+In this example, any new temporary table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+SET default_temporary_table_engine = 'Log';
+
+CREATE TEMPORARY TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TEMPORARY TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TEMPORARY TABLE default.my_table
 (
     `x` UInt32,
     `y` UInt32
