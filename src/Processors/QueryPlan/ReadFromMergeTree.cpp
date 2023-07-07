@@ -139,17 +139,42 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 
 /// build sort description for output stream
 static void updateSortDescriptionForOutputStream(
-    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info)
+    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info)
 {
+    Block original_header = output_stream.header.cloneEmpty();
+    /// build original header
+    if (prewhere_info && prewhere_info->prewhere_actions)
+    {
+        FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
+
+        for (auto & column : original_header)
+        {
+            const auto * original_node = original_column_finder.find(column.name);
+            if (original_node)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get(__PRETTY_FUNCTION__),
+                    "Found original column '{}' for '{}'",
+                    original_node->result_name,
+                    column.name);
+                column.name = original_node->result_name;
+            }
+        }
+    }
+
     SortDescription sort_description;
     const Block & header = output_stream.header;
-    for (const auto & column_name : sorting_key_columns)
+    for (const auto & sorting_key : sorting_key_columns)
     {
-        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
-            == header.end())
+        const auto it = std::find_if(
+            original_header.begin(), original_header.end(), [&sorting_key](const auto & column) { return column.name == sorting_key; });
+        if (it == original_header.end())
             break;
-        sort_description.emplace_back(column_name, sort_direction);
+
+        const size_t column_pos = std::distance(original_header.begin(), it);
+        sort_description.emplace_back((header.begin() + column_pos)->name, sort_direction);
     }
+
     if (!sort_description.empty())
     {
         if (input_order_info)
@@ -283,7 +308,8 @@ ReadFromMergeTree::ReadFromMergeTree(
         *output_stream,
         storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
         getSortDirection(),
-        query_info.getInputOrderInfo());
+        query_info.getInputOrderInfo(),
+        prewhere_info);
 }
 
 
@@ -1575,7 +1601,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         *output_stream,
         storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
         getSortDirection(),
-        query_info.getInputOrderInfo());
+        query_info.getInputOrderInfo(),
+        prewhere_info);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
