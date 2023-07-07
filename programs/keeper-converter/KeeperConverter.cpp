@@ -42,7 +42,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
     {
         auto keeper_context = std::make_shared<KeeperContext>(true);
         keeper_context->setDigestEnabled(true);
-        keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>(), 0));
+        keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 
         DB::KeeperStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
 
