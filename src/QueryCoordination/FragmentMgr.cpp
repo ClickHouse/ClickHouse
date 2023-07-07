@@ -169,7 +169,7 @@ void FragmentMgr::executeQueryPipelines(const String & query_id)
     std::lock_guard lock(data->mutex);
     for (size_t i = 0; i < data->fragments_distributed.size(); ++i)
     {
-        /// root fragment has't DestFragment, it's execute from tcphandler or ExpressionAnalyzer::tryMakeSetForIndexFromSubquery build_set
+        /// root fragment has't DestFragment, it's execute from tcphandler
         auto & fragment = data->fragments_distributed[i].fragment;
         if (fragment->getDestFragment())
         {

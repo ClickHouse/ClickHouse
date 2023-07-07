@@ -59,6 +59,8 @@ public:
 
     void onFinish(const String & query_id, FragmentID fragment_id);
 
+    /// TODO cancel by query_id
+
 private:
     FragmentMgr() : log(&Poco::Logger::get("FragmentMgr")) { }
 

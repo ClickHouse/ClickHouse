@@ -22,7 +22,7 @@ void ExchangeDataReceiver::setStorageLimits(const std::shared_ptr<const StorageL
 std::optional<Chunk> ExchangeDataReceiver::tryGenerate()
 {
     std::unique_lock lk(mutex);
-    cv.wait(lk, [this] {return !block_list.empty() || finished;});
+    cv.wait(lk, [this] {return !block_list.empty() || finished || isCancelled(); });
 
     Block block = std::move(block_list.front());
     block_list.pop_front();
@@ -52,7 +52,8 @@ std::optional<Chunk> ExchangeDataReceiver::tryGenerate()
 
 void ExchangeDataReceiver::onCancel()
 {
-
+    LOG_DEBUG(&Poco::Logger::get("ExchangeDataReceiver"), "Fragment {} exchange id {} on cancel", fragment_id, plan_id);
+    receive(Block());
 }
 
 }

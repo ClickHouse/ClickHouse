@@ -1140,7 +1140,7 @@ PlanFragmentPtr InterpreterSelectQueryFragments::createPlanFragments(const Query
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create plan fragment for this node type {}", root_node.step->getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot create plan fragment for this node type {}", root_node.step->getName());
     }
 
     if (single_plan.getRootNode() == &root_node) /// is root node

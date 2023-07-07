@@ -435,6 +435,14 @@ void TCPHandler::runImpl()
                 /// receive begin
                 receivePacket();
 
+                /// TODO if any fragment queryPipline exception send Exception
+                /// TODO for loop (interactive_delay / 1000)
+                /// TODO receive query finish or cancel
+                /// TODO sendProfileInfo(executor.getProfileInfo());
+                //       sendProgress();
+                //       sendLogs();
+                //       sendSelectProfileEvents();
+
                 continue;
             }
 
@@ -856,6 +864,14 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             {
                 executor.cancelReading();
             }
+
+            /// TODO like RemoteQueryExecutor ？
+            /// TODO if cancellation_status and query coordination, send cancel to other node
+            /// TODO if on query coordination, receive exception from other node connections, if any one exception, rethrow, send cancel to other node
+            /// TODO receiveProfileInfo(executor.getProfileInfo());
+            //       receiveProgress(); updateProgress
+            //       receiveLogs();
+            //       receiveSelectProfileEvents();
 
             if (after_send_progress.elapsed() / 1000 >= interactive_delay)
             {
