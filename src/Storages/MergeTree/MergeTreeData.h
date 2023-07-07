@@ -1030,7 +1030,7 @@ public:
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree
-    virtual MutableDataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
+    virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
