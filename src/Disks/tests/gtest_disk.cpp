@@ -10,7 +10,7 @@ namespace fs = std::filesystem;
 DB::DiskPtr createDisk()
 {
     fs::create_directory("tmp/");
-    return std::make_shared<DB::DiskLocal>("local_disk", "tmp/", 0);
+    return std::make_shared<DB::DiskLocal>("local_disk", "tmp/");
 }
 
 void destroyDisk(DB::DiskPtr & disk)

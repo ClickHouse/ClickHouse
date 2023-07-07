@@ -8,7 +8,9 @@
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -49,6 +51,8 @@
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
+
+#include "config.h"
 
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
@@ -170,6 +174,13 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
+static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
+{
+    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
+    return databaseCombiner;
+}
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
@@ -669,7 +680,7 @@ void LocalServer::processConfig()
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
