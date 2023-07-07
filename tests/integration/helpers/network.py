@@ -161,7 +161,7 @@ class _NetworkManager:
         self._exec_run(cmd, privileged=True)
 
     def dump_rules(self):
-        cmd = ["iptables", "-L"]
+        cmd = ["iptables", "-L", "DOCKER-USER"]
         return self._exec_run(cmd, privileged=True)
 
     @staticmethod

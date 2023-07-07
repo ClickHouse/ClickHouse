@@ -307,13 +307,13 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
+bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
-    addJoinedBlockImpl(std::move(materialized));
+    addBlockToJoinImpl(std::move(materialized));
     return true;
 }
 
@@ -607,7 +607,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         while (Block block = right_reader.read())
         {
             num_rows += block.rows();
-            addJoinedBlockImpl(std::move(block));
+            addBlockToJoinImpl(std::move(block));
         }
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
@@ -632,7 +632,7 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
-void GraceHashJoin::addJoinedBlockImpl(Block block)
+void GraceHashJoin::addBlockToJoinImpl(Block block)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -652,7 +652,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         if (!hash_join)
             hash_join = makeInMemoryJoin();
 
-        hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
+        hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
 
         if (!hasMemoryOverflow(hash_join))
             return;
@@ -683,7 +683,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         hash_join = makeInMemoryJoin();
 
         if (current_block.rows() > 0)
-            hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
     }
 }
 
