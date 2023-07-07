@@ -212,11 +212,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!filesystem_cache_name.empty())
         {
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
-            if (!key_to_drop.empty())
+            if (!delete_key.empty())
             {
-                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << key_to_drop;
-                if (offset_to_drop.has_value())
-                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << offset_to_drop.value();
+                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << delete_key;
+                if (delete_offset.has_value())
+                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << delete_offset.value();
             }
         }
     }
