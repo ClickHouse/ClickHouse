@@ -11,6 +11,11 @@
 
 #include <memory>
 
+#if USE_EMBEDDED_COMPILER
+#    include <Core/ValuesWithType.h>
+#endif
+
+
 /// This file contains user interface for functions.
 
 namespace llvm
@@ -119,8 +124,6 @@ private:
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
-using Values = std::vector<llvm::Value *>;
-
 /** Function with known arguments and return type (when the specific overload was chosen).
   * It is also the point where all function-specific properties are known.
   */
@@ -160,7 +163,7 @@ public:
       *       templates with default arguments is impossible and including LLVM in such a generic header
       *       as this one is a major pain.
       */
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, Values /*values*/) const
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
     }
@@ -509,9 +512,9 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable(const DataTypes & arguments) const;
+    bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 
-    llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, Values values) const;
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const;
 
 #endif
 
@@ -519,9 +522,9 @@ protected:
 
 #if USE_EMBEDDED_COMPILER
 
-    virtual bool isCompilableImpl(const DataTypes &) const { return false; }
+    virtual bool isCompilableImpl(const DataTypes & /*arguments*/, const DataTypePtr & /*result_type*/) const { return false; }
 
-    virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, Values) const
+    virtual llvm::Value * compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/, const DataTypePtr & /*result_type*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
     }
