@@ -22,6 +22,33 @@ namespace DB
 /// This is used to assume that condition is likely to have good selectivity.
 static constexpr auto threshold = 2;
 
+static NameToIndexMap fillNamesPositions(const Names & names)
+{
+    NameToIndexMap names_positions;
+
+    for (size_t position = 0; position < names.size(); ++position)
+    {
+        const auto & name = names[position];
+        names_positions[name] = position;
+    }
+
+    return names_positions;
+}
+
+/// Find minimal position of any of the column in primary key.
+static Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
+{
+    Int64 min_position = std::numeric_limits<Int64>::max() - 1;
+
+    for (const auto & column : condition_table_columns)
+    {
+        auto it = primary_key_positions.find(column);
+        if (it != primary_key_positions.end())
+            min_position = std::min(min_position, static_cast<Int64>(it->second));
+    }
+
+    return min_position;
+}
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
@@ -35,6 +62,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
+    , primary_key_names_positions(fillNamesPositions(metadata_snapshot->getPrimaryKey().column_names))
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -233,6 +261,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
         if (cond.viable)
             cond.good = isConditionGood(node, table_columns);
+
+        /// Find min position in PK of any column that is used in this condition.
+        cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
 
         res.emplace_back(std::move(cond));
     }
