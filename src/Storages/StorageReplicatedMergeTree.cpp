@@ -4890,14 +4890,23 @@ void StorageReplicatedMergeTree::shutdown()
     if (shutdown_called.exchange(true))
         return;
 
-    if (!shutdown_prepared_called.load())
-        flushAndPrepareForShutdown();
+    flushAndPrepareForShutdown();
 
     auto settings_ptr = getSettings();
     if (!shutdown_deadline.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown deadline is not set in shutdown");
 
-    waitForUniquePartsToBeFetchedByOtherReplicas(*shutdown_deadline);
+    try
+    {
+        waitForUniquePartsToBeFetchedByOtherReplicas(*shutdown_deadline);
+    }
+    catch (const Exception & ex)
+    {
+        if (ex.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
 
     session_expired_callback_handler.reset();
     stopOutdatedDataPartsLoadingTask();
@@ -4905,7 +4914,6 @@ void StorageReplicatedMergeTree::shutdown()
     partialShutdown();
 
     part_moves_between_shards_orchestrator.shutdown();
-    background_operations_assignee.finish();
 
     {
         auto lock = queue.lockQueue();
