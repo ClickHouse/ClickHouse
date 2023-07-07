@@ -279,7 +279,8 @@ def test_inserts_single_replica_internal_replication(started_cluster):
 def test_inserts_single_replica_no_internal_replication(started_cluster):
     try:
         with pytest.raises(
-            QueryRuntimeException, match="Table default.single_replicated does not exist"
+            QueryRuntimeException,
+            match="Table default.single_replicated does not exist",
         ):
             node1.query(
                 "INSERT INTO distributed_one_replica_no_internal_replication VALUES ('2000-01-01', 1)",
