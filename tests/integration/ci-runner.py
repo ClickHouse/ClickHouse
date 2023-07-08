@@ -98,9 +98,17 @@ def get_counters(fname):
         "SKIPPED": set([]),
     }
 
+    has_something = False
     with open(fname, "r") as out:
         for line in out:
             line = line.strip()
+
+            if "no tests ran" in line:
+                raise Exception("No tests were run - this is an error")
+
+            if "returned non-zero exit status" in line:
+                raise Exception(line)
+
             # Example of log:
             #
             #     test_mysql_protocol/test.py::test_golang_client
@@ -123,12 +131,16 @@ def get_counters(fname):
 
             if state in counters:
                 counters[state].add(test_name)
+                has_something = True
             else:
                 # will skip lines like:
                 #     30.76s call     test_host_ip_change/test.py::test_ip_drop_cache
                 #     5.71s teardown  test_host_ip_change/test.py::test_ip_change[node1]
                 # and similar
                 logging.debug("Strange state in line %s", line)
+
+    if not has_something:
+        raise Exception("No tests were run - this is an error")
 
     return {k: list(v) for k, v in counters.items()}
 
@@ -650,7 +662,7 @@ class ClickhouseIntegrationTestsRunner:
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
             with open(log_path, "w") as log:
                 logging.info("Executing cmd: %s", cmd)
-                # ignore retcode, since it meaningful due to pipe to tee
+                # Ignore the retcode, since it is meaningless due to piping to 'tee'.
                 subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
 
             extra_logs_names = [log_basename]
@@ -725,6 +737,28 @@ class ClickhouseIntegrationTestsRunner:
             if len(counters["PASSED"]) + len(counters["FLAKY"]) == len(tests_in_group):
                 logging.info("All tests from group %s passed", test_group)
                 break
+
+            if (
+                len(counters["PASSED"]) == 0
+                and len(counters["FLAKY"]) == 0
+                and len(counters["FAILED"]) == 0
+                and len(counters["ERROR"]) == 0
+            ):
+                # Mark all non tried tests as errors, with '::' in name
+                # (example test_partition/test.py::test_partition_simple). For flaky check
+                # we run whole test dirs like "test_odbc_interaction" and don't
+                # want to mark them as error so we filter by '::'.
+                for test in tests_in_group:
+                    if (
+                        test not in counters["PASSED"]
+                        and test not in counters["ERROR"]
+                        and test not in counters["SKIPPED"]
+                        and test not in counters["FAILED"]
+                        and "::" in test
+                    ):
+                        counters["ERROR"].append(test)
+                break
+
             if (
                 len(counters["PASSED"]) + len(counters["FLAKY"]) >= 0
                 and len(counters["FAILED"]) == 0
