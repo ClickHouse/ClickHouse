@@ -57,6 +57,7 @@
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <Common/IPv6ToBinary.h>
 #include <Core/Types.h>
 
 
@@ -210,13 +211,13 @@ struct ConvertImpl
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
-                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
+                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeIPv6>)
                 )
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
                                     TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
                 }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>)
+                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6> && !(std::is_same_v<ToDataType, DataTypeIPv4> || std::is_same_v<FromDataType, DataTypeIPv4>))
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                     "Conversion between numeric types and IPv6 is not supported. "
@@ -297,7 +298,58 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
+                            if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeIPv6>)
+                            {
+                                const uint8_t ip4_cidr[] {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00};
+                                const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
+                                if (!matchIPv6Subnet(src, ip4_cidr, 96))
+                                {
+                                    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+                                    char * paddr = addr;
+                                    formatIPv6(src, paddr);
+
+                                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 {} in column {} is not in IPv4 mapping block", addr, named_from.column->getName());
+                                }
+
+                                uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
+                                if constexpr (std::endian::native == std::endian::little)
+                                {
+                                    dst[0] = src[15];
+                                    dst[1] = src[14];
+                                    dst[2] = src[13];
+                                    dst[3] = src[12];
+                                }
+                                else
+                                {
+                                    dst[0] = src[12];
+                                    dst[1] = src[13];
+                                    dst[2] = src[14];
+                                    dst[3] = src[15];
+                                }
+                            }
+                            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv6> && std::is_same_v<FromDataType, DataTypeIPv4>)
+                            {
+                                const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
+                                uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
+                                std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+                                dst[10] = dst[11] = 0xff;
+
+                                if constexpr (std::endian::native == std::endian::little)
+                                {
+                                    dst[12] = src[3];
+                                    dst[13] = src[2];
+                                    dst[14] = src[1];
+                                    dst[15] = src[0];
+                                }
+                                else
+                                {
+                                    dst[12] = src[0];
+                                    dst[13] = src[1];
+                                    dst[14] = src[2];
+                                    dst[15] = src[3];
+                                }
+                            }
+                            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
                                 vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
                             else if constexpr (std::is_same_v<Name, NameToUnixTimestamp> && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
                                 vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
@@ -4010,6 +4062,26 @@ private:
                     return true;
                 }
             }
+            else if constexpr (WhichDataType(FromDataType::type_id).isIPv6() && WhichDataType(ToDataType::type_id).isIPv4())
+            {
+                ret = [cast_ipv4_ipv6_default_on_conversion_error_value, requested_result_is_nullable](
+                                ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
+                        -> ColumnPtr
+                {
+                    if (!WhichDataType(result_type).isIPv4())
+                        throw Exception(
+                            ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
+
+                    const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                    if (cast_ipv4_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
+                    else
+                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
+                };
+
+                return true;
+            }
+
             if constexpr (WhichDataType(ToDataType::type_id).isStringOrFixedString())
             {
                 if (from_type->getCustomSerialization())
