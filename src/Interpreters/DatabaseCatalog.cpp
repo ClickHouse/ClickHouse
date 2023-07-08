@@ -231,9 +231,11 @@ void DatabaseCatalog::shutdownImpl()
             databases_with_delayed_shutdown.push_back(database.second);
             continue;
         }
+        LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
     }
 
+    LOG_TRACE(log, "Shutting down system databases");
     for (auto & database : databases_with_delayed_shutdown)
     {
         database->shutdown();
