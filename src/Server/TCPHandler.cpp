@@ -507,6 +507,12 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
+
+            auto * query_memory_tracker = CurrentThread::getMemoryTracker();
+            auto * user_memory_tracker  = query_memory_tracker->getParent();
+
+            user_memory_tracker->adjustOnQueryEnd(query_memory_tracker);
+
             query_scope.reset();
             thread_trace_context.reset();
         }
