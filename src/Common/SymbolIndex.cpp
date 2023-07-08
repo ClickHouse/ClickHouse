@@ -9,7 +9,6 @@
 
 #include <link.h>
 
-//#include <iostream>
 #include <filesystem>
 
 #include <base/sort.h>
@@ -559,13 +558,6 @@ MultiVersion<SymbolIndex> & SymbolIndex::instanceImpl()
 MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
 {
     return instanceImpl().get();
-}
-
-void SymbolIndex::reload()
-{
-    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    /// Also drop stacktrace cache.
-    StackTrace::dropCache();
 }
 
 }
