@@ -14,8 +14,8 @@ Row policies makes sense only for users with readonly access. If user can modify
 Syntax:
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
-        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...]
     [FOR SELECT] USING condition
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
@@ -76,20 +76,6 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 
 enables the user `peter` to see rows only if both `b=1` AND `c=2`.
 
-Database policies are combined with table policies.
-
-For example, the following policies
-
-``` sql
-CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
-CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
-```
-
-enables the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
-any other table in mydb would have only `b=1` policy applied for the user.
-
-
-
 ## ON CLUSTER Clause
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
@@ -102,5 +88,3 @@ Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-re
 `CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
 
 `CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
-
-`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

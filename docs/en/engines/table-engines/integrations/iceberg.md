@@ -1,6 +1,5 @@
 ---
 slug: /en/engines/table-engines/integrations/iceberg
-sidebar_position: 90
 sidebar_label: Iceberg
 ---
 
@@ -19,8 +18,8 @@ CREATE TABLE iceberg_table
 
 **Engine parameters**
 
-- `url` — url with the path to an existing Iceberg table.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
+-   `url` — url with the path to an existing Iceberg table.
+-   `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
@@ -50,4 +49,4 @@ CREATE TABLE iceberg_table ENGINE=Iceberg(iceberg_conf, filename = 'test_table')
 
 ## See also
 
-- [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)
+-  [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)

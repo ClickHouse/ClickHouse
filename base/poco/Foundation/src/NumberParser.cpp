@@ -19,6 +19,9 @@
 #include <cstdio>
 #include <cctype>
 #include <stdlib.h>
+#if !defined(POCO_NO_LOCALE)
+	#include <locale>
+#endif
 
 
 #if defined(POCO_LONG_IS_64_BIT)

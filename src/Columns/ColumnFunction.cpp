@@ -258,15 +258,14 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
 
 void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 {
-    const auto & argument_types = function->getArgumentTypes();
-    auto index = captured_columns.size();
-    if (!is_short_circuit_argument && !column.type->equals(*argument_types[index]))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
-                        "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
+    const auto & argumnet_types = function->getArgumentTypes();
 
-    auto captured_column = column;
-    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
-    captured_columns.push_back(std::move(captured_column));
+    auto index = captured_columns.size();
+    if (!is_short_circuit_argument && !column.type->equals(*argumnet_types[index]))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
+                        "got {}, but {} is expected.", argumnet_types.size(), column.type->getName(), argumnet_types[index]->getName());
+
+    captured_columns.push_back(column);
 }
 
 DataTypePtr ColumnFunction::getResultType() const

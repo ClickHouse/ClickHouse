@@ -136,24 +136,15 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 std::tie(ref_dependencies, loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
             }
 
-            try
-            {
-                database->renameTable(
-                    getContext(),
-                    elem.from_table_name,
-                    *database_catalog.getDatabase(elem.to_database_name),
-                    elem.to_table_name,
-                    exchange_tables,
-                    rename.dictionary);
+            database->renameTable(
+                getContext(),
+                elem.from_table_name,
+                *database_catalog.getDatabase(elem.to_database_name),
+                elem.to_table_name,
+                exchange_tables,
+                rename.dictionary);
 
-                DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
-            }
-            catch (...)
-            {
-                /// Restore dependencies if RENAME fails
-                DatabaseCatalog::instance().addDependencies(from_table_id, ref_dependencies, loading_dependencies);
-                throw;
-            }
+            DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
         }
     }
 

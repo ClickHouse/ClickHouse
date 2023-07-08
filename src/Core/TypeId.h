@@ -1,55 +1,9 @@
 #pragma once
 
-#include <Core/Types_fwd.h>
+#include <Core/Types.h>
 
 namespace DB
 {
-
-/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
-enum class TypeIndex
-{
-    Nothing = 0,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    UInt256,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Int256,
-    Float32,
-    Float64,
-    Date,
-    Date32,
-    DateTime,
-    DateTime64,
-    String,
-    FixedString,
-    Enum8,
-    Enum16,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    Decimal256,
-    UUID,
-    Array,
-    Tuple,
-    Set,
-    Interval,
-    Nullable,
-    Function,
-    AggregateFunction,
-    LowCardinality,
-    Map,
-    Object,
-    IPv4,
-    IPv6,
-};
-
 /**
  * Obtain TypeIndex value from real type if possible.
  *

@@ -19,6 +19,20 @@ namespace DB
 
 class HTTPServerResponse;
 
+class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
+{
+private:
+    const std::string host;
+    const UInt16 port;
+    const bool https;
+    using Base = PoolBase<Poco::Net::HTTPClientSession>;
+
+    ObjectPtr allocObject() override;
+
+public:
+    SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_);
+};
+
 class HTTPException : public Exception
 {
 public:
@@ -52,7 +66,7 @@ private:
     const char * className() const noexcept override { return "DB::HTTPException"; }
 };
 
-using PooledHTTPSessionPtr = PoolBase<Poco::Net::HTTPClientSession>::Entry; // SingleEndpointHTTPSessionPool::Entry
+using PooledHTTPSessionPtr = SingleEndpointHTTPSessionPool::Entry;
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
 void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);

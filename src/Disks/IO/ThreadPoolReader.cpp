@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Environment.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
@@ -32,7 +31,7 @@
         #define SYS_preadv2 327
     #elif defined(__aarch64__)
         #define SYS_preadv2 286
-    #elif defined(__powerpc64__)
+    #elif defined(__ppc64__)
         #define SYS_preadv2 380
     #elif defined(__riscv)
         #define SYS_preadv2 286
@@ -88,7 +87,7 @@ static bool hasBugInPreadV2()
 #endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
-    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_))
+    : pool(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_)
 {
 }
 
@@ -201,7 +200,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunner<Result>(*pool, "ThreadPoolRead");
+    auto schedule = threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {
@@ -243,11 +242,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     }, request.priority);
-}
-
-void ThreadPoolReader::wait()
-{
-    pool->wait();
 }
 
 }

@@ -1,6 +1,5 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>

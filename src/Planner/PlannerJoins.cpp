@@ -607,8 +607,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name_)
+        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;

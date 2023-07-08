@@ -36,8 +36,7 @@ struct FormatSettings
     bool defaults_for_omitted_fields = true;
 
     bool seekable_read = true;
-    UInt64 max_rows_to_read_for_schema_inference = 25000;
-    UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
+    UInt64 max_rows_to_read_for_schema_inference = 100;
 
     String column_names_for_schema_inference;
     String schema_inference_hints;
@@ -137,9 +136,6 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         String custom_delimiter;
         bool try_detect_header = true;
-        bool skip_trailing_empty_lines = false;
-        bool trim_whitespaces = true;
-        bool allow_whitespace_or_tab_as_delimiter = false;
     } csv;
 
     struct HiveText
@@ -160,7 +156,6 @@ struct FormatSettings
         std::string field_delimiter;
         EscapingRule escaping_rule = EscapingRule::Escaped;
         bool try_detect_header = true;
-        bool skip_trailing_empty_lines = false;
     } custom;
 
     struct
@@ -210,8 +205,7 @@ struct FormatSettings
 
     struct
     {
-        UInt64 row_group_rows = 1000000;
-        UInt64 row_group_bytes = 512 * 1024 * 1024;
+        UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
@@ -219,11 +213,9 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
-        bool preserve_order = false;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
-        bool output_compliant_nested_types = true;
     } parquet;
 
     struct Pretty
@@ -296,7 +288,6 @@ struct FormatSettings
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         bool try_detect_header = true;
-        bool skip_trailing_empty_lines = false;
     } tsv;
 
     struct
@@ -329,16 +320,16 @@ struct FormatSettings
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
-    enum class CapnProtoEnumComparingMode
+    enum class EnumComparingMode
     {
         BY_NAMES, // Names in enums should be the same, values can be different.
         BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
         BY_VALUES, // Values should be the same, names can be different.
     };
 
-    struct CapnProto
+    struct
     {
-        CapnProtoEnumComparingMode enum_comparing_mode = CapnProtoEnumComparingMode::BY_VALUES;
+        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
         bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 

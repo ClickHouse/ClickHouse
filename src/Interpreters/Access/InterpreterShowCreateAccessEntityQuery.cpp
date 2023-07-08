@@ -1,5 +1,4 @@
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -63,7 +62,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data.toAST();
+            query->auth_data = user.auth_data;
 
         if (!user.settings.empty())
         {
@@ -255,7 +254,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     for (const auto & create_query : create_queries)
-        column->insert(format({getContext(), *create_query}));
+        column->insert(create_query->formatWithSecretsHidden());
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();

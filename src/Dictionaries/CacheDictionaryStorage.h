@@ -157,7 +157,7 @@ public:
             });
         }
 
-        return arena.allocatedBytes() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
+        return arena.size() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
     }
 
 private:

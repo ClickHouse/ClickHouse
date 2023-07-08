@@ -16,7 +16,9 @@
 
 using namespace DB;
 
-[[maybe_unused]] static String astToString(IAST * ast)
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+static String astToString(IAST * ast)
 {
     WriteBufferFromOwnString buf;
     dumpAST(*ast, buf);

@@ -191,27 +191,3 @@ def test_dependent_dict_table_distr(node):
     node.restart_clickhouse()
 
     query("DROP DATABASE IF EXISTS test_db;")
-
-
-def test_no_lazy_load():
-    node2.query("create database no_lazy")
-    node2.query(
-        "create table no_lazy.src (n int, m int) engine=MergeTree order by n partition by n % 100"
-    )
-    node2.query("insert into no_lazy.src select number, number from numbers(0, 99)")
-    node2.query("insert into no_lazy.src select number, number from numbers(100, 99)")
-    node2.query(
-        "create dictionary no_lazy.dict (n int, mm int) primary key n "
-        "source(clickhouse(query 'select n, m + sleepEachRow(0.1) as mm from no_lazy.src')) "
-        "lifetime(min 0 max 0) layout(complex_key_hashed_array(shards 10))"
-    )
-
-    node2.restart_clickhouse()
-
-    assert "42\n" == node2.query("select dictGet('no_lazy.dict', 'mm', 42)")
-
-    assert "some tables depend on it" in node2.query_and_get_error(
-        "drop table no_lazy.src", settings={"check_referential_table_dependencies": 1}
-    )
-
-    node2.query("drop database no_lazy")

@@ -9,6 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <base/types.h>
+#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -35,6 +36,30 @@ public:
     /// Processing of the queue to be checked is done in the background thread, which you must first start.
     void start();
     void stop();
+
+    /// Don't create more than one instance of this object simultaneously.
+    struct TemporarilyStop : private boost::noncopyable
+    {
+        ReplicatedMergeTreePartCheckThread * parent;
+
+        explicit TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
+        {
+            parent->stop();
+        }
+
+        TemporarilyStop(TemporarilyStop && old) noexcept : parent(old.parent)
+        {
+            old.parent = nullptr;
+        }
+
+        ~TemporarilyStop()
+        {
+            if (parent)
+                parent->start();
+        }
+    };
+
+    TemporarilyStop temporarilyStop() { return TemporarilyStop(this); }
 
     /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.

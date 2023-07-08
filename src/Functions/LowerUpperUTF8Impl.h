@@ -139,7 +139,7 @@ struct LowerUpperUTF8Impl
             /// In case partial buffer was passed (due to SSE optimization)
             /// we cannot convert it with current src_end, but we may have more
             /// bytes to convert and eventually got correct symbol.
-            if (partial && src_sequence_length > static_cast<size_t>(src_end - src))
+            if (partial && src_sequence_length > static_cast<size_t>(src_end-src))
                 return false;
 
             auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
@@ -181,9 +181,7 @@ private:
 
 #ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
-
-        /// If we are before this position, we can still read at least bytes_sse.
-        const auto * src_end_sse = src_end - bytes_sse + 1;
+        const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 
         /// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
         const auto v_zero = _mm_setzero_si128();
@@ -229,11 +227,9 @@ private:
             {
                 /// UTF-8
 
-                /// Find the offset of the next string after src
                 size_t offset_from_begin = src - begin;
                 while (offset_from_begin >= *offset_it)
                     ++offset_it;
-
                 /// Do not allow one row influence another (since row may have invalid sequence, and break the next)
                 const UInt8 * row_end = begin + *offset_it;
                 chassert(row_end >= src);
@@ -251,9 +247,8 @@ private:
             }
         }
 
-        /// Find the offset of the next string after src
-        size_t offset_from_begin = src - begin;
-        while (offset_it != offsets.end() && offset_from_begin >= *offset_it)
+        /// Find which offset src has now
+        while (offset_it != offsets.end() && static_cast<size_t>(src - begin) >= *offset_it)
             ++offset_it;
 #endif
 

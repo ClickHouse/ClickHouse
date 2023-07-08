@@ -7,6 +7,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
+#include <Poco/Version.h>
+
 #include "config.h"
 
 #if USE_SSL
@@ -97,14 +99,12 @@ namespace
     private:
         const std::string host;
         const UInt16 port;
-        const bool https;
+        bool https;
         const String proxy_host;
         const UInt16 proxy_port;
-        const bool proxy_https;
-        const bool resolve_host;
-
+        bool proxy_https;
+        bool resolve_host;
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
-
         ObjectPtr allocObject() override
         {
             auto session = makeHTTPSessionImpl(host, port, https, true, resolve_host);
@@ -124,14 +124,14 @@ namespace
 
     public:
         SingleEndpointHTTPSessionPool(
-            const std::string & host_,
-            UInt16 port_,
-            bool https_,
-            const std::string & proxy_host_,
-            UInt16 proxy_port_,
-            bool proxy_https_,
-            size_t max_pool_size_,
-            bool resolve_host_ = true)
+                const std::string & host_,
+                UInt16 port_,
+                bool https_,
+                const std::string & proxy_host_,
+                UInt16 proxy_port_,
+                bool proxy_https_,
+                size_t max_pool_size_,
+                bool resolve_host_ = true)
             : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)

@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 namespace
 {
@@ -21,7 +20,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
     auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
     return std::make_unique<MergeTreeReaderStream>(
-        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
+        part->getDataPartStoragePtr(),
         index->getFileName(), extension, marks_count,
         all_mark_ranges,
         std::move(settings), mark_cache, uncompressed_cache,

@@ -15,6 +15,9 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArraySplitImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }

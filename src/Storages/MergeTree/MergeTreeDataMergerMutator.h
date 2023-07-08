@@ -62,59 +62,6 @@ public:
       */
     UInt64 getMaxSourcePartSizeForMutation() const;
 
-    struct PartitionInfo
-    {
-        time_t min_age{std::numeric_limits<time_t>::max()};
-    };
-    using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
-
-    using PartitionIdsHint = std::unordered_set<String>;
-
-    /// The first step of selecting parts to merge: returns a list of all active/visible parts
-    MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const;
-
-    /// Same as above, but filters partitions according to partitions_hint
-    MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(
-        const MergeTreeTransactionPtr & txn,
-        const PartitionIdsHint * partitions_hint) const;
-
-    struct MergeSelectingInfo
-    {
-        time_t current_time;
-        PartitionsInfo partitions_info;
-        IMergeSelector::PartsRanges parts_ranges;
-        size_t parts_selected_precondition = 0;
-    };
-
-    /// The second step of selecting parts to merge: splits parts list into a set of ranges according to can_merge_callback.
-    /// All parts within a range can be merged without violating some invariants.
-    MergeSelectingInfo getPossibleMergeRanges(
-        const MergeTreeData::DataPartsVector & data_parts,
-        const AllowedMergingPredicate & can_merge_callback,
-        const MergeTreeTransactionPtr & txn,
-        String * out_disable_reason = nullptr) const;
-
-    /// The third step of selecting parts to merge: takes ranges that we can merge, and selects parts that we want to merge
-    SelectPartsDecision selectPartsToMergeFromRanges(
-        FutureMergedMutatedPartPtr future_part,
-        bool aggressive,
-        size_t max_total_size_to_merge,
-        bool merge_with_ttl_allowed,
-        const StorageMetadataPtr & metadata_snapshot,
-        const IMergeSelector::PartsRanges & parts_ranges,
-        const time_t & current_time,
-        String * out_disable_reason = nullptr,
-        bool dry_run = false);
-
-    String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
-
-    /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    PartitionIdsHint getPartitionsThatMayBeMerged(
-        size_t max_total_size_to_merge,
-        const AllowedMergingPredicate & can_merge_callback,
-        bool merge_with_ttl_allowed,
-        const MergeTreeTransactionPtr & txn) const;
-
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
       * can_merge - a function that determines if it is possible to merge a pair of adjacent parts.
@@ -129,8 +76,7 @@ public:
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
         const MergeTreeTransactionPtr & txn,
-        String * out_disable_reason = nullptr,
-        const PartitionIdsHint * partitions_hint = nullptr);
+        String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",

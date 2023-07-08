@@ -36,8 +36,6 @@ select '-------toYearWeek---------';
 select toYearWeek(x1) from t1;
 select '-------toStartOfWeek---------';
 select toStartOfWeek(x1) from t1;
-select '-------toLastDayOfWeek---------';
-select toLastDayOfWeek(x1) from t1;
 select '-------toStartOfMonth---------';
 select toStartOfMonth(x1) from t1;
 select '-------toStartOfQuarter---------';

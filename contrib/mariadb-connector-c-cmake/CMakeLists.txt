@@ -15,7 +15,7 @@ endif()
 
 # This is the LGPL libmariadb project.
 
-set(CC_SOURCE_DIR ${PROJECT_SOURCE_DIR}/contrib/mariadb-connector-c)
+set(CC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
 set(CC_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 set(WITH_SSL ON)

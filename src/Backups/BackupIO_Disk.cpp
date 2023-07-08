@@ -8,11 +8,13 @@
 namespace DB
 {
 
-BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ContextPtr & context_)
-    : BackupReaderDefault(&Poco::Logger::get("BackupReaderDisk"), context_)
-    , disk(disk_)
-    , root_path(root_path_)
-    , data_source_description(disk->getDataSourceDescription())
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_)
+    : disk(disk_), path(path_), log(&Poco::Logger::get("BackupReaderDisk"))
 {
 }
 
@@ -20,47 +22,35 @@ BackupReaderDisk::~BackupReaderDisk() = default;
 
 bool BackupReaderDisk::fileExists(const String & file_name)
 {
-    return disk->exists(root_path / file_name);
+    return disk->exists(path / file_name);
 }
 
 UInt64 BackupReaderDisk::getFileSize(const String & file_name)
 {
-    return disk->getFileSize(root_path / file_name);
+    return disk->getFileSize(path / file_name);
 }
 
 std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & file_name)
 {
-    return disk->readFile(root_path / file_name, read_settings);
+    return disk->readFile(path / file_name);
 }
 
-void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
-                                      DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
+void BackupReaderDisk::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
 {
-    /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
-    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or do appending.
-    bool has_throttling = disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
-    if (!has_throttling && (write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
+    if (write_mode == WriteMode::Rewrite)
     {
-        auto destination_data_source_description = destination_disk->getDataSourceDescription();
-        if (destination_data_source_description.sameKind(data_source_description) && !data_source_description.is_encrypted)
-        {
-            /// Use more optimal way.
-            LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
-            disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, write_settings);
-            return; /// copied!
-        }
+        LOG_TRACE(log, "Copying {}/{} from disk {} to {} by the disk", path, file_name, disk->getName(), destination_disk->getName());
+        disk->copyFile(path / file_name, *destination_disk, destination_path, write_settings);
+        return;
     }
 
-    /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    LOG_TRACE(log, "Copying {}/{} from disk {} to {} through buffers", path, file_name, disk->getName(), destination_disk->getName());
+    IBackupReader::copyFileToDisk(file_name, size, destination_disk, destination_path, write_mode, write_settings);
 }
 
 
-BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ContextPtr & context_)
-    : BackupWriterDefault(&Poco::Logger::get("BackupWriterDisk"), context_)
-    , disk(disk_)
-    , root_path(root_path_)
-    , data_source_description(disk->getDataSourceDescription())
+BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
 {
 }
 
@@ -68,64 +58,85 @@ BackupWriterDisk::~BackupWriterDisk() = default;
 
 bool BackupWriterDisk::fileExists(const String & file_name)
 {
-    return disk->exists(root_path / file_name);
+    return disk->exists(path / file_name);
 }
 
 UInt64 BackupWriterDisk::getFileSize(const String & file_name)
 {
-    return disk->getFileSize(root_path / file_name);
+    return disk->getFileSize(path / file_name);
 }
 
-std::unique_ptr<ReadBuffer> BackupWriterDisk::readFile(const String & file_name, size_t expected_file_size)
+bool BackupWriterDisk::fileContentsEqual(const String & file_name, const String & expected_file_contents)
 {
-    return disk->readFile(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
+    if (!disk->exists(path / file_name))
+        return false;
+
+    try
+    {
+        auto in = disk->readFile(path / file_name);
+        String actual_file_contents(expected_file_contents.size(), ' ');
+        return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
+            && (actual_file_contents == expected_file_contents) && in->eof();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_name)
 {
-    auto file_path = root_path / file_name;
+    auto file_path = path / file_name;
     disk->createDirectories(file_path.parent_path());
-    return disk->writeFile(file_path, write_buffer_size, WriteMode::Rewrite, write_settings);
+    return disk->writeFile(file_path);
 }
 
 void BackupWriterDisk::removeFile(const String & file_name)
 {
-    disk->removeFileIfExists(root_path / file_name);
-    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
-        disk->removeDirectory(root_path);
+    disk->removeFileIfExists(path / file_name);
+    if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
+        disk->removeDirectory(path);
 }
 
 void BackupWriterDisk::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
-        disk->removeFileIfExists(root_path / file_name);
-    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
-        disk->removeDirectory(root_path);
+        disk->removeFileIfExists(path / file_name);
+    if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
+        disk->removeDirectory(path);
 }
 
-void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
+DataSourceDescription BackupWriterDisk::getDataSourceDescription() const
 {
-    /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
-    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or copy a part of the file.
-    bool has_throttling = src_disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
-    if (!has_throttling && !start_pos && !copy_encrypted)
+    return disk->getDataSourceDescription();
+}
+
+DataSourceDescription BackupReaderDisk::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
+}
+
+bool BackupWriterDisk::supportNativeCopy(DataSourceDescription data_source_description) const
+{
+    return data_source_description == disk->getDataSourceDescription();
+}
+
+void BackupWriterDisk::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
+{
+    if (!src_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
+
+    if ((src_offset != 0) || (src_size != src_disk->getFileSize(src_file_name)))
     {
-        auto source_data_source_description = src_disk->getDataSourceDescription();
-        if (source_data_source_description.sameKind(data_source_description) && !source_data_source_description.is_encrypted
-            && (length == src_disk->getFileSize(src_path)))
-        {
-            /// Use more optimal way.
-            LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
-            auto dest_file_path = root_path / path_in_backup;
-            disk->createDirectories(dest_file_path.parent_path());
-            src_disk->copyFile(src_path, *disk, dest_file_path, write_settings);
-            return; /// copied!
-        }
+        auto create_read_buffer = [src_disk, src_file_name] { return src_disk->readFile(src_file_name); };
+        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
+        return;
     }
 
-    /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    auto file_path = path / dest_file_name;
+    disk->createDirectories(file_path.parent_path());
+    src_disk->copyFile(src_file_name, *disk, file_path);
 }
 
 }

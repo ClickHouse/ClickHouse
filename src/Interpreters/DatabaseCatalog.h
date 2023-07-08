@@ -79,8 +79,6 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
-class FutureSet;
-using FutureSetPtr = std::shared_ptr<FutureSet>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -113,7 +111,6 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
-    FutureSetPtr future_set;
 };
 
 ///TODO maybe remove shared_ptr from here?
@@ -307,8 +304,6 @@ private:
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
     Poco::Logger * log;
-
-    std::atomic_bool is_shutting_down = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
     /// database name -> database guard -> (table name mutex, counter),

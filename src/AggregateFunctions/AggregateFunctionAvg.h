@@ -146,8 +146,8 @@ public:
         for (const auto & argument : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument);
 
-        const auto & result_type = this->getResultType();
-        can_be_compiled &= canBeNativeType(*result_type);
+        auto return_type = this->getResultType();
+        can_be_compiled &= canBeNativeType(*return_type);
 
         return can_be_compiled;
     }
@@ -198,8 +198,8 @@ public:
         auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
 
-        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, this->getResultType());
-        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
+        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, b.getDoubleTy());
+        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, b.getDoubleTy());
 
         return b.CreateFDiv(double_numerator, double_denominator);
     }
@@ -308,7 +308,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -316,7 +316,7 @@ public:
 
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
-        auto * value_cast_to_numerator = nativeCast(b, arguments[0], toNativeDataType<Numerator>());
+        auto * value_cast_to_numerator = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
         b.CreateStore(numerator_result_value, numerator_ptr);
 

@@ -159,18 +159,6 @@ DataTypes NamesAndTypesList::getTypes() const
     return res;
 }
 
-void NamesAndTypesList::filterColumns(const NameSet & names)
-{
-    for (auto it = begin(); it != end();)
-    {
-        const auto & column = *it;
-        if (names.contains(column.name))
-            ++it;
-        else
-            it = erase(it);
-    }
-}
-
 NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
 {
     NamesAndTypesList res;

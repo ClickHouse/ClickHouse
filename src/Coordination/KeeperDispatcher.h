@@ -9,6 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
@@ -80,8 +81,6 @@ private:
     std::atomic<int64_t> internal_session_id_counter{0};
 
     KeeperSnapshotManagerS3 snapshot_s3;
-
-    KeeperContextPtr keeper_context;
 
     /// Thread put requests to raft
     void requestThread();
@@ -198,11 +197,6 @@ public:
     const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
     {
         return configuration_and_settings;
-    }
-
-    const KeeperContextPtr & getKeeperContext() const
-    {
-        return keeper_context;
     }
 
     void incrementPacketsSent()

@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_nonconst_timezone_arguments>1</allow_nonconst_timezone_arguments>
-        </default>
-    </profiles>
-</clickhouse>

@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-16}
+export LLVM_VERSION=${LLVM_VERSION:-13}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -80,7 +80,7 @@ function start_server
 
 function clone_root
 {
-    [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
+    git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -147,11 +147,10 @@ function clone_submodules
             contrib/xxHash
             contrib/simdjson
             contrib/liburing
-            contrib/libfiu
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --single-branch --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -195,18 +194,12 @@ function build
 {
     (
         cd "$FASTTEST_BUILD"
-        TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
-        ( time ninja clickhouse-bundle) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
-        BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
-        echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
-          | ts '%Y-%m-%d %H:%M:%S' \
-          | tee "$FASTTEST_OUTPUT/test_result.txt"
+        time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            mkdir -p "$FASTTEST_OUTPUT/binaries/"
-            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
-            strip programs/clickhouse -o programs/clickhouse-stripped
-            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
+            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
+            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache_status
         ccache --evict-older-than 1d ||:
@@ -258,7 +251,7 @@ function run_tests
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a "$FASTTEST_OUTPUT/test_result.txt"
+        | tee "$FASTTEST_OUTPUT/test_result.txt"
     set -e
 
     clickhouse stop --pid-path "$FASTTEST_DATA"

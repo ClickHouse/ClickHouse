@@ -19,6 +19,7 @@
 #include <utility>
 #include <memory>
 #include <base/types.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -215,7 +216,7 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
+    VolumePtr getTemporaryVolume() { return tmp_volume; }
 
     ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
@@ -234,17 +235,8 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-
-    bool forceNullableRight() const
-    {
-        return join_use_nulls && isLeftOrFull(kind());
-    }
-
-    bool forceNullableLeft() const
-    {
-        return join_use_nulls && isRightOrFull(kind());
-    }
-
+    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }
+    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind()); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }

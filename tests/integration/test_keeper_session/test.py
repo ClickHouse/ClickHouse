@@ -167,7 +167,6 @@ def test_session_close_shutdown(started_cluster):
 
     eph_node = "/test_node"
     node2_zk.create(eph_node, ephemeral=True)
-    node1_zk.sync(eph_node)
     assert node1_zk.exists(eph_node) != None
 
     # shutdown while session is active

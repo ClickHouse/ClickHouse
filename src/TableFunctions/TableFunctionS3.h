@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/* s3(source, [access_key_id, secret_access_key,] [format, structure, compression]) - creates a temporary storage for a file in S3.
+/* s3(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary storage for a file in S3.
  */
 class TableFunctionS3 : public ITableFunction
 {
@@ -26,21 +26,11 @@ public:
                                       " - url, format, structure, compression_method\n"
                                       " - url, access_key_id, secret_access_key, format\n"
                                       " - url, access_key_id, secret_access_key, format, structure\n"
-                                      " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
-                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
-
-    static size_t getMaxNumberOfArguments() { return 6; }
-
-    String getName() const override
+                                      " - url, access_key_id, secret_access_key, format, structure, compression_method";
+    std::string getName() const override
     {
         return name;
     }
-
-    virtual String getSignature() const
-    {
-        return signature;
-    }
-
     bool hasStaticStructure() const override { return configuration.structure != "auto"; }
 
     bool needStructureHint() const override { return configuration.structure == "auto"; }
@@ -53,10 +43,12 @@ public:
     {
         return {"_path", "_file"};
     }
-
-    virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
-
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
+    static void parseArgumentsImpl(
+        const String & error_message,
+        ASTs & args,
+        ContextPtr context,
+        StorageS3::Configuration & configuration,
+        bool get_format_from_file = true);
 
 protected:
 
@@ -73,6 +65,30 @@ protected:
 
     mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
+};
+
+class TableFunctionCOS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "cosn";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "COSN"; }
+};
+
+class TableFunctionOSS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "oss";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "OSS"; }
 };
 
 }

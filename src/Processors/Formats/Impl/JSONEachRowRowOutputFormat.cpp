@@ -12,11 +12,9 @@ namespace DB
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const FormatSettings & settings_,
-    bool pretty_json_)
+    const FormatSettings & settings_)
         : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_),
-        pretty_json(pretty_json_),
-        settings(settings_)
+            settings(settings_)
 {
     fields = JSONUtils::makeNamesValidJSONStrings(getPort(PortKind::Main).getHeader().getNames(), settings, settings.json.validate_utf8);
 }
@@ -24,7 +22,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
 
 void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, settings.json.serialize_as_strings, settings, *ostr, fields[field_number], pretty_json ? 1 : 0, "", pretty_json);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, settings.json.serialize_as_strings, settings, *ostr, fields[field_number], 0, "");
     ++field_number;
 }
 
@@ -32,24 +30,17 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISeria
 void JSONEachRowRowOutputFormat::writeFieldDelimiter()
 {
     writeChar(',', *ostr);
-    if (pretty_json)
-        writeChar('\n', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 {
     writeChar('{', *ostr);
-    if (pretty_json)
-        writeChar('\n', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    if (pretty_json)
-        writeChar('\n', *ostr);
-
     if (settings.json.array_of_rows)
         writeChar('}', *ostr);
     else
@@ -83,27 +74,24 @@ void JSONEachRowRowOutputFormat::writeSuffix()
 
 void registerOutputFormatJSONEachRow(FormatFactory & factory)
 {
-    auto register_function = [&](const String & format, bool serialize_as_strings, bool pretty_json)
+    auto register_function = [&](const String & format, bool serialize_as_strings)
     {
-        factory.registerOutputFormat(format, [serialize_as_strings, pretty_json](
+        factory.registerOutputFormat(format, [serialize_as_strings](
             WriteBuffer & buf,
             const Block & sample,
             const FormatSettings & _format_settings)
         {
             FormatSettings settings = _format_settings;
             settings.json.serialize_as_strings = serialize_as_strings;
-            return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, settings, pretty_json);
+            return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, settings);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
     };
 
-    register_function("JSONEachRow", false, false);
-    register_function("PrettyJSONEachRow", false, true);
-    register_function("JSONLines", false, false);
-    register_function("PrettyJSONLines", false, true);
-    register_function("NDJSON", false, false);
-    register_function("PrettyNDJSON", false, true);
-    register_function("JSONStringsEachRow", true, false);
+    register_function("JSONEachRow", false);
+    register_function("JSONLines", false);
+    register_function("NDJSON", false);
+    register_function("JSONStringsEachRow", true);
 }
 
 }

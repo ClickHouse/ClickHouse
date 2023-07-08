@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS rename_table;
 
-CREATE TABLE rename_table (key Int32, value1 Int32, value2 Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0;
+CREATE TABLE rename_table (key Int32, value1 Int32, value2 Int32) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO rename_table VALUES (1, 2, 3);
 

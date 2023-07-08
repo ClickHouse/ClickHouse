@@ -9,19 +9,27 @@ if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MA
     return()
 endif()
 
+set(ENABLE_CCACHE "default" CACHE STRING "Deprecated, use COMPILER_CACHE=(auto|ccache|sccache|disabled)")
+if (NOT ENABLE_CCACHE STREQUAL "default")
+    message(WARNING "The -DENABLE_CCACHE is deprecated in favor of -DCOMPILER_CACHE")
+endif()
+
 set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (ccache, then sccache), 'ccache', 'sccache', or 'disabled'")
 
-if(COMPILER_CACHE STREQUAL "auto")
-    find_program (CCACHE_EXECUTABLE ccache sccache)
-elseif (COMPILER_CACHE STREQUAL "ccache")
+# It has pretty complex logic, because the ENABLE_CCACHE is deprecated, but still should
+# control the COMPILER_CACHE
+# After it will be completely removed, the following block will be much simpler
+if (COMPILER_CACHE STREQUAL "ccache" OR (ENABLE_CCACHE AND NOT ENABLE_CCACHE STREQUAL "default"))
     find_program (CCACHE_EXECUTABLE ccache)
-elseif(COMPILER_CACHE STREQUAL "sccache")
-    find_program (CCACHE_EXECUTABLE sccache)
-elseif(COMPILER_CACHE STREQUAL "disabled")
+elseif(COMPILER_CACHE STREQUAL "disabled" OR NOT ENABLE_CCACHE STREQUAL "default")
     message(STATUS "Using *ccache: no (disabled via configuration)")
     return()
+elseif(COMPILER_CACHE STREQUAL "auto")
+    find_program (CCACHE_EXECUTABLE ccache sccache)
+elseif(COMPILER_CACHE STREQUAL "sccache")
+    find_program (CCACHE_EXECUTABLE sccache)
 else()
-    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|ccache|sccache|disabled), value: '${COMPILER_CACHE}'")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|ccache|sccache|disabled), given '${COMPILER_CACHE}'")
 endif()
 
 

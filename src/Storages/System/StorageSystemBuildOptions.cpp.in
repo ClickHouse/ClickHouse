@@ -64,7 +64,6 @@ const char * auto_config_build[]
     "USE_ARROW", "@USE_ARROW@",
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
-    "USE_QPL", "@ENABLE_QPL@",
     "GIT_HASH", "@GIT_HASH@",
     "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(@GIT_BRANCH@)IRjaNsZIL9Yh7FQ4",
     "GIT_DATE", "@GIT_DATE@",

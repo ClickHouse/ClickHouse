@@ -23,7 +23,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/ThreadPool.h>
 
 
 namespace CurrentMetrics
@@ -59,13 +58,10 @@ namespace
 
             BackupCoordinationRemote::BackupKeeperSettings keeper_settings
             {
-                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
-                .keeper_value_max_size = context->getSettingsRef().backup_restore_keeper_value_max_size,
+                .keeper_max_retries = context->getSettingsRef().backup_keeper_max_retries,
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
+                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+                .keeper_value_max_size = context->getSettingsRef().backup_keeper_value_max_size,
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -96,27 +92,10 @@ namespace
 
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
 
-            RestoreCoordinationRemote::RestoreKeeperSettings keeper_settings
-            {
-                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed
-            };
-
             auto all_hosts = BackupSettings::Util::filterHostIDs(
                 restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
-            return std::make_shared<RestoreCoordinationRemote>(
-                get_zookeeper,
-                root_zk_path,
-                keeper_settings,
-                toString(*restore_settings.restore_uuid),
-                all_hosts,
-                restore_settings.host_id,
-                restore_settings.internal);
+            return std::make_shared<RestoreCoordinationRemote>(get_zookeeper, root_zk_path, toString(*restore_settings.restore_uuid), all_hosts, restore_settings.host_id, restore_settings.internal);
         }
         else
         {
@@ -152,7 +131,8 @@ namespace
         }
         catch (...)
         {
-            sendExceptionToCoordination(coordination, Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
+            if (coordination)
+                coordination->setError(Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
         }
     }
 
@@ -182,8 +162,8 @@ namespace
 
 
 BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
-    : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
-    , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
+    : backups_thread_pool(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
+    , restores_thread_pool(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
@@ -248,7 +228,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
         if (backup_settings.async)
         {
-            backups_thread_pool->scheduleOrThrowOnError(
+            backups_thread_pool.scheduleOrThrowOnError(
                 [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
                 {
                     doBackup(
@@ -367,7 +347,6 @@ void BackupsWorker::doBackup(
 
             /// Wait until all the hosts have written their backup entries.
             backup_coordination->waitForStage(Stage::COMPLETED);
-            backup_coordination->setStage(Stage::COMPLETED,"");
         }
         else
         {
@@ -385,7 +364,7 @@ void BackupsWorker::doBackup(
             writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
-            backup_coordination->setStage(Stage::COMPLETED,"");
+            backup_coordination->setStage(Stage::COMPLETED, "");
         }
 
         size_t num_files = 0;
@@ -436,7 +415,7 @@ void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, con
     LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), *backups_thread_pool));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), backups_thread_pool));
 }
 
 
@@ -523,7 +502,7 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
             }
         };
 
-        if (always_single_threaded || !backups_thread_pool->trySchedule([job] { job(true); }))
+        if (always_single_threaded || !backups_thread_pool.trySchedule([job] { job(true); }))
             job(false);
     }
 
@@ -582,7 +561,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
         if (restore_settings.async)
         {
-            restores_thread_pool->scheduleOrThrowOnError(
+            restores_thread_pool.scheduleOrThrowOnError(
                 [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
                 {
                     doRestore(
@@ -654,26 +633,12 @@ void BackupsWorker::doRestore(
         /// (If this isn't ON CLUSTER query RestorerFromBackup will check access rights later.)
         ClusterPtr cluster;
         bool on_cluster = !restore_query->cluster.empty();
-
         if (on_cluster)
         {
             restore_query->cluster = context->getMacros()->expand(restore_query->cluster);
             cluster = context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
-        }
 
-        /// Make a restore coordination.
-        if (!restore_coordination)
-            restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ on_cluster);
-
-        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
-            throw Exception(
-                ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
-                "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
-
-
-        if (on_cluster)
-        {
             /// We cannot just use access checking provided by the function executeDDLQueryOnCluster(): it would be incorrect
             /// because different replicas can contain different set of tables and so the required access rights can differ too.
             /// So the right way is pass through the entire cluster and check access for each host.
@@ -689,6 +654,13 @@ void BackupsWorker::doRestore(
                 dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
             }
         }
+
+        /// Make a restore coordination.
+        if (!restore_coordination)
+            restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ on_cluster);
+
+        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
 
         /// Do RESTORE.
         if (on_cluster)
@@ -708,7 +680,6 @@ void BackupsWorker::doRestore(
 
             /// Wait until all the hosts have written their backup entries.
             restore_coordination->waitForStage(Stage::COMPLETED);
-            restore_coordination->setStage(Stage::COMPLETED,"");
         }
         else
         {
@@ -723,7 +694,7 @@ void BackupsWorker::doRestore(
             }
 
             /// Execute the data restoring tasks.
-            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), *restores_thread_pool);
+            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), restores_thread_pool);
 
             /// We have restored everything, we need to tell other hosts (they could be waiting for it).
             restore_coordination->setStage(Stage::COMPLETED, "");
@@ -948,8 +919,8 @@ void BackupsWorker::shutdown()
     if (has_active_backups_and_restores)
         LOG_INFO(log, "Waiting for {} backups and {} restores to be finished", num_active_backups, num_active_restores);
 
-    backups_thread_pool->wait();
-    restores_thread_pool->wait();
+    backups_thread_pool.wait();
+    restores_thread_pool.wait();
 
     if (has_active_backups_and_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");
