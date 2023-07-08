@@ -19,6 +19,8 @@ function run_test_for_disk()
         grep -o -e "Single part upload has completed." -e "Single operation copy has completed."
     }
     clickhouse-disks -C "$config" --disk "$disk" remove $CLICKHOUSE_DATABASE/test
+    # NOTE: this is due to "copy" does works like "cp -R from to/" instead of "cp from to"
+    clickhouse-disks -C "$config" --disk "$disk" remove $CLICKHOUSE_DATABASE/test.copy/test
     clickhouse-disks -C "$config" --disk "$disk" remove $CLICKHOUSE_DATABASE/test.copy
 }
 
