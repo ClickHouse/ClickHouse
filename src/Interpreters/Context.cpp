@@ -875,9 +875,9 @@ catch (...)
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
-static VolumePtr createLocalSingleDiskVolume(const std::string & path)
+static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
-    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
 }
@@ -893,7 +893,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
 
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
 
     for (const auto & disk : volume->getDisks())
     {
@@ -966,7 +966,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
     shared->tmp_path = file_cache->getBasePath();
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 

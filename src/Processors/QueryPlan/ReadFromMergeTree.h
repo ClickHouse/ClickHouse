@@ -226,7 +226,7 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
-    void onAddFilterFinish() override;
+    void applyFilters() override;
 
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
