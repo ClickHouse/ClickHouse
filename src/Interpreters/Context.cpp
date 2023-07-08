@@ -181,7 +181,7 @@ namespace ErrorCodes
     if (ptr)                                            \
     {                                                   \
         LOG_DEBUG(log, "Shutting down " desc);          \
-        ptr->method;                                    \
+        (ptr)->method;                                  \
     }                                                   \
 } while (false)                                         \
 
