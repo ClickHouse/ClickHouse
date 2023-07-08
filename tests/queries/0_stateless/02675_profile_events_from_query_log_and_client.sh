@@ -32,8 +32,11 @@ DROP TABLE IF EXISTS times;
 CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
   SETTINGS
     storage_policy='default',
+    min_rows_for_compact_part = 0,
+    min_bytes_for_compact_part = 0,
     min_rows_for_wide_part = 1000000,
     min_bytes_for_wide_part = 1000000,
+    in_memory_parts_enable_wal = 0,
     ratio_of_defaults_for_sparse_serialization=1.0;
 "
 
@@ -71,3 +74,4 @@ AND ( query LIKE '%SELECT % FROM times%' OR query LIKE '%INSERT INTO times%' )
 AND type = 'QueryFinish'
 ORDER BY query_start_time_microseconds ASC, query DESC;
 "
+

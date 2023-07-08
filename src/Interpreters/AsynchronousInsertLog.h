@@ -45,7 +45,7 @@ public:
     using SystemLog<AsynchronousInsertLogElement>::SystemLog;
 
     /// This table is usually queried for fixed table name.
-    static const char * getDefaultOrderBy() { return "database, table, event_date, event_time"; }
+    static const char * getDefaultOrderBy() { return "(database, table, event_date, event_time)"; }
 };
 
 }

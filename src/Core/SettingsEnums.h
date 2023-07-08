@@ -188,7 +188,7 @@ enum class TransactionsWaitCSNMode
 
 DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(CapnProtoEnumComparingMode, FormatSettings::CapnProtoEnumComparingMode)
+DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 

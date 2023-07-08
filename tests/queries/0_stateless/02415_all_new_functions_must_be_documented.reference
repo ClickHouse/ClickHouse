@@ -97,7 +97,6 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
-arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -655,7 +654,6 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
-space
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -686,6 +684,7 @@ throwIf
 tid
 timeSlot
 timeSlots
+timezone
 timezoneOf
 timezoneOffset
 toBool
@@ -783,7 +782,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
-toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay

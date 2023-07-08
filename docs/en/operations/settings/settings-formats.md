@@ -7,23 +7,6 @@ toc_max_heading_level: 2
 
 # Format settings {#format-settings}
 
-## format_display_secrets_in_show_and_select {#format_display_secrets_in_show_and_select}
-
-Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
-table functions, and dictionaries.
-
-User wishing to see secrets must also have
-[`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
-turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 0.
-
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 Enables or disables skipping insertion of extra data.
@@ -136,12 +119,6 @@ Enabled by default.
 The maximum rows of data to read for automatic schema inference.
 
 Default value: `25'000`.
-
-## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
-
-The maximum amount of data in bytes to read for automatic schema inference.
-
-Default value: `33554432` (32 Mb).
 
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
@@ -734,12 +711,6 @@ My NULL
 My NULL
 ```
 
-### input_format_tsv_skip_trailing_empty_lines {input_format_tsv_skip_trailing_empty_lines}
-
-When enabled, trailing empty lines at the end of TSV file will be skipped.
-
-Disabled by default.
-
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -892,76 +863,6 @@ Result
 788
 My NULL
 My NULL
-```
-
-### input_format_csv_skip_trailing_empty_lines {input_format_csv_skip_trailing_empty_lines}
-
-When enabled, trailing empty lines at the end of CSV file will be skipped.
-
-Disabled by default.
-
-### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
-
-Trims spaces and tabs in non-quoted CSV strings.
-
-Default value: `true`.
-
-**Examples**
-
-Query
-
-```bash
-echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
-```
-
-Result
-
-```text
-"string"
-```
-
-Query
-
-```bash
-echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
-```
-
-Result
-
-```text
-"  string  "
-```
-
-### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
-
-Allow to use whitespace or tab as field delimiter in CSV strings.
-
-Default value: `false`.
-
-**Examples**
-
-Query
-
-```bash
-echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter=' '
-```
-
-Result
-
-```text
-a  b
-```
-
-Query
-
-```bash
-echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter='\t'
-```
-
-Result
-
-```text
-a  b
 ```
 
 ## Values format settings {#values-format-settings}
@@ -1264,7 +1165,7 @@ Possible values:
 
 - `bin` - as 16-bytes binary.
 - `str` - as a string of 36 bytes.
-- `ext` - as extension with ExtType = 2.
+- `ext` - as extention with ExtType = 2.
 
 Default value: `ext`.
 
@@ -1524,12 +1425,6 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md/#format-customseparated) data format.
 
 Default value: `''`.
-
-### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
-
-When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
-
-Disabled by default.
 
 ## Regexp format settings {#regexp-format-settings}
 

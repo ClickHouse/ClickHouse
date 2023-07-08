@@ -85,7 +85,7 @@ SELECT 1.0, 1
 ----
 1.000 1
 
-# mess with columns count
+# mess with colums count
 query RT nosort
 SELECT 1.0
 ----

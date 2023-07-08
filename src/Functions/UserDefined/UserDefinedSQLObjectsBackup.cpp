@@ -56,18 +56,18 @@ void backupUserDefinedSQLObjects(
     // They will only be returned for one of the hosts below, for the rest an empty list.
     // See also BackupCoordinationReplicatedSQLObjects class.
     backup_entries_collector.addPostTask(
-        [my_backup_entries = std::move(backup_entries),
-         my_replication_id = std::move(replication_id),
+        [backup_entries = std::move(backup_entries),
+         replication_id = std::move(replication_id),
          object_type,
          &backup_entries_collector,
          backup_coordination]
         {
-            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(my_replication_id, object_type);
+            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(replication_id, object_type);
 
             for (const auto & dir : dirs)
             {
                 fs::path dir_fs{dir};
-                for (const auto & [file_name, entry] : my_backup_entries)
+                for (const auto & [file_name, entry] : backup_entries)
                 {
                     backup_entries_collector.addBackupEntry(dir_fs / file_name, entry);
                 }

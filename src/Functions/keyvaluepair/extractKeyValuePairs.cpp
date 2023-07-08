@@ -7,8 +7,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <Interpreters/Context.h>
-
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/ArgumentExtractor.h>
@@ -43,13 +41,6 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_kvp_max_pairs_per_row == 0;
-
-        if (!is_number_of_pairs_unlimited)
-        {
-            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_kvp_max_pairs_per_row);
-        }
-
         return builder.build();
     }
 
@@ -82,7 +73,7 @@ class ExtractKeyValuePairs : public IFunction
     }
 
 public:
-    explicit ExtractKeyValuePairs(ContextPtr context_) : context(context_) {}
+    ExtractKeyValuePairs() = default;
 
     static constexpr auto name = Name::name;
 
@@ -91,9 +82,9 @@ public:
         return name;
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<ExtractKeyValuePairs>(context);
+        return std::make_shared<ExtractKeyValuePairs>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
@@ -129,9 +120,6 @@ public:
     {
         return {1, 2, 3, 4};
     }
-
-private:
-    ContextPtr context;
 };
 
 struct NameExtractKeyValuePairs
@@ -147,8 +135,8 @@ struct NameExtractKeyValuePairsWithEscaping
 REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairs, false>>(
-        FunctionDocumentation{
-            .description=R"(Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
+        Documentation(
+            R"(Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
 
             It can contain noise (e.g. log files). The key-value pair format to be interpreted should be specified via function arguments.
 
@@ -209,12 +197,12 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv────────────────────┐
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
-            ```)"}
+            ```)")
     );
 
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
-        FunctionDocumentation{
-            .description=R"(Same as `extractKeyValuePairs` but with escaping support.
+        Documentation(
+            R"(Same as `extractKeyValuePairs` but with escaping support.
 
             Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
             Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
@@ -238,10 +226,8 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv───────────────┐
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
-            ```)"}
+            ```)")
     );
-    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);
 }
 
 }

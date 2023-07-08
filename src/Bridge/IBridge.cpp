@@ -165,7 +165,7 @@ void IBridge::initialize(Application & self)
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
     keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
-    http_max_field_value_size = config().getUInt64("http-max-field-value-size", 128 * 1024);
+    http_max_field_value_size = config().getUInt64("http-max-field-value-size", 1048576);
 
     struct rlimit limit;
     const UInt64 gb = 1024 * 1024 * 1024;
@@ -214,14 +214,14 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
 
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, hostname, port, log);
-    socket.setReceiveTimeout(Poco::Timespan(http_timeout, 0));
-    socket.setSendTimeout(Poco::Timespan(http_timeout, 0));
+    socket.setReceiveTimeout(http_timeout);
+    socket.setSendTimeout(http_timeout);
 
     Poco::ThreadPool server_pool(3, max_server_connections);
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(Poco::Timespan(http_timeout, 0));
-    http_params->setKeepAliveTimeout(Poco::Timespan(keep_alive_timeout, 0));
+    http_params->setTimeout(http_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     auto shared_context = Context::createShared();
     auto context = Context::createGlobal(shared_context.get());

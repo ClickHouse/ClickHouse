@@ -251,10 +251,7 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
     DB::UInt64 out {0};
-    if constexpr (std::endian::native == std::endian::little)
-        std::memcpy(&out, &key, sizeof(T));
-    else
-        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
+    std::memcpy(&out, &key, sizeof(T));
     return intHash64(out);
 }
 

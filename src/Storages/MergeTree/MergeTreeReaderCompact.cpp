@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -11,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -36,7 +36,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings_,
         avg_value_size_hints_)
     , marks_loader(
-          data_part_info_for_read_,
+          data_part_info_for_read_->getDataPartStorage(),
           mark_cache,
           data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part_info_for_read_->getMarksCount(),
@@ -111,12 +111,6 @@ void MergeTreeReaderCompact::initialize()
             data_buffer = non_cached_buffer.get();
             compressed_data_buffer = non_cached_buffer.get();
         }
-    }
-    catch (const Exception & e)
-    {
-        if (!isRetryableException(e))
-            data_part_info_for_read->reportBroken();
-        throw;
     }
     catch (...)
     {
@@ -213,11 +207,11 @@ size_t MergeTreeReaderCompact::readRows(
             }
             catch (Exception & e)
             {
-                if (!isRetryableException(e))
+                if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                     data_part_info_for_read->reportBroken();
 
                 /// Better diagnostics.
-                e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+                e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
                 throw;
             }
             catch (...)
@@ -320,8 +314,7 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
-void MergeTreeReaderCompact::prefetchBeginOfRange(Priority priority)
-try
+void MergeTreeReaderCompact::prefetchBeginOfRange(int64_t priority)
 {
     if (!initialized)
     {
@@ -332,17 +325,6 @@ try
     adjustUpperBound(all_mark_ranges.back().end);
     seekToMark(all_mark_ranges.front().begin, 0);
     data_buffer->prefetch(priority);
-}
-catch (const Exception & e)
-{
-    if (!isRetryableException(e))
-        data_part_info_for_read->reportBroken();
-    throw;
-}
-catch (...)
-{
-    data_part_info_for_read->reportBroken();
-    throw;
 }
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)

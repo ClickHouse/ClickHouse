@@ -12,4 +12,4 @@ CREATE TABLE test2 (x UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{d
 -- The macro {server_uuid} is special, not a configuration-type macro. It's normal that it is inaccessible with the getMacro function.
 SELECT getMacro('server_uuid'); -- { serverError NO_ELEMENTS_IN_CONFIG }
 
-DROP TABLE test SYNC;
+DROP TABLE test NO DELAY;

@@ -107,7 +107,7 @@ struct ManyAggregatedData
                 {
                     // variant is moved here and will be destroyed in the destructor of the lambda function.
                     pool->trySchedule(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
                             SCOPE_EXIT_SAFE(
                                 if (thread_group)

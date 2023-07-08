@@ -226,7 +226,8 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     String key = "1234567812345678";
     FileEncryption::Header header;
     header.algorithm = Algorithm::AES_128_CTR;
-    header.key_fingerprint = calculateKeyFingerprint(key);
+    header.key_id = 1;
+    header.key_hash = calculateKeyHash(key);
     header.init_vector = InitVector::random();
 
     auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);

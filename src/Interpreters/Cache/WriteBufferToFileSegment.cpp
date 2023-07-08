@@ -17,17 +17,17 @@ namespace ErrorCodes
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache()))
+    : WriteBufferFromFileDecorator(file_segment_->detachWriter())
     , file_segment(file_segment_)
 {
 }
 
-WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_)
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolder && segment_holder_)
     : WriteBufferFromFileDecorator(
-        segment_holder_->size() == 1
-        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPathInLocalCache())
+        segment_holder_.file_segments.size() == 1
+        ? segment_holder_.file_segments.front()->detachWriter()
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
-    , file_segment(&segment_holder_->front())
+    , file_segment(segment_holder_.file_segments.front().get())
     , segment_holder(std::move(segment_holder_))
 {
 }
@@ -69,6 +69,18 @@ std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
     finalize();
     return std::make_shared<ReadBufferFromFile>(file_segment->getPathInLocalCache());
+}
+
+WriteBufferToFileSegment::~WriteBufferToFileSegment()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/materialized-postgresql
-sidebar_position: 130
+sidebar_position: 12
 sidebar_label: MaterializedPostgreSQL
 title: MaterializedPostgreSQL
 ---

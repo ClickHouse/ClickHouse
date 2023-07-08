@@ -33,5 +33,5 @@ select count() from system.filesystem_cache_log where query_id = '$query_id' AND
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 select count() from ttt;
-drop table ttt sync;
+drop table ttt no delay;
 "

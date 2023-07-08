@@ -20,7 +20,7 @@ public:
 
     ~PeekableReadBuffer() override;
 
-    void prefetch(Priority priority) override { sub_buf->prefetch(priority); }
+    void prefetch(int64_t priority) override { sub_buf->prefetch(priority); }
 
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()

@@ -104,14 +104,6 @@ String DDLLogEntry::toString() const
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
         wb << "tracing: " << this->tracing_context;
-    /// NOTE: OPENTELEMETRY_ENABLED_VERSION has new line in TracingContext::serialize(), so no need to add one more
-
-    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
-    {
-        writeString("initial_query_id: ", wb);
-        writeEscapedString(initial_query_id, wb);
-        writeChar('\n', wb);
-    }
 
     return wb.str();
 }
@@ -157,14 +149,6 @@ void DDLLogEntry::parse(const String & data)
         if (!rb.eof() && *rb.position() == 't')
             rb >> "tracing: " >> this->tracing_context;
     }
-
-    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
-    {
-        checkString("initial_query_id: ", rb);
-        readEscapedString(initial_query_id, rb);
-        checkChar('\n', rb);
-    }
-
 
     assertEOF(rb);
 

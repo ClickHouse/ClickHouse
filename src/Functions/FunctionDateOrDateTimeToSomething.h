@@ -24,7 +24,7 @@ public:
         /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false);
+            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
             /// only validate the time_zone part if the number of arguments is 2. This is mainly
             /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
             if (arguments.size() == 2 && time_zone.empty())
@@ -53,7 +53,7 @@ public:
                 scale = std::max(source_scale, static_cast<Int64>(9));
             }
 
-            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         }
         else
             return std::make_shared<ToDataType>();

@@ -63,7 +63,7 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/
 
 ``` text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00.000 │        3 │
+│ 2019-01-01 00:00:00.000 │        2 │
 └─────────────────────────┴──────────┘
 ```
 
@@ -75,8 +75,8 @@ SELECT * FROM dt WHERE timestamp = toDateTime64(1546300800.123, 3);
 
 ``` text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
-│ 2019-01-01 03:00:00.123 │        2 │
+│ 2019-01-01 00:00:00.123 │        1 │
+│ 2019-01-01 00:00:00.123 │        2 │
 └─────────────────────────┴──────────┘
 ```
 
@@ -91,7 +91,7 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 
 ``` text
 ┌──────────────────column─┬─x──────────────────────────────┐
-│ 2023-06-05 00:09:52.000 │ DateTime64(3, 'Asia/Istanbul') │
+│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Asia/Istanbul') │
 └─────────────────────────┴────────────────────────────────┘
 ```
 
@@ -100,14 +100,13 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 ``` sql
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
-toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
+toDateTime64(timestamp, 3, 'Asia/Istanbul') as mos_time
 FROM dt;
 ```
 
 ``` text
-┌────────────────lon_time─┬───────────istanbul_time─┐
-│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
-│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+┌───────────────lon_time──┬────────────────mos_time─┐
+│ 2019-01-01 00:00:00.000 │ 2019-01-01 03:00:00.000 │
 │ 2018-12-31 21:00:00.000 │ 2019-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -116,9 +115,10 @@ FROM dt;
 
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
-- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
+- [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
+- [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings.md#settings-date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
-- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
+- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [`Date` data type](../../sql-reference/data-types/date.md)
 - [`DateTime` data type](../../sql-reference/data-types/datetime.md)

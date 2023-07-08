@@ -50,16 +50,7 @@ bool FillingRow::operator>=(const FillingRow & other) const
     return !(*this < other);
 }
 
-bool FillingRow::isNull() const
-{
-    for (const auto & field : row)
-        if (!field.isNull())
-            return false;
-
-    return true;
-}
-
-std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
+bool FillingRow::next(const FillingRow & to_row)
 {
     const size_t row_size = size();
     size_t pos = 0;
@@ -70,24 +61,22 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
             break;
 
     if (pos == row_size || less(to_row.row[pos], row[pos], getDirection(pos)))
-        return {false, false};
+        return false;
 
     /// If we have any 'fill_to' value at position greater than 'pos',
     ///  we need to generate rows up to 'fill_to' value.
     for (size_t i = row_size - 1; i > pos; --i)
     {
-        auto & fill_column_desc = getFillDescription(i);
-
-        if (fill_column_desc.fill_to.isNull() || row[i].isNull())
+        if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
             continue;
 
-        Field next_value = row[i];
-        fill_column_desc.step_func(next_value);
-        if (less(next_value, fill_column_desc.fill_to, getDirection(i)))
+        auto next_value = row[i];
+        getFillDescription(i).step_func(next_value);
+        if (less(next_value, getFillDescription(i).fill_to, getDirection(i)))
         {
             row[i] = next_value;
             initFromDefaults(i + 1);
-            return {true, true};
+            return true;
         }
     }
 
@@ -95,13 +84,14 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
     getFillDescription(pos).step_func(next_value);
 
     if (less(to_row.row[pos], next_value, getDirection(pos)) || equals(next_value, getFillDescription(pos).fill_to))
-        return {false, false};
+        return false;
 
     row[pos] = next_value;
     if (equals(row[pos], to_row.row[pos]))
     {
         bool is_less = false;
-        for (size_t i = pos + 1; i < row_size; ++i)
+        size_t i = pos + 1;
+        for (; i < row_size; ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
             if (!fill_from.isNull())
@@ -111,11 +101,11 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
             is_less |= less(row[i], to_row.row[i], getDirection(i));
         }
 
-        return {is_less, true};
+        return is_less;
     }
 
     initFromDefaults(pos + 1);
-    return {true, true};
+    return true;
 }
 
 void FillingRow::initFromDefaults(size_t from_pos)

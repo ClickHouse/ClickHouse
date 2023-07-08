@@ -26,27 +26,19 @@ SELECT
 
 ## makeDate
 
-Creates a [Date](../../sql-reference/data-types/date.md)
-- from a year, month and day argument, or
-- from a year and day of year argument.
+Creates a [Date](../../sql-reference/data-types/date.md) from a year, month and day argument.
 
 **Syntax**
 
 ``` sql
-makeDate(year, month, day);
-makeDate(year, day_of_year);
+makeDate(year, month, day)
 ```
-
-Alias:
-- `MAKEDATE(year, month, day);`
-- `MAKEDATE(year, day_of_year);`
 
 **Arguments**
 
 - `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `month` — Month. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `day_of_year` — Day of the year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
@@ -55,8 +47,6 @@ Alias:
 Type: [Date](../../sql-reference/data-types/date.md).
 
 **Example**
-
-Create a Date from a year, month and day:
 
 ``` sql
 SELECT makeDate(2023, 2, 28) AS Date;
@@ -70,19 +60,6 @@ Result:
 └────────────┘
 ```
 
-Create a Date from a year and day of year argument:
-
-``` sql
-SELECT makeDate(2023, 42) AS Date;
-```
-
-Result:
-
-``` text
-┌───────date─┐
-│ 2023-02-11 │
-└────────────┘
-```
 ## makeDate32
 
 Like [makeDate](#makeDate) but produces a [Date32](../../sql-reference/data-types/date32.md).
@@ -131,16 +108,10 @@ Result:
 
 Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-reference/data-types/datetime64.md).
 
-**Syntax**
-
-``` sql
-makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
-```
-
 ## timeZone
 
-Returns the timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
-If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
+Returns the timezone of the server.
+If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
 
 **Syntax**
 
@@ -155,33 +126,6 @@ Alias: `timezone`.
 - Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
-
-**See also**
-
-- [serverTimeZone](#serverTimeZone)
-
-## serverTimeZone
-
-Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
-If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
-
-**Syntax**
-
-``` sql
-serverTimeZone()
-```
-
-Alias: `serverTimezone`.
-
-**Returned value**
-
--   Timezone.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**See also**
-
-- [timeZone](#timeZone)
 
 ## toTimeZone
 
@@ -345,7 +289,7 @@ Aliases: `DAYOFMONTH`, `DAY`.
 
 Converts a date or date with time to the number of the day in the week as UInt8 value.
 
-The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is omitted, the default mode is 0. The time zone of the date can be specified as the third argument.
+The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
 
 | Mode | First day of week | Range                                          |
 |------|-------------------|------------------------------------------------|
@@ -384,14 +328,14 @@ Alias: `SECOND`.
 
 ## toUnixTimestamp
 
-Converts a string, a date or a date with time to the [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time) in `UInt32` representation.
+For DateTime arguments: converts the value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
 
-If the function is called with a string, it accepts an optional timezone argument.
+For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
 
 **Syntax**
 
 ``` sql
-toUnixTimestamp(date)
+toUnixTimestamp(datetime)
 toUnixTimestamp(str, [timezone])
 ```
 
@@ -404,40 +348,24 @@ Type: `UInt32`.
 **Example**
 
 ``` sql
-SELECT
-    '2017-11-05 08:07:47' AS dt_str,
-    toUnixTimestamp(dt_str) AS from_str,
-    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
-    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
-    toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
-    toUnixTimestamp(toDate(dt_str)) AS from_date,
-    toUnixTimestamp(toDate32(dt_str)) AS from_date32
-FORMAT Vertical;
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 ```
 
 Result:
 
 ``` text
-Row 1:
-──────
-dt_str:          2017-11-05 08:07:47
-from_str:        1509869267
-from_str_tokyo:  1509836867
-from_datetime:   1509869267
-from_datetime64: 1509869267
-from_date:       1509840000
-from_date32:     1509840000
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
 
 Behavior for
-* `enable_extended_results_for_datetime_functions = 0`:
-  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`.
-  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+* `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
 * `enable_extended_results_for_datetime_functions = 1`:
-  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
   * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
 :::
 
@@ -490,18 +418,6 @@ The mode argument works exactly like the mode argument in function `toWeek()`. I
 
 ``` sql
 toStartOfWeek(t[, mode[, timezone]])
-```
-
-## toLastDayOfWeek
-
-Rounds a date or date with time up to the nearest Saturday or Sunday.
-Returns the date.
-The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
-
-**Syntax**
-
-``` sql
-toLastDayOfWeek(t[, mode[, timezone]])
 ```
 
 ## toStartOfDay
@@ -1273,16 +1189,12 @@ Rounds the time to the half hour.
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-**Example**
-
-``` sql
+### example
+```sql
 SELECT
     toYYYYMM(now(), 'US/Eastern')
 ```
-
-Result:
-
-``` text
+```response
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
 │                        202303 │
 └───────────────────────────────┘
@@ -1292,15 +1204,11 @@ Result:
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-**Example**
-
+### example
 ```sql
 SELECT
     toYYYYMMDD(now(), 'US/Eastern')
 ```
-
-Result:
-
 ```response
 ┌─toYYYYMMDD(now(), 'US/Eastern')─┐
 │                        20230302 │
@@ -1311,15 +1219,11 @@ Result:
 
 Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-**Example**
-
+### example
 ```sql
 SELECT
     toYYYYMMDDhhmmss(now(), 'US/Eastern')
 ```
-
-Result:
-
 ```response
 ┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
 │                        20230302112209 │

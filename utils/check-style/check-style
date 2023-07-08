@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -163,12 +163,14 @@ find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
 find $ROOT_PATH/tests/queries -iname '*fail*' |
+    grep -vP $EXCLUDE_DIRS |
     grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
 
 # Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
 # NOTE: it is not that accurate, but at least something.
 tests_with_query_log=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        grep -vP $EXCLUDE_DIRS |
         xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_query_log[@]}"; do
@@ -203,6 +205,7 @@ tables_with_database_column=(
 # NOTE: it is not that accuate, but at least something.
 tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        grep -vP $EXCLUDE_DIRS |
         xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
         grep -v -e ':--' -e ':#' |
         cut -d: -f1 | sort -u
@@ -222,6 +225,7 @@ done
 # NOTE: it is not that accuate, but at least something.
 tests_with_replicated_merge_tree=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        grep -vP $EXCLUDE_DIRS |
         xargs grep --with-filename -e "Replicated.*MergeTree[ ]*(.*" | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_replicated_merge_tree[@]}"; do
@@ -229,7 +233,7 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
         *.gen.*)
             ;;
         *.sh)
-            test_case_zk_prefix="\(\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX\|{database}\)"
+            test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
             grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.sql|*.sql.j2)

@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int LIMIT_EXCEEDED;
 }
 
 /*
@@ -26,8 +25,8 @@ class CHKeyValuePairExtractor : public KeyValuePairExtractor
     using NextState = DB::extractKV::StateHandler::NextState;
 
 public:
-    explicit CHKeyValuePairExtractor(StateHandler state_handler_, uint64_t max_number_of_pairs_)
-        : state_handler(std::move(state_handler_)), max_number_of_pairs(max_number_of_pairs_)
+    explicit CHKeyValuePairExtractor(StateHandler state_handler_)
+        : state_handler(std::move(state_handler_))
     {}
 
     uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
@@ -114,15 +113,10 @@ private:
     NextState flushPair(const std::string_view & file, auto & key,
                         auto & value, uint64_t & row_offset)
     {
-        row_offset++;
-
-        if (row_offset > max_number_of_pairs)
-        {
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
-        }
-
         key.commit();
         value.commit();
+
+        row_offset++;
 
         return {0, file.empty() ? State::END : State::WAITING_KEY};
     }
@@ -134,7 +128,6 @@ private:
     }
 
     StateHandler state_handler;
-    uint64_t max_number_of_pairs;
 };
 
 }

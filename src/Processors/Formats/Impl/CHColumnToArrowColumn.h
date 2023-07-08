@@ -16,7 +16,7 @@ class CHColumnToArrowColumn
 public:
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, bool low_cardinality_as_dictionary_, bool output_string_as_string_, bool output_fixed_string_as_fixed_byte_array_);
 
-    void chChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const std::vector<Chunk> & chunk, size_t columns_num);
+    void chChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const Chunk & chunk, size_t columns_num);
 
 private:
     ColumnsWithTypeAndName header_columns;

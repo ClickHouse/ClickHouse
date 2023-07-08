@@ -16,12 +16,14 @@ struct DataTypeValidationSettings
 
     explicit DataTypeValidationSettings(const Settings & settings)
         : allow_suspicious_low_cardinality_types(settings.allow_suspicious_low_cardinality_types)
+        , allow_experimental_geo_types(settings.allow_experimental_geo_types)
         , allow_experimental_object_type(settings.allow_experimental_object_type)
         , allow_suspicious_fixed_string_types(settings.allow_suspicious_fixed_string_types)
     {
     }
 
     bool allow_suspicious_low_cardinality_types = true;
+    bool allow_experimental_geo_types = true;
     bool allow_experimental_object_type = true;
     bool allow_suspicious_fixed_string_types = true;
 };

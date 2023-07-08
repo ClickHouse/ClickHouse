@@ -976,75 +976,56 @@ namespace DB
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunks,
+        const Chunk & chunk,
         size_t columns_num)
     {
-        std::shared_ptr<arrow::Schema> arrow_schema;
-        std::vector<arrow::ArrayVector> table_data(columns_num);
-
-        for (const auto & chunk : chunks)
+        /// For arrow::Schema and arrow::Table creation
+        std::vector<std::shared_ptr<arrow::Array>> arrow_arrays;
+        arrow_arrays.reserve(columns_num);
+        for (size_t column_i = 0; column_i < columns_num; ++column_i)
         {
-            /// For arrow::Schema and arrow::Table creation
-            for (size_t column_i = 0; column_i < columns_num; ++column_i)
+            const ColumnWithTypeAndName & header_column = header_columns[column_i];
+            auto column = chunk.getColumns()[column_i];
+
+            if (!low_cardinality_as_dictionary)
+                column = recursiveRemoveLowCardinality(column);
+
+            if (!is_arrow_fields_initialized)
             {
-                const ColumnWithTypeAndName & header_column = header_columns[column_i];
-                auto column = chunk.getColumns()[column_i];
-
-                if (!low_cardinality_as_dictionary)
-                    column = recursiveRemoveLowCardinality(column);
-
-                if (!is_arrow_fields_initialized)
-                {
-                    bool is_column_nullable = false;
-                    auto arrow_type = getArrowType(
-                        header_column.type,
-                        column,
-                        header_column.name,
-                        format_name,
-                        output_string_as_string,
-                        output_fixed_string_as_fixed_byte_array,
-                        &is_column_nullable);
-                    arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
-                }
-
-                arrow::MemoryPool * pool = arrow::default_memory_pool();
-                std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
-                checkStatus(status, column->getName(), format_name);
-
-                fillArrowArray(
-                    header_column.name,
-                    column,
-                    header_column.type,
-                    nullptr,
-                    array_builder.get(),
-                    format_name,
-                    0,
-                    column->size(),
-                    output_string_as_string,
-                    output_fixed_string_as_fixed_byte_array,
-                    dictionary_values);
-
-                std::shared_ptr<arrow::Array> arrow_array;
-                status = array_builder->Finish(&arrow_array);
-                checkStatus(status, column->getName(), format_name);
-
-                table_data.at(column_i).emplace_back(std::move(arrow_array));
+                bool is_column_nullable = false;
+                auto arrow_type = getArrowType(header_column.type, column, header_column.name, format_name, output_string_as_string, output_fixed_string_as_fixed_byte_array, &is_column_nullable);
+                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
             }
 
-            is_arrow_fields_initialized = true;
-            if (!arrow_schema)
-                arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
+            arrow::MemoryPool* pool = arrow::default_memory_pool();
+            std::unique_ptr<arrow::ArrayBuilder> array_builder;
+            arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
+            checkStatus(status, column->getName(), format_name);
+
+            fillArrowArray(
+                header_column.name,
+                column,
+                header_column.type,
+                nullptr,
+                array_builder.get(),
+                format_name,
+                0,
+                column->size(),
+                output_string_as_string,
+                output_fixed_string_as_fixed_byte_array,
+                dictionary_values);
+
+            std::shared_ptr<arrow::Array> arrow_array;
+            status = array_builder->Finish(&arrow_array);
+            checkStatus(status, column->getName(), format_name);
+            arrow_arrays.emplace_back(std::move(arrow_array));
         }
 
-        std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
-        columns.reserve(columns_num);
-        for (size_t column_i = 0; column_i < columns_num; ++column_i)
-            columns.emplace_back(std::make_shared<arrow::ChunkedArray>(table_data.at(column_i)));
+        std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
 
-        res = arrow::Table::Make(arrow_schema, columns);
+        res = arrow::Table::Make(arrow_schema, arrow_arrays);
+        is_arrow_fields_initialized = true;
     }
-
 }
 
 #endif

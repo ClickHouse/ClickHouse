@@ -6,9 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -22,8 +20,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-const std::string copy_lock_file = "STATE_COPY_LOCK";
 
 bool isLocalhost(const std::string & hostname)
 {
@@ -215,14 +211,12 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
-KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
+KeeperStateManager::KeeperStateManager(
+    int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
     : my_server_id(server_id_)
     , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(
-          LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
-          keeper_context_))
-    , server_state_file_name("state")
-    , keeper_context(keeper_context_)
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, LogFileSettings{.force_sync =false, .compress_logs = false, .rotate_interval = 5000}))
+    , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
@@ -235,15 +229,16 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
 KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
-    const std::string & server_state_file_name_,
+    const std::string & log_storage_path,
+    const std::string & state_file_path,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings,
-    KeeperContextPtr keeper_context_)
+    const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
+          log_storage_path,
           LogFileSettings
           {
             .force_sync = coordination_settings->force_sync,
@@ -251,10 +246,8 @@ KeeperStateManager::KeeperStateManager(
             .rotate_interval = coordination_settings->rotate_log_storage_interval,
             .max_size = coordination_settings->max_log_file_size,
             .overallocate_size = coordination_settings->log_file_overallocate_size
-          },
-          keeper_context_))
-    , server_state_file_name(server_state_file_name_)
-    , keeper_context(keeper_context_)
+          }))
+    , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
 }
@@ -293,19 +286,14 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
-const String & KeeperStateManager::getOldServerStatePath()
+const std::filesystem::path & KeeperStateManager::getOldServerStatePath()
 {
     static auto old_path = [this]
     {
-        return server_state_file_name + "-OLD";
+        return server_state_path.parent_path() / (server_state_path.filename().generic_string() + "-OLD");
     }();
 
     return old_path;
-}
-
-DiskPtr KeeperStateManager::getStateFileDisk() const
-{
-    return keeper_context->getStateFileDisk();
 }
 
 namespace
@@ -323,61 +311,51 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
     const auto & old_path = getOldServerStatePath();
 
-    auto disk = getStateFileDisk();
+    if (std::filesystem::exists(server_state_path))
+        std::filesystem::rename(server_state_path, old_path);
 
-    if (disk->exists(server_state_file_name))
-    {
-        auto buf = disk->writeFile(copy_lock_file);
-        buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path);
-        disk->removeFile(copy_lock_file);
-        disk->removeFile(old_path);
-    }
-
-    auto server_state_file = disk->writeFile(server_state_file_name);
+    WriteBufferFromFile server_state_file(server_state_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
     auto buf = state.serialize();
 
     // calculate checksum
     SipHash hash;
     hash.update(current_server_state_version);
     hash.update(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
-    writeIntBinary(hash.get64(), *server_state_file);
+    writeIntBinary(hash.get64(), server_state_file);
 
-    writeIntBinary(static_cast<uint8_t>(current_server_state_version), *server_state_file);
+    writeIntBinary(static_cast<uint8_t>(current_server_state_version), server_state_file);
 
-    server_state_file->write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
-    server_state_file->sync();
-    server_state_file->finalize();
+    server_state_file.write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
+    server_state_file.sync();
+    server_state_file.close();
 
-    disk->removeFileIfExists(old_path);
+    std::filesystem::remove(old_path);
 }
 
 nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 {
     const auto & old_path = getOldServerStatePath();
 
-    auto disk = getStateFileDisk();
-
-    const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
+    const auto try_read_file = [this](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
         try
         {
-            auto read_buf = disk->readFile(path);
-            auto content_size = read_buf->getFileSize();
+            ReadBufferFromFile read_buf(path);
+            auto content_size = read_buf.getFileSize();
 
             if (content_size == 0)
                 return nullptr;
 
             uint64_t read_checksum{0};
-            readIntBinary(read_checksum, *read_buf);
+            readIntBinary(read_checksum, read_buf);
 
             uint8_t version;
-            readIntBinary(version, *read_buf);
+            readIntBinary(version, read_buf);
 
             auto buffer_size = content_size - sizeof read_checksum - sizeof version;
 
             auto state_buf = nuraft::buffer::alloc(buffer_size);
-            read_buf->readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
+            read_buf.readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
 
             SipHash hash;
             hash.update(version);
@@ -387,15 +365,15 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             {
                 constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
 #ifdef NDEBUG
-                LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
+                LOG_ERROR(logger, error_format, path.generic_string(), hash.get64(), read_checksum);
                 return nullptr;
 #else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, disk->getPath() + path, hash.get64(), read_checksum);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, path.generic_string(), hash.get64(), read_checksum);
 #endif
             }
 
             auto state = nuraft::srv_state::deserialize(*state_buf);
-            LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
+            LOG_INFO(logger, "Read state from {}", path.generic_string());
             return state;
         }
         catch (const std::exception & e)
@@ -406,45 +384,37 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
                 throw;
             }
 
-            LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
+            LOG_ERROR(logger, "Failed to deserialize state from {}", path.generic_string());
             return nullptr;
         }
     };
 
-    if (disk->exists(server_state_file_name))
+    if (std::filesystem::exists(server_state_path))
     {
-        auto state = try_read_file(server_state_file_name);
+        auto state = try_read_file(server_state_path);
 
         if (state)
         {
-            disk->removeFileIfExists(old_path);
+            if (std::filesystem::exists(old_path))
+                std::filesystem::remove(old_path);
+
             return state;
         }
 
-        disk->removeFile(server_state_file_name);
+        std::filesystem::remove(server_state_path);
     }
 
-    if (disk->exists(old_path))
+    if (std::filesystem::exists(old_path))
     {
-        if (disk->exists(copy_lock_file))
+        auto state = try_read_file(old_path);
+
+        if (state)
         {
-            disk->removeFile(old_path);
-            disk->removeFile(copy_lock_file);
+            std::filesystem::rename(old_path, server_state_path);
+            return state;
         }
-        else
-        {
-            auto state = try_read_file(old_path);
-            if (state)
-            {
-                disk->moveFile(old_path, server_state_file_name);
-                return state;
-            }
-            disk->removeFile(old_path);
-        }
-    }
-    else if (disk->exists(copy_lock_file))
-    {
-        disk->removeFile(copy_lock_file);
+
+        std::filesystem::remove(old_path);
     }
 
     LOG_WARNING(logger, "No state was read");

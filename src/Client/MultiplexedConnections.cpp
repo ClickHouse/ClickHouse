@@ -142,7 +142,7 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
@@ -259,7 +259,6 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
-            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
@@ -341,7 +340,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
-        case Protocol::Server::TimezoneUpdate:
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:

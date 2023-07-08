@@ -39,7 +39,7 @@ private:
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
-    std::optional<std::string> config_logger;
+    std::string config_logger;
 
 #ifndef WITHOUT_TEXT_LOG
     std::weak_ptr<DB::TextLog> text_log;

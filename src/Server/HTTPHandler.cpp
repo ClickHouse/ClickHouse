@@ -44,8 +44,6 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
-#include <re2/re2.h>
-
 #include <chrono>
 #include <sstream>
 
@@ -291,15 +289,14 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        if (!write_buf)
-            continue;
+        IReadableWriteBuffer * write_buf_concrete;
+        ReadBufferPtr reread_buf;
 
-        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
-        if (write_buf_concrete)
+        if (write_buf
+            && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+            && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
         {
-            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
-            if (reread_buf)
-                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
+            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
@@ -803,11 +800,11 @@ void HTTPHandler::processQuery(
     if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out->addHeaderCORS(true);
 
-    auto append_callback = [my_context = context] (ProgressCallback callback)
+    auto append_callback = [context = context] (ProgressCallback callback)
     {
-        auto prev = my_context->getProgressCallback();
+        auto prev = context->getProgressCallback();
 
-        my_context->setProgressCallback([prev, callback] (const Progress & progress)
+        context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -903,13 +900,7 @@ try
     {
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
-        {
-            if (used_output.out_maybe_delayed_and_compressed)
-            {
-                used_output.out_maybe_delayed_and_compressed->finalize();
-            }
             used_output.out_maybe_delayed_and_compressed.reset();
-        }
 
         /// Send the error message into already used (and possibly compressed) stream.
         /// Note that the error message will possibly be sent after some data.
@@ -1165,8 +1156,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        std::string_view matches[num_captures];
-        std::string_view input(begin, end - begin);
+        re2::StringPiece matches[num_captures];
+        re2::StringPiece input(begin, end - begin);
         if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())

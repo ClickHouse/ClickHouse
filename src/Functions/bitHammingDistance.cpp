@@ -8,7 +8,7 @@ template <typename A, typename B>
 struct BitHammingDistanceImpl
 {
     using ResultType = UInt8;
-    static constexpr bool allow_fixed_string = true;
+    static constexpr bool allow_fixed_string = false;
     static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>

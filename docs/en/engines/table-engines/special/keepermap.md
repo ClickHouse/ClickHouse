@@ -72,7 +72,7 @@ Additionally, number of keys will have a soft limit of 4 for the number of keys.
 
 If multiple tables are created on the same ZooKeeper path, the values are persisted until there exists at least 1 table using it.  
 As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.  
-Of course, it's possible to manually run `CREATE TABLE` with same path on unrelated ClickHouse instances to have same data sharing effect.
+Of course, it's possible to manually run `CREATE TABLE` with same path on nonrelated ClickHouse instances to have same data sharing effect.
 
 ## Supported operations {#table_engine-KeeperMap-supported-operations}
 
