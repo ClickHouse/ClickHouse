@@ -76,9 +76,9 @@ def wait_select_start(query_id):
 
 
 LOCK_FREE_QUERIES = {
-    "detach table": "DETACH TABLE {table};",
-    "drop part": "ALTER TABLE {table} DROP PART 'all_1_1_0';",
-    "detach part": "ALTER TABLE {table} DETACH PART 'all_1_1_0';",
+    "detach-table": "DETACH TABLE {table};",
+    "drop-part": "ALTER TABLE {table} DROP PART 'all_1_1_0';",
+    "detach-part": "ALTER TABLE {table} DETACH PART 'all_1_1_0';",
     "truncate": "TRUNCATE TABLE {table};",
 }
 
