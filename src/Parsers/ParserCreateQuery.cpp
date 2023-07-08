@@ -304,7 +304,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     for (const auto & elem : list->children)
     {
-        if (auto *cd = elem->as<ASTColumnDeclaration>())
+        if (auto * cd = elem->as<ASTColumnDeclaration>())
         {
             if (cd->primary_key_specifier)
             {
