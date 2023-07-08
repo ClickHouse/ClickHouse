@@ -177,5 +177,35 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 }
 
+void optimizeTreeThirdPass(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    Stack stack;
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        /// NOTE: frame cannot be safely used after stack was modified.
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get()))
+        {
+            source_step_with_filter->applyFilters();
+        }
+
+        addPlansForSets(*frame.node, nodes);
+
+        stack.pop_back();
+    }
+}
+
 }
 }
