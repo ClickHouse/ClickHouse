@@ -406,9 +406,9 @@ class ClickhouseIntegrationTestsRunner:
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
-            "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
+            "| tee '{out_file_full}' | grep -F '::' | sed -r 's/ \(fixtures used:.*//g; s/^ *//g; s/ *$//g' "
+            "| grep -v -F 'SKIPPED' | sort --unique > {out_file}".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -626,7 +626,7 @@ class ClickhouseIntegrationTestsRunner:
             info_basename = test_group_str + "_" + str(i) + ".nfo"
             info_path = os.path.join(repo_path, "tests/integration", info_basename)
 
-            test_cmd = " ".join([test for test in sorted(test_names)])
+            test_cmd = " ".join([f"'{test}'" for test in sorted(test_names)])
             parallel_cmd = (
                 " --parallel {} ".format(num_workers) if num_workers > 0 else ""
             )
