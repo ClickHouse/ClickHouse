@@ -5,6 +5,7 @@
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>

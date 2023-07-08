@@ -46,16 +46,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     index->part_of_create_index_query = true;
     index->set(index->expr, expr);
     index->set(index->type, type);
-
-    if (granularity)
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    else
-    {
-        if (index->type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else
-            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-    }
+    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
     node = index;
 
     return true;

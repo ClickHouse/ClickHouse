@@ -80,7 +80,7 @@ function start_server
 
 function clone_root
 {
-    [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
+    git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -151,7 +151,7 @@ function clone_submodules
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --single-branch --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -202,11 +202,10 @@ function build
           | ts '%Y-%m-%d %H:%M:%S' \
           | tee "$FASTTEST_OUTPUT/test_result.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            mkdir -p "$FASTTEST_OUTPUT/binaries/"
-            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
-            strip programs/clickhouse -o programs/clickhouse-stripped
-            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
+            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
+            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache_status
         ccache --evict-older-than 1d ||:

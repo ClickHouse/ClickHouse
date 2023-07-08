@@ -246,7 +246,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
-        /* priority= */ Priority{1},
+        /* priority= */ 1,
         /* cluster_name= */ "",
         /* password= */ ""};
     auto cluster = std::make_shared<Cluster>(

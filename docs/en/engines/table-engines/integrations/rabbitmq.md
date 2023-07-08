@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/rabbitmq
-sidebar_position: 170
+sidebar_position: 10
 sidebar_label: RabbitMQ
 ---
 

@@ -58,7 +58,6 @@ def test_jbod_ha(start_cluster):
                     old_parts_lifetime = 1,
                     cleanup_delay_period = 1,
                     cleanup_delay_period_random_add = 2,
-                    cleanup_thread_preferred_points_per_iteration=0,
                     max_bytes_to_merge_at_max_space_in_pool = 4096
             """.format(
                     i

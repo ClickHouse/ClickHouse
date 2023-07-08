@@ -328,7 +328,7 @@ namespace
 
             if (!named_collection_control)
             {
-                user->access.revoke(AccessType::NAMED_COLLECTION_ADMIN);
+                user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
             }
 
             if (!show_named_collections_secrets)

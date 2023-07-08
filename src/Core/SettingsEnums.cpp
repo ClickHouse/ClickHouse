@@ -1,10 +1,8 @@
 #include <Core/SettingsEnums.h>
-#include <magic_enum.hpp>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_LOAD_BALANCING;
@@ -16,6 +14,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
 }
+
 
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
     {{"random",           LoadBalancing::RANDOM},
@@ -55,7 +54,7 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
      {"break", OverflowMode::BREAK}})
 
 
-IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK},
      {"any", OverflowMode::ANY}})
@@ -68,26 +67,51 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
      {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
 
 
-IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"simple",         FormatSettings::DateTimeOutputFormat::Simple},
      {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
-IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
+    {{"none",        LogsLevel::none},
+     {"fatal",       LogsLevel::fatal},
+     {"error",       LogsLevel::error},
+     {"warning",     LogsLevel::warning},
+     {"information", LogsLevel::information},
+     {"debug",       LogsLevel::debug},
+     {"trace",       LogsLevel::trace},
+     {"test",        LogsLevel::test}})
 
-IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
+    {{"QUERY_START",                QUERY_START},
+     {"QUERY_FINISH",               QUERY_FINISH},
+     {"EXCEPTION_BEFORE_START",     EXCEPTION_BEFORE_START},
+     {"EXCEPTION_WHILE_PROCESSING", EXCEPTION_WHILE_PROCESSING}})
 
-IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 
-IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"Ordinary", DefaultDatabaseEngine::Ordinary},
+     {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
-IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", DefaultTableEngine::None},
+     {"Log", DefaultTableEngine::Log},
+     {"StripeLog", DefaultTableEngine::StripeLog},
+     {"MergeTree", DefaultTableEngine::MergeTree},
+     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
+     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
+     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
+     {"Memory", DefaultTableEngine::Memory}})
+
+IMPLEMENT_SETTING_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS,
+    {{"Never", CleanDeletedRows::Never},
+     {"Always", CleanDeletedRows::Always}})
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
@@ -120,12 +144,19 @@ IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
      {"wait",           TransactionsWaitCSNMode::WAIT},
      {"wait_unknown",   TransactionsWaitCSNMode::WAIT_UNKNOWN}})
 
-IMPLEMENT_SETTING_ENUM(CapnProtoEnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"by_names",   FormatSettings::CapnProtoEnumComparingMode::BY_NAMES},
-     {"by_values",  FormatSettings::CapnProtoEnumComparingMode::BY_VALUES},
-     {"by_names_case_insensitive", FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
+IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
+     {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
+     {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
 
-IMPLEMENT_SETTING_AUTO_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", FormatSettings::EscapingRule::None},
+     {"Escaped", FormatSettings::EscapingRule::Escaped},
+     {"Quoted", FormatSettings::EscapingRule::Quoted},
+     {"CSV", FormatSettings::EscapingRule::CSV},
+     {"JSON", FormatSettings::EscapingRule::JSON},
+     {"XML", FormatSettings::EscapingRule::XML},
+     {"Raw", FormatSettings::EscapingRule::Raw}})
 
 IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
                        {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
@@ -135,15 +166,17 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto}})
-    // FIXME: do not add 'kusto_auto' to the list. Maybe remove it from code completely?
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
 
-IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
+    {{"mmap", LocalFSReadMethod::mmap},
+     {"pread", LocalFSReadMethod::pread},
+     {"read", LocalFSReadMethod::read}})
 
-IMPLEMENT_SETTING_ENUM(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
     {{"1.0",       FormatSettings::ParquetVersion::V1_0},
      {"2.4", FormatSettings::ParquetVersion::V2_4},
      {"2.6", FormatSettings::ParquetVersion::V2_6},

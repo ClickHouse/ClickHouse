@@ -14,8 +14,6 @@
 #include <Common/logger_useful.h>
 #include "Coordination/KeeperStorage.h"
 
-#include <Disks/DiskLocal.h>
-
 
 namespace ProfileEvents
 {
@@ -35,11 +33,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SYSTEM_ERROR;
+}
+
+namespace
+{
 }
 
 KeeperStateMachine::KeeperStateMachine(
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
+    const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -48,6 +52,7 @@ KeeperStateMachine::KeeperStateMachine(
     : commit_callback(commit_callback_)
     , coordination_settings(coordination_settings_)
     , snapshot_manager(
+          snapshots_path_,
           coordination_settings->snapshots_to_keep,
           keeper_context_,
           coordination_settings->compress_snapshots_with_zstd_format,
@@ -64,16 +69,6 @@ KeeperStateMachine::KeeperStateMachine(
 {
 }
 
-namespace
-{
-
-bool isLocalDisk(const IDisk & disk)
-{
-    return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
-}
-
-}
-
 void KeeperStateMachine::init()
 {
     /// Do everything without mutexes, no other threads exist.
@@ -88,13 +83,9 @@ void KeeperStateMachine::init()
 
         try
         {
-            latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
-            latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
-
-            if (isLocalDisk(*latest_snapshot_info.disk))
-                latest_snapshot_buf = nullptr;
-
+            auto snapshot_deserialization_result
+                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index));
+            latest_snapshot_path = snapshot_manager.getLatestSnapshotPath();
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
             cluster_config = snapshot_deserialization_result.cluster_config;
@@ -285,7 +276,7 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         std::abort();
     }
 
-    if (keeper_context->digestEnabled() && request_for_session.digest)
+    if (keeper_context->digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 
     return true;
@@ -342,7 +333,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                     response_for_session.session_id);
             }
 
-        if (keeper_context->digestEnabled() && request_for_session->digest)
+        if (keeper_context->digest_enabled && request_for_session->digest)
             assertDigest(*request_for_session->digest, storage->getNodesDigest(true), *request_for_session->request, true);
     }
 
@@ -380,13 +371,8 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     { /// deserialize and apply snapshot to storage
         std::lock_guard lock(storage_and_responses_lock);
-
-        SnapshotDeserializationResult snapshot_deserialization_result;
-        if (latest_snapshot_ptr)
-            snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
-        else
-            snapshot_deserialization_result
-                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
+        auto snapshot_deserialization_result
+            = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
 
         /// maybe some logs were preprocessed with log idx larger than the snapshot idx
         /// we have to apply them to the new storage
@@ -478,24 +464,19 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                 }
                 else
                 {
+                    auto [path, error_code] = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                    if (error_code)
+                    {
+                        throw Exception(
+                            ErrorCodes::SYSTEM_ERROR,
+                            "Snapshot {} was created failed, error: {}",
+                            snapshot->snapshot_meta->get_last_log_idx(),
+                            error_code.message());
+                    }
+                    latest_snapshot_path = path;
                     latest_snapshot_meta = snapshot->snapshot_meta;
-                    /// we rely on the fact that the snapshot disk cannot be changed during runtime
-                    if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
-                    {
-                        auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                        latest_snapshot_info = std::move(snapshot_info);
-                        latest_snapshot_buf = nullptr;
-                    }
-                    else
-                    {
-                        auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                        auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                        latest_snapshot_info = std::move(snapshot_info);
-                        latest_snapshot_buf = std::move(snapshot_buf);
-                    }
-
                     ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), latest_snapshot_info.path);
+                    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
                 }
             }
 
@@ -519,19 +500,19 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
 
         when_done(ret, exception);
 
-        return ret ? latest_snapshot_info : SnapshotFileInfo{};
+        return ret ? latest_snapshot_path : "";
     };
 
 
-    if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
+    if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
-        auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+        auto snapshot_path = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
 
-        if (!snapshot_file_info.path.empty() && snapshot_manager_s3)
+        if (!snapshot_path.empty() && snapshot_manager_s3)
         {
-            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info.path);
-            snapshot_manager_s3->uploadSnapshot(snapshot_file_info, /* asnyc_upload */ false);
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_path);
+            snapshot_manager_s3->uploadSnapshot(snapshot_path, /* asnyc_upload */ false);
         }
 
         return;
@@ -552,20 +533,14 @@ void KeeperStateMachine::save_logical_snp_obj(
     nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
     nuraft::ptr<nuraft::snapshot> cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
 
-    nuraft::ptr<nuraft::buffer> cloned_buffer;
-
-    /// we rely on the fact that the snapshot disk cannot be changed during runtime
-    if (!isLocalDisk(*keeper_context->getSnapshotDisk()))
-        cloned_buffer = nuraft::buffer::clone(data);
-
     try
     {
         std::lock_guard lock(snapshots_lock);
         /// Serialize snapshot to disk
-        latest_snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
+        auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
+        latest_snapshot_path = result_path;
         latest_snapshot_meta = cloned_meta;
-        latest_snapshot_buf = std::move(cloned_buffer);
-        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info.path);
+        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), result_path);
         obj_id++;
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
     }
@@ -625,23 +600,11 @@ int KeeperStateMachine::read_logical_snp_obj(
             latest_snapshot_meta->get_last_log_idx());
         return -1;
     }
-
-    const auto & [path, disk] = latest_snapshot_info;
-    if (isLocalDisk(*disk))
+    if (bufferFromFile(log, latest_snapshot_path, data_out))
     {
-        auto full_path = fs::path(disk->getPath()) / path;
-        if (bufferFromFile(log, full_path, data_out))
-        {
-            LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), full_path);
-            return -1;
-        }
+        LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), latest_snapshot_path);
+        return -1;
     }
-    else
-    {
-        chassert(latest_snapshot_buf);
-        data_out = nuraft::buffer::clone(*latest_snapshot_buf);
-    }
-
     is_last_obj = true;
     ProfileEvents::increment(ProfileEvents::KeeperReadSnapshot);
 

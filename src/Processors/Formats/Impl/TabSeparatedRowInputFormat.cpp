@@ -286,20 +286,6 @@ void TabSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
 }
 
-bool TabSeparatedFormatReader::checkForSuffix()
-{
-    if (!format_settings.tsv.skip_trailing_empty_lines)
-        return buf->eof();
-
-    PeekableReadBufferCheckpoint checkpoint(*buf);
-    while (checkChar('\n', *buf) || checkChar('\r', *buf));
-    if (buf->eof())
-        return true;
-
-    buf->rollbackToCheckpoint();
-    return false;
-}
-
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
     ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(

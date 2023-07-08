@@ -109,12 +109,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             query_with_output.is_outfile_append = true;
         }
 
-        ParserKeyword s_truncate("TRUNCATE");
-        if (s_truncate.ignore(pos, expected))
-        {
-            query_with_output.is_outfile_truncate = true;
-        }
-
         ParserKeyword s_stdout("AND STDOUT");
         if (s_stdout.ignore(pos, expected))
         {

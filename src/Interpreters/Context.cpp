@@ -377,7 +377,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
+                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
                 asynchronous_remote_fs_reader->wait();
                 asynchronous_remote_fs_reader.reset();
             }
@@ -391,7 +391,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Destructing local fs threadpool reader");
+                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
                 asynchronous_local_fs_reader->wait();
                 asynchronous_local_fs_reader.reset();
             }
@@ -405,7 +405,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Destructing local fs threadpool reader");
+                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
                 synchronous_local_fs_reader->wait();
                 synchronous_local_fs_reader.reset();
             }
@@ -419,7 +419,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Destructing threadpool writer");
+                LOG_DEBUG(log, "Desctructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
@@ -433,7 +433,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Destructing marks loader");
+                LOG_DEBUG(log, "Desctructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
@@ -447,7 +447,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Destructing prefetch threadpool");
+                LOG_DEBUG(log, "Desctructing prefetch threadpool");
                 prefetch_threadpool->wait();
                 prefetch_threadpool.reset();
             }
@@ -875,9 +875,9 @@ catch (...)
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
-static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
+static VolumePtr createLocalSingleDiskVolume(const std::string & path)
 {
-    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
 }
@@ -893,7 +893,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
 
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
 
     for (const auto & disk : volume->getDisks())
     {
@@ -966,7 +966,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
     shared->tmp_path = file_cache->getBasePath();
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
@@ -1319,21 +1319,6 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
-std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::shared_ptr<TemporaryTableHolder> holder;
-    {
-        auto lock = getLock();
-        auto iter = external_tables_mapping.find(table_name);
-        if (iter == external_tables_mapping.end())
-            return {};
-        holder = iter->second;
-    }
-    return holder;
-}
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
@@ -1491,7 +1476,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
-        if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
+        if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
         {
             function->prefer_subquery_to_function_formatting = true;
             return table;

@@ -90,8 +90,8 @@ public:
     /// Distance should be calculated regarding to referenceVector
     std::vector<float> getReferenceVector() const;
 
-    /// Reference vector's dimension count
-    size_t getDimensions() const;
+    /// Reference vector's dimension size
+    size_t getNumOfDimensions() const;
 
     String getColumnName() const;
 

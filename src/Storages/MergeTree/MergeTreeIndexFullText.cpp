@@ -624,11 +624,7 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = right_argument.tryGetPreparedSet(data_types);
-    if (!future_set)
-        return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
+    auto prepared_set = right_argument.tryGetPreparedSet(data_types);
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

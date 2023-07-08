@@ -223,12 +223,12 @@ public:
         nested_func->compileCreate(builder, aggregate_data_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        const auto & predicate_type = arguments.back().type;
-        auto * predicate_value = arguments.back().value;
+        const auto & predicate_type = arguments_types[argument_values.size() - 1];
+        auto * predicate_value = argument_values[argument_values.size() - 1];
 
         auto * head = b.GetInsertBlock();
 
@@ -242,9 +242,21 @@ public:
 
         b.SetInsertPoint(if_true);
 
-        ValuesWithType arguments_without_predicate = arguments;
-        arguments_without_predicate.pop_back();
-        nested_func->compileAdd(builder, aggregate_data_ptr, arguments_without_predicate);
+        size_t arguments_size_without_predicate = arguments_types.size() - 1;
+
+        DataTypes argument_types_without_predicate;
+        std::vector<llvm::Value *> argument_values_without_predicate;
+
+        argument_types_without_predicate.resize(arguments_size_without_predicate);
+        argument_values_without_predicate.resize(arguments_size_without_predicate);
+
+        for (size_t i = 0; i < arguments_size_without_predicate; ++i)
+        {
+            argument_types_without_predicate[i] = arguments_types[i];
+            argument_values_without_predicate[i] = argument_values[i];
+        }
+
+        nested_func->compileAdd(builder, aggregate_data_ptr, argument_types_without_predicate, argument_values_without_predicate);
 
         b.CreateBr(join_block);
 
