@@ -200,9 +200,14 @@ public:
     /// If token is not empty, block id is calculated based on it instead of block data
     String getZeroLevelPartBlockID(std::string_view token) const;
 
+    void setName(const String & new_name);
+
     const MergeTreeData & storage;
 
-    String name;
+private:
+    String mutable_name;
+public:
+    const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
 
     /// Part unique identifier.
@@ -386,6 +391,7 @@ public:
     bool isProjectionPart() const { return parent_part != nullptr; }
 
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
+    String getParentPartName() const { return parent_part_name; }
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
@@ -519,6 +525,7 @@ protected:
 
     /// Not null when it's a projection part.
     const IMergeTreeDataPart * parent_part;
+    String parent_part_name;
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 

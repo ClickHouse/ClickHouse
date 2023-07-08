@@ -917,7 +917,7 @@ public:
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
                 selected_parts[0]->renameTo(projection.name + ".proj", true);
-                selected_parts[0]->name = projection.name;
+                selected_parts[0]->setName(projection.name);
                 selected_parts[0]->is_temp = false;
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
