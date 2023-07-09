@@ -1213,17 +1213,23 @@ class TestCase:
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
 
-            leftover_tables = clickhouse_execute(
-                args,
-                f"SHOW TABLES FROM {database}",
-                timeout=seconds_left,
-                settings={
-                    "log_comment": args.testcase_basename,
-                },
-            ).decode().replace("\n", ", ");
+            leftover_tables = (
+                clickhouse_execute(
+                    args,
+                    f"SHOW TABLES FROM {database}",
+                    timeout=seconds_left,
+                    settings={
+                        "log_comment": args.testcase_basename,
+                    },
+                )
+                .decode()
+                .replace("\n", ", ")
+            )
 
             if 0 != len(leftover_tables):
-                raise Exception(f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally.")
+                raise Exception(
+                    f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
+                )
 
             drop_database_query = f"DROP DATABASE IF EXISTS {database}"
             if args.replicated_database:
