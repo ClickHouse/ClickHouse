@@ -16,7 +16,10 @@ def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
         node = cluster.add_instance(
-            "meili", main_configs=["configs/named_collection.xml"], with_meili=True
+            "meili",
+            main_configs=["configs/named_collection.xml"],
+            user_configs=["configs/users.xml"],
+            with_meili=True,
         )
         cluster.start()
         yield cluster

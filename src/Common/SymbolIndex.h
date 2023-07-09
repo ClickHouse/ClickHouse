@@ -24,7 +24,6 @@ protected:
 
 public:
     static MultiVersion<SymbolIndex>::Version instance();
-    static void reload();
 
     struct Symbol
     {
