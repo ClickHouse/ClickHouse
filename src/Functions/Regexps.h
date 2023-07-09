@@ -11,7 +11,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <Common/likePatternToRegexp.h>
-#include <Common/HashTable/Hash.h>
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>
@@ -21,7 +20,6 @@
 #if USE_VECTORSCAN
 #    include <hs.h>
 #endif
-
 
 namespace ProfileEvents
 {
@@ -88,7 +86,7 @@ public:
 private:
     constexpr static size_t CACHE_SIZE = 100; /// collision probability
 
-    DefaultHash<String> hasher;
+    std::hash<String> hasher;
     struct Bucket
     {
         String pattern;   /// key
