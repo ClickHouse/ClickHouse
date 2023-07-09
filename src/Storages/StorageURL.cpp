@@ -36,6 +36,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <regex>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB

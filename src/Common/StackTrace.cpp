@@ -20,12 +20,9 @@
 #include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
+#include <libunwind.h>
 
 #include "config.h"
-
-#if USE_UNWIND
-#    include <libunwind.h>
-#endif
 
 namespace
 {
@@ -287,12 +284,8 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
-#if USE_UNWIND
     size = unw_backtrace(frame_pointers.data(), capacity);
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
-#else
-    size = 0;
-#endif
 }
 
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
@@ -409,6 +402,21 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
 
 void StackTrace::toStringEveryLine(std::function<void(std::string_view)> callback) const
 {
+    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback)
+{
+    toStringEveryLineImpl(true, {frame_pointers, 0, static_cast<size_t>(std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback)
+{
+    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
+
+    StackTrace::FramePointers frame_pointers{};
+    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
+
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
