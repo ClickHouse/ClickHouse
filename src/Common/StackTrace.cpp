@@ -208,8 +208,7 @@ void StackTrace::symbolize(
     const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset, size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -341,8 +340,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     using enum DB::Dwarf::LocationInfoMode;
     const auto mode = fatal ? FULL_WITH_INLINE : FAST;
 
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<String, DB::Dwarf> dwarfs;
 
     for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)
