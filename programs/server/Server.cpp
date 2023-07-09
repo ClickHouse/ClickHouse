@@ -1627,7 +1627,7 @@ try
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+#if !WITH_COVERAGE
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1649,10 +1649,6 @@ try
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
-
-#if !USE_UNWIND
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
-#endif
 
 #if WITH_COVERAGE
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
