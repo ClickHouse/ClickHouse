@@ -199,7 +199,7 @@ S3Settings::RequestSettings::RequestSettings(
     list_object_keys_size = config.getUInt64(key + "list_object_keys_size", settings.s3_list_object_keys_size);
     throw_on_zero_files_match = config.getBool(key + "throw_on_zero_files_match", settings.s3_throw_on_zero_files_match);
     retry_attempts = config.getUInt64(key + "retry_attempts", settings.s3_retry_attempts);
-    request_timeout_ms = config.getUInt64(key + "request_timeout_ms", request_timeout_ms);
+    request_timeout_ms = config.getUInt64(key + "request_timeout_ms", settings.s3_request_timeout_ms);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
@@ -255,6 +255,9 @@ void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settin
 
     if (!if_changed || settings.s3_retry_attempts.changed)
         retry_attempts = settings.s3_retry_attempts;
+
+    if (!if_changed || settings.s3_request_timeout_ms.changed)
+        request_timeout_ms = settings.s3_request_timeout_ms;
 }
 
 void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)
