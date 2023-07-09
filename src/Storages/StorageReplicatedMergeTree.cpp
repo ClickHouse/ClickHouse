@@ -1260,8 +1260,7 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
     return res;
 }
 
-static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicatedMergeTree * storage, const Strings & parts_in_zk,
-                                                           MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const
 {
 #ifdef ABORT_ON_LOGICAL_ERROR
     constexpr bool paranoid_check_for_covered_parts_default = true;
@@ -1275,15 +1274,15 @@ static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicat
         return;
 
     /// FIXME https://github.com/ClickHouse/ClickHouse/issues/51182
-    if (storage->getSettings()->use_metadata_cache)
+    if (getSettings()->use_metadata_cache)
         return;
 
     ActiveDataPartSet active_set(format_version);
     for (const auto & part_name : parts_in_zk)
         active_set.add(part_name);
 
-    const auto disks = storage->getStoragePolicy()->getDisks();
-    auto path = storage->getRelativeDataPath();
+    const auto disks = getStoragePolicy()->getDisks();
+    auto path = getRelativeDataPath();
 
     for (const auto & part_name : parts_in_zk)
     {
@@ -1295,6 +1294,9 @@ static void paranoidCheckForCoveredPartsInZooKeeperOnStart(const StorageReplicat
         for (const DiskPtr & disk : disks)
             if (disk->exists(fs::path(path) / part_name))
                 found = true;
+
+        if (!found)
+            found = std::find(parts_to_fetch.begin(), parts_to_fetch.end(), part_name) != parts_to_fetch.end();
 
         if (!found)
         {
@@ -1310,7 +1312,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     auto zookeeper = getZooKeeper();
 
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
-    paranoidCheckForCoveredPartsInZooKeeperOnStart(this, expected_parts_vec, format_version, log);
 
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
@@ -1344,6 +1345,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const String & missing_name : expected_parts)
         if (!getActiveContainingPart(missing_name))
             parts_to_fetch.push_back(missing_name);
+
+    paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
@@ -3359,6 +3362,21 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
+    if (entry.source_replica.empty())
+    {
+        auto part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting});
+        if (part && part->was_removed_as_broken)
+        {
+            disable_reason = fmt::format("Not executing fetch of part {} because we still have broken part with that name. "
+                                         "Waiting for the broken part to be removed first.", entry.new_part_name);
+
+            constexpr time_t min_interval_to_wakeup_cleanup_s = 30;
+            if (entry.last_postpone_time + min_interval_to_wakeup_cleanup_s < time(nullptr))
+                const_cast<StorageReplicatedMergeTree *>(this)->cleanup_thread.wakeup();
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -3739,23 +3757,49 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 {
     auto zookeeper = getZooKeeper();
 
+    DataPartPtr broken_part;
+    auto outdate_broken_part = [this, &broken_part]()
+    {
+        if (!broken_part)
+            return;
+        DataPartsLock lock = lockParts();
+        if (broken_part->getState() == DataPartState::Active)
+            removePartsFromWorkingSet(NO_TRANSACTION_RAW, {broken_part}, true, &lock);
+        broken_part.reset();
+        cleanup_thread.wakeup();
+    };
+
     /// We don't know exactly what happened to broken part
     /// and we are going to remove all covered log entries.
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getVisibleDataPartsVectorInPartition(getContext(), broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated},
+                                                                         broken_part_info.partition_id);
+    Strings detached_parts;
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
             continue;
 
-        /// Broken part itself either already moved to detached or does not exist.
-        assert(broken_part_info != part->info);
-        part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+        if (broken_part_info == part->info)
+        {
+            chassert(!broken_part);
+            chassert(!storage_init);
+            part->was_removed_as_broken = true;
+            part->makeCloneInDetached("broken", getInMemoryMetadataPtr());
+            broken_part = part;
+        }
+        else
+        {
+            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+        }
+        detached_parts.push_back(part->name);
     }
+    LOG_WARNING(log, "Detached {} parts covered by broken part {}: {}", detached_parts.size(), part_name, fmt::join(detached_parts, ", "));
 
     ThreadFuzzer::maybeInjectSleep();
+    ThreadFuzzer::maybeInjectMemoryLimitException();
 
     /// It's possible that queue contains entries covered by part_name.
     /// For example, we had GET_PART all_1_42_5 and MUTATE_PART all_1_42_5_63,
@@ -3770,6 +3814,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     queue.removePartProducingOpsInRange(zookeeper, broken_part_info, /* covering_entry= */ {});
 
     ThreadFuzzer::maybeInjectSleep();
+    ThreadFuzzer::maybeInjectMemoryLimitException();
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -3788,7 +3833,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             /// but we are going to remove it from /parts and add to queue again.
             Coordination::Stat is_lost_stat;
             String is_lost_value = zookeeper->get(replica_path + "/is_lost", &is_lost_stat);
-            assert(is_lost_value == "0");
+            chassert(is_lost_value == "0");
             ops.emplace_back(zkutil::makeSetRequest(replica_path + "/is_lost", is_lost_value, is_lost_stat.version));
 
             part_create_time = stat.ctime / 1000;
@@ -3810,12 +3855,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
             if (merge_pred.isGoingToBeDropped(broken_part_info))
             {
-                LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it, removing it from ZooKeeper", part_name);
-
-                /// But we have to remove it from ZooKeeper because broken parts are not removed from ZK during Outdated parts cleanup
-                /// There's a chance that DROP_RANGE will remove it, but only if it was not already removed by cleanup thread
-                if (exists_in_zookeeper)
-                    removePartsFromZooKeeperWithRetries({part_name});
+                LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it", part_name);
+                outdate_broken_part();
                 return;
             }
 
@@ -3846,8 +3887,13 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
         log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+        LOG_DEBUG(log, "Created entry {} to fetch missing part {}", log_entry->znode_name, part_name);
         queue.insert(zookeeper, log_entry);
-        break;
+
+        /// Make the part outdated after creating the log entry.
+        /// Otherwise, if we failed to create the entry, cleanup thread could remove the part from ZooKeeper (leading to diverged replicas)
+        outdate_broken_part();
+        return;
     }
 }
 
@@ -6856,10 +6902,10 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKee
     {
         /// Broken part can be removed from zk by removePartAndEnqueueFetch(...) only.
         /// Removal without enqueueing a fetch leads to intersecting parts.
-        if (part->is_duplicate || part->outdated_because_broken)
+        if (part->is_duplicate || part->is_unexpected_local_part)
         {
-            LOG_WARNING(log, "Will not remove part {} from ZooKeeper (is_duplicate: {}, outdated_because_broken: {})",
-                        part->name, part->is_duplicate, part->outdated_because_broken);
+            LOG_WARNING(log, "Will not remove part {} from ZooKeeper (is_duplicate: {}, is_unexpected_local_part: {})",
+                        part->name, part->is_duplicate, part->is_unexpected_local_part);
             parts_to_delete_only_from_filesystem.emplace_back(part);
         }
         else
@@ -8205,7 +8251,7 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
         {
             try
             {
-                results.push_back(part_check_thread.checkPart(part->name));
+                results.push_back(part_check_thread.checkPartAndFix(part->name));
             }
             catch (const Exception & ex)
             {
@@ -9216,7 +9262,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     }
 
     MergeTreeData::MutableDataPartPtr new_data_part = createEmptyPart(new_part_info, partition, lost_part_name, NO_TRANSACTION_PTR);
-    new_data_part->name = lost_part_name;
+    new_data_part->setName(lost_part_name);
 
     try
     {

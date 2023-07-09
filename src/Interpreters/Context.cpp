@@ -176,6 +176,15 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+#define SHUTDOWN(log, desc, ptr, method) do             \
+{                                                       \
+    if (ptr)                                            \
+    {                                                   \
+        LOG_DEBUG(log, "Shutting down " desc);          \
+        (ptr)->method;                                  \
+    }                                                   \
+} while (false)                                         \
+
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -479,35 +488,29 @@ struct ContextSharedPart : boost::noncopyable
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
-        if (external_dictionaries_loader)
-            external_dictionaries_loader->enablePeriodicUpdates(false);
-        if (external_user_defined_executable_functions_loader)
-            external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
-        if (user_defined_sql_objects_loader)
-            user_defined_sql_objects_loader->stopWatching();
 
+        SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
+        SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
+        SHUTDOWN(log, "another UDFs loader", user_defined_sql_objects_loader, stopWatching());
+
+        LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
 
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        if (backups_worker)
-            backups_worker->shutdown();
+        SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        if (system_logs)
-            system_logs->shutdown();
+        SHUTDOWN(log, "system logs", system_logs, shutdown());
 
+        LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
 
-        if (merge_mutate_executor)
-            merge_mutate_executor->wait();
-        if (fetch_executor)
-            fetch_executor->wait();
-        if (moves_executor)
-            moves_executor->wait();
-        if (common_executor)
-            common_executor->wait();
+        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
+        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
+        SHUTDOWN(log, "moves executor", moves_executor, wait());
+        SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
 
@@ -533,10 +536,12 @@ struct ContextSharedPart : boost::noncopyable
 
         /// DDLWorker should be deleted without lock, cause its internal thread can
         /// take it as well, which will cause deadlock.
+        LOG_TRACE(log, "Shutting down DDLWorker");
         delete_ddl_worker.reset();
 
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
+        LOG_TRACE(log, "Shutting down caches");
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
