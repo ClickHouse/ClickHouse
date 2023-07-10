@@ -816,7 +816,7 @@ hasSubsequence(haystack, needle)
 **Аргументы**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
--   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `needle` — подпоследовательность, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
 
 **Возвращаемые значения**
 

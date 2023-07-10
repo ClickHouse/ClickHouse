@@ -647,7 +647,7 @@ hasSubsequence(haystack, needle)
 **Arguments**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 

@@ -1,5 +1,4 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringSearch.h>
 #include <Functions/HasSubsequenceImpl.h>
 
 
@@ -12,7 +11,7 @@ struct HasSubsequenceCaseSensitiveASCII
 {
     static constexpr bool is_utf8 = false;
 
-    static void toLowerIfNeed(String & /*s*/) { }
+    static int toLowerIfNeed(int c) { return c; }
 };
 
 struct NameHasSubsequence
@@ -20,7 +19,7 @@ struct NameHasSubsequence
     static constexpr auto name = "hasSubsequence";
 };
 
-using FunctionHasSubsequence = FunctionsHasSubsequenceImpl<NameHasSubsequence, HasSubsequenceCaseSensitiveASCII>;
+using FunctionHasSubsequence = HasSubsequenceImpl<NameHasSubsequence, HasSubsequenceCaseSensitiveASCII>;
 }
 
 REGISTER_FUNCTION(hasSubsequence)
