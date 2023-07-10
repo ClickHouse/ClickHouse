@@ -343,6 +343,10 @@ has
 hasAll
 hasAny
 hasColumnInTable
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF8
+hasSubsequenceUTF8
 hasSubstr
 hasThreadFuzzer
 hashid
