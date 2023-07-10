@@ -4620,7 +4620,7 @@ is_currently_used:          0
     kafka_delete_topic(admin_client, topic)
 
 
-def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries = 15):
+def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
     # based on test_kafka_consumer_hang2
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -4744,7 +4744,7 @@ is_currently_used:          0
             FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
             """
         )
-        if result_rdkafka_stat.find('consumer') or retries > max_retries:
+        if result_rdkafka_stat.find("consumer") or retries > max_retries:
             break
         retries += 1
         time.sleep(1)
