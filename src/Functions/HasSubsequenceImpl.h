@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
