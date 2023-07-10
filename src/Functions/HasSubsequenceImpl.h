@@ -96,11 +96,18 @@ private:
 
             auto haystack = std::string(reinterpret_cast<const char *>(haystack_slice.data), haystack_slice.size);
             auto needle = std::string(reinterpret_cast<const char *>(needle_slice.data), needle_slice.size);
+            
+            if constexpr (!Impl::is_utf8)
+            {
+                Impl::toLowerIfNeed(haystack);
+                Impl::toLowerIfNeed(needle);
 
-            Impl::toLowerIfNeed(haystack);
-            Impl::toLowerIfNeed(needle);
-
-            res_data[row_num] = hasSubsequence(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+                res_data[row_num] = hasSubsequence(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+            }
+            else
+            {
+                res_data[row_num] = hasSubsequenceUTF8(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+            }
             haystacks.next();
             needles.next();
             ++row_num;
@@ -114,6 +121,47 @@ private:
             if (needle[j] == haystack[i])
                 ++j;
         return j == needle_size;
+    }
+
+    static UInt8 hasSubsequenceUTF8(const char * haystack, size_t haystack_size, const char * needle, size_t needle_size)
+    {
+        const auto * haystack_pos = haystack;
+        const auto * needle_pos = needle;
+        const auto * haystack_end = haystack + haystack_size;
+        const auto * needle_end = needle + needle_size;
+
+        if (!needle_size)
+        {
+            return 1;
+        }
+
+        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+        auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+        if (!haystack_code_point || !needle_code_point)
+        {
+            return 0;
+        }
+       
+        while (true)
+        {
+            if (needle_code_point == haystack_code_point)
+            {
+                needle_pos += UTF8::seqLength(*needle_pos);
+                if (needle_pos == needle_end)
+                {
+                    break;
+                }
+                needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+            }
+            haystack_pos += UTF8::seqLength(*haystack_pos);
+            if (haystack_pos == haystack_end)
+            {
+                break;
+            }
+            haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+        }
+                
+        return needle_pos == needle_end;
     }
 };
 
