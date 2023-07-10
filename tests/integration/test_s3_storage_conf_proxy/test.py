@@ -65,10 +65,6 @@ def test_s3_with_proxy_list(cluster, policy):
             policy
         )
     )
-
-    if policy == "s3_with_resolver":
-        time.sleep(3600)
-
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
     assert (
         node.query("SELECT * FROM s3_test order by id FORMAT Values")
