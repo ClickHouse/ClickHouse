@@ -894,8 +894,9 @@ public:
         }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -927,7 +928,7 @@ public:
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
                 selected_parts[0]->renameTo(projection.name + ".proj", true);
-                selected_parts[0]->name = projection.name;
+                selected_parts[0]->setName(projection.name);
                 selected_parts[0]->is_temp = false;
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
@@ -1216,8 +1217,9 @@ public:
     explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1444,8 +1446,9 @@ public:
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {

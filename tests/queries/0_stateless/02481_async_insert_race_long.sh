@@ -32,6 +32,8 @@ function insert3()
         ${MY_CLICKHOUSE_CLIENT} --wait_for_async_insert 1 -q "INSERT INTO async_inserts_race VALUES (7, 'g') (8, 'h')" &
         sleep 0.05
     done
+
+    wait
 }
 
 function select1()
