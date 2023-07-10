@@ -5,6 +5,7 @@
 #include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -58,8 +59,8 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
     auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
 
-//    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}",
-//              endpoint.toString(), proxy_scheme, proxy_port);
+    LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured remote proxy resolver: {}, Scheme: {}, Port: {}",
+              endpoint.toString(), proxy_scheme, proxy_port);
 
     return std::make_shared<RemoteProxyConfigurationResolver>(endpoint, proxy_scheme, proxy_port, cache_ttl);
 }
@@ -83,7 +84,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 
             proxies.push_back(proxy_uri);
 
-//            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy: {}", proxy_uri.toString());
+            LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured proxy: {}", proxy_uri.toString());
         }
 
     if (!proxies.empty())

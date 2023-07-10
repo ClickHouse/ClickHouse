@@ -36,7 +36,12 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve(bool)
 
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
-//        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", Aws::Http::SchemeMapper::ToString(cached_config.proxy_scheme), cached_config.proxy_host, cached_config.proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("RemoteProxyConfigurationResolver"),
+                  "Use cached proxy: {}://{}:{}",
+                  cached_config.scheme,
+                  cached_config.host,
+                  cached_config.port
+                  );
         return cached_config;
     }
 
