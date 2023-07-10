@@ -9,6 +9,8 @@ namespace
 
 struct HasSubsequenceCaseInsensitiveASCII
 {
+    static constexpr bool is_utf8 = false;
+
     static void toLowerIfNeed(String & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
 };
 

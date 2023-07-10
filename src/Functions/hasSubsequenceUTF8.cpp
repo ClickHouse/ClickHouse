@@ -10,7 +10,9 @@ namespace
 
 struct HasSubsequenceCaseSensitiveUTF8
 {
-    static void toLowerIfNeed(String & /*s*/) { }
+    static constexpr bool is_utf8 = true;
+
+   // static void toLowerIfNeed(String & /*s*/) { }
 };
 
 struct NameHasSubsequenceUTF8
