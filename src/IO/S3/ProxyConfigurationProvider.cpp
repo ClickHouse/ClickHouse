@@ -14,6 +14,11 @@ std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(const String
     return std::make_shared<ProxyConfigurationResolverAdapter>(ProxyConfigurationResolverProvider::get(prefix, config));
 }
 
+std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(const Poco::Util::AbstractConfiguration & config)
+{
+    return get("", config);
+}
+
 }
 
 #endif

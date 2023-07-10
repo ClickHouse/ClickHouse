@@ -14,6 +14,8 @@ class ProxyConfigurationProvider
 public:
     static std::shared_ptr<ProxyConfiguration> get(
         const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config);
+
+    static std::shared_ptr<ProxyConfiguration> get(const Poco::Util::AbstractConfiguration & proxy_resolver_config);
 };
 
 }

@@ -1284,7 +1284,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
         request_settings.get_request_throttler,
         request_settings.put_request_throttler);
 
-    auto proxy_config = S3::ProxyConfigurationProvider::get("", context->getConfigRef());
+    auto proxy_config = S3::ProxyConfigurationProvider::get(context->getConfigRef());
 
     if (proxy_config)
     {
