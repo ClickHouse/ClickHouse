@@ -27,6 +27,31 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class KafkaConsumer
 {
 public:
+    struct Stat // for system.kafka_consumers
+    {
+        struct Assignment
+        {
+            String topic_str;
+            Int32 partition_id;
+            Int64 current_offset;
+            Int64 offset_committed;
+        };
+        using Assignments = std::vector<Assignment>;
+        String consumer_id; // cpp_consumer->get_member_id();
+        Assignments assignments;
+        String last_exception;
+        Int64 last_exception_time;
+        UInt64 last_poll_time;
+        UInt64 num_messages_read;
+        UInt64 last_commit_timestamp_usec;
+        UInt64 last_rebalance_timestamp_usec;
+        UInt64 num_commits;
+        UInt64 num_rebalance_assignments;
+        UInt64 num_rebalance_revocations;
+        bool in_use;
+    };
+
+public:
     KafkaConsumer(
         ConsumerPtr consumer_,
         Poco::Logger * log_,
@@ -72,9 +97,10 @@ public:
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const String & text);
-    std::pair<String, Int64> getExceptionInfo() const;
     void inUse() { in_use = true; }
     void notInUse() { in_use = false; }
+
+    Stat getStat();
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -111,9 +137,10 @@ private:
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
-    String last_exception_text;
-    Int64 last_exception_timestamp_usec = 0;
     mutable std::mutex exception_mutex;
+    String last_exception_text;
+
+    std::atomic<Int64> last_exception_timestamp_usec = 0;
 
     std::atomic<UInt64> last_poll_timestamp_usec = 0;
     std::atomic<UInt64> num_messages_read = 0;
@@ -130,8 +157,6 @@ private:
     /// Return number of messages with an error.
     size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
-
-    friend class DB::StorageSystemKafkaConsumers;
 };
 
 }

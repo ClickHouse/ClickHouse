@@ -101,52 +101,46 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
         {
             if (auto consumer = weak_consumer.lock())
             {
-                auto & cpp_consumer = consumer->consumer;
+                auto consumer_stat = consumer->getStat();
 
                 database.insertData(database_str.data(), database_str.size());
                 table.insertData(table_str.data(), table_str.size());
 
-                std::string consumer_id_str = cpp_consumer->get_member_id();
-                consumer_id.insertData(consumer_id_str.data(), consumer_id_str.size());
+                consumer_id.insertData(consumer_stat.consumer_id.data(), consumer_stat.consumer_id.size());
 
-                auto cpp_assignments = cpp_consumer->get_assignment();
-                auto cpp_offsets = cpp_consumer->get_offsets_position(cpp_assignments);
-                auto cpp_offsets_committed = cpp_consumer->get_offsets_committed(cpp_assignments);
+                const auto num_assignnemts = consumer_stat.assignments.size();
 
-                for (size_t num = 0; num < cpp_assignments.size(); ++num)
+                for (size_t num = 0; num < num_assignnemts; ++num)
                 {
-                    const auto & topic_str = cpp_assignments[num].get_topic();
-                    assigments_topics.insertData(topic_str.data(), topic_str.size());
+                    const auto & assign = consumer_stat.assignments[num];
 
-                    assigments_partition_id.insert(cpp_assignments[num].get_partition());
-                    assigments_current_offset.insert(cpp_offsets[num].get_offset());
-                    assigments_offset_committed.insert(cpp_offsets_committed[num].get_offset());
+                    assigments_topics.insertData(assign.topic_str.data(), assign.topic_str.size());
+
+                    assigments_partition_id.insert(assign.partition_id);
+                    assigments_current_offset.insert(assign.current_offset);
+                    assigments_offset_committed.insert(assign.offset_committed);
                 }
-
-
-                last_assignment_num += cpp_assignments.size();
+                last_assignment_num += num_assignnemts;
 
                 assigments_topics_offsets.push_back(last_assignment_num);
                 assigments_partition_id_offsets.push_back(last_assignment_num);
                 assigments_current_offset_offsets.push_back(last_assignment_num);
                 assigments_offset_committed_offsets.push_back(last_assignment_num);
 
-                auto exception_info = consumer->getExceptionInfo();
 
+                last_exception.insertData(consumer_stat.last_exception.data(), consumer_stat.last_exception.size());
+                last_exception_time.insert(consumer_stat.last_exception_time);
 
-                last_exception.insertData(exception_info.first.data(), exception_info.first.size());
-                last_exception_time.insert(exception_info.second);
+                last_poll_time.insert(consumer_stat.last_poll_time);
+                num_messages_read.insert(consumer_stat.num_messages_read);
+                last_commit_time.insert(consumer_stat.last_commit_timestamp_usec);
+                num_commits.insert(consumer_stat.num_commits);
+                last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp_usec);
 
-                last_poll_time.insert(consumer->last_poll_timestamp_usec.load());
-                num_messages_read.insert(consumer->num_messages_read.load());
-                last_commit_time.insert(consumer->last_commit_timestamp_usec.load());
-                num_commits.insert(consumer->num_commits.load());
-                last_rebalance_time.insert(consumer->last_rebalance_timestamp_usec.load());
+                num_rebalance_revocations.insert(consumer_stat.num_rebalance_revocations);
+                num_rebalance_assigments.insert(consumer_stat.num_rebalance_assignments);
 
-                num_rebalance_revocations.insert(consumer->num_rebalance_revocations.load());
-                num_rebalance_assigments.insert(consumer->num_rebalance_assignments.load());
-
-                is_currently_used.insert(consumer->in_use.load());
+                is_currently_used.insert(consumer_stat.in_use);
 
                 auto stat_string_ptr = storage_kafka_ptr->getRdkafkaStat();
                 if (stat_string_ptr)

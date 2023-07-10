@@ -537,16 +537,46 @@ void KafkaConsumer::storeLastReadMessageOffset()
 
 void KafkaConsumer::setExceptionInfo(const String & text)
 {
-    std::lock_guard<std::mutex> lock(exception_mutex);
-
-    last_exception_text = text;
     last_exception_timestamp_usec = static_cast<Int64>(Poco::Timestamp().epochTime());
+
+    std::lock_guard<std::mutex> lock(exception_mutex);
+    last_exception_text = text;
 }
 
-std::pair<String, Int64> KafkaConsumer::getExceptionInfo() const
+
+KafkaConsumer::Stat KafkaConsumer::getStat()
 {
-    std::lock_guard<std::mutex> lock(exception_mutex);
-    return std::make_pair(last_exception_text, last_exception_timestamp_usec);
+    KafkaConsumer::Stat::Assignments assignments;
+    auto cpp_assignments = consumer->get_assignment();
+    auto cpp_offsets = consumer->get_offsets_position(cpp_assignments);
+    auto cpp_offsets_committed = consumer->get_offsets_committed(cpp_assignments);
+
+    for (size_t num = 0; num < cpp_assignments.size(); ++num)
+    {
+        assignments.push_back({
+            cpp_assignments[num].get_topic(),
+            cpp_assignments[num].get_partition(),
+            cpp_offsets[num].get_offset(),
+            cpp_offsets_committed[num].get_offset()
+        });
+    }
+
+    return {
+        .consumer_id = consumer->get_member_id(),
+        .assignments = std::move(assignments),
+        .last_exception = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
+            return last_exception_text;}(),
+        .last_exception_time = last_exception_timestamp_usec.load(),
+        .last_poll_time = last_poll_timestamp_usec.load(),
+        .num_messages_read = num_messages_read.load(),
+
+        .last_commit_timestamp_usec = last_commit_timestamp_usec.load(),
+        .last_rebalance_timestamp_usec = last_rebalance_timestamp_usec.load(),
+        .num_commits = num_commits.load(),
+        .num_rebalance_assignments = num_rebalance_assignments.load(),
+        .num_rebalance_revocations = num_rebalance_revocations.load(),
+        .in_use = in_use.load()
+    };
 }
 
 }
