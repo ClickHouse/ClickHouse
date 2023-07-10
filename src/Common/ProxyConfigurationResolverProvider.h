@@ -10,15 +10,15 @@ namespace DB
 class ProxyConfigurationResolverProvider
 {
 public:
-    static std::shared_ptr<ProxyConfigurationResolver> get(const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config);
-    static std::shared_ptr<ProxyConfigurationResolver> get(const Poco::Util::AbstractConfiguration & proxy_resolver_config);
+    static std::shared_ptr<ProxyConfigurationResolver> get(const String & prefix, const Poco::Util::AbstractConfiguration & configuration);
+    static std::shared_ptr<ProxyConfigurationResolver> get(const Poco::Util::AbstractConfiguration & configuration);
 
 private:
     static std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
-        const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config);
+        const String & prefix, const Poco::Util::AbstractConfiguration & configuration);
 
     static std::shared_ptr<ProxyConfigurationResolver> getListResolver(
-        const String & prefix, const Poco::Util::AbstractConfiguration & proxy_config);
+        const String & prefix, const Poco::Util::AbstractConfiguration & configuration);
 };
 
 }

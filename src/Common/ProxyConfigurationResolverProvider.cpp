@@ -44,20 +44,20 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     return std::make_shared<EnvironmentProxyConfigurationResolver>();
 }
 
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const Poco::Util::AbstractConfiguration & proxy_resolver_config)
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const Poco::Util::AbstractConfiguration & configuration)
 {
-    return get("", proxy_resolver_config);
+    return get("", configuration);
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getRemoteResolver(
-    const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)
+    const String & prefix, const Poco::Util::AbstractConfiguration & configuration)
 {
-    auto endpoint = Poco::URI(proxy_resolver_config.getString(prefix + ".endpoint"));
-    auto proxy_scheme = proxy_resolver_config.getString(prefix + ".proxy_scheme");
+    auto endpoint = Poco::URI(configuration.getString(prefix + ".endpoint"));
+    auto proxy_scheme = configuration.getString(prefix + ".proxy_scheme");
     if (proxy_scheme != "http" && proxy_scheme != "https")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy resolver config: {}", proxy_scheme);
-    auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
-    auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
+    auto proxy_port = configuration.getUInt(prefix + ".proxy_port");
+    auto cache_ttl = configuration.getUInt(prefix + ".proxy_cache_time", 10);
 
     LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured remote proxy resolver: {}, Scheme: {}, Port: {}",
               endpoint.toString(), proxy_scheme, proxy_port);
@@ -66,16 +66,16 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getListResolver(
-    const String & prefix, const Poco::Util::AbstractConfiguration & proxy_config)
+    const String & prefix, const Poco::Util::AbstractConfiguration & configuration)
 {
     std::vector<String> keys;
-    proxy_config.keys(prefix, keys);
+    configuration.keys(prefix, keys);
 
     std::vector<Poco::URI> proxies;
     for (const auto & key : keys)
         if (startsWith(key, "uri"))
         {
-            Poco::URI proxy_uri(proxy_config.getString(prefix + "." + key));
+            Poco::URI proxy_uri(configuration.getString(prefix + "." + key));
 
             if (proxy_uri.getScheme() != "http" && proxy_uri.getScheme() != "https")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy uri: {}", proxy_uri.toString());
