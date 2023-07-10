@@ -134,7 +134,7 @@ private:
             return 0;
 
         while (haystack_code_point && needle_code_point)
-        {   
+        {
             if (Impl::toLowerIfNeed(*needle_code_point) == Impl::toLowerIfNeed(*haystack_code_point))
             {
                 needle_pos += UTF8::seqLength(*needle_pos);
