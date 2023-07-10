@@ -7,7 +7,7 @@ node1 = cluster.add_instance(
     main_configs=[
         "configs/conf.xml",
         "configs/named_collections.xml",
-        "configs/proxy_list.xml"
+        "configs/proxy_list.xml",
     ],
     user_configs=["configs/users.xml"],
     with_nginx=True,
