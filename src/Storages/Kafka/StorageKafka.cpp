@@ -648,7 +648,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
 
     if (!config.has(config_prefix + "." + "statistics_interval_ms"))
     {
-        kafka_config.set("statistics.interval.ms", "600"); // every 600 milliseconds
+        kafka_config.set("statistics.interval.ms", "3000"); // every 3 seconds by default. set to 0 to disable.
     }
 
     if (kafka_config.get("statistics.interval.ms") != "0")
