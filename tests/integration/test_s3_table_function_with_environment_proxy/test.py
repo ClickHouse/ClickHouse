@@ -15,7 +15,7 @@ def cluster():
             with_minio=True,
             env_variables={
                 "http_proxy": "http://proxy1",
-                "https_proxy": "http://proxy1"
+                "https_proxy": "http://proxy1",
             },
         )
 
