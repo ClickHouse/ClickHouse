@@ -155,6 +155,24 @@ namespace
     {
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
     }
+
+    auto proxyConfigurationToPocoProxyConfiguration(const ProxyConfiguration & proxy_configuration)
+    {
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        poco_proxy_config.host = proxy_configuration.host;
+        poco_proxy_config.port = proxy_configuration.port;
+        poco_proxy_config.protocol = proxy_configuration.scheme;
+
+        return poco_proxy_config;
+    }
+
+    auto getProxyConfiguration(const std::string & http_method, ContextPtr context)
+    {
+        auto proxy_config = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https");
+
+        return proxyConfigurationToPocoProxyConfiguration(proxy_config);
+    }
 }
 
 class StorageURLSource::DisclosedGlobIterator::Impl
@@ -400,13 +418,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         const auto settings = context->getSettings();
 
-        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
-
-        auto proxy_config = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https");
-
-        poco_proxy_config.host = proxy_config.host;
-        poco_proxy_config.port = proxy_config.port;
-        poco_proxy_config.protocol = proxy_config.scheme;
+        auto proxy_config = getProxyConfiguration(http_method, context);
 
         try
         {
@@ -425,7 +437,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 /* use_external_buffer */ false,
                 /* skip_url_not_found_error */ skip_url_not_found_error,
                 /* file_info */ std::nullopt,
-                poco_proxy_config);
+                proxy_config);
 
             if (context->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {
@@ -472,13 +484,7 @@ StorageURLSink::StorageURLSink(
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
-    Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
-
-    auto proxy_config = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https");
-
-    poco_proxy_config.host = proxy_config.host;
-    poco_proxy_config.port = proxy_config.port;
-    poco_proxy_config.protocol = proxy_config.scheme;
+    auto proxy_config = getProxyConfiguration(http_method, context);
 
     auto write_buffer = WriteBufferFromHTTPBuilder()
         .withURI(Poco::URI(uri))
@@ -487,7 +493,7 @@ StorageURLSink::StorageURLSink(
         .withContentEncoding(content_encoding)
         .withAdditionalHeaders(headers)
         .withTimeouts(timeouts)
-        .withProxyConfiguration(poco_proxy_config)
+        .withProxyConfiguration(proxy_config)
         .build();
 
     write_buf = wrapWriteBufferWithCompressionMethod(
@@ -997,8 +1003,12 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
 
     try
     {
+        auto uri = Poco::URI(url);
+
+        auto proxy_config = getProxyConfiguration(uri.getScheme(), context);
+
         ReadWriteBufferFromHTTP buf(
-            Poco::URI(url),
+            uri,
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
             getHTTPTimeouts(context),
@@ -1010,7 +1020,9 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             &context->getRemoteHostFilter(),
             true,
             false,
-            false);
+            false,
+            std::nullopt,
+            proxy_config);
 
         return buf.getLastModificationTime();
     }

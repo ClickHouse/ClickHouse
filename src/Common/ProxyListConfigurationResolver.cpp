@@ -1,6 +1,7 @@
 #include <Common/ProxyListConfigurationResolver.h>
 
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -24,7 +25,7 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve(bool)
     auto & proxy = proxies[index];
 
     return ProxyConfiguration {proxy.getHost(), proxy.getScheme(), proxy.getPort()};
-//    LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}", proxies[index].toString());
+    LOG_DEBUG(&Poco::Logger::get("ProxyListConfigurationResolver"), "Use proxy: {}", proxies[index].toString());
 }
 
 }
