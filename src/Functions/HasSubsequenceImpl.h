@@ -3,22 +3,27 @@
 #include <Columns/ColumnString.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
-#include <Functions/GatherUtils/Algorithms.h>
-#include <Functions/GatherUtils/Sinks.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+}
 namespace
 {
 
 using namespace GatherUtils;
 
 template <typename Name, typename Impl>
-class FunctionsHasSubsequenceImpl : public IFunction
+class HasSubsequenceImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsHasSubsequenceImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<HasSubsequenceImpl>(); }
 
     String getName() const override { return name; }
 
@@ -72,8 +77,9 @@ public:
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {}, first argument of function {} must be a string",
+                "Illegal columns {} and {} of arguments of function {}",
                 arguments[0].column->getName(),
+                arguments[1].column->getName(),
                 getName());
 
         return col_res;
@@ -87,43 +93,32 @@ private:
         SourceNeedle && needles,
         PaddedPODArray<UInt8> & res_data) const
     {
-        size_t row_num = 0;
-
         while (!haystacks.isEnd())
         {
-            [[maybe_unused]] auto haystack_slice = haystacks.getWhole();
-            [[maybe_unused]] auto needle_slice = needles.getWhole();
+            auto haystack_slice = haystacks.getWhole();
+            auto needle_slice = needles.getWhole();
+            size_t row_num = haystacks.rowNum();
 
-            auto haystack = std::string(reinterpret_cast<const char *>(haystack_slice.data), haystack_slice.size);
-            auto needle = std::string(reinterpret_cast<const char *>(needle_slice.data), needle_slice.size);
-            
             if constexpr (!Impl::is_utf8)
-            {
-                Impl::toLowerIfNeed(haystack);
-                Impl::toLowerIfNeed(needle);
-
-                res_data[row_num] = hasSubsequence(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
-            }
+                res_data[row_num] = hasSubsequence(haystack_slice.data, haystack_slice.size, needle_slice.data, needle_slice.size);
             else
-            {
-                res_data[row_num] = hasSubsequenceUTF8(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
-            }
+                res_data[row_num] = hasSubsequenceUTF8(haystack_slice.data, haystack_slice.size, needle_slice.data, needle_slice.size);
+
             haystacks.next();
             needles.next();
-            ++row_num;
         }
     }
 
-    static UInt8 hasSubsequence(const char * haystack, size_t haystack_size, const char * needle, size_t needle_size)
+    static UInt8 hasSubsequence(const UInt8 * haystack, size_t haystack_size, const UInt8 * needle, size_t needle_size)
     {
         size_t j = 0;
         for (size_t i = 0; (i < haystack_size) && (j < needle_size); i++)
-            if (needle[j] == haystack[i])
+            if (Impl::toLowerIfNeed(needle[j]) == Impl::toLowerIfNeed(haystack[i]))
                 ++j;
         return j == needle_size;
     }
 
-    static UInt8 hasSubsequenceUTF8(const char * haystack, size_t haystack_size, const char * needle, size_t needle_size)
+    static UInt8 hasSubsequenceUTF8(const UInt8 * haystack, size_t haystack_size, const UInt8 * needle, size_t needle_size)
     {
         const auto * haystack_pos = haystack;
         const auto * needle_pos = needle;
@@ -131,36 +126,27 @@ private:
         const auto * needle_end = needle + needle_size;
 
         if (!needle_size)
-        {
             return 1;
-        }
 
         auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
         auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
         if (!haystack_code_point || !needle_code_point)
-        {
             return 0;
-        }
-       
-        while (true)
-        {
-            if (needle_code_point == haystack_code_point)
+
+        while (haystack_code_point && needle_code_point)
+        {   
+            if (Impl::toLowerIfNeed(*needle_code_point) == Impl::toLowerIfNeed(*haystack_code_point))
             {
                 needle_pos += UTF8::seqLength(*needle_pos);
-                if (needle_pos == needle_end)
-                {
+                if (needle_pos >= needle_end)
                     break;
-                }
                 needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
             }
             haystack_pos += UTF8::seqLength(*haystack_pos);
-            if (haystack_pos == haystack_end)
-            {
+            if (haystack_pos >= haystack_end)
                 break;
-            }
             haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
         }
-                
         return needle_pos == needle_end;
     }
 };
