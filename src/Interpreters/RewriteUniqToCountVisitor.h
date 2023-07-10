@@ -9,14 +9,15 @@ namespace DB
 
 class ASTFunction;
 
-/// Simple rewrite:
-///     'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)' to
-///     'SELECT count() FROM (SELECT DISTINCT x ...)'
-///
-///     'SELECT uniq(x ...) FROM (SELECT x ... GROUP BY x ...)' to
-///     'SELECT count() FROM (SELECT x ... GROUP BY x ...)'
-///
-/// Note we can rewrite all uniq variants except uniqUpTo.
+/** Optimize `uniq` into `count` over subquery.
+ *     Example: 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)' to
+ *     Result: 'SELECT count() FROM (SELECT DISTINCT x ...)'
+ *
+ *     Example: 'SELECT uniq(x ...) FROM (SELECT x ... GROUP BY x ...)' to
+ *     Result: 'SELECT count() FROM (SELECT x ... GROUP BY x ...)'
+ *
+ *     Note that we can rewrite all uniq variants except uniqUpTo.
+ */
 class RewriteUniqToCountMatcher
 {
 public:

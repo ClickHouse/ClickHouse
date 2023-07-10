@@ -26,7 +26,7 @@ bool matchFnUniq(String func_name)
         || name == "uniqCombined64";
 }
 
-bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, Aliases & alias)
+bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & alias)
 {
     if (lhs->getTreeHash() == rhs->getTreeHash())
     {
@@ -56,7 +56,7 @@ bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, Aliases & alias)
     return false;
 }
 
-bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs, Aliases & alias)
+bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs, const Aliases & alias)
 {
     if (!lhs || !rhs)
         return false;
@@ -71,7 +71,7 @@ bool expressionListEquals(ASTExpressionList * lhs, ASTExpressionList * rhs, Alia
 }
 
 /// Test whether lhs contains all expressions in rhs.
-bool expressionListContainsAll(ASTExpressionList * lhs, ASTExpressionList * rhs, Aliases alias)
+bool expressionListContainsAll(ASTExpressionList * lhs, ASTExpressionList * rhs, const Aliases & alias)
 {
     if (!lhs || !rhs)
         return false;
@@ -123,13 +123,14 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
         return;
 
     /// collect subquery select expressions alias
-    std::unordered_map<String, ASTPtr> alias;
+    Aliases alias;
     for (auto expr : sub_expr_list->children)
     {
         if (!expr->tryGetAlias().empty())
             alias.insert({expr->tryGetAlias(), expr});
     }
 
+    /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
     auto match_subquery_with_distinct = [&]() -> bool
     {
         if (!sub_selectq->distinct)
@@ -140,9 +141,10 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
         return true;
     };
 
+    /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT x ... GROUP BY x ...)'
     auto match_subquery_with_group_by = [&]() -> bool
     {
-        auto group_by = sub_selectq->groupBy(); // TODO group by type
+        auto group_by = sub_selectq->groupBy();
         if (!group_by)
             return false;
         /// uniq expression list == subquery group by expression list
