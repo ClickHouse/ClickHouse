@@ -27,7 +27,7 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class KafkaConsumer
 {
 public:
-    struct Stat // for system.kafka_consumers
+    struct Stat // system.kafka_consumers data
     {
         struct Assignment
         {
@@ -37,10 +37,11 @@ public:
             Int64 offset_committed;
         };
         using Assignments = std::vector<Assignment>;
-        String consumer_id; // cpp_consumer->get_member_id();
+
+        String consumer_id;
         Assignments assignments;
         String last_exception;
-        Int64 last_exception_time;
+        UInt64 last_exception_time;
         UInt64 last_poll_time;
         UInt64 num_messages_read;
         UInt64 last_commit_timestamp_usec;
@@ -100,6 +101,7 @@ public:
     void inUse() { in_use = true; }
     void notInUse() { in_use = false; }
 
+    // For system.kafka_consumers
     Stat getStat();
 
 private:
@@ -137,11 +139,11 @@ private:
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
+    /// system.kafka_consumers data is retrieved asynchronously,
     mutable std::mutex exception_mutex;
     String last_exception_text;
 
-    std::atomic<Int64> last_exception_timestamp_usec = 0;
-
+    std::atomic<UInt64> last_exception_timestamp_usec = 0;
     std::atomic<UInt64> last_poll_timestamp_usec = 0;
     std::atomic<UInt64> num_messages_read = 0;
     std::atomic<UInt64> last_commit_timestamp_usec = 0;

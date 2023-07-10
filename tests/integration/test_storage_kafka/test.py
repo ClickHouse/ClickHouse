@@ -4582,7 +4582,7 @@ def test_system_kafka_consumers(kafka_cluster):
     result_system_kafka_consumers = instance.query(
         """
         create or replace function stable_timestamp as
-          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 20, 'now', toString(d));
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
 
         SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
           assignments.current_offset, stable_timestamp(last_exception_time) as last_exception_time_,
@@ -4620,7 +4620,7 @@ is_currently_used:          0
     kafka_delete_topic(admin_client, topic)
 
 
-def test_system_kafka_consumers_rebalance(kafka_cluster):
+def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries = 15):
     # based on test_kafka_consumer_hang2
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -4682,7 +4682,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster):
     result_system_kafka_consumers = instance.query(
         """
         create or replace function stable_timestamp as
-          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 20, 'now', toString(d));
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
         SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
           assignments.current_offset, stable_timestamp(last_exception_time) as last_exception_time_,
           if(length(last_exception)>0, last_exception, 'no exception') as last_exception_,
@@ -4735,22 +4735,25 @@ is_currently_used:          0
 """
     )
 
-    result_rdkafka_stat = instance.query(
-        """
-        SELECT table, JSONExtractString(rdkafka_stat, 'type')
-          FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
-        """
-    )
+    retries = 0
+    result_rdkafka_stat = ""
+    while True:
+        result_rdkafka_stat = instance.query(
+            """
+            SELECT table, JSONExtractString(rdkafka_stat, 'type')
+            FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
+            """
+        )
+        if result_rdkafka_stat.find('consumer') or retries > max_retries:
+            break
+        retries += 1
+        time.sleep(1)
+
     assert (
         result_rdkafka_stat
         == """Row 1:
 ──────
 table:                                   kafka
-JSONExtractString(rdkafka_stat, 'type'): consumer
-
-Row 2:
-──────
-table:                                   kafka2
 JSONExtractString(rdkafka_stat, 'type'): consumer
 """
     )

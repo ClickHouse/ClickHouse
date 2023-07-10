@@ -173,7 +173,7 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
-	<statistics_interval_ms>10</statistics_interval_ms>
+	<statistics_interval_ms>600</statistics_interval_ms>
 
     <!-- Configuration specific to topics "logs" and "stats" -->
 
