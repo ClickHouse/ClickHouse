@@ -66,7 +66,7 @@ def test_s3_with_remote_resolver(cluster):
 
     assert (
         node.query(
-          "SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values"
+            "SELECT * FROM s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV') FORMAT Values"
         )
         == "('color','red'),('size','10')"
     )
