@@ -1,8 +1,11 @@
 #include "ReadWriteBufferFromHTTP.h"
 
+#include <IO/HTTPCommon.h>
+
 namespace ProfileEvents
 {
 extern const Event ReadBufferSeekCancelConnection;
+extern const Event ReadWriteBufferFromHTTPPreservedSessions;
 }
 
 namespace DB
@@ -146,30 +149,20 @@ std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
     LOG_TRACE(log, "Sending request to {}", uri_.toString());
 
     auto sess = current_session->getSession();
-    try
-    {
-        auto & stream_out = sess->sendRequest(request);
+    auto & stream_out = sess->sendRequest(request);
 
-        if (out_stream_callback)
-            out_stream_callback(stream_out);
+    if (out_stream_callback)
+        out_stream_callback(stream_out);
 
-        auto result_istr = receiveResponse(*sess, request, response, true);
-        response.getCookies(cookies);
+    auto result_istr = receiveResponse(*sess, request, response, true);
+    response.getCookies(cookies);
 
-        /// we can fetch object info while the request is being processed
-        /// and we don't want to override any context used by it
-        if (!for_object_info)
-            content_encoding = response.get("Content-Encoding", "");
+    /// we can fetch object info while the request is being processed
+    /// and we don't want to override any context used by it
+    if (!for_object_info)
+        content_encoding = response.get("Content-Encoding", "");
 
-        return result_istr;
-    }
-    catch (const Poco::Exception & e)
-    {
-        /// We use session data storage as storage for exception text
-        /// Depend on it we can deduce to reconnect session or reresolve session host
-        sess->attachSessionData(e.message());
-        throw;
-    }
+    return result_istr;
 }
 
 template <typename UpdatableSessionPtr>
@@ -429,23 +422,10 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::initialize()
     if (!read_range.end && response.hasContentLength())
         file_info = parseFileInfo(response, withPartialContent(read_range) ? getOffset() : 0);
 
-    try
-    {
-        impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
+    impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
 
-        if (use_external_buffer)
-        {
-            setupExternalBuffer();
-        }
-    }
-    catch (const Poco::Exception & e)
-    {
-        /// We use session data storage as storage for exception text
-        /// Depend on it we can deduce to reconnect session or reresolve session host
-        auto sess = session->getSession();
-        sess->attachSessionData(e.message());
-        throw;
-    }
+    if (use_external_buffer)
+        setupExternalBuffer();
 }
 
 template <typename UpdatableSessionPtr>
@@ -460,7 +440,12 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
 
     if ((read_range.end && getOffset() > read_range.end.value()) ||
         (file_info && file_info->file_size && getOffset() >= file_info->file_size.value()))
+    {
+        /// Response was fully read.
+        markSessionForReuse(session->getSession());
+        ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
         return false;
+    }
 
     if (impl)
     {
@@ -582,7 +567,12 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
         std::rethrow_exception(exception);
 
     if (!result)
+    {
+        /// Eof is reached, i.e response was fully read.
+        markSessionForReuse(session->getSession());
+        ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
         return false;
+    }
 
     internal_buffer = impl->buffer();
     working_buffer = internal_buffer;
@@ -635,12 +625,17 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
             bool cancelled;
             size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
 
+            if (!cancelled)
+            {
+                /// Response was fully read.
+                markSessionForReuse(sess);
+                ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
+            }
+
             return r;
         }
         catch (const Poco::Exception & e)
         {
-            sess->attachSessionData(e.message());
-
             LOG_ERROR(
                 log,
                 "HTTP request (positioned) to `{}` with range [{}, {}) failed at try {}/{}: {}",

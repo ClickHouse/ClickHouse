@@ -515,7 +515,7 @@ remap_executable: false
 # https://clickhouse.com/docs/en/operations/table_engines/distributed/
 remote_servers:
     # Test only shard config for testing distributed storage
-    test_shard_localhost:
+    default:
         # Inter-server per-cluster secret for Distributed queries
         # default: no secret (no authentication will be performed)
 
@@ -546,46 +546,8 @@ remote_servers:
                 port: 9000
                 # Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority).
                 # priority: 1
-    test_cluster_two_shards_localhost:
-        shard:
-            - replica:
-                  host: localhost
-                  port: 9000
-            - replica:
-                  host: localhost
-                  port: 9000
-    test_cluster_two_shards:
-        shard:
-            - replica:
-                  host: 127.0.0.1
-                  port: 9000
-            - replica:
-                  host: 127.0.0.2
-                  port: 9000
-    test_cluster_two_shards_internal_replication:
-        shard:
-            - internal_replication: true
-              replica:
-                  host: 127.0.0.1
-                  port: 9000
-            - internal_replication: true
-              replica:
-                  host: 127.0.0.2
-                  port: 9000
-    test_shard_localhost_secure:
-        shard:
-            replica:
-                host: localhost
-                port: 9440
-                secure: 1
-    test_unavailable_shard:
-        shard:
-            - replica:
-                  host: localhost
-                  port: 9000
-            - replica:
-                  host: localhost
-                  port: 1
+                # Use SSL? Default: no
+                # secure: 0
 
 # The list of hosts allowed to use in URL-related storage engines and table functions.
 # If this section is not present in configuration, all hosts are allowed.
