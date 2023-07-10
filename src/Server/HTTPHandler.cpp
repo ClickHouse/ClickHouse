@@ -44,6 +44,8 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <re2/re2.h>
+
 #include <chrono>
 #include <sstream>
 
@@ -1163,8 +1165,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        re2::StringPiece matches[num_captures];
-        re2::StringPiece input(begin, end - begin);
+        std::string_view matches[num_captures];
+        std::string_view input(begin, end - begin);
         if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())

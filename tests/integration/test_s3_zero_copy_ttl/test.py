@@ -35,7 +35,7 @@ def test_ttl_move_and_s3(started_cluster):
             ORDER BY id
             PARTITION BY id
             TTL date TO DISK 's3_disk'
-            SETTINGS storage_policy='s3_and_default'
+            SETTINGS storage_policy='s3_and_default', temporary_directories_lifetime=1
             """.format(
                 i
             )
