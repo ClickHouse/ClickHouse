@@ -57,6 +57,8 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    # This is from LSan, and it indicates its own internal problem:
+    "Unable to get registers from thread",
 ]
 
 MAX_RETRIES = 3
