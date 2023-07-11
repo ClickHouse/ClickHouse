@@ -51,7 +51,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(const FileCacheSettings & settings)
+FileCache::FileCache(const FileCacheSettings & settings, BackgroundSchedulePool & schedule_pool)
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
@@ -67,6 +67,8 @@ FileCache::FileCache(const FileCacheSettings & settings)
 
     if (settings.enable_filesystem_query_cache_limit)
         query_limit = std::make_unique<FileCacheQueryLimit>();
+
+    cleanup_task = schedule_pool.createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
 }
 
 FileCache::Key FileCache::createKeyForPath(const String & path)
@@ -134,7 +136,6 @@ void FileCache::initialize()
     for (size_t i = 0; i < background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
-    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
 }

@@ -42,7 +42,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    explicit FileCache(const FileCacheSettings & settings);
+    explicit FileCache(const FileCacheSettings & settings, BackgroundSchedulePool & schedule_pool);
 
     ~FileCache();
 
