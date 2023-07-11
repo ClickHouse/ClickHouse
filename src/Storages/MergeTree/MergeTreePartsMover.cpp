@@ -112,11 +112,15 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             for (const auto & disk : volumes[i]->getDisks())
             {
-                UInt64 required_maximum_available_space = static_cast<UInt64>(disk->getTotalSpace() * policy->getMoveFactor());
-                UInt64 unreserved_space = disk->getUnreservedSpace();
+                auto total_space = disk->getTotalSpace();
+                auto unreserved_space = disk->getUnreservedSpace();
+                if (total_space && unreserved_space)
+                {
+                    UInt64 required_maximum_available_space = static_cast<UInt64>(*total_space * policy->getMoveFactor());
 
-                if (unreserved_space < required_maximum_available_space && !disk->isBroken())
-                    need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
+                    if (*unreserved_space < required_maximum_available_space && !disk->isBroken())
+                        need_to_move.emplace(disk, required_maximum_available_space - *unreserved_space);
+                }
             }
         }
     }
