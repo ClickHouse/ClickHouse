@@ -21,4 +21,6 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 # - replace() is required to avoid non deterministic behaviour of
 #   normalizeQuery() that replaces the identifier with "?" only if it has more
 #   then two numbers.
+#
+# NOTE: no current_database = '$CLICKHOUSE_DATABASE' filter on purpose (since ON CLUSTER queries does not have current_database passed)
 $CLICKHOUSE_CLIENT -q "SELECT normalizeQuery(replace(query, currentDatabase(), 'default')) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' ORDER BY event_time_microseconds"

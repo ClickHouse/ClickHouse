@@ -57,6 +57,8 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    # This is from LSan, and it indicates its own internal problem:
+    "Unable to get registers from thread",
 ]
 
 MAX_RETRIES = 3
@@ -589,7 +591,7 @@ class SettingsRandomizer:
         "filesystem_prefetch_step_bytes": lambda: random.choice(
             [0, "100Mi"]
         ),  # 0 means 'auto'
-        "compile_expressions": lambda: random.randint(0, 1),
+        # "compile_expressions": lambda: random.randint(0, 1), - this setting has a bug: https://github.com/ClickHouse/ClickHouse/issues/51264
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
@@ -992,7 +994,10 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += trim_for_log(open(self.stdout_file).read())
+                    with open(self.stdout_file, "rb") as f:
+                        description += trim_for_log(
+                            f.read().decode("utf-8", errors="ignore")
+                        )
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"

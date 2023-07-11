@@ -38,6 +38,9 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->isParallelReadingEnabled())
         return false;
 
+    if (reading->readsInOrder())
+        return false;
+
     // Currently projection don't support deduplication when moving parts between shards.
     if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
         return false;

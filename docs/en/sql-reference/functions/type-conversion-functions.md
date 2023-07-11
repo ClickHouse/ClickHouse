@@ -1509,10 +1509,12 @@ parseDateTimeBestEffort(time_string [, time_zone])
 - A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
 - A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
 - A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
-- A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+- A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `MM` is substituted by `01`.
 - A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+- A [syslog timestamp](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2): `Mmm dd hh:mm:ss`. For example, `Jun  9 14:20:32`.
 
 For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
+If the year is not specified, it is considered to be equal to the current year. If the resulting DateTime happen to be in the future (even by a second after the current moment), then the current year is substituted by the previous year.
 
 **Returned value**
 
@@ -1583,23 +1585,46 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('10 20:19');
+SELECT toYear(now()) as year, parseDateTimeBestEffort('10 20:19');
 ```
 
 Result:
 
 ```response
-┌─parseDateTimeBestEffort('10 20:19')─┐
-│                 2000-01-10 20:19:00 │
-└─────────────────────────────────────┘
+┌─year─┬─parseDateTimeBestEffort('10 20:19')─┐
+│ 2023 │                 2023-01-10 20:19:00 │
+└──────┴─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+WITH
+    now() AS ts_now,
+    formatDateTime(ts_around, '%b %e %T') AS syslog_arg
+SELECT
+    ts_now,
+    syslog_arg,
+    parseDateTimeBestEffort(syslog_arg)
+FROM (SELECT arrayJoin([ts_now - 30, ts_now + 30]) AS ts_around);
+```
+
+Result:
+
+```response
+┌──────────────ts_now─┬─syslog_arg──────┬─parseDateTimeBestEffort(syslog_arg)─┐
+│ 2023-06-30 23:59:30 │ Jun 30 23:59:00 │                 2023-06-30 23:59:00 │
+│ 2023-06-30 23:59:30 │ Jul  1 00:00:00 │                 2022-07-01 00:00:00 │
+└─────────────────────┴─────────────────┴─────────────────────────────────────┘
 ```
 
 **See Also**
 
-- [RFC 1123](https://tools.ietf.org/html/rfc1123)
+- [RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123)
 - [toDate](#todate)
 - [toDateTime](#todatetime)
 - [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
+- [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2)
 
 ## parseDateTimeBestEffortUS
 
