@@ -1,3 +1,9 @@
+SELECT * FROM 02763_merge_log_1 ORDER BY x
+1	11
+2	12
+3	13
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge) ORDER BY x
 1	11
 1	11
 1	11
@@ -13,10 +19,6 @@
 4	14
 4	14
 4	14
-4	14
-1	11
-2	12
-3	13
 4	14
 SETTINGS optimize_move_to_prewhere= 0
 SELECT * FROM 02763_merge_log_1
@@ -98,6 +100,28 @@ SELECT x, SUM(x) FROM (SELECT * FROM merge(...) UNION ALL ...) GROUP BY x
 2	24
 3	39
 4	42
+1	11	0
+2	12	0
+3	13	0
+4	14	1
+4	14	1
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+2	12	0
+3	13	1
+3	13	1
+4	14	1
+4	14	1
 SETTINGS optimize_move_to_prewhere= 1
 SELECT * FROM 02763_merge_log_1
 3	13
@@ -178,3 +202,25 @@ SELECT x, SUM(x) FROM (SELECT * FROM merge(...) UNION ALL ...) GROUP BY x
 2	24
 3	39
 4	42
+1	11	0
+2	12	0
+3	13	0
+4	14	1
+4	14	1
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+2	12	0
+3	13	1
+3	13	1
+4	14	1
+4	14	1

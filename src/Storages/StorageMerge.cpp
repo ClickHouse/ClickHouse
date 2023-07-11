@@ -66,6 +66,26 @@ bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
     return false;
 }
 
+std::string namesDifference(Names && outer_set, Names && inner_set)
+{
+    std::sort(outer_set.begin(), outer_set.end());
+
+    std::sort(inner_set.begin(), inner_set.end());
+
+    Names result;
+
+    std::set_difference(outer_set.begin(), outer_set.end(),
+        inner_set.begin(), inner_set.end(),  std::inserter(result, result.begin()));
+
+    if (result.size() != 1)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot determine row level filter");
+    }
+
+    return result.front();
+}
+
 }
 
 namespace DB
@@ -682,29 +702,22 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 {
                     ASTPtr expr = row_policy_filter->expression;
 
-                    auto syntax_result = TreeRewriter(modified_context).analyze(expr, header.getNamesAndTypesList());
+                    auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+                    auto storage_columns = storage_metadata_snapshot->getColumns();
+                    auto needed_columns = storage_columns.getAllPhysical(); // header.getNamesAndTypesList()
+
+                    auto syntax_result = TreeRewriter(modified_context).analyze(expr, needed_columns);
                     auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, modified_context};
 
-                    auto filter_dag_ptr = expression_analyzer.getActionsDAG(true, false);
-                    auto filter_actions = std::make_shared<ExpressionActions>(filter_dag_ptr, ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+                    auto actions_dag = expression_analyzer.getActionsDAG(true, false);
+                    auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
                     auto required_columns = filter_actions->getRequiredColumns();
 
-                    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
+                    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
                         filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
 
-                    auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
-                    std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
-
-                    Names required_columns_sorted = required_columns;
-                    std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
-
-                    Names filter_columns;
-
-                    std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
-                        required_columns.begin(), required_columns.end(),
-                        std::inserter(filter_columns, filter_columns.begin()));
-
-                    source_step_with_filter->addFilter(filter_dag_ptr, filter_columns.front());
+                    auto filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
+                    source_step_with_filter->addFilter(actions_dag, filter_column_name);
                 }
             }
         }
@@ -1059,33 +1072,39 @@ void ReadFromMerge::convertingSourceStream(
     {
         ASTPtr expr = row_policy_filter->expression;
 
-        auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
+        auto storage_columns = metadata_snapshot->getColumns();
+        auto needed_columns = storage_columns.getAllPhysical(); // header.getNamesAndTypesList()
+
+
+        auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns /* pipe_columns */);
         auto expression_analyzer = ExpressionAnalyzer{row_policy_filter->expression, syntax_result, local_context};
 
         auto actions_dag = expression_analyzer.getActionsDAG(true, false);
         auto filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-        auto required_columns = filter_actions->getRequiredColumns();
 
         LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
             filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
 
 
-        auto fa_actions_columns_sorted = filter_actions->getSampleBlock().getNames();
-        std::sort(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end());
 
-        Names required_columns_sorted = required_columns;
-        std::sort(required_columns_sorted.begin(), required_columns_sorted.end());
+        for (auto & colname : filter_actions->getSampleBlock().getNames())
+        {
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions->getSampleBlock().getNames(): {}", colname);
+        }
 
-        Names filter_columns;
+        for (auto & colname : filter_actions->getRequiredColumns())
+        {
+            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions->getRequiredColumns(): {}", colname);
+        }
 
 
-        std::set_difference(fa_actions_columns_sorted.begin(), fa_actions_columns_sorted.end(),
-            required_columns.begin(), required_columns.end(),
-            std::inserter(filter_columns, filter_columns.begin()));
+
+        auto filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
+
 
         builder.addSimpleTransform([&](const Block & stream_header)
         {
-            return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_columns.front(), true /* remove fake column */);
+            return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_column_name, true /* remove fake column */);
         });
     }
 }
