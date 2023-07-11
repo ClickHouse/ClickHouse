@@ -64,9 +64,9 @@ Pipe StorageSystemDisks::read(
     {
         col_name->insert(disk_name);
         col_path->insert(disk_ptr->getPath());
-        col_free->insert(disk_ptr->getAvailableSpace());
-        col_total->insert(disk_ptr->getTotalSpace());
-        col_unreserved->insert(disk_ptr->getUnreservedSpace());
+        col_free->insert(disk_ptr->getAvailableSpace().value_or(std::numeric_limits<UInt64>::max()));
+        col_total->insert(disk_ptr->getTotalSpace().value_or(std::numeric_limits<UInt64>::max()));
+        col_unreserved->insert(disk_ptr->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()));
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
         auto data_source_description = disk_ptr->getDataSourceDescription();
         col_type->insert(toString(data_source_description.type));
