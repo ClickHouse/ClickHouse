@@ -24,7 +24,10 @@ select geohashEncode(-5.60302734375, 42.593994140625);
 
 select 'mixing const and non-const-columns:';
 select geohashEncode(materialize(-5.60302734375), materialize(42.593994140625), 0);
-select geohashEncode(materialize(-5.60302734375), materialize(42.593994140625), materialize(0)); -- { serverError 44 }
+select geohashEncode(materialize(-5.60302734375), materialize(42.593994140625), materialize(0));
+select geohashEncode(-5.60302734375, materialize(42.593994140625), 0);
+select geohashEncode(materialize(-5.60302734375), 42.593994140625, 0);
+select geohashEncode(-5.60302734375, 42.593994140625, 0);
 
 
 select 'from table (with const precision):';
