@@ -183,7 +183,7 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 
 #if USE_SSL
 
-std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
+std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value) const
 {
     EncryptionMethod method = getEncryptionMethod(codec_name);
     CompressionCodecEncrypted codec(method);
@@ -197,7 +197,7 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     return hex_value;
 }
 
-std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
+std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value) const
 {
     EncryptionMethod method = getEncryptionMethod(codec_name);
     CompressionCodecEncrypted codec(method);
@@ -778,7 +778,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 #if USE_SSL
 
-void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
+void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
 {
     CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
     Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
@@ -788,7 +788,7 @@ void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
 
 #endif
 
-void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
+void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
     {
@@ -843,6 +843,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
+
+#if USE_SSL
+    if (fs::path(preprocessed_path).filename() == "config.xml")
+        decryptEncryptedElements(loaded_config);
+#endif
 }
 
 void ConfigProcessor::setConfigPath(const std::string & config_path)
