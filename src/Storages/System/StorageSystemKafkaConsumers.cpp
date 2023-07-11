@@ -97,7 +97,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
         std::lock_guard lock(storage_kafka_ptr->mutex);
 
-        for (auto weak_consumer : storage_kafka_ptr->all_consumers)
+        for (const auto & weak_consumer : storage_kafka_ptr->all_consumers)
         {
             if (auto consumer = weak_consumer.lock())
             {
