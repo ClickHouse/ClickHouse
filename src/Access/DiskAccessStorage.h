@@ -13,7 +13,7 @@ class AccessChangesNotifier;
 class DiskAccessStorage : public IAccessStorage
 {
 public:
-    static constexpr char STORAGE_TYPE[] = "local directory";
+    static constexpr char STORAGE_TYPE[] = "local_directory";
 
     DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_);
     ~DiskAccessStorage() override;

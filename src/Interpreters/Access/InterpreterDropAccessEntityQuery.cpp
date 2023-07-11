@@ -26,18 +26,26 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
-    auto do_drop = [&](const Strings & names)
+    auto do_drop = [&](const Strings & names, const String & storage_name)
     {
+        IAccessStorage * storage = &access_control;
+        MultipleAccessStorage::StoragePtr storage_ptr;
+        if (!storage_name.empty())
+        {
+            storage_ptr = access_control.getStorageByName(storage_name);
+            storage = storage_ptr.get();
+        }
+
         if (query.if_exists)
-            access_control.tryRemove(access_control.find(query.type, names));
+            storage->tryRemove(storage->find(query.type, names));
         else
-            access_control.remove(access_control.getIDs(query.type, names));
+            storage->remove(storage->getIDs(query.type, names));
     };
 
     if (query.type == AccessEntityType::ROW_POLICY)
-        do_drop(query.row_policy_names->toStrings());
+        do_drop(query.row_policy_names->toStrings(), query.storage_name);
     else
-        do_drop(query.names);
+        do_drop(query.names, query.storage_name);
 
     return {};
 }

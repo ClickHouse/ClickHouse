@@ -41,6 +41,11 @@ public:
     ConstStoragePtr getStorage(const UUID & id) const;
     StoragePtr getStorage(const UUID & id);
 
+    ConstStoragePtr findStorageByName(const String & storage_name) const;
+    StoragePtr findStorageByName(const String & storage_name);
+    ConstStoragePtr getStorageByName(const String & storage_name) const;
+    StoragePtr getStorageByName(const String & storage_name);
+
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override;
