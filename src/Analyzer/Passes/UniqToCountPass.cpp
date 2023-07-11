@@ -11,65 +11,50 @@
 namespace DB
 {
 
-using Aliases = std::unordered_map<String, QueryTreeNodePtr>;
-
 namespace
 {
 
-    bool matchFnUniq(String func_name)
-    {
-        auto name = Poco::toLower(func_name);
-        return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
-            || name == "uniqCombined64";
-    }
+bool matchFnUniq(String func_name)
+{
+    auto name = Poco::toLower(func_name);
+    return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
+        || name == "uniqCombined64";
+}
 
-    bool nodeEquals(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, const Aliases & alias)
-    {
-        auto * lhs_node = lhs->as<ColumnNode>();
-        auto * rhs_node = rhs->as<ColumnNode>();
+bool nodeEquals(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    auto * lhs_node = lhs->as<ColumnNode>();
+    auto * rhs_node = rhs->as<ColumnNode>();
 
-        if (lhs_node && rhs_node)
-        {
-            if (lhs_node->getColumn() == rhs_node->getColumn())
-                return true;
+    if (lhs_node && rhs_node && lhs_node->getColumn() == rhs_node->getColumn())
+        return true;
+    return false;
+}
 
-            /// translate alias
-            if (lhs->hasAlias() && alias.find(lhs->getAlias()) != alias.end())
-                lhs_node = alias.find(lhs->getAlias())->second->as<ColumnNode>();
-
-            if (rhs->hasAlias() && alias.find(rhs->getAlias()) != alias.end())
-                rhs_node = alias.find(rhs->getAlias())->second->as<ColumnNode>();
-
-            if (lhs_node && rhs_node && lhs_node == rhs_node)
-                return true;
-        }
+bool nodeListEquals(const QueryTreeNodes & lhs, const QueryTreeNodes & rhs)
+{
+    if (lhs.size() != rhs.size())
         return false;
-    }
-
-    bool nodeListEquals(const QueryTreeNodes & lhs, const QueryTreeNodes & rhs, const Aliases & alias)
+    for (size_t i = 0; i < lhs.size(); i++)
     {
-        if (lhs.size() != rhs.size())
+        if (!nodeEquals(lhs[i], rhs[i]))
             return false;
-        for (size_t i = 0; i < lhs.size(); i++)
-        {
-            if (!nodeEquals(lhs[i], rhs[i], alias))
-                return false;
-        }
-        return true;
     }
+    return true;
+}
 
-    bool nodeListContainsAll(const QueryTreeNodes & lhs, const QueryTreeNodes & rhs, const Aliases & alias)
+bool nodeListContainsAll(const QueryTreeNodes & lhs, const QueryTreeNodes & rhs)
+{
+    if (lhs.size() < rhs.size())
+        return false;
+    for (const auto & re : rhs)
     {
-        if (lhs.size() < rhs.size())
+        auto predicate = [&](const QueryTreeNodePtr & le) { return nodeEquals(le, re); };
+        if (std::find_if(lhs.begin(), lhs.end(), predicate) == lhs.end())
             return false;
-        for (const auto & re : rhs)
-        {
-            auto predicate = [&](const QueryTreeNodePtr & le) { return nodeEquals(le, re, alias); };
-            if (std::find_if(lhs.begin(), lhs.end(), predicate) == lhs.end())
-                return false;
-        }
-        return true;
     }
+    return true;
+}
 
 }
 
@@ -108,15 +93,6 @@ public:
         if (!matchFnUniq(function_node->getFunctionName()))
             return;
 
-        /// collect subquery select expressions alias.
-        /// TODO new analyzer will lose alias info, so we will collect nothing and we can not rewrite SQL with alias.
-        Aliases alias;
-        for (auto & subquery_projection_node : subquery_node->getProjection().getNodes())
-        {
-            if (subquery_projection_node->hasAlias())
-                alias.insert({subquery_projection_node->getAlias(), subquery_projection_node});
-        }
-
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
 
         /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
@@ -125,7 +101,7 @@ public:
             if (!subquery_node->isDistinct())
                 return false;
             /// uniq expression list == subquery group by expression list
-            if (!nodeListEquals(uniq_arguments_nodes, subquery_node->getProjection().getNodes(), alias))
+            if (!nodeListEquals(uniq_arguments_nodes, subquery_node->getProjection().getNodes()))
                 return false;
             return true;
         };
@@ -136,10 +112,10 @@ public:
             if (!subquery_node->hasGroupBy())
                 return false;
             /// uniq argument node list == subquery group by node list
-            if (!nodeListEquals(uniq_arguments_nodes, subquery_node->getGroupByNode()->getChildren(), alias))
+            if (!nodeListEquals(uniq_arguments_nodes, subquery_node->getGroupByNode()->getChildren()))
                 return false;
             /// subquery select node list must contain all columns in uniq argument node list
-            if (!nodeListContainsAll(subquery_node->getProjection().getNodes(), uniq_arguments_nodes, alias))
+            if (!nodeListContainsAll(subquery_node->getProjection().getNodes(), uniq_arguments_nodes))
                 return false;
             return true;
         };
