@@ -415,7 +415,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         String type = key_in_user_directories;
         if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
-        if ((type == "users_xml") || (type == "users_config"))
+        if ((type == "users.xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
         else if ((type == "local") || (type == "local_directory"))
             type = DiskAccessStorage::STORAGE_TYPE;

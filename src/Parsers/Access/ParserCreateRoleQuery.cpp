@@ -91,6 +91,10 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String new_name;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     String cluster;
+    String storage_name;
+
+    if (ParserKeyword{"AT"}.ignore(pos, expected))
+        parseStorageName(pos, expected, storage_name);
 
     while (true)
     {
@@ -125,6 +129,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
+    query->storage_name = std::move(storage_name);
 
     return true;
 }

@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
 }
 
 using Storage = IAccessStorage;
@@ -176,6 +177,40 @@ StoragePtr MultipleAccessStorage::getStorage(const UUID & id)
 ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
 {
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
+}
+
+StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageName() == storage_name)
+            return storage;
+    }
+
+    return nullptr;
+}
+
+
+ConstStoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name) const
+{
+    return const_cast<MultipleAccessStorage *>(this)->findStorageByName(storage_name);
+}
+
+
+StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name)
+{
+    auto storage = findStorageByName(storage_name);
+    if (storage)
+        return storage;
+
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "Access storage with name {} is not found", storage_name);
+}
+
+
+ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name) const
+{
+    return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
 }
 
 AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const

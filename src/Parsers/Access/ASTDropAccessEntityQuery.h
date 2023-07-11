@@ -21,6 +21,7 @@ public:
     AccessEntityType type;
     bool if_exists = false;
     Strings names;
+    String storage_name;
     std::shared_ptr<ASTRowPolicyNames> row_policy_names;
 
     String getID(char) const override;

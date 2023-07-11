@@ -53,6 +53,11 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
     else
         formatNames(names, settings);
 
+    if (!storage_name.empty())
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "")
+                      << " FROM " << (settings.hilite ? IAST::hilite_none : "")
+                      << backQuoteIfNeed(storage_name);
+
     formatOnCluster(settings);
 }
 
