@@ -1100,9 +1100,16 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+
+    std::vector<std::string> extra_paths = {include_from_path};
+    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
+    if (!key_path.empty()) extra_paths.emplace_back(key_path);
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        include_from_path,
+        extra_paths,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
