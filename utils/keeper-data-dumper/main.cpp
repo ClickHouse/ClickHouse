@@ -8,6 +8,7 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
 #include <Common/logger_useful.h>
+#include <Disks/DiskLocal.h>
 
 using namespace Coordination;
 using namespace DB;
@@ -62,15 +63,18 @@ int main(int argc, char *argv[])
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>();
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings, keeper_context, nullptr);
+    KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
+    keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[1]));
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
     DB::KeeperLogStore changelog(
-        argv[2], LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000});
+        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000}, keeper_context);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)
         LOG_INFO(logger, "Changelog empty");
