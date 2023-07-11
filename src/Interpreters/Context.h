@@ -1,5 +1,7 @@
 #pragma once
 
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
@@ -615,6 +617,7 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     const Scalars & getScalars() const;
@@ -1239,3 +1242,9 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
+
+#else
+
+#include <Coordination/Standalone/Context.h>
+
+#endif

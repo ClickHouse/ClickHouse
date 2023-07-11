@@ -48,7 +48,6 @@ public:
         Finalizer & operator=(Finalizer &&) noexcept;
         ~Finalizer();
 
-
         void finish();
     };
 

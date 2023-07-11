@@ -13,6 +13,7 @@
 #include <Common/NetException.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/Priority.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ namespace ProfileEvents
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
 /// Initialized by several PoolBase objects.
 /// When a connection is requested, tries to create or choose an alive connection from one of the nested pools.
-/// Pools are tried in the order consistent with lexicographical order of (error count, priority, random number) tuples.
+/// Pools are tried in the order consistent with lexicographical order of (error count, slowdown count, config priority, priority, random number) tuples.
 /// Number of tries for a single pool is limited by max_tries parameter.
 /// The client can set nested pool priority by passing a GetPriority functor.
 ///
@@ -113,7 +114,7 @@ public:
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
-    using GetPriorityFunc = std::function<size_t(size_t index)>;
+    using GetPriorityFunc = std::function<Priority(size_t index)>;
 
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
@@ -336,9 +337,9 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     /// The number of slowdowns that led to changing replica in HedgedRequestsFactory
     UInt64 slowdown_count = 0;
     /// Priority from the <remote_server> configuration.
-    Int64 config_priority = 1;
+    Priority config_priority{1};
     /// Priority from the GetPriorityFunc.
-    Int64 priority = 0;
+    Priority priority{0};
     UInt64 random = 0;
 
     void randomize()
