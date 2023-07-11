@@ -94,18 +94,15 @@ public:
 
 #if USE_SSL
     /// Encrypt text value
-    std::string encryptValue(const std::string & codec_name, const std::string & value);
+    std::string encryptValue(const std::string & codec_name, const std::string & value) const;
 
     /// Decrypt value
-    std::string decryptValue(const std::string & codec_name, const std::string & value);
-
-    /// Decrypt nodes in config with specified encryption attributes
-    void decryptConfig(LoadedConfig & loaded_config);
+    std::string decryptValue(const std::string & codec_name, const std::string & value) const;
 #endif
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
-    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
+    void savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir);
 
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
@@ -137,6 +134,9 @@ private:
 
 #if USE_SSL
     void decryptRecursive(Poco::XML::Node * config_root);
+
+    /// Decrypt elements in config with specified encryption attributes
+    void decryptEncryptedElements(LoadedConfig & loaded_config);
 #endif
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
