@@ -283,6 +283,11 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
+bool CSVFormatReader::allowVariableNumberOfColumns()
+{
+    return format_settings.csv.allow_variable_number_of_columns;
+}
+
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
@@ -345,6 +350,12 @@ bool CSVFormatReader::checkForSuffix()
 
     buf->rollbackToCheckpoint();
     return false;
+}
+
+bool CSVFormatReader::checkForEndOfRow()
+{
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
+    return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
