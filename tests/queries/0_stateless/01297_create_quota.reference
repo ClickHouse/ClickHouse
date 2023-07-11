@@ -52,10 +52,10 @@ CREATE QUOTA q2_01297 FOR INTERVAL 1 day MAX errors = 5
 CREATE QUOTA q1_01297 FOR INTERVAL 1 day TRACKING ONLY TO r1_01297
 CREATE QUOTA q2_01297 FOR INTERVAL 1 day TRACKING ONLY TO r1_01297
 -- system.quotas
-q1_01297	local directory	['user_name']	[]	0	['r1_01297']	[]
-q2_01297	local directory	[]	[5259492]	0	['r1_01297','u1_01297']	[]
-q3_01297	local directory	['client_key','user_name']	[5259492,15778476]	0	[]	[]
-q4_01297	local directory	[]	[604800]	1	[]	['u1_01297']
+q1_01297	local_directory	['user_name']	[]	0	['r1_01297']	[]
+q2_01297	local_directory	[]	[5259492]	0	['r1_01297','u1_01297']	[]
+q3_01297	local_directory	['client_key','user_name']	[5259492,15778476]	0	[]	[]
+q4_01297	local_directory	[]	[604800]	1	[]	['u1_01297']
 -- system.quota_limits
 q2_01297	5259492	0	100	\N	\N	11	1000	10000	1001	10001	2.5	\N
 q3_01297	5259492	0	\N	\N	\N	\N	1002	\N	\N	\N	\N	\N
