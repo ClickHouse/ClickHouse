@@ -313,15 +313,20 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const IMergeTreeDataPart * parent_part_)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
-    , name(name_)
+    , mutable_name(name_)
+    , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
+    , parent_part_name(parent_part ? parent_part->name : "")
     , use_metadata_cache(storage.use_metadata_cache)
 {
     if (parent_part)
+    {
+        chassert(parent_part_name.starts_with(parent_part->info.partition_id));     /// Make sure there's no prefix
         state = MergeTreeDataPartState::Active;
+    }
 
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
@@ -338,6 +343,12 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementTypeMetric(part_type);
 }
 
+void IMergeTreeDataPart::setName(const String & new_name)
+{
+    mutable_name = new_name;
+    for (auto & proj_part : projection_parts)
+        proj_part.second->parent_part_name = new_name;
+}
 
 String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) const
 {
@@ -503,8 +514,10 @@ void IMergeTreeDataPart::removeIfNeeded()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            const auto part_parent_directory = directoryPath(part_directory);
-            bool is_moving_part = part_parent_directory.ends_with("moving/");
+            fs::path part_directory_path = getDataPartStorage().getRelativePath();
+            if (part_directory_path.filename().empty())
+                part_directory_path = part_directory_path.parent_path();
+            bool is_moving_part = part_directory_path.parent_path().filename() == "moving";
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
