@@ -3238,6 +3238,9 @@ class ClickHouseInstance:
         self.clickhouse_start_command = clickhouse_start_command.replace(
             "{main_config_file}", self.main_config_name
         )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
+            clickhouse_start_command
+        )
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, "docker-compose.yml")
@@ -4327,7 +4330,7 @@ class ClickHouseInstance:
         entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace(
+            entrypoint_cmd = self.clickhouse_stay_alive_command.replace(
                 "{main_config_file}", self.main_config_name
             )
         else:
