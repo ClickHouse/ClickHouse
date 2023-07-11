@@ -472,7 +472,9 @@ try
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
+#if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
+#endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
