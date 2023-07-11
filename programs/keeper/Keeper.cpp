@@ -21,7 +21,6 @@
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <Server/CertificateReloader.h>
 #include <sys/stat.h>
 #include <pwd.h>
 
@@ -43,6 +42,7 @@
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
+#    include <Server/CertificateReloader.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
