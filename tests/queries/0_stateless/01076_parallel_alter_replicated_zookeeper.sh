@@ -31,7 +31,8 @@ for i in $(seq $REPLICAS); do
                  max_replicated_merges_in_queue = 1000,
                  temporary_directories_lifetime = 10,
                  cleanup_delay_period = 3,
-                 cleanup_delay_period_random_add = 0"
+                 cleanup_delay_period_random_add = 0,
+                 cleanup_thread_preferred_points_per_iteration=0"
 done
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"
