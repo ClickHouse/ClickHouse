@@ -11,6 +11,7 @@
 #include <base/hex.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <filesystem>
@@ -52,12 +53,12 @@ namespace ErrorCodes
 
 FileCache::FileCache(const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
-    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
+    , boundary_alignment(settings.boundary_alignment)
+    , background_download_threads(settings.background_download_threads)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
-    , boundary_alignment(settings.boundary_alignment)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -129,6 +130,9 @@ void FileCache::initialize()
     }
 
     is_initialized = true;
+
+    for (size_t i = 0; i < background_download_threads; ++i)
+         download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
@@ -424,7 +428,12 @@ FileSegmentsHolderPtr FileCache::set(
 }
 
 FileSegmentsHolderPtr
-FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
+FileCache::getOrSet(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    size_t file_size,
+    const CreateFileSegmentSettings & settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
@@ -499,12 +508,14 @@ KeyMetadata::iterator FileCache::addFileSegment(
     chassert(size > 0); /// Empty file segments in cache are not allowed.
 
     const auto & key = locked_key.getKey();
-    if (locked_key.tryGetByOffset(offset))
+    const FileSegment::Range range(offset, offset + size - 1);
+
+    if (auto intersecting_range = locked_key.hasIntersectingRange(range))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cache entry already exists for key: `{}`, offset: {}, size: {}.",
-            key, offset, size);
+            "Attempt to add intersecting file segment in cache ({} intersects {})",
+            range.toString(), intersecting_range->toString());
     }
 
     FileSegment::State result_state;
@@ -615,9 +626,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 
     struct EvictionCandidates
     {
-        explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(key_metadata_) {}
+        explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(std::move(key_metadata_)) {}
 
-        void add(FileSegmentMetadataPtr candidate)
+        void add(const FileSegmentMetadataPtr & candidate)
         {
             candidate->removal_candidate = true;
             candidates.push_back(candidate);
@@ -638,36 +649,20 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     std::unordered_map<Key, EvictionCandidates> to_delete;
     size_t freeable_space = 0, freeable_count = 0;
 
-    auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
 
-        const bool is_persistent = allow_persistent_files && segment_metadata->file_segment->isPersistent();
-        const bool releasable = segment_metadata->releasable() && !is_persistent;
-
-        if (releasable)
+        if (segment_metadata->releasable())
         {
-            auto segment = segment_metadata->file_segment;
-            if (segment->state() == FileSegment::State::DOWNLOADED)
-            {
-                const auto & key = segment->key();
+            const auto & key = segment_metadata->file_segment->key();
+            auto it = to_delete.find(key);
+            if (it == to_delete.end())
+                it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
+            it->second.add(segment_metadata);
 
-                auto it = to_delete.find(key);
-                if (it == to_delete.end())
-                    it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
-                it->second.add(segment_metadata);
-
-                freeable_space += segment_metadata->size();
-                freeable_count += 1;
-
-                return PriorityIterationResult::CONTINUE;
-            }
-
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
-
-            locked_key.removeFileSegment(segment->offset(), segment->lock());
-            return PriorityIterationResult::REMOVE_AND_CONTINUE;
+            freeable_space += segment_metadata->size();
+            ++freeable_count;
         }
         return PriorityIterationResult::CONTINUE;
     };
@@ -683,7 +678,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
         if (is_query_priority_overflow())
         {
             query_priority->iterate(
-                [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+                [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
                 { return is_query_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
                 cache_lock);
 
@@ -696,20 +691,28 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
             file_segment.key(), file_segment.offset());
     }
 
-    auto is_main_priority_overflow = [&]
+    auto is_main_priority_overflow = [main_priority_size_limit = main_priority->getSizeLimit(),
+                                      main_priority_elements_limit = main_priority->getElementsLimit(),
+                                      size,
+                                      &freeable_space,
+                                      &freeable_count,
+                                      &file_segment,
+                                      &cache_lock,
+                                      my_main_priority = this->main_priority.get(),
+                                      my_log = this->log]
     {
-        /// max_size == 0 means unlimited cache size,
-        /// max_element_size == 0 means unlimited number of cache elements.
-        const bool is_overflow = (main_priority->getSizeLimit() != 0
-                                  && (main_priority->getSize(cache_lock) + size - freeable_space > main_priority->getSizeLimit()))
-            || (main_priority->getElementsLimit() != 0
-                && freeable_count == 0 && main_priority->getElementsCount(cache_lock) == main_priority->getElementsLimit());
+        const bool is_overflow =
+            /// size_limit == 0 means unlimited cache size
+            (main_priority_size_limit != 0 && (my_main_priority->getSize(cache_lock) + size - freeable_space > main_priority_size_limit))
+            /// elements_limit == 0 means unlimited number of cache elements
+            || (main_priority_elements_limit != 0 && freeable_count == 0
+                && my_main_priority->getElementsCount(cache_lock) == main_priority_elements_limit);
 
         LOG_TEST(
-            log, "Overflow: {}, size: {}, ready to remove: {} ({} in number), current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
+            my_log, "Overflow: {}, size: {}, ready to remove: {} ({} in number), current cache size: {}/{}, elements: {}/{}, while reserving for {}:{}",
             is_overflow, size, freeable_space, freeable_count,
-            main_priority->getSize(cache_lock), main_priority->getSizeLimit(),
-            main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(),
+            my_main_priority->getSize(cache_lock), my_main_priority->getSizeLimit(),
+            my_main_priority->getElementsCount(cache_lock), my_main_priority->getElementsLimit(),
             file_segment.key(), file_segment.offset());
 
         return is_overflow;
@@ -718,7 +721,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     if (is_main_priority_overflow())
     {
         main_priority->iterate(
-            [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+            [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
             { return is_main_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
             cache_lock);
 
@@ -751,12 +754,14 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 chassert(candidate->releasable());
 
                 const auto * segment = candidate->file_segment.get();
+                auto queue_it = segment->getQueueIterator();
+                chassert(queue_it);
 
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
                 locked_key->removeFileSegment(segment->offset(), segment->lock());
-                segment->getQueueIterator()->remove(cache_lock);
+                queue_it->remove(cache_lock);
 
                 if (query_context)
                     query_context->remove(current_key, segment->offset(), cache_lock);
@@ -825,13 +830,9 @@ void FileCache::removeAllReleasable()
 {
     assertInitialized();
 
-    /// Only releasable file segments are evicted.
-    /// `remove_persistent_files` defines whether non-evictable by some criteria files
-    /// (they do not comply with the cache eviction policy) should also be removed.
-
     auto lock = lockCache();
 
-    main_priority->iterate([&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+    main_priority->iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         if (segment_metadata->releasable())
         {
@@ -931,7 +932,9 @@ void FileCache::loadMetadata()
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
                     if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                     {
-                        segment_kind = FileSegmentKind::Persistent;
+                        /// For compatibility. Persistent files are no longer supported.
+                        fs::remove(offset_it->path());
+                        continue;
                     }
                     if (offset_with_suffix.substr(delim_pos+1) == "temporary")
                     {
@@ -956,8 +959,20 @@ void FileCache::loadMetadata()
                 if ((main_priority->getSizeLimit() == 0 || main_priority->getSize(lock) + size <= main_priority->getSizeLimit())
                     && (main_priority->getElementsLimit() == 0 || main_priority->getElementsCount(lock) + 1 <= main_priority->getElementsLimit()))
                 {
-                    auto file_segment_metadata_it = addFileSegment(
-                        *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
+                    KeyMetadata::iterator file_segment_metadata_it;
+                    try
+                    {
+                        file_segment_metadata_it = addFileSegment(
+                            *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        chassert(false);
+
+                        fs::remove(offset_it->path());
+                        continue;
+                    }
 
                     const auto & file_segment_metadata = file_segment_metadata_it->second;
                     chassert(file_segment_metadata->file_segment->assertCorrectness());
@@ -1009,6 +1024,11 @@ void FileCache::deactivateBackgroundOperations()
 {
     if (cleanup_task)
         cleanup_task->deactivate();
+
+    metadata.cancelDownload();
+    for (auto & thread : download_threads)
+        if (thread.joinable())
+            thread.join();
 }
 
 void FileCache::cleanup()
@@ -1020,10 +1040,6 @@ void FileCache::cleanupThreadFunc()
 {
     try
     {
-#ifdef ABORT_ON_LOGICAL_ERROR
-        assertCacheCorrectness();
-#endif
-
         cleanup();
     }
     catch (...)
@@ -1065,7 +1081,7 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
     assertInitialized();
 
     FileSegments file_segments;
-    main_priority->iterate([&](LockedKey &, FileSegmentMetadataPtr segment_metadata)
+    main_priority->iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
         file_segments.push_back(FileSegment::getSnapshot(segment_metadata->file_segment));
         return PriorityIterationResult::CONTINUE;
@@ -1105,7 +1121,7 @@ size_t FileCache::getFileSegmentsNum() const
 void FileCache::assertCacheCorrectness()
 {
     auto lock = lockCache();
-    main_priority->iterate([&](LockedKey &, FileSegmentMetadataPtr segment_metadata)
+    main_priority->iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
         const auto & file_segment = *segment_metadata->file_segment;
         UNUSED(file_segment);

@@ -26,7 +26,8 @@ SELECT
 
 ## timeZone {#timezone}
 
-Возвращает часовой пояс сервера.
+Возвращает часовой пояс сервера, считающийся умолчанием для текущей сессии: значение параметра [session_timezone](../../operations/settings/settings.md#session_timezone), если установлено.
+
 Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
@@ -42,6 +43,33 @@ timeZone()
 -   Часовой пояс.
 
 Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [serverTimeZone](#servertimezone)
+
+## serverTimeZone {#servertimezone}
+
+Возвращает часовой пояс сервера по умолчанию, в т.ч. установленный [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
+
+**Синтаксис**
+
+``` sql
+serverTimeZone()
+```
+
+Синонимы: `serverTimezone`.
+
+**Возвращаемое значение**
+
+-   Часовой пояс.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [timeZone](#timezone)
 
 ## toTimeZone {#totimezone}
 
@@ -593,7 +621,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## age
 
-Вычисляет компонент `unit` разницы между `startdate` и `enddate`. Разница вычисляется с точностью в 1 секунду.
+Вычисляет компонент `unit` разницы между `startdate` и `enddate`. Разница вычисляется с точностью в 1 микросекунду.
 Например, разница между `2021-12-29` и `2022-01-01` 3 дня для единицы `day`, 0 месяцев для единицы `month`, 0 лет для единицы `year`.
 
 **Синтаксис**
@@ -607,6 +635,8 @@ age('unit', startdate, enddate, [timezone])
 -   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
     Возможные значения:
 
+    - `microsecond` (возможные сокращения: `us`, `u`)
+    - `millisecond` (возможные сокращения: `ms`)
     - `second` (возможные сокращения: `ss`, `s`)
     - `minute` (возможные сокращения: `mi`, `n`)
     - `hour` (возможные сокращения: `hh`, `h`)
@@ -680,6 +710,8 @@ date_diff('unit', startdate, enddate, [timezone])
 -   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
     Возможные значения:
 
+    - `microsecond` (возможные сокращения: `us`, `u`)
+    - `millisecond` (возможные сокращения: `ms`)
     - `second` (возможные сокращения: `ss`, `s`)
     - `minute` (возможные сокращения: `mi`, `n`)
     - `hour` (возможные сокращения: `hh`, `h`)
