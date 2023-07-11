@@ -404,8 +404,12 @@ private:
         {
             if (!col.type->isNullable())
                 return;
-            const auto & nullable_col = assert_cast<const ColumnNullable &>(*col.column);
-            const auto & null_map = nullable_col.getNullMapData();
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            if (!nullable_col)
+                nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
+            if (!nullable_col)
+                return;
+            const auto & null_map = nullable_col->getNullMapData();
             if (!memoryIsZero(null_map.data(), 0, null_map.size()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal (null) value column {} of argument of function {}", col.column->getName(), getName());
         };
