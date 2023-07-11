@@ -87,7 +87,6 @@ if (ENABLE_FUZZING)
     set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
     set (ENABLE_LIBRARIES 0)
     set (ENABLE_SSL 1)
-    set (USE_UNWIND ON)
     set (ENABLE_EMBEDDED_COMPILER 0)
     set (ENABLE_EXAMPLES 0)
     set (ENABLE_UTILS 0)
@@ -344,9 +343,9 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    if (NOT ENABLE_TESTS AND NOT SANITIZE)
+    if (NOT ENABLE_TESTS AND NOT SANITIZE AND OS_LINUX)
         # https://clang.llvm.org/docs/ThinLTO.html
-        # Applies to clang only.
+        # Applies to clang and linux only.
         # Disabled when building with tests or sanitizers.
         option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
     endif()
