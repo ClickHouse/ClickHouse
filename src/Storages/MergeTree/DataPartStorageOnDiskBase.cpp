@@ -455,22 +455,34 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const std::string & to,
     const std::string & dir_path,
-    const DiskPtr & disk,
+    const DiskPtr & dst_disk,
     Poco::Logger * log) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
+    auto src_disk = volume->getDisk();
 
-    if (disk->exists(path_to_clone))
+    if (dst_disk->exists(path_to_clone))
     {
-        LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone));
-        disk->removeRecursive(path_to_clone);
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                        "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
+                        dir_path, getRelativePath(), path_to_clone, fullPath(dst_disk, path_to_clone));
     }
 
-    disk->createDirectories(to);
-    volume->getDisk()->copy(getRelativePath(), disk, to);
-    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
+    try
+    {
+        dst_disk->createDirectories(to);
+        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone);
+    }
+    catch (...)
+    {
+        /// It's safe to remove it recursively (even with zero-copy-replication)
+        /// because we've just did full copy through copyDirectoryContent
+        LOG_WARNING(log, "Removing directory {} after failed attempt to move a data part", path_to_clone);
+        dst_disk->removeRecursive(path_to_clone);
+        throw;
+    }
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
     return create(single_disk_volume, to, dir_path, /*initialize=*/ true);
 }
 

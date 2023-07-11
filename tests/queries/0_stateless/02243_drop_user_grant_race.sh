@@ -19,17 +19,18 @@ $CLICKHOUSE_CLIENT -nm -q "
 
 function create_drop_grant()
 {
-    $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02243 GRANTEES NONE" ||:
-    $CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO test_user_02243 WITH GRANT OPTION" ||:
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02243" &
-    $CLICKHOUSE_CLIENT --user test_user_02243 -q "GRANT ALL ON *.* TO kek_02243" &
-    wait
+    while true; do
+        $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02243 GRANTEES NONE" ||:
+        $CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO test_user_02243 WITH GRANT OPTION" ||:
+        $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02243" &
+        $CLICKHOUSE_CLIENT --user test_user_02243 -q "GRANT ALL ON *.* TO kek_02243" &
+    done
 }
 
 export -f create_drop_grant
 
 TIMEOUT=10
-clickhouse_client_loop_timeout $TIMEOUT create_drop_grant 2> /dev/null &
+timeout $TIMEOUT bash -c create_drop_grant 2> /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT --user kek_02243 -q "SELECT * FROM test" 2>&1| grep -Fa "Exception: " | grep -Eo ACCESS_DENIED | uniq
