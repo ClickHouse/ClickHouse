@@ -138,7 +138,8 @@ void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
 
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
 {
-    return nullptr;
+    /// No hardlinks, so will always remove file.
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
 
 }
