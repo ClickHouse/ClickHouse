@@ -1,5 +1,17 @@
 <clickhouse>
     <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+
+    <remote_servers>
+        <test_shard_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_localhost>
+    </remote_servers>
+
     <named_collections>
         <named_collection_1/>
         <named_collection_2/>
