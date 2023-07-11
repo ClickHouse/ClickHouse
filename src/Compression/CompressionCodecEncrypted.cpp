@@ -28,6 +28,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+EncryptionMethod getEncryptionMethod(const std::string & name)
+{
+    if (name == "AES_128_GCM_SIV")
+        return AES_128_GCM_SIV;
+    else if (name == "AES_256_GCM_SIV")
+        return AES_256_GCM_SIV;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", name);
 }
 
 namespace
@@ -79,7 +90,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
 

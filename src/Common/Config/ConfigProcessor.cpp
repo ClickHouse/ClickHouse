@@ -52,25 +52,6 @@ namespace ErrorCodes
 #endif
 }
 
-#if USE_SSL
-namespace
-{
-
-/// Get method for string name. Throw exception for wrong name
-EncryptionMethod getEncryptionMethod(const std::string & name)
-{
-    if (name == "AES_128_GCM_SIV")
-        return AES_128_GCM_SIV;
-    else if (name == "AES_256_GCM_SIV")
-        return AES_256_GCM_SIV;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", name);
-}
-
-}
-
-#endif
-
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
@@ -204,11 +185,12 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 
 std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
 {
-    auto codec = DB::CompressionCodecEncrypted(getEncryptionMethod(codec_name));
+    EncryptionMethod method = getEncryptionMethod(codec_name);
+    CompressionCodecEncrypted codec(method);
 
-    DB::Memory<> memory;
-    memory.resize(codec.getCompressedReserveSize(static_cast<DB::UInt32>(value.size())));
-    auto bytes_written = codec.compress(value.data(), static_cast<DB::UInt32>(value.size()), memory.data());
+    Memory<> memory;
+    memory.resize(codec.getCompressedReserveSize(static_cast<UInt32>(value.size())));
+    auto bytes_written = codec.compress(value.data(), static_cast<UInt32>(value.size()), memory.data());
     auto encrypted_value = std::string(memory.data(), bytes_written);
     std::string hex_value;
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
@@ -217,9 +199,10 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
 
 std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
 {
-    auto codec = DB::CompressionCodecEncrypted(getEncryptionMethod(codec_name));
+    EncryptionMethod method = getEncryptionMethod(codec_name);
+    CompressionCodecEncrypted codec(method);
 
-    DB::Memory<> memory;
+    Memory<> memory;
     std::string encrypted_value;
 
     try
@@ -232,7 +215,7 @@ std::string ConfigProcessor::decryptValue(const std::string & codec_name, const 
     }
 
     memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()));
-    codec.decompress(encrypted_value.data(), static_cast<DB::UInt32>(encrypted_value.size()), memory.data());
+    codec.decompress(encrypted_value.data(), static_cast<UInt32>(encrypted_value.size()), memory.data());
     std::string decrypted_value = std::string(memory.data(), memory.size());
     return decrypted_value;
 }
@@ -797,7 +780,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 void ConfigProcessor::decryptConfig(LoadedConfig & loaded_config)
 {
-    DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
+    CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
     Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
     decryptRecursive(config_root);
     loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
