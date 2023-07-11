@@ -76,6 +76,13 @@ class OpenedFileCache
             it->second = res;
             return res;
         }
+
+        void remove(const std::string & path, int flags)
+        {
+            Key key(path, flags);
+            std::lock_guard lock(mutex);
+            files.erase(key);
+        }
     };
 
     static constexpr size_t buckets = 1024;
@@ -87,15 +94,15 @@ public:
     OpenedFilePtr get(const std::string & path, int flags)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::OpenedFileCacheMicroseconds);
-        const auto bucket = CityHash_v1_0_2::CityHash64(path) % buckets;
+        const auto bucket = CityHash_v1_0_2::CityHash64(path.data(), path.length()) % buckets;
         return impls[bucket].get(path, flags);
     }
 
     void remove(const std::string & path, int flags)
     {
-        Key key(path, flags);
-        std::lock_guard lock(mutex);
-        files.erase(key);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::OpenedFileCacheMicroseconds);
+        const auto bucket = CityHash_v1_0_2::CityHash64(path.data(), path.length()) % buckets;
+        impls[bucket].remove(path, flags);
     }
 
     static OpenedFileCache & instance()
