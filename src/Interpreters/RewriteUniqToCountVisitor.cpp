@@ -124,7 +124,7 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
 
     /// collect subquery select expressions alias
     Aliases alias;
-    for (auto expr : sub_expr_list->children)
+    for (const auto & expr : sub_expr_list->children)
     {
         if (!expr->tryGetAlias().empty())
             alias.insert({expr->tryGetAlias(), expr});
