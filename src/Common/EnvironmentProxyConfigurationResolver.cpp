@@ -1,5 +1,6 @@
 #include "EnvironmentProxyConfigurationResolver.h"
 
+#include <Common/logger_useful.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -13,7 +14,14 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve(bool https)
     if (const auto * proxy_host = std::getenv(https ? PROXY_HTTPS_ENVIRONMENT_VARIABLE : PROXY_HTTP_ENVIRONMENT_VARIABLE)) // NOLINT(concurrency-mt-unsafe)
     {
         auto uri = Poco::URI(proxy_host);
-        return ProxyConfiguration {uri.getHost(), uri.getScheme(), uri.getPort()};
+
+        auto host = uri.getHost();
+        auto scheme = uri.getScheme();
+        auto port = uri.getPort();
+
+        LOG_DEBUG(&Poco::Logger::get("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
+
+        return ProxyConfiguration {host, scheme, port};
     }
 
     return {};
