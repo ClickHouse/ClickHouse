@@ -29,13 +29,21 @@ def prepare():
         ORDER BY `a`
         """
     )
-    node.query("INSERT INTO test_rewrite_uniq_to_count values ('1', '1', '1'), ('1', '1', '1')")
-    node.query("INSERT INTO test_rewrite_uniq_to_count values ('2', '2', '2'), ('2', '2', '2')")
-    node.query("INSERT INTO test_rewrite_uniq_to_count values ('3', '3', '3'), ('3', '3', '3')")
+    node.query(
+        "INSERT INTO test_rewrite_uniq_to_count values ('1', '1', '1'), ('1', '1', '1')"
+    )
+    node.query(
+        "INSERT INTO test_rewrite_uniq_to_count values ('2', '2', '2'), ('2', '2', '2')"
+    )
+    node.query(
+        "INSERT INTO test_rewrite_uniq_to_count values ('3', '3', '3'), ('3', '3', '3')"
+    )
 
 
 def shutdown():
-    node.query("DROP TABLE IF EXISTS test_rewrite_uniq_to_count SYNC")
+    node.query(
+        "DROP TABLE IF EXISTS test_rewrite_uniq_to_count SYNC"
+    )
 
 
 def check(query, result):
@@ -50,7 +58,6 @@ def check(query, result):
     assert "count()" in node.query("EXPLAIN QUERY TREE " + query)
 
 
-# For new analyzer loses alias info, we can not rewrite SQL with alias.
 def check_by_old_analyzer(query, result):
     # only old analyzer
     query = query + " settings optimize_uniq_to_count = 1"
@@ -60,43 +67,63 @@ def check_by_old_analyzer(query, result):
 
 def test_rewrite_distinct(started_cluster):
     # simple test
-    check("SELECT uniq(a) FROM (SELECT DISTINCT a FROM test_rewrite_uniq_to_count)",
-          3)
+    check(
+        "SELECT uniq(a) FROM (SELECT DISTINCT a FROM test_rewrite_uniq_to_count)",
+        3,
+    )
 
     # test subquery alias
-    check("SELECT uniq(t.a) FROM (SELECT DISTINCT a FROM test_rewrite_uniq_to_count) t",
-          3)
+    check(
+        "SELECT uniq(t.a) FROM (SELECT DISTINCT a FROM test_rewrite_uniq_to_count) t",
+        3,
+    )
 
-    # test table.column
-    check("SELECT uniq(a) FROM (SELECT DISTINCT test_rewrite_uniq_to_count.a FROM test_rewrite_uniq_to_count) t",
-          3)
+    # test compound column name
+    check(
+        "SELECT uniq(a) FROM (SELECT DISTINCT test_rewrite_uniq_to_count.a FROM test_rewrite_uniq_to_count) t",
+        3,
+    )
 
     # test select expression alias
-    check_by_old_analyzer("SELECT uniq(a) FROM (SELECT DISTINCT test_rewrite_uniq_to_count.a as alias_of_a FROM test_rewrite_uniq_to_count) t",
-          3)
+    check_by_old_analyzer(
+        "SELECT uniq(a) FROM (SELECT DISTINCT test_rewrite_uniq_to_count.a as alias_of_a FROM test_rewrite_uniq_to_count) t",
+        3,
+    )
 
     # test select expression alias
-    check_by_old_analyzer("SELECT uniq(alias_of_a) FROM (SELECT DISTINCT a as alias_of_a FROM test_rewrite_uniq_to_count) t",
-          3)
+    check_by_old_analyzer(
+        "SELECT uniq(alias_of_a) FROM (SELECT DISTINCT a as alias_of_a FROM test_rewrite_uniq_to_count) t",
+        3,
+    )
 
 
 def test_rewrite_group_by(started_cluster):
     # simple test
-    check("SELECT uniq(a) FROM (SELECT a, min(b) FROM test_rewrite_uniq_to_count GROUP BY a)",
-          3)
+    check(
+        "SELECT uniq(a) FROM (SELECT a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY a)",
+        3,
+    )
 
     # test subquery alias
-    check("SELECT uniq(t.a) FROM (SELECT a, min(b) FROM test_rewrite_uniq_to_count GROUP BY a) t",
-          3)
+    check(
+        "SELECT uniq(t.a) FROM (SELECT a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY a) t",
+          3,
+    )
 
     # test select expression alias
-    check_by_old_analyzer("SELECT uniq(t.alias_of_a) FROM (SELECT a as alias_of_a, min(b) FROM test_rewrite_uniq_to_count GROUP BY a) t",
-          3)
+    check_by_old_analyzer(
+        "SELECT uniq(t.alias_of_a) FROM (SELECT a as alias_of_a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY a) t",
+        3,
+    )
 
     # test select expression alias
-    check_by_old_analyzer("SELECT uniq(t.a) FROM (SELECT a as alias_of_a, min(b) FROM test_rewrite_uniq_to_count GROUP BY alias_of_a) t",
-          3)
+    check_by_old_analyzer(
+        "SELECT uniq(t.a) FROM (SELECT a as alias_of_a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY alias_of_a) t",
+        3,
+    )
 
     # test select expression alias
-    check_by_old_analyzer("SELECT uniq(t.alias_of_a) FROM (SELECT a as alias_of_a, min(b) FROM test_rewrite_uniq_to_count GROUP BY alias_of_a) t",
-          3)
+    check_by_old_analyzer(
+        "SELECT uniq(t.alias_of_a) FROM (SELECT a as alias_of_a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY alias_of_a) t",
+        3,
+    )
