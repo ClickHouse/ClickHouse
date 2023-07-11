@@ -60,5 +60,4 @@ def test_s3_environment_proxy(cluster):
         == "('color','red'),('size','10')"
     )
 
-
     check_proxy_logs(cluster, "proxy1", ["PUT", "GET"])
