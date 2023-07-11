@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <base/types.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
@@ -61,7 +62,8 @@ private:
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
-    String getLogDetails() const;
+    String getVerboseLogDetails() const;
+    String getShortLogDetails() const;
 
     struct PartData;
     void hidePartialData();
@@ -91,6 +93,7 @@ private:
     const std::shared_ptr<const S3::Client> client_with_long_timeout_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     IBufferAllocationPolicyPtr buffer_allocation_policy;
 
