@@ -8,7 +8,7 @@ There are multiple ways to set ClickHouse query-level settings. Settings are con
 
 The order of priority for defining a setting is:
 
-1. Settings in user profiles. Set user profiles either by:
+1. Applying a setting to a user directly, or within a settings profile
 
     - SQL (recommended)
     - adding one or more XML or YAML files to `/etc/clickhouse-server/users.d`
@@ -35,7 +35,32 @@ The order of priority for defining a setting is:
 These examples all set the value of the `async_insert` setting to `1`, and
 show how to examine the settings in a running system.
 
-### Using SQL to create a settings profile
+### Using SQL to apply a setting to a user directly
+
+This creates the user `ingester` with the setting `async_inset = 1`:
+
+```sql
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+# highlight-next-line
+SETTINGS async_insert = 1
+```
+
+#### Examine the settings profile and assignment
+
+```sql
+SHOW ACCESS
+```
+
+```response
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+# highlight-next-line
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+### Using SQL to create a settings profile and assign to a user
 
 This creates the profile `log_ingest` with the setting `async_inset = 1`:
 
@@ -53,26 +78,8 @@ IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f2
 SETTINGS PROFILE log_ingest
 ```
 
-#### Examine the settings profile and assignment
 
-```sql
-SHOW ACCESS
-```
-
-```response
-┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
-│ CREATE USER default IDENTIFIED WITH sha256_password                                │
-# highlight-next-line
-│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
-│ CREATE SETTINGS PROFILE default                                                    │
-# highlight-next-line
-│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
-│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
-│ ...                                                                                │
-└────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Using XML to create a settings profile
+### Using XML to create a settings profile and user
 
 ```xml title=/etc/clickhouse-server/users.d/users.xml
 <clickhouse>
@@ -119,6 +126,29 @@ SHOW ACCESS
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Assign a setting to a session
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+### Assign a setting during a query
+
+```sql
+INSERT INTO YourTable
+# highlight-next-line
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+
 ## Converting a Setting to its Default Value
 
 If you change a setting and would like to revert it back to its default value, set the value to `DEFAULT`. The syntax looks like:
@@ -127,38 +157,37 @@ If you change a setting and would like to revert it back to its default value, s
 SET setting_name = DEFAULT
 ```
 
-For example, the default value of `max_insert_block_size` is 1048449. Suppose you change its value to 100000:
+For example, the default value of `async_insert` is `0`. Suppose you change its value to `1`:
 
 ```sql
-SET max_insert_block_size=100000;
+SET async_insert = 1;
 
-SELECT value FROM system.settings where name='max_insert_block_size';
+SELECT value FROM system.settings where name='async_insert';
 ```
 
 The response is:
 
 ```response
 ┌─value──┐
-│ 100000 │
+│ 1      │
 └────────┘
 ```
 
-The following command sets its value back to 1048449:
+The following command sets its value back to 0:
 
 ```sql
-SET max_insert_block_size=DEFAULT;
+SET async_insert = DEFAULT;
 
-SELECT value FROM system.settings where name='max_insert_block_size';
+SELECT value FROM system.settings where name='async_insert';
 ```
 
 The setting is now back to its default:
 
 ```response
 ┌─value───┐
-│ 1048449 │
+│ 0       │
 └─────────┘
 ```
-
 
 ## Custom Settings {#custom_settings}
 
