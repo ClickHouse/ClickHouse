@@ -10,7 +10,7 @@ namespace
 
 TEST(ProxyEnvironmentConfiguration, TestHTTP)
 {
-    setenv("http_proxy", proxy_server.toString().c_str(), 1);
+    setenv("http_proxy", proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
@@ -23,7 +23,7 @@ TEST(ProxyEnvironmentConfiguration, TestHTTP)
 
 TEST(ProxyEnvironmentConfiguration, TestHTTPNoEnv)
 {
-    unsetenv("http_proxy");
+    unsetenv("http_proxy"); // NOLINT(concurrency-mt-unsafe)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
@@ -36,7 +36,7 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPNoEnv)
 
 TEST(ProxyEnvironmentConfiguration, TestHTTPs)
 {
-    setenv("https_proxy", proxy_server.toString().c_str(), 1);
+    setenv("https_proxy", proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
@@ -49,7 +49,7 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPs)
 
 TEST(ProxyEnvironmentConfiguration, TestHTTPsNoEnv)
 {
-    unsetenv("https_proxy");
+    unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
