@@ -32,7 +32,9 @@ def test_role_from_different_storages():
     node.query("CREATE ROLE default_role")
     node.query("GRANT SELECT ON system.* TO default_role")
 
-    assert node.query("SHOW GRANTS FOR default_role") == TSV(["GRANT SELECT ON system.* TO default_role"])
+    assert node.query("SHOW GRANTS FOR default_role") == TSV(
+        ["GRANT SELECT ON system.* TO default_role"]
+    )
     assert node.query("SHOW ROLES") == TSV(["default_role"])
 
     node.query("GRANT default_role TO test_user")
@@ -45,23 +47,28 @@ def test_role_from_different_storages():
     node.restart_clickhouse()
 
     assert node.query("SELECT name, storage FROM system.roles") == TSV(
-        [
-            ["default_role", "users_xml"],
-            ["default_role", "local_directory"]
-        ]
+        [["default_role", "users_xml"], ["default_role", "local_directory"]]
     )
 
     # Role from users.xml will have priority
-    assert node.query("SHOW GRANTS FOR default_role") == TSV(["GRANT ALL ON *.* TO default_role WITH GRANT OPTION"])
+    assert node.query("SHOW GRANTS FOR default_role") == TSV(
+        ["GRANT ALL ON *.* TO default_role WITH GRANT OPTION"]
+    )
 
     node.query("GRANT default_role TO test_user")
     node.query("GRANT default_role TO test_user2")
-    assert node.query("SELECT granted_role_id FROM system.role_grants WHERE user_name = 'test_user2'") == TSV(
-        ["62bedbf3-7fb1-94cb-3a35-e479693223b3"]  # roles from users.xml have deterministic ids
+    assert node.query(
+        "SELECT granted_role_id FROM system.role_grants WHERE user_name = 'test_user2'"
+    ) == TSV(
+        [
+            "62bedbf3-7fb1-94cb-3a35-e479693223b3"
+        ]  # roles from users.xml have deterministic ids
     )
 
     node.query("DROP ROLE default_role FROM local_directory")
-    assert node.query("SELECT granted_role_id FROM system.role_grants WHERE user_name = 'test_user'") == TSV(["62bedbf3-7fb1-94cb-3a35-e479693223b3"])
+    assert node.query(
+        "SELECT granted_role_id FROM system.role_grants WHERE user_name = 'test_user'"
+    ) == TSV(["62bedbf3-7fb1-94cb-3a35-e479693223b3"])
 
     # Already exists
     with pytest.raises(QueryRuntimeException):
@@ -69,4 +76,6 @@ def test_role_from_different_storages():
 
     node.query("CREATE ROLE other_role AT memory")
 
-    assert node.query("SELECT storage FROM system.roles WHERE name = 'other_role'") == TSV(["memory"])
+    assert node.query(
+        "SELECT storage FROM system.roles WHERE name = 'other_role'"
+    ) == TSV(["memory"])
