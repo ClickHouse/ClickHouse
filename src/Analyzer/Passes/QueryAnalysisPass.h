@@ -51,7 +51,6 @@ namespace DB
   * Function `arrayJoin` is handled properly.
   * For functions `dictGet` and its variations and for function `joinGet` identifier as first argument is handled properly.
   * Replace `countDistinct` and `countIfDistinct` aggregate functions using setting count_distinct_implementation.
-  * Replace `uniq` and `uniq` and its variants(except uniqUpTo) into `count` aggregate functions using setting optimize_uniq_to_count.
   * Add -OrNull suffix to aggregate functions if setting aggregate_functions_null_for_empty is true.
   * Function `exists` is converted into `in`.
   * Functions `in`, `notIn`, `globalIn`, `globalNotIn` converted into `nullIn`, `notNullIn`, `globalNullIn`, `globalNotNullIn` if setting transform_null_in is true.

@@ -41,9 +41,7 @@ def prepare():
 
 
 def shutdown():
-    node.query(
-        "DROP TABLE IF EXISTS test_rewrite_uniq_to_count SYNC"
-    )
+    node.query("DROP TABLE IF EXISTS test_rewrite_uniq_to_count SYNC")
 
 
 def check(query, result):
@@ -107,7 +105,7 @@ def test_rewrite_group_by(started_cluster):
     # test subquery alias
     check(
         "SELECT uniq(t.a) FROM (SELECT a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY a) t",
-          3,
+        3,
     )
 
     # test select expression alias
