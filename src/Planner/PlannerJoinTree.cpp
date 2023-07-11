@@ -16,6 +16,7 @@
 #include <Access/ContextAccess.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 
@@ -46,11 +47,12 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/HashJoin.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
@@ -60,7 +62,6 @@
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
-
 
 namespace DB
 {
@@ -644,6 +645,37 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             if (!select_query_options.only_analyze)
             {
+                auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+                if (storage_merge_tree && query_context->canUseParallelReplicasOnInitiator()
+                    && settings.parallel_replicas_min_number_of_rows_per_replica > 0)
+                {
+                    /// This is trash
+                    /// It uses the old InterpreterSelectQuery to do the estimation of how many rows will be read
+                    /// Ideally we should be able to use estimateNumberOfRowsToRead over the storage, but to do this
+                    /// properly we need all the actions/filters, which aren't available yet
+                    /// If we instead delay this check for later several things will happen:
+                    /// * The header might be different (updatePrewhereOutputsIfNeeded)
+                    /// * The storage will have been initiated (thus already preparing parallel replicas)
+                    auto query_options = SelectQueryOptions(
+                                             QueryProcessingStage::WithMergeableState,
+                                             /* depth */ 1,
+                                             /* is_subquery_= */ true)
+                                             .ignoreProjections()
+                                             .ignoreAlias();
+                    InterpreterSelectQuery select(
+                        table_expression_query_info.original_query,
+                        query_context,
+                        query_options,
+                        table_expression_query_info.prepared_sets);
+                    select.adjustParallelReplicasAfterAnalysis();
+                    planner_context->getMutableQueryContext()->setSetting(
+                        "allow_experimental_parallel_reading_from_replicas",
+                        select.getContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas.operator Field());
+                    planner_context->getMutableQueryContext()->setSetting(
+                        "max_parallel_replicas", select.getContext()->getSettingsRef().max_parallel_replicas.operator Field());
+                }
+
+
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
 
                 if (prewhere_actions)

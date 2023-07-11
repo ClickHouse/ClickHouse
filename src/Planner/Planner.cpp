@@ -1233,7 +1233,7 @@ void Planner::buildPlanForQueryNode()
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
         {
-            LOG_WARNING(
+            LOG_DEBUG(
                 &Poco::Logger::get("Planner"),
                 "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 

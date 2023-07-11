@@ -893,8 +893,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     ASTSelectQuery & query = getSelectQuery();
 
     /// While only_analyze we don't know anything about parts, so any decision about how many parallel replicas to use would be wrong
-    if (!storage || options.only_analyze || settings.max_parallel_replicas <= 1
-        || settings.allow_experimental_parallel_reading_from_replicas == 0 || !settings.parallel_replicas_custom_key.value.empty())
+    if (!storage || options.only_analyze || !context->canUseParallelReplicasOnInitiator())
         return false;
 
     if (getTrivialCount(0).has_value())
@@ -907,7 +906,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     }
 
     auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-    if (!storage_merge_tree || settings.parallel_replicas_min_number_of_rows_per_replica <= 1)
+    if (!storage_merge_tree || settings.parallel_replicas_min_number_of_rows_per_replica == 0)
         return false;
 
     auto query_info_copy = query_info;

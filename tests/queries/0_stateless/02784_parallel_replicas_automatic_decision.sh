@@ -62,47 +62,10 @@ function run_query_with_pure_parallel_replicas () {
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
-        --allow_experimental_analyzer 0
-
-# Analyzer: Not implemented yet
-#    $CLICKHOUSE_CLIENT \
-#        --query "$3" \
-#        --query_id "${1}_pure_analyzer" \
-#        --max_parallel_replicas 3 \
-#        --prefer_localhost_replica 1 \
-#        --use_hedged_requests 0 \
-#        --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
-#        --allow_experimental_parallel_reading_from_replicas 1 \
-#        --parallel_replicas_for_non_replicated_merge_tree 1 \
-#        --parallel_replicas_min_number_of_rows_per_replica "$2" \
-#        --allow_experimental_analyzer 0
-}
-
-function run_query_with_custom_key_parallel_replicas () {
-    $CLICKHOUSE_CLIENT \
-        --query "$3" \
-        --query_id "${1}_custom_key" \
-        --max_parallel_replicas 3 \
-        --use_hedged_requests 0 \
-        --parallel_replicas_custom_key_filter_type 'default' \
-        --parallel_replicas_custom_key "$2" \
-        --parallel_replicas_for_non_replicated_merge_tree 1 \
-        --parallel_replicas_min_number_of_rows_per_replica "$2" \
-        --allow_experimental_analyzer 0
-
-    $CLICKHOUSE_CLIENT \
-        --query "$3" \
-        --query_id "${1}_custom_key_analyzer" \
-        --max_parallel_replicas 3 \
-        --use_hedged_requests 0 \
-        --parallel_replicas_custom_key_filter_type 'default' \
-        --parallel_replicas_custom_key "sipHash64(number)" \
-        --parallel_replicas_for_non_replicated_merge_tree 1 \
-        --parallel_replicas_min_number_of_rows_per_replica "$2" \
         --allow_experimental_analyzer 1
 }
 
-query_id_base="02783_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
+query_id_base="02784_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
 
 #### Reading 10M rows without filters
 whole_table_query="SELECT sum(number) FROM test_parallel_replicas_automatic_count format Null"
@@ -145,6 +108,7 @@ run_query_with_pure_parallel_replicas "${query_id_base}_useless_limit_500k" 5000
 #### As the right side of the JOIN is a table, ideally it shouldn't be executed with parallel replicas and instead passed as is to the replicas
 #### so each of them executes the join with the assigned granules of the left table, but that's not implemented yet
 #### https://github.com/ClickHouse/ClickHouse/issues/49301#issuecomment-1619897920
+#### Note that this currently fails with the analyzer since it doesn't support JOIN with parallel replicas
 simple_join_query="SELECT sum(value) FROM test_parallel_replicas_automatic_count INNER JOIN test_parallel_replicas_automatic_count_right_side USING number format Null"
 run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_0" 0 "$simple_join_query" # 3 replicas for the right side first, 3 replicas for the left
 run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_10M" 10000000 "$simple_join_query" # Right: 0. Left: 0
@@ -158,14 +122,6 @@ run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_0" 0 "$h
 run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_2M" 2000000 "$helpless_filter_query"
 run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_500000" 500000 "$helpless_filter_query"
 run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_100000" 100000 "$helpless_filter_query"
-
-#### Custom key parallel replicas: Not implemented
-#whole_table_query="SELECT sum(number) FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_parallel_replicas_automatic_count) format Null"
-#run_query_with_custom_key_parallel_replicas "${query_id_base}_0_0" 0 "$whole_table_query"
-#run_query_with_custom_key_parallel_replicas "${query_id_base}_0_10M" 10000000 "$whole_table_query"
-#run_query_with_custom_key_parallel_replicas "${query_id_base}_0_6M" 6000000 "$whole_table_query" # 1.6 replicas -> 1 replica -> No parallel replicas
-#run_query_with_custom_key_parallel_replicas "${query_id_base}_0_5M" 5000000 "$whole_table_query"
-#run_query_with_custom_key_parallel_replicas "${query_id_base}_0_1M" 1000000 "$whole_table_query"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 involved_parallel_replicas "${query_id_base}"
