@@ -174,7 +174,7 @@ private:
 namespace
 {
 /// Whether we should push limit down to scan.
-bool shouldPushdownLimit(const ASTSelectQuery & query, UInt64 limit_length)
+bool shouldPushdownLimit(const ASTSelectQuery & query, const ASTPtr & additional_filter, UInt64 limit_length)
 {
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
@@ -183,6 +183,7 @@ bool shouldPushdownLimit(const ASTSelectQuery & query, UInt64 limit_length)
         && !query.orderBy()
         && !query.groupBy()
         && !query.limitBy()
+        && !additional_filter
         && (limit_length > 0 && !query.limit_with_ties);
 }
 
@@ -247,7 +248,7 @@ Pipe StorageSystemNumbers::read(
         auto & query = query_info.query->as<ASTSelectQuery &>();
         auto [limit_length, limit_offset] = InterpreterSelectQuery::getLimitLengthAndOffset(query, context);
 
-        bool should_pushdown_limit = shouldPushdownLimit(query, limit_length);
+        bool should_pushdown_limit = shouldPushdownLimit(query, query_info.additional_filter_ast, limit_length);
 
         /// If intersected ranges is limited or we can pushdown limit.
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit)
