@@ -10,8 +10,8 @@ namespace DB
 class ProxyConfigurationResolverProvider
 {
 public:
-    static std::shared_ptr<ProxyConfigurationResolver> get(const String & config_prefix);
     static std::shared_ptr<ProxyConfigurationResolver> get();
+    static std::shared_ptr<ProxyConfigurationResolver> get(const String & config_prefix);
 
 private:
     static std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(

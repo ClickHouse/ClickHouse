@@ -17,11 +17,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get()
+{
+    return get("");
+}
+
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const String & config_prefix)
 {
     if (auto context = Context::getGlobalContextInstance())
     {
-        auto & configuration = context->getConfigRef();
+        const auto & configuration = context->getConfigRef();
 
         auto proxy_prefix = config_prefix + ".proxy";
 
@@ -46,11 +51,6 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>();
-}
-
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get()
-{
-    return get("");
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getRemoteResolver(
