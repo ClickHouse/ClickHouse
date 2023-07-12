@@ -8,9 +8,9 @@
 namespace DB::S3
 {
 
-std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(const String & prefix)
+std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(const String & config_prefix)
 {
-    return std::make_shared<ProxyConfigurationResolverAdapter>(ProxyConfigurationResolverProvider::get(prefix));
+    return std::make_shared<ProxyConfigurationResolverAdapter>(ProxyConfigurationResolverProvider::get(config_prefix));
 }
 
 std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get()

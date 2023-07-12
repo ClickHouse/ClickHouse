@@ -17,11 +17,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const String & prefix)
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const String & config_prefix)
 {
     if (auto context = Context::getGlobalContextInstance())
     {
-        return get(prefix, context->getConfigRef());
+        return get(config_prefix, context->getConfigRef());
     }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>();
@@ -67,14 +67,14 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getRemoteResolver(
-    const String & prefix, const Poco::Util::AbstractConfiguration & configuration)
+    const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
 {
-    auto endpoint = Poco::URI(configuration.getString(prefix + ".endpoint"));
-    auto proxy_scheme = configuration.getString(prefix + ".proxy_scheme");
+    auto endpoint = Poco::URI(configuration.getString(config_prefix + ".endpoint"));
+    auto proxy_scheme = configuration.getString(config_prefix + ".proxy_scheme");
     if (proxy_scheme != "http" && proxy_scheme != "https")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy resolver config: {}", proxy_scheme);
-    auto proxy_port = configuration.getUInt(prefix + ".proxy_port");
-    auto cache_ttl = configuration.getUInt(prefix + ".proxy_cache_time", 10);
+    auto proxy_port = configuration.getUInt(config_prefix + ".proxy_port");
+    auto cache_ttl = configuration.getUInt(config_prefix + ".proxy_cache_time", 10);
 
     LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured remote proxy resolver: {}, Scheme: {}, Port: {}",
               endpoint.toString(), proxy_scheme, proxy_port);
@@ -83,16 +83,16 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getListResolver(
-    const String & prefix, const Poco::Util::AbstractConfiguration & configuration)
+    const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
 {
     std::vector<String> keys;
-    configuration.keys(prefix, keys);
+    configuration.keys(config_prefix, keys);
 
     std::vector<Poco::URI> proxies;
     for (const auto & key : keys)
         if (startsWith(key, "uri"))
         {
-            Poco::URI proxy_uri(configuration.getString(prefix + "." + key));
+            Poco::URI proxy_uri(configuration.getString(config_prefix + "." + key));
 
             if (proxy_uri.getScheme() != "http" && proxy_uri.getScheme() != "https")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy uri: {}", proxy_uri.toString());
