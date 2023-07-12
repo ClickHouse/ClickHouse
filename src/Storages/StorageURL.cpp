@@ -167,9 +167,9 @@ namespace
         return poco_proxy_config;
     }
 
-    auto getProxyConfiguration(const std::string & http_method, ContextPtr context)
+    auto getProxyConfiguration(const std::string & http_method)
     {
-        auto proxy_config = ProxyConfigurationResolverProvider::get(context->getConfigRef())->resolve(http_method == "https");
+        auto proxy_config = ProxyConfigurationResolverProvider::get()->resolve(http_method == "https");
 
         return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }
@@ -418,7 +418,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         const auto settings = context->getSettings();
 
-        auto proxy_config = getProxyConfiguration(http_method, context);
+        auto proxy_config = getProxyConfiguration(http_method);
 
         try
         {
@@ -484,7 +484,7 @@ StorageURLSink::StorageURLSink(
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
-    auto proxy_config = getProxyConfiguration(http_method, context);
+    auto proxy_config = getProxyConfiguration(http_method);
 
     auto write_buffer = WriteBufferFromHTTPBuilder()
         .withURI(Poco::URI(uri))
@@ -1005,7 +1005,7 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
     {
         auto uri = Poco::URI(url);
 
-        auto proxy_config = getProxyConfiguration(uri.getScheme(), context);
+        auto proxy_config = getProxyConfiguration(uri.getScheme());
 
         ReadWriteBufferFromHTTP buf(
             uri,

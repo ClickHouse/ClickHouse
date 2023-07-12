@@ -787,7 +787,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const ThrottlerPtr & get_request_throttler,
     const ThrottlerPtr & put_request_throttler)
 {
-    auto proxy_configuration_resolver = S3::ProxyConfigurationProvider::get(Context::getGlobalContextInstance()->getConfigRef());
+    auto proxy_configuration_resolver = S3::ProxyConfigurationProvider::get();
 
     auto per_request_configuration = [=] (const Aws::Http::HttpRequest & req) { return proxy_configuration_resolver->getConfiguration(req); };
     auto error_report = [=] (const ClientConfigurationPerRequest & req) { proxy_configuration_resolver->errorReport(req); };

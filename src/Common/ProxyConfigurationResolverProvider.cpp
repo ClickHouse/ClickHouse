@@ -7,12 +7,29 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 
+#include <Interpreters/Context.h>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const String & prefix)
+{
+    if (auto context = Context::getGlobalContextInstance())
+    {
+        return get(prefix, context->getConfigRef());
+    }
+
+    return std::make_shared<EnvironmentProxyConfigurationResolver>();
+}
+
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get()
+{
+    return get("");
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
