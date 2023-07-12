@@ -46,6 +46,14 @@ public:
         const String & table_name_,
         const String & storage_def_,
         size_t flush_interval_milliseconds_);
+    
+    static std::shared_ptr<SystemLogQueue<TextLogElement>> getLogQueue()
+    {
+        static std::shared_ptr<SystemLogQueue<TextLogElement>> queue = std::make_shared<SystemLogQueue<TextLogElement>>();
+        return queue;
+    }
 };
+
+
 
 }

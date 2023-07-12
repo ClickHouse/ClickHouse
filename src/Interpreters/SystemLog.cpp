@@ -332,8 +332,10 @@ SystemLog<LogElement>::SystemLog(
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
-    size_t flush_interval_milliseconds_)
-    : WithContext(context_)
+    size_t flush_interval_milliseconds_,
+    std::shared_ptr<SystemLogQueue<LogElement>> ex_queue)
+    : Base(ex_queue)
+    , WithContext(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , create_query(serializeAST(*getCreateTableQuery()))
@@ -371,21 +373,21 @@ void SystemLog<LogElement>::savingThreadFunction()
             bool should_prepare_tables_anyway = false;
 
             {
-                std::unique_lock lock(mutex);
-                flush_event.wait_for(lock,
+                std::unique_lock lock(queue->mutex);
+                queue->flush_event.wait_for(lock,
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
+                        return queue->requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
-                queue_front_index += queue.size();
-                to_flush_end = queue_front_index;
+                queue->queue_front_index += queue->size();
+                to_flush_end = queue->queue_front_index;
                 // Swap with existing array from previous flush, to save memory
                 // allocations.
                 to_flush.resize(0);
-                queue.swap(to_flush);
+                queue->queue.swap(to_flush);
 
                 should_prepare_tables_anyway = is_force_prepare_tables;
 
@@ -399,9 +401,9 @@ void SystemLog<LogElement>::savingThreadFunction()
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
 
-                    std::lock_guard lock(mutex);
+                    std::lock_guard lock(queue->mutex);
                     is_force_prepare_tables = false;
-                    flush_event.notify_all();
+                    queue->flush_event.notify_all();
                 }
             }
             else
@@ -474,10 +476,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(queue->mutex);
         flushed_up_to = to_flush_end;
         is_force_prepare_tables = false;
-        flush_event.notify_all();
+        queue->flush_event.notify_all();
     }
 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
