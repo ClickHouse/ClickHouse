@@ -983,7 +983,15 @@ class ClickhouseIntegrationTestsRunner:
             result_state = "success"
 
         test_result = []
-        for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY", "BROKEN", "NOT_FAILED"):
+        for state in (
+            "ERROR",
+            "FAILED",
+            "PASSED",
+            "SKIPPED",
+            "FLAKY",
+            "BROKEN",
+            "NOT_FAILED",
+        ):
             if state == "PASSED":
                 text_state = "OK"
             elif state == "FAILED":
