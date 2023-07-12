@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
