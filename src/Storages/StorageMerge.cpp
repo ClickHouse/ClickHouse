@@ -937,7 +937,7 @@ std::string ReadFromMerge::RowPolicyData::namesDifference(Names && outer_set, Na
     Names result;
 
     std::set_difference(outer_set.begin(), outer_set.end(),
-        inner_set.begin(), inner_set.end(),  std::inserter(result, result.begin()));
+        inner_set.begin(), inner_set.end(), std::inserter(result, result.begin()));
 
     if (result.size() != 1)
     {
