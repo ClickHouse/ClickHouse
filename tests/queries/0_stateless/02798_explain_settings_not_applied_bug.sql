@@ -1,5 +1,6 @@
 SET read_in_order_two_level_merge_threshold=1000000;
 
+DROP TABLE IF EXISTS t;
 CREATE TABLE t(a UInt64)
 ENGINE = MergeTree
 ORDER BY a;
@@ -13,3 +14,5 @@ FROM t
 GROUP BY a
 FORMAT PrettySpace
 SETTINGS optimize_aggregation_in_order = 1;
+
+DROP TABLE t;
