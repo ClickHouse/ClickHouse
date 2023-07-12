@@ -1106,7 +1106,7 @@ try
         config().getString("path", ""), // preprocessed dir
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading, ConfigReloader::Paths& extra)
+        [&](ConfigurationPtr config, bool initial_loading, [[maybe_unused]] ConfigReloader::Paths& extra)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
