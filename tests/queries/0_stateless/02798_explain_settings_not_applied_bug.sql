@@ -1,3 +1,5 @@
+SET read_in_order_two_level_merge_threshold=1000000;
+
 CREATE TABLE t(a UInt64)
 ENGINE = MergeTree
 ORDER BY a;
