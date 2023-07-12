@@ -122,6 +122,19 @@ SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12
 3	13	1
 4	14	1
 4	14	1
+SELECT y from merge(currentDatabase(), 02763_merge)
+11
+11
+12
+12
+13
+13
+13
+13
+14
+14
+14
+14
 SETTINGS optimize_move_to_prewhere= 1
 SELECT * FROM 02763_merge_log_1
 3	13
@@ -224,3 +237,16 @@ SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12
 3	13	1
 4	14	1
 4	14	1
+SELECT y from merge(currentDatabase(), 02763_merge)
+11
+11
+12
+12
+13
+13
+13
+13
+14
+14
+14
+14

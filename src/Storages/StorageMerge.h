@@ -177,6 +177,8 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
+    class RowPolicyData;
+
     static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
         const ContextPtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
@@ -202,8 +204,7 @@ private:
         ContextPtr context,
         QueryPipelineBuilder & builder,
         const QueryProcessingStage::Enum & processed_stage,
-        const String & database_name,
-        const String & table_name);
+        RowPolicyData & row_policy_data);
 };
 
 }
