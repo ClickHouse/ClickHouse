@@ -24,7 +24,6 @@
 #include <Common/logger_useful.h>
 
 #include <IO/S3/ProxyConfigurationProvider.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
