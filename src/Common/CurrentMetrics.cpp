@@ -2,7 +2,7 @@
 
 
 /// Available metrics. Add something here as you wish.
-#define APPLY_FOR_METRICS(M) \
+#define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
     M(Move, "Number of currently executing moves") \
@@ -202,7 +202,13 @@
     M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
-    M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler")
+    M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
+
+#ifdef APPLY_FOR_EXTERNAL_METRICS
+    #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
+#else
+    #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
+#endif
 
 namespace CurrentMetrics
 {
