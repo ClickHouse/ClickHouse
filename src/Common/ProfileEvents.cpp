@@ -4,7 +4,7 @@
 
 
 /// Available events. Add something here as you wish.
-#define APPLY_FOR_EVENTS(M) \
+#define APPLY_FOR_BUILTIN_EVENTS(M) \
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
@@ -368,6 +368,10 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
+    M(ReadBufferFromS3ResetSessions, "Number of HTTP sessions that were reset in ReadBufferFromS3.") \
+    M(ReadBufferFromS3PreservedSessions, "Number of HTTP sessions that were preserved in ReadBufferFromS3.") \
+    \
+    M(ReadWriteBufferFromHTTPPreservedSessions, "Number of HTTP sessions that were preserved in ReadWriteBufferFromHTTP.") \
     \
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
@@ -536,6 +540,11 @@ The server successfully detected this situation and will download merged part fr
     M(LogError, "Number of log messages with level Error") \
     M(LogFatal, "Number of log messages with level Fatal") \
 
+#ifdef APPLY_FOR_EXTERNAL_EVENTS
+    #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
+#else
+    #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M)
+#endif
 
 namespace ProfileEvents
 {
