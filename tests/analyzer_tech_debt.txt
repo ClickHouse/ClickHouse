@@ -99,6 +99,7 @@
 00636_partition_key_parts_pruning
 01825_type_json_multiple_files
 02725_agg_projection_resprect_PK
+01287_max_execution_speed
 02703_row_policy_for_database
 02721_url_cluster
 02534_s3_cluster_insert_select_schema_inference
