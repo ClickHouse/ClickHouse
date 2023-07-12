@@ -1,5 +1,6 @@
 import pytest
 import os
+import time
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -65,7 +66,7 @@ EOF""".format(
             ),
         ]
     )
-    node.query("SYSTEM RELOAD CONFIG")
+    time.sleep(2)
 
 
 def check_certificate_switch(
