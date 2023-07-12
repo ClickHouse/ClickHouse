@@ -210,8 +210,13 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
 
-    query_context = thread_group->query_context;
-    global_context = thread_group->global_context;
+    if (thread_group->master_thread_id != thread_id)
+    {
+        // ill formed global thread as it was before https://github.com/ClickHouse/ClickHouse/pull/47564
+        // https://github.com/CheSema/ClickHouse/blob/082194a7557e0fde532e0e25b1e574ddf3c180b6/src/Interpreters/ThreadStatusExt.cpp#L555
+        query_context = thread_group->query_context;
+        global_context = thread_group->global_context;
+    }
 
     fatal_error_callback = thread_group->fatal_error_callback;
 
@@ -220,6 +225,14 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     applyGlobalSettings();
     applyQuerySettings();
     initPerformanceCounters();
+
+    if (thread_group->master_thread_id == thread_id)
+    {
+        // ill formed global thread as it was before https://github.com/ClickHouse/ClickHouse/pull/47564
+        // https://github.com/CheSema/ClickHouse/blob/082194a7557e0fde532e0e25b1e574ddf3c180b6/src/Interpreters/ThreadStatusExt.cpp#L555
+        query_context = thread_group->query_context;
+        global_context = thread_group->global_context;
+    }
 }
 
 void ThreadStatus::detachFromGroup()
