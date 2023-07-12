@@ -9,7 +9,7 @@
 #include <Common/logger_useful.h>
 
 #include "EncryptedObjectStorage.h"
-#include "IO/FileEncryptionCommon.h"
+#include <IO/FileEncryptionCommon.h>
 
 namespace DB
 {
