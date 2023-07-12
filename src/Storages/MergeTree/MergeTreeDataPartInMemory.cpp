@@ -1,14 +1,15 @@
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Storages/MergeTree/MergeTreeReaderInMemory.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/createVolume.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
+#include <Storages/MergeTree/MergeTreeReaderInMemory.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Poco/Logger.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -132,6 +133,11 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     }
 
     out.finalizePart(new_data_part, false);
+    if (storage.supportFDB())
+    {
+        std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = new_data_part->toMetaDataPart();
+        storage.getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {storage.getStorageID().uuid, new_data_part->name});
+    }
     new_data_part_storage->commitTransaction();
     return new_data_part_storage;
 }

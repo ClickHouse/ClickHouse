@@ -55,6 +55,7 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
+class MetadataStoreFoundationDB;
 
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
@@ -431,6 +432,8 @@ public:
 
     bool supportsLightweightDelete() const override;
 
+    virtual bool supportFDB() const { return false; }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -543,6 +546,7 @@ public:
 
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
+    DetachedPartsInfo getDetachedPartsFromFDB() const;
 
     static void validateDetachedPartName(const String & name);
 
@@ -1507,11 +1511,8 @@ private:
         size_t max_backoff_ms,
         size_t max_tries);
 
-    std::vector<LoadPartResult> loadDataPartsFromDisk(
-        ThreadPool & pool,
-        size_t num_parts,
-        std::queue<PartLoadingTreeNodes> & parts_queue,
-        const MergeTreeSettingsPtr & settings);
+    std::vector<LoadPartResult> loadDataPartsFromDiskOrFDB(
+        ThreadPool & pool, size_t num_parts, std::queue<PartLoadingTreeNodes> & parts_queue, const MergeTreeSettingsPtr & settings);
 
     void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal);
 

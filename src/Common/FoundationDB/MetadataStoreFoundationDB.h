@@ -166,7 +166,9 @@ public:
     using MergeTreePartDiskMeta = FoundationDB::Proto::MergeTreePartDiskMeta;
 
     void addPartMeta(const MergeTreePartDiskMeta & disk, const MergeTreePartMeta & part, const PartKey & part_key);
-    std::vector<std::unique_ptr<MergeTreePartDiskMeta>> listParts(const UUID & table_uuid);
+    void addPartMeta(const MergeTreePartMeta & part, const PartKey & part_key);
+    void updatePartMeta(const MergeTreePartMeta & part, const PartKey & part_key);
+    std::vector<std::unique_ptr<MergeTreePartMeta>> listParts(const UUID & table_uuid);
     std::unique_ptr<MergeTreePartMeta> getPartMeta(const PartKey & part_key);
     void removePartMeta(const PartKey & part_key);
     bool isExistsPart(const PartKey & part_key);

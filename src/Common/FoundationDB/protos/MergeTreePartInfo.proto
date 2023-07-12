@@ -28,6 +28,10 @@ message MergeTreePartMeta {
     repeated Field meta_partition = 10;
     string meta_default_codec = 11;
     bytes meta_serialization_infos = 12;
+    int32 meta_loaded_version = 13;
+    ColSize meta_total_columns_size = 14;
+    ColSize meta_total_secondary_indices_size = 15;
+    bytes meta_trx_version = 16;
 
     message Range {
         Field left = 1;
@@ -40,4 +44,11 @@ message MergeTreePartMeta {
         string column_name = 1;
         string column_type = 2;
     }
+
+    message ColSize{
+        uint64 col_marks = 1;
+        uint64 col_data_compressed = 2;
+        uint64 col_data_uncompressed = 3;
+    }
+
 }
