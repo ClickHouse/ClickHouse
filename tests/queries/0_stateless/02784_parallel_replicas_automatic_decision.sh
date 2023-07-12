@@ -61,8 +61,7 @@ function run_query_with_pure_parallel_replicas () {
         --cluster_for_parallel_replicas 'parallel_replicas' \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
-        --parallel_replicas_min_number_of_rows_per_replica "$2" \
-        --allow_experimental_analyzer 1
+        --parallel_replicas_min_number_of_rows_per_replica "$2"
 }
 
 query_id_base="02784_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
