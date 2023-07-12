@@ -108,22 +108,23 @@ public:
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
-        size_t flush_interval_milliseconds_);
+        size_t flush_interval_milliseconds_,
+        std::shared_ptr<SystemLogQueue<LogElement>> ex_queue = nullptr);
 
     void shutdown() override;
 
 protected:
-    using ISystemLog::mutex;
-    using ISystemLog::is_shutdown;
-    using ISystemLog::flush_event;
-    using ISystemLog::stopFlushThread;
+    //using ISystemLog::mutex;
+    using Base::is_shutdown;
+   // using ISystemLog::flush_event;
+    using Base::stopFlushThread;
     using Base::log;
     using Base::queue;
-    using Base::queue_front_index;
+   // using Base::queue_front_index;
     using Base::is_force_prepare_tables;
-    using Base::requested_flush_up_to;
+    //using Base::requested_flush_up_to;
     using Base::flushed_up_to;
-    using Base::logged_queue_full_at_index;
+ //   using Base::logged_queue_full_at_index;
 
 private:
 

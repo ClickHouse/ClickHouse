@@ -34,21 +34,9 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
-#ifndef WITHOUT_TEXT_LOG
-void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
-{
-    text_log = log;
-    text_log_max_priority = max_priority;
-}
-#endif
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-#ifndef WITHOUT_TEXT_LOG
-    if (split)
-        if (auto log = text_log.lock())
-            split->addTextLog(log, text_log_max_priority);
-#endif
 
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value() && *config_logger == current_logger)
@@ -61,6 +49,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
     split = new DB::OwnSplitChannel();
+
+#ifndef WITHOUT_TEXT_LOG
+    String text_log_level_str = config.getString("text_log.level", "");
+    int text_log_level = text_log_level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(text_log_level_str);
+    split->addTextLog(DB::TextLog::getLogQueue(), text_log_level);
+#endif
 
     auto log_level_string = config.getString("logger.level", "trace");
 

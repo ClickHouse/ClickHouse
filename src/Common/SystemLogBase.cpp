@@ -38,10 +38,20 @@ namespace
 
 ISystemLog::~ISystemLog() = default;
 
-void ISystemLog::stopFlushThread()
+template <typename LogElement>
+SystemLogBase<LogElement>::SystemLogBase(std::shared_ptr<SystemLogQueue<LogElement>> ex_queue)
+{
+    if (ex_queue)
+        queue = ex_queue;
+    else
+        queue = std::make_shared<SystemLogQueue<LogElement>>();
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::stopFlushThread()
 {
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(queue->mutex);
 
         if (!saving_thread || !saving_thread->joinable())
             return;
@@ -52,22 +62,26 @@ void ISystemLog::stopFlushThread()
         is_shutdown = true;
 
         /// Tell thread to shutdown.
-        flush_event.notify_all();
+        queue->flush_event.notify_all();
     }
 
     saving_thread->join();
 }
 
-void ISystemLog::startup()
+template <typename LogElement>
+void SystemLogBase<LogElement>::startup()
 {
-    std::lock_guard lock(mutex);
-    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
+    std::lock_guard lock(queue->mutex);
+    std::cout << "void ISystemLog::startup()" << std::endl;
+    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { 
+        std::cout << "void ISystemLog::ThreadFromGlobalPool()" << std::endl;
+        savingThreadFunction(); });
 }
 
 static thread_local bool recursive_add_call = false;
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::add(const LogElement & element)
+void SystemLogQueue<LogElement>::add(const LogElement & element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
@@ -75,12 +89,12 @@ void SystemLogBase<LogElement>::add(const LogElement & element)
         return;
     recursive_add_call = true;
     SCOPE_EXIT({ recursive_add_call = false; });
-
-    /// Memory can be allocated while resizing on queue.push_back.
+     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
@@ -88,8 +102,8 @@ void SystemLogBase<LogElement>::add(const LogElement & element)
     {
         std::unique_lock lock(mutex);
 
-        if (is_shutdown)
-            return;
+        // if (queue.is_shutdown)
+        //     return;              // TODO
 
         if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
         {
@@ -135,24 +149,30 @@ void SystemLogBase<LogElement>::add(const LogElement & element)
 }
 
 template <typename LogElement>
+void SystemLogBase<LogElement>::add(const LogElement & element)
+{
+    queue->add(element);
+}
+
+template <typename LogElement>
 void SystemLogBase<LogElement>::flush(bool force)
 {
     uint64_t this_thread_requested_offset;
 
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(queue->mutex);
 
         if (is_shutdown)
             return;
 
-        this_thread_requested_offset = queue_front_index + queue.size();
+        this_thread_requested_offset = queue->queue_front_index + queue->size();
 
         // Publish our flush request, taking care not to overwrite the requests
         // made by other threads.
         is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
+        queue->requested_flush_up_to = std::max(queue->requested_flush_up_to, this_thread_requested_offset);
 
-        flush_event.notify_all();
+        queue->flush_event.notify_all();
     }
 
     LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
@@ -161,8 +181,8 @@ void SystemLogBase<LogElement>::flush(bool force)
     // too fast for our parallel functional tests, probably because they
     // heavily load the disk.
     const int timeout_seconds = 180;
-    std::unique_lock lock(mutex);
-    bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
+    std::unique_lock lock(queue->mutex);
+    bool result = queue->flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
         return flushed_up_to >= this_thread_requested_offset && !is_force_prepare_tables;
     });
