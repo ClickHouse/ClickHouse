@@ -36,6 +36,7 @@ try:
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
+    from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
@@ -51,7 +52,6 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
-from .hdfs_api import HDFSApi
 
 from .config_cluster import *
 
@@ -3416,13 +3416,14 @@ class ClickHouseInstance:
                     database=database,
                 )
                 time.sleep(sleep_time)
+
+                if result is not None:
+                    return result
             except QueryRuntimeException as ex:
                 logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
-        if result is not None:
-            return result
-        raise Exception("Query {sql} did not fail".format(sql))
+        raise Exception("Query {} did not fail".format(sql))
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
