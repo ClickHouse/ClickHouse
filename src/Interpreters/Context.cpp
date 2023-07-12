@@ -114,6 +114,7 @@
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
 #include <base/find_symbols.h>
+#include <QueryCoordination/Coordinator.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -1213,6 +1214,18 @@ std::vector<UUID> Context::getEnabledProfiles() const
     return settings_constraints_and_current_profiles->enabled_profiles;
 }
 
+
+void Context::setCoordinator(std::shared_ptr<Coordinator> coordinator_)
+{
+    auto lock = getLock();
+    coordinator = coordinator_;
+}
+
+std::shared_ptr<Coordinator> Context::getCoordinator() const
+{
+    auto lock = getLock();
+    return coordinator;
+}
 
 ResourceManagerPtr Context::getResourceManager() const
 {

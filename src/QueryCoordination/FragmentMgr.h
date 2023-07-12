@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <QueryCoordination/PipelineExecutors.h>
 #include <QueryCoordination/ExchangeDataReceiver.h>
+#include <QueryCoordination/CompletedPipelinesExecutor.h>
 
 namespace DB
 {
@@ -58,6 +59,10 @@ public:
     }
 
     void onFinish(const String & query_id, FragmentID fragment_id);
+
+    void onFinish(const String & query_id);
+
+    std::shared_ptr<CompletedPipelinesExecutor> createPipelinesExecutor(const String & query_id);
 
     /// TODO cancel by query_id
 

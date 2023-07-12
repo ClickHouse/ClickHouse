@@ -26,6 +26,7 @@ static void threadFunction(PipelineExecutors::Data & data, ThreadGroupPtr thread
         data.has_exception = true;
     }
 
+    data.finish_call_back();
     data.is_finished = true;
 }
 

@@ -424,22 +424,22 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
     fragments.back()->dump(buffer);
     LOG_INFO(&Poco::Logger::get("InterpreterSelectWithUnionQueryFragments"), "Fragment dump: {}", buffer.str());
 
+    for (const auto & fragment : fragments)
+    {
+        /// add fragment wait for be scheduled
+        FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
+    }
+
     /// schedule fragments
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        Coordinator coord(fragments, context, formattedAST(query_ptr)/*, options.is_subquery*/);
-        coord.scheduleExecuteDistributedPlan();
+        std::shared_ptr<Coordinator> coord = std::make_shared<Coordinator>(fragments, context, formattedAST(query_ptr));
+        coord->scheduleExecuteDistributedPlan();
+
+        context->setCoordinator(coord);
 
         res.pipeline = FragmentMgr::getInstance().findRootQueryPipeline(context->getCurrentQueryId());
         setQuota(res.pipeline);
-    }
-    else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        for (const auto & fragment : fragments)
-        {
-            /// add fragment wait for be scheduled
-            FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
-        }
     }
 
     return res;

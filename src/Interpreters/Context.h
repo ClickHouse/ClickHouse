@@ -194,6 +194,8 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class Coordinator;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -280,7 +282,9 @@ private:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
+    /// for query coordination
     Int32 fragment_id_counter = 0;
+    std::shared_ptr<Coordinator> coordinator;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -545,6 +549,9 @@ public:
     void setCurrentProfile(const UUID & profile_id);
     std::vector<UUID> getCurrentProfiles() const;
     std::vector<UUID> getEnabledProfiles() const;
+
+    void setCoordinator(std::shared_ptr<Coordinator> coordinator_);
+    std::shared_ptr<Coordinator> getCoordinator() const;
 
     /// Checks access rights.
     /// Empty database means the current database.

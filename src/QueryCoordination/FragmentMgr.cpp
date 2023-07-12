@@ -74,6 +74,8 @@ void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vec
     }
 
     fragmentsToQueryPipelines(query_id);
+
+    /// create Coordination reporter
 }
 
 void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
@@ -161,27 +163,26 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 
 }
 
-void FragmentMgr::executeQueryPipelines(const String & query_id)
+std::shared_ptr<CompletedPipelinesExecutor> FragmentMgr::createPipelinesExecutor(const String & query_id)
 {
-    /// begin execute pipeline
     auto data = find(query_id);
 
     std::lock_guard lock(data->mutex);
+    std::vector<QueryPipeline> pipelines;
+    std::vector<Int32> fragment_ids;
     for (size_t i = 0; i < data->fragments_distributed.size(); ++i)
     {
         /// root fragment has't DestFragment, it's execute from tcphandler
         auto & fragment = data->fragments_distributed[i].fragment;
         if (fragment->getDestFragment())
         {
-            onFinishCallBack call_back = [this, query_id = query_id, fragment_id = fragment->getFragmentID()]()
-            {
-                onFinish(query_id, fragment_id);
-            };
-
-            LOG_DEBUG(log, "Fragment {} begin execute", fragment->getFragmentID());
-            executors.execute(data->query_pipelines[i], call_back);
+            LOG_DEBUG(log, "Create CompletedPipelinesExecutor for fragment {}", fragment->getFragmentID());
+            pipelines.emplace_back(std::move(data->query_pipelines[i]));
+            fragment_ids.emplace_back(fragment->getFragmentID());
         }
     }
+
+    return std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
 }
 
 QueryPipeline FragmentMgr::findRootQueryPipeline(const String & query_id)
@@ -246,6 +247,13 @@ std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDa
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found exchange data receiver {}", exchange_data_request.toString());
 
     return receiver;
+}
+
+void FragmentMgr::onFinish(const String & query_id)
+{
+    LOG_DEBUG(log, "Query {} execute finished", query_id);
+    std::lock_guard lock(fragments_mutex);
+    query_fragment.erase(query_id);
 }
 
 void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)

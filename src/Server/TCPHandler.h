@@ -21,6 +21,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
+#include <QueryCoordination/CompletedPipelinesExecutor.h>
 
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"
@@ -126,6 +127,8 @@ struct QueryState
     std::optional<ExchangeDataRequest> exchange_data_request;
 
     std::shared_ptr<ExchangeDataReceiver> exchange_data_receiver;
+
+    std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor;
 
     /// sample block from ExchangeData
     Block exchange_data_header;
@@ -266,6 +269,8 @@ private:
     void processOrdinaryQuery();
 
     void processOrdinaryQueryWithProcessors();
+
+    void processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel);
 
     void processTablesStatusRequest();
 

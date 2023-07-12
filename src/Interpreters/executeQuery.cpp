@@ -1064,8 +1064,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     query_span->finish();
                 }
 
-                if (context->getSettingsRef().allow_experimental_query_coordination && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-                    FragmentMgr::getInstance().rootQueryPipelineFinish(elem.client_info.current_query_id);
+                if (context->getSettingsRef().allow_experimental_query_coordination)
+                    FragmentMgr::getInstance().onFinish(elem.client_info.current_query_id);
             };
 
             auto exception_callback = [start_watch,
@@ -1144,8 +1144,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     query_span->finish();
                 }
 
-                if (context->getSettingsRef().allow_experimental_query_coordination && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-                    FragmentMgr::getInstance().rootQueryPipelineFinish(elem.client_info.current_query_id);
+                if (context->getSettingsRef().allow_experimental_query_coordination)
+                    FragmentMgr::getInstance().onFinish(elem.client_info.current_query_id);
             };
 
             res.finish_callback = std::move(finish_callback);

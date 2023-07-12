@@ -4,9 +4,16 @@
 #include <Storages/IStorage.h>
 #include <QueryCoordination/FragmentMgr.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYSTEM_ERROR;
+}
 
 void Coordinator::scheduleExecuteDistributedPlan()
 {
@@ -32,6 +39,8 @@ void Coordinator::scheduleExecuteDistributedPlan()
     sendFragmentToDistributed(local_host);
 
     sendExecuteQueryPipelines(local_host);
+
+    remote_pipelines_manager->setManagedNode(host_connection, local_host);
 }
 
 String Coordinator::assignFragmentToHost()
@@ -258,10 +267,6 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
         {
             const auto & [_, request] = *fragment_requests.find(fragment->getFragmentID());
             fragments_request.fragments_request.emplace_back(request);
-            if (host == local_shard_host)
-            {
-                FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
-            }
         }
 
         if (host == local_shard_host)
@@ -312,11 +317,7 @@ void Coordinator::sendExecuteQueryPipelines(const String & local_shard_host)
 {
     for (auto [host, fragments_for_dump] : host_fragments)
     {
-        if (host == local_shard_host)
-        {
-            FragmentMgr::getInstance().executeQueryPipelines(context->getCurrentQueryId());
-        }
-        else
+        if (host != local_shard_host)
         {
             host_connection[host]->sendExecuteQueryPipelines(context->getCurrentQueryId());
         }

@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
-#include <QueryCoordination/PlanFragment.h>
-#include <Common/logger_useful.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
+#include <QueryCoordination/PlanFragment.h>
+#include <QueryCoordination/RemotePipelinesManager.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -18,12 +19,18 @@ using FragmentToHosts = std::unordered_map<FragmentID , Hosts>;
 class Coordinator
 {
 public:
-    Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_, String query_/*, bool is_subquery_ = false*/)
-        : log(&Poco::Logger::get("Coordinator")), fragments(fragments_), context(context_), query(query_)/*, is_subquery(is_subquery_)*/
+    Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
+        : remote_pipelines_manager(std::make_shared<RemotePipelinesManager>())
+        , log(&Poco::Logger::get("Coordinator"))
+        , fragments(fragments_)
+        , context(context_)
+        , query(query_)
     {
     }
 
     void scheduleExecuteDistributedPlan();
+
+    std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager;
 
 private:
     String assignFragmentToHost();

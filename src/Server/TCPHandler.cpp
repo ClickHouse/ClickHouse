@@ -49,6 +49,8 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
+#include <QueryCoordination/Coordinator.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #if USE_SSL
@@ -434,16 +436,6 @@ void TCPHandler::runImpl()
 
                 /// receive begin
                 receivePacket();
-
-                /// TODO if any fragment queryPipline exception send Exception
-                /// TODO for loop (interactive_delay / 1000)
-                /// TODO receive query finish or cancel
-                /// TODO sendProfileInfo(executor.getProfileInfo());
-                //       sendProgress();
-                //       sendLogs();
-                //       sendSelectProfileEvents();
-
-                continue;
             }
 
             after_check_cancelled.restart();
@@ -457,7 +449,11 @@ void TCPHandler::runImpl()
                     state.io.onFinish();
             };
 
-            if (state.io.pipeline.pushing())
+            if (query_context->getSettingsRef().allow_experimental_query_coordination)
+            {
+                processOrdinaryQueryWithCoordination(finish_or_cancel);
+            }
+            else if (state.io.pipeline.pushing())
             {
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
@@ -816,6 +812,166 @@ void TCPHandler::processInsertQuery()
     sendInsertProfileEvents();
 }
 
+void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel)
+{
+    bool initial_query_coordination = query_context->getSettingsRef().allow_experimental_query_coordination
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+
+    bool secondary_query_coordination = query_context->getSettingsRef().allow_experimental_query_coordination
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    if (secondary_query_coordination)
+    {
+        auto callback = [this]()
+        {
+            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+
+            if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                return true;
+
+            sendProgress();
+            sendSelectProfileEvents();
+            sendLogs();
+
+            return false;
+        };
+
+        state.completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+
+        state.completed_pipelines_executor->execute();
+        finish_or_cancel();
+
+        std::lock_guard lock(task_callback_mutex);
+
+        /// Send final progress after calling onFinish(), since it will update the progress.
+        ///
+        /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
+        /// without breaking protocol compatibility, but it can be done
+        /// by increasing revision.
+        sendProgress();
+        sendSelectProfileEvents();
+    }
+    else if (initial_query_coordination)
+    {
+        auto & pipeline = state.io.pipeline;
+
+        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+        {
+            std::lock_guard lock(task_callback_mutex);
+            sendPartUUIDs();
+        }
+
+        /// Send header-block, to allow client to prepare output format for data to send.
+        {
+            const auto & header = pipeline.getHeader();
+
+            if (header)
+            {
+                std::lock_guard lock(task_callback_mutex);
+                sendData(header);
+            }
+        }
+
+        /// Defer locking to cover a part of the scope below and everything after it
+        std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+
+        {
+            auto callback = [this]()
+            {
+                std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+
+                if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                    return true;
+
+                return false;
+            };
+
+            state.completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
+            state.completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+
+            std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(state.io.pipeline);
+
+            auto & remote_pipelines_manager = query_context->getCoordinator()->remote_pipelines_manager;
+
+            remote_pipelines_manager->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+
+            QueryCoordinationExecutor executor(pulling_executor, state.completed_pipelines_executor, remote_pipelines_manager);
+
+            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+
+            Block block;
+            while (executor.pull(block, interactive_delay / 1000))
+            {
+                std::unique_lock lock(task_callback_mutex);
+
+                auto cancellation_status = getQueryCancellationStatus();
+                if (cancellation_status == CancellationStatus::FULLY_CANCELLED)
+                {
+                    /// Several callback like callback for parallel reading could be called from inside the pipeline
+                    /// and we have to unlock the mutex from our side to prevent deadlock.
+                    lock.unlock();
+                    /// A packet was received requesting to stop execution of the request.
+                    executor.cancel();
+                    break;
+                }
+                else if (cancellation_status == CancellationStatus::READ_CANCELLED)
+                {
+                    executor.cancelReading();
+                }
+
+                if (after_send_progress.elapsed() / 1000 >= interactive_delay)
+                {
+                    /// Some time passed and there is a progress.
+                    after_send_progress.restart();
+                    sendProgress();
+                    sendSelectProfileEvents();
+                }
+
+                sendLogs();
+
+                if (block)
+                {
+                    if (!state.io.null_format)
+                        sendData(block);
+                }
+            }
+
+            /// This lock wasn't acquired before and we make .lock() call here
+            /// so everything under this line is covered even together
+            /// with sendProgress() out of the scope
+            progress_lock.lock();
+
+            /** If data has run out, we will send the profiling data and total values to
+          * the last zero block to be able to use
+          * this information in the suffix output of stream.
+          * If the request was interrupted, then `sendTotals` and other methods could not be called,
+          *  because we have not read all the data yet,
+          *  and there could be ongoing calculations in other threads at the same time.
+          */
+            if (getQueryCancellationStatus() != CancellationStatus::FULLY_CANCELLED)
+            {
+                sendTotals(executor.getTotalsBlock());
+                sendExtremes(executor.getExtremesBlock());
+                sendProfileInfo(executor.getProfileInfo());
+                sendProgress();
+                sendLogs();
+                sendSelectProfileEvents();
+            }
+
+            if (state.is_connection_closed)
+                return;
+
+            sendData({});
+            last_sent_snapshots.clear();
+        }
+
+        sendProgress();
+
+
+        finish_or_cancel();
+    }
+}
+
 
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
@@ -864,14 +1020,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             {
                 executor.cancelReading();
             }
-
-            /// TODO like RemoteQueryExecutor ？
-            /// TODO if cancellation_status and query coordination, send cancel to other node
-            /// TODO if on query coordination, receive exception from other node connections, if any one exception, rethrow, send cancel to other node
-            /// TODO receiveProfileInfo(executor.getProfileInfo());
-            //       receiveProgress(); updateProgress
-            //       receiveLogs();
-            //       receiveSelectProfileEvents();
 
             if (after_send_progress.elapsed() / 1000 >= interactive_delay)
             {
@@ -1392,7 +1540,7 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::PlanFragmentsBeginProcess:
             readStringBinary(state.query_id, *in);
-            FragmentMgr::getInstance().executeQueryPipelines(state.query_id);
+            state.completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
             return false;
 
         case Protocol::Client::ExchangeData:
