@@ -70,6 +70,9 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.http_connection_pool_size = config.getUInt(config_prefix + ".http_connection_pool_size", 1000);
     client_configuration.wait_on_pool_size_limit = false;
 
+    /*
+     * Override proxy configuration for backwards compatibility with old configuration format.
+     * */
     auto proxy_config = S3::ProxyConfigurationProvider::get(config_prefix, config);
     if (proxy_config)
     {
