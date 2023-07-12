@@ -375,22 +375,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
                 try
                 {
-                    String source = binary_self_path.string();
-                    String destination = main_bin_tmp_path.string();
+                    ReadBufferFromFile in(binary_self_path.string());
+                    WriteBufferFromFile out(main_bin_tmp_path.string());
+                    copyData(in, out);
+                    out.sync();
 
-                    /// Try to make a hard link first, as an optimization.
-                    /// It is possible if the source and the destination are on the same filesystems.
-                    if (0 != link(source.c_str(), destination.c_str()))
-                    {
-                        ReadBufferFromFile in(binary_self_path.string());
-                        WriteBufferFromFile out(main_bin_tmp_path.string());
-                        copyData(in, out);
-                        out.sync();
-                        out.finalize();
-                    }
-
-                    if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
                         throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+
+                    out.finalize();
                 }
                 catch (const Exception & e)
                 {

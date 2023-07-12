@@ -24,7 +24,6 @@ struct AsynchronousInsertLogElement
     ASTPtr query;
     String query_id;
     UInt64 bytes{};
-    UInt64 rows{};
     String exception;
     Status status{};
 
@@ -45,7 +44,7 @@ public:
     using SystemLog<AsynchronousInsertLogElement>::SystemLog;
 
     /// This table is usually queried for fixed table name.
-    static const char * getDefaultOrderBy() { return "database, table, event_date, event_time"; }
+    static const char * getDefaultOrderBy() { return "(database, table, event_date, event_time)"; }
 };
 
 }

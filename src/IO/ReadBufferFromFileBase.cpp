@@ -1,5 +1,4 @@
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Progress.h>
 #include <Interpreters/Context.h>
 
 namespace DB

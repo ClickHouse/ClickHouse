@@ -9,6 +9,7 @@
 
 #include <link.h>
 
+//#include <iostream>
 #include <filesystem>
 
 #include <base/sort.h>
@@ -509,7 +510,7 @@ const T * find(const void * address, const std::vector<T> & vec)
 }
 
 
-void SymbolIndex::load()
+void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
@@ -549,10 +550,22 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-const SymbolIndex & SymbolIndex::instance()
+MultiVersion<SymbolIndex> & SymbolIndex::instanceImpl()
 {
-    static SymbolIndex instance;
+    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
     return instance;
+}
+
+MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
+{
+    return instanceImpl().get();
+}
+
+void SymbolIndex::reload()
+{
+    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    /// Also drop stacktrace cache.
+    StackTrace::dropCache();
 }
 
 }

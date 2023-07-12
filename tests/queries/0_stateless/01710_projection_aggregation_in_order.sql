@@ -1,5 +1,3 @@
--- Tags: disabled
--- FIXME https://github.com/ClickHouse/ClickHouse/issues/49552
 -- Test that check the correctness of the result for optimize_aggregation_in_order and projections,
 -- not that this optimization will take place.
 
@@ -28,7 +26,7 @@ INSERT INTO normal SELECT
     number
 FROM numbers(100000);
 
-SET optimize_use_projections=1, optimize_aggregation_in_order=1, force_optimize_projection=1;
+SET allow_experimental_projection_optimization=1, optimize_aggregation_in_order=1, force_optimize_projection=1;
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
@@ -60,7 +58,7 @@ INSERT INTO agg SELECT
     number
 FROM numbers(100000);
 
-SET optimize_use_projections=1, optimize_aggregation_in_order=1, force_optimize_projection = 1;
+SET allow_experimental_projection_optimization=1, optimize_aggregation_in_order=1, force_optimize_projection = 1;
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;

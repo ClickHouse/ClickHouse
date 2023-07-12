@@ -13,7 +13,6 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Date; }
     const char * getFamilyName() const override { return family_name; }
-    String getSQLCompatibleName() const override { return "DATE"; }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

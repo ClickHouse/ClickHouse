@@ -20,7 +20,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -150,7 +152,7 @@ namespace
             if (text == "bc")
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
             else if (text != "ad")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {}", text);
         }
 
         void setCentury(Int32 century)
@@ -464,15 +466,8 @@ namespace
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
-        const bool mysql_M_is_month_name;
-
         static constexpr auto name = Name::name;
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
-
-        explicit FunctionParseDateTimeImpl(ContextPtr context)
-            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-        {
-        }
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseDateTimeImpl>(); }
 
         String getName() const override { return name; }
 
@@ -485,15 +480,33 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors args{
-                {"time", &isString<IDataType>, nullptr, "String"},
-                {"format", &isString<IDataType>, nullptr, "String"},
-            };
+            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
+                    getName(),
+                    arguments.size());
 
-            if (arguments.size() == 3)
-                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
+            if (!isString(arguments[0].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}. Should be String",
+                    arguments[0].type->getName(),
+                    getName());
 
-            validateFunctionArgumentTypes(*this, arguments, args);
+            if (arguments.size() > 1 && !isString(arguments[1].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of second argument of function {}. Should be String",
+                    arguments[0].type->getName(),
+                    getName());
+
+            if (arguments.size() > 2 && !isString(arguments[2].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of third argument of function {}. Should be String",
+                    arguments[0].type->getName(),
+                    getName());
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
@@ -723,31 +736,13 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
-                if (*cur != expected) [[unlikely]]
+                if (*cur != expected)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
-                        String(*cur, 1));
-
-                ++cur;
-                return cur;
-            }
-
-            template <NeedCheckSpace need_check_space>
-            static Pos assertNumber(Pos cur, Pos end, const String & fragment)
-            {
-                if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
-
-                if (*cur < '0' || *cur > '9') [[unlikely]]
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because {} is not a number",
-                        fragment,
-                        std::string_view(cur, end - cur),
                         String(*cur, 1));
 
                 ++cur;
@@ -790,38 +785,6 @@ namespace
 
                 date.setMonth(it->second.second);
                 cur += 3;
-                return cur;
-            }
-
-            static Pos mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
-            {
-                checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment);
-                String text1(cur, 3);
-                boost::to_lower(text1);
-                auto it = monthMap.find(text1);
-                if (it == monthMap.end())
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
-                        fragment,
-                        std::string_view(cur, end - cur),
-                        text1);
-                cur += 3;
-
-                size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
-                String text2(cur, expected_remaining_size);
-                boost::to_lower(text2);
-                if (text2 != it->second.first)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
-                        fragment,
-                        std::string_view(cur, end - cur),
-                        text1 + text2);
-                cur += expected_remaining_size;
-
-                date.setMonth(it->second.second);
                 return cur;
             }
 
@@ -1089,16 +1052,6 @@ namespace
                 Int32 second;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second);
                 date.setSecond(second);
-                return cur;
-            }
-
-            static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
-            {
-                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
-
-                for (size_t i = 0; i < 6; ++i)
-                    cur = assertNumber<NeedCheckSpace::No>(cur, end, fragment);
-
                 return cur;
             }
 
@@ -1513,10 +1466,6 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
-                        // Fractional seconds
-                        case 'f':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMicrosecond));
-                            break;
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1583,14 +1532,9 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
-                        // Depending on a setting
-                        // - Full month [January...December]
-                        // - Minute (00-59) OR
+                        // Minute (00-59)
                         case 'M':
-                            if (mysql_M_is_month_name)
-                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
-                            else
-                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM
@@ -1669,6 +1613,8 @@ namespace
                         /// Unimplemented
 
                         /// Fractional seconds
+                        case 'f':
+                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':
@@ -1830,6 +1776,14 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
+            if (arguments.size() < 2)
+            {
+                if constexpr (parse_syntax == ParseSyntax::Joda)
+                    return "yyyy-MM-dd HH:mm:ss";
+                else
+                    return "%Y-%m-%d %H:%M:%S";
+            }
+
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!format_column)
                 throw Exception(

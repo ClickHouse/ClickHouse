@@ -8,6 +8,7 @@
 
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -35,22 +37,7 @@ public:
     /// Read state from the latest snapshot
     void init();
 
-    enum ZooKeeperLogSerializationVersion
-    {
-        INITIAL = 0,
-        WITH_TIME = 1,
-        WITH_ZXID_DIGEST = 2,
-    };
-
-    /// lifetime of a parsed request is:
-    /// [preprocess/PreAppendLog -> commit]
-    /// [preprocess/PreAppendLog -> rollback]
-    /// on events like commit and rollback we can remove the parsed request to keep the memory usage at minimum
-    /// request cache is also cleaned on session close in case something strange happened
-    ///
-    /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
-    /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly
-    std::shared_ptr<KeeperStorage::RequestForSession> parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version = nullptr);
+    static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
 
     bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
@@ -127,7 +114,7 @@ private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    SnapshotFileInfo latest_snapshot_info;
+    std::string latest_snapshot_path;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
@@ -153,13 +140,6 @@ private:
     /// watch and after that receive watch response and only receive response
     /// for request.
     mutable std::mutex storage_and_responses_lock;
-
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperStorage::RequestForSession>>> parsed_request_cache;
-    uint64_t min_request_size_to_cache{0};
-    /// we only need to protect the access to the map itself
-    /// requests can be modified from anywhere without lock because a single request
-    /// can be processed only in 1 thread at any point
-    std::mutex request_cache_mutex;
 
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;

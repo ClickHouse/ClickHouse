@@ -1,6 +1,8 @@
 #include <TableFunctions/TableFunctionPostgreSQL.h>
 
 #if USE_LIBPQXX
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
@@ -22,14 +24,14 @@ namespace ErrorCodes
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
+    auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
         configuration->table,
-        ColumnsDescription{},
+        columns,
         ConstraintsDescription{},
         String{},
-        context,
         configuration->schema,
         configuration->on_conflict);
 
@@ -40,7 +42,15 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
 {
-    return StoragePostgreSQL::getTableStructureFromData(connection_pool, configuration->table, configuration->schema, context);
+    const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
+    auto connection_holder = connection_pool->get();
+    auto columns_info = fetchPostgreSQLTableStructure(
+            connection_holder->get(), configuration->table, configuration->schema, use_nulls).physical_columns;
+
+    if (!columns_info)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
+
+    return ColumnsDescription{columns_info->columns};
 }
 
 

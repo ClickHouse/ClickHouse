@@ -42,8 +42,6 @@ public:
     TypeIndex getTypeId() const override { return type_id; }
 
     const char * getFamilyName() const override { return "FixedString"; }
-    /// Use TEXT for compatibility with MySQL to allow arbitrary bytes.
-    String getSQLCompatibleName() const override { return "TEXT"; }
 
     size_t getN() const
     {

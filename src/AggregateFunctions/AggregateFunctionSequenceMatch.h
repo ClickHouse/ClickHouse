@@ -50,7 +50,7 @@ struct AggregateFunctionSequenceMatchData final
     bool sorted = true;
     PODArrayWithStackMemory<TimestampEvents, 64> events_list;
     /// sequenceMatch conditions met at least once in events_list
-    Events conditions_met;
+    std::bitset<max_events> conditions_met;
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -100,11 +100,6 @@ struct AggregateFunctionSequenceMatchData final
 
         size_t size;
         readBinary(size, buf);
-
-        /// If we lose these flags, functionality is broken
-        /// If we serialize/deserialize these flags, we have compatibility issues
-        /// If we set these flags to 1, we have a minor performance penalty, which seems acceptable
-        conditions_met.set();
 
         events_list.clear();
         events_list.reserve(size);

@@ -86,7 +86,7 @@ protected:
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
-    ThreadGroupPtr thread_group;
+    ThreadGroupStatusPtr thread_group;
 
     Stopwatch watch;
 
@@ -162,9 +162,8 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        ThreadGroupPtr && thread_group_,
+        ThreadGroupStatusPtr && thread_group_,
         IAST::QueryKind query_kind_,
-        const Settings & query_settings_,
         UInt64 watch_start_nanoseconds);
 
     ~QueryStatus();

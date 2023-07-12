@@ -237,15 +237,5 @@ int SecureStreamSocketImpl::completeHandshake()
 	return _impl.completeHandshake();
 }
 
-bool SecureStreamSocketImpl::getBlocking() const
-{
-    return _impl.getBlocking();
-}
-
-void SecureStreamSocketImpl::setBlocking(bool flag)
-{
-    _impl.setBlocking(flag);
-}
-
 
 } } // namespace Poco::Net

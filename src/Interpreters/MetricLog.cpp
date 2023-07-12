@@ -1,5 +1,4 @@
 #include <Interpreters/MetricLog.h>
-#include <Common/ThreadPool.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -59,7 +58,7 @@ void MetricLog::startCollectMetric(size_t collect_interval_milliseconds_)
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    metric_flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { metricThreadFunction(); });
+    metric_flush_thread = ThreadFromGlobalPool([this] { metricThreadFunction(); });
 }
 
 
@@ -68,8 +67,7 @@ void MetricLog::stopCollectMetric()
     bool old_val = false;
     if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
         return;
-    if (metric_flush_thread)
-        metric_flush_thread->join();
+    metric_flush_thread.join();
 }
 
 

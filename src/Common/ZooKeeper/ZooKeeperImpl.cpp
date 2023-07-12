@@ -299,8 +299,11 @@ ZooKeeper::~ZooKeeper()
     {
         finalize(false, false, "Destructor called");
 
-        send_thread.join();
-        receive_thread.join();
+        if (send_thread.joinable())
+            send_thread.join();
+
+        if (receive_thread.joinable())
+            receive_thread.join();
     }
     catch (...)
     {
@@ -354,8 +357,7 @@ ZooKeeper::ZooKeeper(
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-        initFeatureFlags();
-        keeper_feature_flags.logFlags(log);
+        initApiVersion();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -363,18 +365,11 @@ ZooKeeper::ZooKeeper(
     {
         tryLogCurrentException(log, "Failed to connect to ZooKeeper");
 
-        try
-        {
-            requests_queue.finish();
-            socket.shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
+        if (send_thread.joinable())
+            send_thread.join();
 
-        send_thread.join();
-        receive_thread.join();
+        if (receive_thread.joinable())
+            receive_thread.join();
 
         throw;
     }
@@ -444,8 +439,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                connected_zk_address = node.address;
-
                 break;
             }
             catch (...)
@@ -461,8 +454,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
-
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
@@ -678,8 +669,8 @@ void ZooKeeper::receiveThread()
                     earliest_operation = operations.begin()->second;
                     auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(args.operation_timeout_ms * 1000);
                     if (now > earliest_operation_deadline)
-                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
-                                        args.operation_timeout_ms, earliest_operation->request->getPath());
+                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline already expired) for path: {}",
+                                        earliest_operation->request->getPath());
                     max_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(earliest_operation_deadline - now).count();
                 }
             }
@@ -696,12 +687,12 @@ void ZooKeeper::receiveThread()
             {
                 if (earliest_operation)
                 {
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms, toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
+                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response) for request {} for path: {}",
+                        toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout of {} ms", args.session_timeout_ms);
+                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout");
 
             }
 
@@ -923,7 +914,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             }
 
             /// Send thread will exit after sending close request or on expired flag
-            send_thread.join();
+            if (send_thread.joinable())
+                send_thread.join();
         }
 
         /// Set expired flag after we sent close event
@@ -940,7 +932,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             tryLogCurrentException(log);
         }
 
-        if (!error_receive)
+        if (!error_receive && receive_thread.joinable())
             receive_thread.join();
 
         {
@@ -1088,7 +1080,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             if (requests_queue.isFinished())
                 throw Exception(Error::ZSESSIONEXPIRED, "Session expired");
 
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
+            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout");
         }
     }
     catch (...)
@@ -1100,64 +1092,41 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
-    return keeper_feature_flags.isEnabled(feature_flag);
+    return keeper_api_version;
 }
 
-void ZooKeeper::initFeatureFlags()
+void ZooKeeper::initApiVersion()
 {
-    const auto try_get = [&](const std::string & path, const std::string & description) -> std::optional<std::string>
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
     {
-        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-        auto future = promise->get_future();
-
-        auto callback = [promise](const Coordination::GetResponse & response) mutable
-        {
-            promise->set_value(response);
-        };
-
-        get(path, std::move(callback), {});
-        if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
-
-        auto response = future.get();
-
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            LOG_TRACE(log, "Failed to get {}", description);
-            return std::nullopt;
-        }
-        else if (response.error != Coordination::Error::ZOK)
-        {
-            throw Exception(response.error, "Failed to get {}", description);
-        }
-
-        return std::move(response.data);
+        promise->set_value(response);
     };
 
-    if (auto feature_flags = try_get(keeper_api_feature_flags_path, "feature flags"); feature_flags.has_value())
+    get(keeper_api_version_path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
-        keeper_feature_flags.setFeatureFlags(std::move(*feature_flags));
+        LOG_TRACE(log, "Failed to get API version: timeout");
         return;
     }
 
-    auto keeper_api_version_string = try_get(keeper_api_version_path, "API version");
+    auto response = future.get();
 
-    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
-
-    if (!keeper_api_version_string.has_value())
+    if (response.error != Coordination::Error::ZOK)
     {
-        LOG_TRACE(log, "API version not found, assuming {}", keeper_api_version);
+        LOG_TRACE(log, "Failed to get API version");
         return;
     }
 
-    DB::ReadBufferFromOwnString buf(*keeper_api_version_string);
     uint8_t keeper_version{0};
+    DB::ReadBufferFromOwnString buf(response.data);
     DB::readIntText(keeper_version, buf);
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
-    keeper_feature_flags.fromApiVersion(keeper_api_version);
 }
 
 
@@ -1277,7 +1246,7 @@ void ZooKeeper::list(
     WatchCallback watch)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-    if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+    if (keeper_api_version < Coordination::KeeperApiVersion::WITH_FILTERED_LIST)
     {
         if (list_request_type != ListRequestType::ALL)
             throw Exception(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
@@ -1342,7 +1311,7 @@ void ZooKeeper::multi(
 {
     ZooKeeperMultiRequest request(requests, default_acls);
 
-    if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+    if (request.getOpNum() == OpNum::MultiRead && keeper_api_version < Coordination::KeeperApiVersion::WITH_MULTI_READ)
             throw Exception(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
     RequestInfo request_info;
@@ -1363,7 +1332,7 @@ void ZooKeeper::close()
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
-        throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
+        throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout");
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }

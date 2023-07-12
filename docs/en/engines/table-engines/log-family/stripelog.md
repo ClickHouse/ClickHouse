@@ -29,8 +29,8 @@ The `StripeLog` engine stores all the columns in one file. For each `INSERT` que
 
 For each table ClickHouse writes the files:
 
-- `data.bin` — Data file.
-- `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
+-   `data.bin` — Data file.
+-   `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
 The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 

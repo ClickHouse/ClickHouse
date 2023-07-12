@@ -7,7 +7,7 @@ Contains a list of time zones that are supported by the ClickHouse server. This 
 
 Columns:
 
-- `time_zone` (String) — List of supported time zones.
+-   `time_zone` (String) — List of supported time zones.
 
 **Example**
 

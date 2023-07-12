@@ -71,12 +71,9 @@ public:
         scale(scale_)
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Precision {} is out of bounds (precision range: [1, {}])",
-                            std::to_string(precision), maxPrecision());
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Precision {} is out of bounds", std::to_string(precision));
         if (unlikely(scale > maxPrecision()))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                            std::to_string(scale), maxPrecision());
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", std::to_string(scale));
     }
 
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }

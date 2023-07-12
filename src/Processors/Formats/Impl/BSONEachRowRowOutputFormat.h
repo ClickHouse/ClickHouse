@@ -17,8 +17,8 @@ namespace DB
  *
  * ClickHouse type         | BSON Type
  * Bool                    | \x08 boolean
- * Int8/UInt8/Enum8        | \x10 int32
- * Int16UInt16/Enum16      | \x10 int32
+ * Int8/UInt8              | \x10 int32
+ * Int16UInt16             | \x10 int32
  * Int32                   | \x10 int32
  * UInt32                  | \x12 int64
  * Int64                   | \x12 int64
@@ -38,7 +38,7 @@ namespace DB
  * Array                   | \x04 array
  * Tuple                   | \x04 array
  * Named Tuple             | \x03 document
- * Map                     | \x03 document
+ * Map (with String keys)  | \x03 document
  *
  * Note: on Big-Endian platforms this format will not work properly.
  */
@@ -55,24 +55,12 @@ private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override { }
 
-    void serializeField(
-        const IColumn & column,
-        const DataTypePtr & data_type,
-        size_t row_num,
-        const String & name,
-        const String & path,
-        std::unordered_map<String, size_t> & nested_document_sizes);
+    void serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name);
 
     /// Count field size in bytes that we will get after serialization in BSON format.
     /// It's needed to calculate document size before actual serialization,
     /// because in BSON format we should write the size of the document before its content.
-    size_t countBSONFieldSize(
-        const IColumn & column,
-        const DataTypePtr & data_type,
-        size_t row_num,
-        const String & name,
-        const String & path,
-        std::unordered_map<String, size_t> & nested_document_sizes);
+    size_t countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name);
 
     NamesAndTypes fields;
     FormatSettings settings;

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/numbers
-sidebar_position: 145
+sidebar_position: 39
 sidebar_label: numbers
 ---
 

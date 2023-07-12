@@ -3,6 +3,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackData.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

@@ -1,5 +1,4 @@
 #include "ClusterCopierApp.h"
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeouts.h>
@@ -44,7 +43,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     time_t timestamp = Poco::Timestamp().epochTime();
     auto curr_pid = Poco::Process::id();
 
-    process_id = std::to_string(DateLUT::serverTimezoneInstance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
+    process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
     process_path = fs::weakly_canonical(fs::path(base_dir) / ("clickhouse-copier_" + process_id));
     fs::create_directories(process_path);
@@ -192,8 +191,6 @@ void ClusterCopierApp::mainImpl()
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
-
-    zkutil::validateZooKeeperConfig(config());
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));

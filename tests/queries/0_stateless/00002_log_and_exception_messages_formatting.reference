@@ -1,8 +1,8 @@
 runtime messages	0.001
 runtime exceptions	0.05
-messages shorter than 10	1
-messages shorter than 16	3
-exceptions shorter than 30	3
+messages shorter than 10	10
+messages shorter than 16	40
+exceptions shorter than 30	125
 noisy messages	0.3
 noisy Trace messages	0.16
 noisy Debug messages	0.09

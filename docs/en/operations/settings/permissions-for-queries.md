@@ -21,8 +21,8 @@ Restricts permissions for read data, write data, and change settings queries.
 
 When set to 1, allows:
 
-- All types of read queries (like SELECT and equivalent queries).
-- Queries that modify only session context (like USE).
+-   All types of read queries (like SELECT and equivalent queries).
+-   Queries that modify only session context (like USE).
 
 When set to 2, allows the above plus:
 - SET and CREATE TEMPORARY TABLE
@@ -33,9 +33,9 @@ When set to 2, allows the above plus:
 
 Possible values:
 
-- 0 — Read, Write, and Change settings queries are allowed.
-- 1 — Only Read data queries are allowed.
-- 2 — Read data and Change settings queries are allowed.
+-   0 — Read, Write, and Change settings queries are allowed.
+-   1 — Only Read data queries are allowed.
+-   2 — Read data and Change settings queries are allowed.
 
 Default value: 0
 
@@ -54,8 +54,8 @@ Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) q
 
 Possible values:
 
-- 0 — DDL queries are not allowed.
-- 1 — DDL queries are allowed.
+-   0 — DDL queries are not allowed.
+-   1 — DDL queries are allowed.
 
 Default value: 1
 

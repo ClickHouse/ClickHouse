@@ -301,16 +301,16 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
     }
 }
 
-std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & select_query_)
+std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & select_query)
 {
     if (tables_with_columns.size() < 2)
         return {};
 
     auto settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
-    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume());
+    auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
-    const ASTTablesInSelectQueryElement * ast_join = select_query_.join();
+    const ASTTablesInSelectQueryElement * ast_join = select_query.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
 
     /// TODO This syntax does not support specifying a database name.
@@ -352,16 +352,16 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
 
     if (!table_join->isSpecialStorage() &&
         settings.enable_optimize_predicate_expression)
-        replaceJoinedTable(select_query_);
+        replaceJoinedTable(select_query);
 
     return table_join;
 }
 
-void JoinedTables::reset(const ASTSelectQuery & select_query_)
+void JoinedTables::reset(const ASTSelectQuery & select_query)
 {
-    table_expressions = getTableExpressions(select_query_);
-    left_table_expression = extractTableExpression(select_query_, 0);
-    left_db_and_table = getDatabaseAndTable(select_query_, 0);
+    table_expressions = getTableExpressions(select_query);
+    left_table_expression = extractTableExpression(select_query, 0);
+    left_db_and_table = getDatabaseAndTable(select_query, 0);
 }
 
 }

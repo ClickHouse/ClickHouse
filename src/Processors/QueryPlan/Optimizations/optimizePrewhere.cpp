@@ -133,17 +133,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
     if (!optimize_move_to_prewhere)
         return;
 
-    const auto & storage_snapshot = read_from_merge_tree->getStorageSnapshot();
-
-    if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
-    {
-        const auto & sampling_key = storage_snapshot->getMetadataForQuery()->getSamplingKey();
-        const auto & sampling_columns = sampling_key.sample_block.getColumnsWithTypeAndName();
-        required_columns_after_filter.insert(required_columns_after_filter.end(), sampling_columns.begin(), sampling_columns.end());
-    }
-
-    const auto & storage = storage_snapshot->storage;
-    const auto & storage_metadata = storage_snapshot->metadata;
+    const auto & storage = read_from_merge_tree->getStorageSnapshot()->storage;
+    const auto & storage_metadata = read_from_merge_tree->getStorageSnapshot()->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
         return;

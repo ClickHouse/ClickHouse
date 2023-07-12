@@ -1,8 +1,0 @@
-1	2	3
-4	5	6
-{"column1_renamed":"1","column2_renamed":"2","column3":"3"}
-{"column1_renamed":"4","column2_renamed":"5","column3":"6"}
-1	2	3
-4	5	6
-{"column1_renamed":"1","column2_renamed":"2","column3":"3"}
-{"column1_renamed":"4","column2_renamed":"5","column3":"6"}

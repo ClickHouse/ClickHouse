@@ -147,16 +147,20 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({.documentation = {
-            .description=R"(
-                Returns result of EXPLAIN query.
-                The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
-                You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
-                Example:
-                [example:1]
-                )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
-        }});
+    factory.registerFunction<TableFunctionExplain>({.documentation = {R"(
+Returns result of EXPLAIN query.
+
+The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
+
+You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
+
+Example:
+[example:1]
+
+)",
+{{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'"}}
+}});
+
 }
 
 }

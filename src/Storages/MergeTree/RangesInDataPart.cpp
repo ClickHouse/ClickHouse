@@ -1,23 +1,12 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
-#include <fmt/format.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+
+#include "IO/VarInt.h"
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include "IO/VarInt.h"
 
-template <>
-struct fmt::formatter<DB::RangesInDataPartDescription>
-{
-    static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
-
-    template <typename FormatContext>
-    auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx)
-    {
-        return fmt::format_to(ctx.out(), "{}", range.describe());
-    }
-};
 
 namespace DB
 {
@@ -37,7 +26,8 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out) const
 String RangesInDataPartDescription::describe() const
 {
     String result;
-    result += fmt::format("part {} with ranges [{}]", info.getPartNameV1(), fmt::join(ranges, ","));
+    result += fmt::format("Part: {}, ", info.getPartNameV1());
+    result += fmt::format("Ranges: [{}], ", fmt::join(ranges, ","));
     return result;
 }
 
@@ -56,7 +46,10 @@ void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
 
 String RangesInDataPartsDescription::describe() const
 {
-    return fmt::format("{} parts: [{}]", this->size(), fmt::join(*this, ", "));
+    String result;
+    for (const auto & desc : *this)
+        result += desc.describe() + ",";
+    return result;
 }
 
 void RangesInDataPartsDescription::deserialize(ReadBuffer & in)

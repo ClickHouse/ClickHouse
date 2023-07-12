@@ -679,7 +679,7 @@ public:
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
@@ -696,7 +696,7 @@ public:
                     return {};
                 });
 
-            auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
+            auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
             if (const auto* datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
             {
                 const auto from_scale = datetime64_type->getScale();

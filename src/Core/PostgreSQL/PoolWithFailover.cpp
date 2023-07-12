@@ -6,7 +6,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 

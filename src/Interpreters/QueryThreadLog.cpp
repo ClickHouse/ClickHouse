@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/QueryLog.h>
@@ -23,10 +22,7 @@ namespace DB
 
 NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
 {
-    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-
-    return
-    {
+    return {
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -41,19 +37,19 @@ NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
         {"memory_usage", std::make_shared<DataTypeInt64>()},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
 
-        {"thread_name", low_cardinality_string},
+        {"thread_name", std::make_shared<DataTypeString>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
         {"master_thread_id", std::make_shared<DataTypeUInt64>()},
-        {"current_database", low_cardinality_string},
+        {"current_database", std::make_shared<DataTypeString>()},
         {"query", std::make_shared<DataTypeString>()},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>()},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>()},
-        {"user", low_cardinality_string},
+        {"user", std::make_shared<DataTypeString>()},
         {"query_id", std::make_shared<DataTypeString>()},
         {"address", DataTypeFactory::instance().get("IPv6")},
         {"port", std::make_shared<DataTypeUInt16>()},
-        {"initial_user", low_cardinality_string},
+        {"initial_user", std::make_shared<DataTypeString>()},
         {"initial_query_id", std::make_shared<DataTypeString>()},
         {"initial_address", DataTypeFactory::instance().get("IPv6")},
         {"initial_port", std::make_shared<DataTypeUInt16>()},
@@ -61,15 +57,15 @@ NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
         {"interface", std::make_shared<DataTypeUInt8>()},
         {"is_secure", std::make_shared<DataTypeUInt8>()},
-        {"os_user", low_cardinality_string},
-        {"client_hostname", low_cardinality_string},
-        {"client_name", low_cardinality_string},
+        {"os_user", std::make_shared<DataTypeString>()},
+        {"client_hostname", std::make_shared<DataTypeString>()},
+        {"client_name", std::make_shared<DataTypeString>()},
         {"client_revision", std::make_shared<DataTypeUInt32>()},
         {"client_version_major", std::make_shared<DataTypeUInt32>()},
         {"client_version_minor", std::make_shared<DataTypeUInt32>()},
         {"client_version_patch", std::make_shared<DataTypeUInt32>()},
         {"http_method", std::make_shared<DataTypeUInt8>()},
-        {"http_user_agent", low_cardinality_string},
+        {"http_user_agent", std::make_shared<DataTypeString>()},
         {"http_referer", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
@@ -77,7 +73,7 @@ NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
 
         {"revision", std::make_shared<DataTypeUInt32>()},
 
-        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
     };
 }
 
@@ -85,7 +81,7 @@ NamesAndAliases QueryThreadLogElement::getNamesAndAliases()
 {
     return
     {
-        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))}, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
         {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
     };
 }

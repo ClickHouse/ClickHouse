@@ -9,8 +9,8 @@ The GenerateRandom table engine produces random data for given table schema.
 
 Usage examples:
 
-- Use in test to populate reproducible large table.
-- Generate random input for fuzzing tests.
+-   Use in test to populate reproducible large table.
+-   Generate random input for fuzzing tests.
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
@@ -49,9 +49,9 @@ SELECT * FROM generate_engine_table LIMIT 3
 
 ## Details of Implementation {#details-of-implementation}
 
-- Not supported:
-    - `ALTER`
-    - `SELECT ... SAMPLE`
-    - `INSERT`
-    - Indices
-    - Replication
+-   Not supported:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   `INSERT`
+    -   Indices
+    -   Replication

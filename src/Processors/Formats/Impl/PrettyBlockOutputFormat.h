@@ -29,6 +29,8 @@ protected:
     void consumeExtremes(Chunk) override;
 
     size_t total_rows = 0;
+    size_t terminal_width = 0;
+
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;

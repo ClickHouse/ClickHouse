@@ -8,6 +8,7 @@
 
 namespace DB
 {
+#pragma GCC diagnostic warning "-Wold-style-cast"
 
 std::string encodeSHA256(std::string_view text)
 {

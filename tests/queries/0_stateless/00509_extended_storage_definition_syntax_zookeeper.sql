@@ -1,4 +1,5 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-parallel
+-- Tag no-parallel: leftovers
 
 SET optimize_on_insert = 0;
 
@@ -43,7 +44,7 @@ CREATE TABLE replicated_collapsing(d Date, x UInt32, sign Int8)
 INSERT INTO replicated_collapsing VALUES ('2017-10-23', 1, 1);
 INSERT INTO replicated_collapsing VALUES ('2017-10-23', 1, -1), ('2017-10-23', 2, 1);
 
-SYSTEM SYNC REPLICA replicated_collapsing PULL;
+SYSTEM SYNC REPLICA replicated_collapsing;
 OPTIMIZE TABLE replicated_collapsing PARTITION 201710 FINAL;
 
 SELECT * FROM replicated_collapsing;

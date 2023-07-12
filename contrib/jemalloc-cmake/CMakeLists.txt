@@ -4,7 +4,7 @@ if (SANITIZE OR NOT (
 ))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds. Use -DENABLE_JEMALLOC=0")
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds.")
     endif ()
     set (ENABLE_JEMALLOC OFF)
 else ()
@@ -170,13 +170,16 @@ endif ()
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
-# jemalloc provides support for two different libunwind flavors: the original HP libunwind and the one coming with gcc / g++ / libstdc++.
-# The latter is identified by `JEMALLOC_PROF_LIBGCC` and uses `_Unwind_Backtrace` method instead of `unw_backtrace`.
-# At the time ClickHouse uses LLVM libunwind which follows libgcc's way of backtracing.
-#
-# ClickHouse has to provide `unw_backtrace` method by the means of [commit 8e2b31e](https://github.com/ClickHouse/libunwind/commit/8e2b31e766dd502f6df74909e04a7dbdf5182eb1).
-target_compile_definitions (_jemalloc PRIVATE -DJEMALLOC_PROF_LIBGCC=1)
-target_link_libraries (_jemalloc PRIVATE unwind)
+if (USE_UNWIND)
+    # jemalloc provides support for two different libunwind flavors: the original HP libunwind and the one coming with gcc / g++ / libstdc++.
+    # The latter is identified by `JEMALLOC_PROF_LIBGCC` and uses `_Unwind_Backtrace` method instead of `unw_backtrace`.
+    # At the time ClickHouse uses LLVM libunwind which follows libgcc's way of backtracing.
+
+    # ClickHouse has to provide `unw_backtrace` method by the means of [commit 8e2b31e](https://github.com/ClickHouse/libunwind/commit/8e2b31e766dd502f6df74909e04a7dbdf5182eb1).
+
+    target_compile_definitions (_jemalloc PRIVATE -DJEMALLOC_PROF_LIBGCC=1)
+    target_link_libraries (_jemalloc PRIVATE unwind)
+endif ()
 
 # for RTLD_NEXT
 target_compile_options(_jemalloc PRIVATE -D_GNU_SOURCE)

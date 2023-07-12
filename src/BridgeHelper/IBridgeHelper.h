@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

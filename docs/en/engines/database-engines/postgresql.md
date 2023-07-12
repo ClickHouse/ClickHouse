@@ -21,12 +21,12 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `schema` — PostgreSQL schema.
-- `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+-   `host:port` — PostgreSQL server address.
+-   `database` — Remote database name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
+-   `schema` — PostgreSQL schema.
+-   `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 ## Data Types Support {#data_types-support}
 
@@ -140,4 +140,3 @@ DESCRIBE TABLE test_database.test_table;
 ## Related content
 
 - Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
-- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

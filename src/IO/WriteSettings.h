@@ -11,7 +11,6 @@ struct WriteSettings
 {
     /// Bandwidth throttler to use during writing
     ThrottlerPtr remote_throttler;
-    ThrottlerPtr local_throttler;
 
     // Resource to be used during reading
     ResourceLink resource_link;
@@ -19,6 +18,7 @@ struct WriteSettings
     /// Filesystem cache settings
     bool enable_filesystem_cache_on_write_operations = false;
     bool enable_filesystem_cache_log = false;
+    bool is_file_cache_persistent = false;
     bool throw_on_error_from_cache = false;
 
     bool s3_allow_parallel_part_upload = true;

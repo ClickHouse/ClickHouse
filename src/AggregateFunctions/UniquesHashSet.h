@@ -331,11 +331,7 @@ public:
 
     void ALWAYS_INLINE insert(Value x)
     {
-        HashValue hash_value;
-        if constexpr (std::endian::native == std::endian::little)
-            hash_value = hash(x);
-        else
-            hash_value = std::byteswap(hash(x));
+        HashValue hash_value = hash(x);
         if (!good(hash_value))
             return;
 

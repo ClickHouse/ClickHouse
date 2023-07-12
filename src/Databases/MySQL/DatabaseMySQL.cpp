@@ -67,7 +67,7 @@ DatabaseMySQL::DatabaseMySQL(
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty(); // NOLINT(bugprone-standalone-empty)
+        empty();
     }
     catch (...)
     {

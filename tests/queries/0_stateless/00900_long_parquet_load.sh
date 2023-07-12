@@ -66,6 +66,6 @@ EOF
     # Some files contain unsupported data structures, exception is ok.
     cat "$DATA_DIR"/"$NAME" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_load FORMAT Parquet" 2>&1 | sed 's/Exception/Ex---tion/'
 
-    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load ORDER BY tuple(*) LIMIT 100"
+    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load LIMIT 100"
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_load"
 done

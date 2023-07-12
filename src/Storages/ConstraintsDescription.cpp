@@ -11,13 +11,6 @@
 
 #include <Core/Defines.h>
 
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
-
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -110,7 +103,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraint
     return constraint_data;
 }
 
-std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() const
+std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
 {
     static const NameSet relations = { "equals", "less", "lessOrEquals", "greaterOrEquals", "greater" };
 
@@ -128,7 +121,7 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
         }
     }
 
-    return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
+    return std::make_unique<ComparisonGraph>(constraints_for_graph);
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
@@ -150,7 +143,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
     return res;
 }
 
-const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
+const ComparisonGraph & ConstraintsDescription::getGraph() const
 {
     return *graph;
 }
@@ -177,94 +170,6 @@ std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::getAtomId
 std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomsById(const ConstraintsDescription::AtomIds & ids) const
 {
     std::vector<CNFQuery::AtomicFormula> result;
-    for (const auto & id : ids)
-        result.push_back(cnf_constraints[id.group_id][id.atom_id]);
-    return result;
-}
-
-ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
-{
-    QueryTreeData data;
-    std::vector<Analyzer::CNF::AtomicFormula> atomic_constraints_data;
-
-    QueryAnalysisPass pass(table_node);
-
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
-    {
-        auto query_tree = buildQueryTree(constraint->as<ASTConstraintDeclaration>()->expr->ptr(), context);
-        pass.run(query_tree, context);
-
-        const auto cnf = Analyzer::CNF::toCNF(query_tree, context)
-            .pullNotOutFunctions(context);
-        for (const auto & group : cnf.getStatements())
-        {
-            data.cnf_constraints.emplace_back(group.begin(), group.end());
-
-            if (group.size() == 1)
-                atomic_constraints_data.emplace_back(*group.begin());
-        }
-
-        data.constraints.push_back(std::move(query_tree));
-    }
-
-    for (size_t i = 0; i < data.cnf_constraints.size(); ++i)
-        for (size_t j = 0; j < data.cnf_constraints[i].size(); ++j)
-            data.query_node_to_atom_ids[data.cnf_constraints[i][j].node_with_hash].push_back({i, j});
-
-    /// build graph
-    if (constraints.empty())
-    {
-        data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(QueryTreeNodes(), context);
-    }
-    else
-    {
-        static const NameSet relations = { "equals", "less", "lessOrEquals", "greaterOrEquals", "greater" };
-
-        QueryTreeNodes constraints_for_graph;
-        for (const auto & atomic_formula : atomic_constraints_data)
-        {
-            Analyzer::CNF::AtomicFormula atom{atomic_formula.negative, atomic_formula.node_with_hash.node->clone()};
-            atom = Analyzer::CNF::pushNotIntoFunction(atom, context);
-
-            auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
-            if (function_node && relations.contains(function_node->getFunctionName()))
-            {
-                assert(!atom.negative);
-                constraints_for_graph.push_back(atom.node_with_hash.node);
-            }
-        }
-        data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);
-    }
-
-    return data;
-}
-
-const QueryTreeNodes & ConstraintsDescription::QueryTreeData::getConstraints() const
-{
-    return constraints;
-}
-
-const std::vector<std::vector<Analyzer::CNF::AtomicFormula>> & ConstraintsDescription::QueryTreeData::getConstraintData() const
-{
-    return cnf_constraints;
-}
-
-const ComparisonGraph<QueryTreeNodePtr> & ConstraintsDescription::QueryTreeData::getGraph() const
-{
-    return *graph;
-}
-
-std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::QueryTreeData::getAtomIds(const QueryTreeNodePtrWithHash & node_with_hash) const
-{
-    auto it = query_node_to_atom_ids.find(node_with_hash);
-    if (it != query_node_to_atom_ids.end())
-        return it->second;
-    return std::nullopt;
-}
-
-std::vector<Analyzer::CNF::AtomicFormula> ConstraintsDescription::QueryTreeData::getAtomsById(const AtomIds & ids) const
-{
-    std::vector<Analyzer::CNF::AtomicFormula> result;
     for (const auto & id : ids)
         result.push_back(cnf_constraints[id.group_id][id.atom_id]);
     return result;
@@ -313,7 +218,7 @@ void ConstraintsDescription::update()
     {
         cnf_constraints.clear();
         ast_to_atom_ids.clear();
-        graph = std::make_unique<ComparisonGraph<ASTPtr>>(ASTs());
+        graph = std::make_unique<ComparisonGraph>(ASTs());
         return;
     }
 
