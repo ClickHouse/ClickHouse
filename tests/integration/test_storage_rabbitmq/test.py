@@ -858,7 +858,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
         if len(insert_messages) == 50:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -921,7 +921,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
         if len(insert_messages) == 50:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -1020,7 +1020,6 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     ), "ClickHouse lost some messages: {}".format(result)
 
 
-@pytest.mark.skip(reason="Flaky")
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query(
         """
@@ -2050,7 +2049,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     )
 
 
-@pytest.mark.skip(reason="Timeout: FIXME")
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
     instance.query(
@@ -2953,7 +2951,6 @@ def test_rabbitmq_address(rabbitmq_cluster):
     instance2.query("drop table rabbit_out sync")
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     instance.query(
         """
@@ -2991,7 +2988,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
 
     consumer.start_consuming()
     consumer_connection.close()
@@ -3002,7 +2999,6 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     )
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_max_rows_per_message(rabbitmq_cluster):
     num_rows = 5
 
@@ -3050,7 +3046,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3075,7 +3071,6 @@ def test_max_rows_per_message(rabbitmq_cluster):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_row_based_formats(rabbitmq_cluster):
     num_rows = 10
 
@@ -3148,7 +3143,7 @@ def test_row_based_formats(rabbitmq_cluster):
             if insert_messages == 2:
                 channel.stop_consuming()
 
-        consumer.basic_consume(onReceived, queue_name)
+        consumer.basic_consume(queue_name, onReceived)
         consumer.start_consuming()
         consumer_connection.close()
 
@@ -3172,7 +3167,6 @@ def test_row_based_formats(rabbitmq_cluster):
         assert result == expected
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_1(rabbitmq_cluster):
     instance.query(
         """
@@ -3211,7 +3205,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
         if len(insert_messages) == 3:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3234,7 +3228,6 @@ def test_block_based_formats_1(rabbitmq_cluster):
     ]
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_2(rabbitmq_cluster):
     num_rows = 100
 
@@ -3296,7 +3289,7 @@ def test_block_based_formats_2(rabbitmq_cluster):
             if insert_messages == 9:
                 channel.stop_consuming()
 
-        consumer.basic_consume(onReceived, queue_name)
+        consumer.basic_consume(queue_name, onReceived)
         consumer.start_consuming()
         consumer_connection.close()
 
