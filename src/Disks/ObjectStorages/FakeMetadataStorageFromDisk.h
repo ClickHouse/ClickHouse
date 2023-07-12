@@ -125,7 +125,7 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    void unlinkMetadata(const std::string & path) override;
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 };
 
 }
