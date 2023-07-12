@@ -10,6 +10,9 @@
 namespace DB
 {
 
+/*
+ * Makes an HTTP GET request to the specified endpoint to obtain a proxy host.
+ * */
 class RemoteProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:

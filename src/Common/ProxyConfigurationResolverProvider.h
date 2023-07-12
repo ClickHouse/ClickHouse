@@ -7,6 +7,10 @@
 namespace DB
 {
 
+/*
+ * Returns appropriate ProxyConfigurationResolver based on current CH settings (Remote resolver or List resolver).
+ * If no configuration is found, returns Environment Resolver.
+ * */
 class ProxyConfigurationResolverProvider
 {
 public:

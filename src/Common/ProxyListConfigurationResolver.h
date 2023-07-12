@@ -8,6 +8,9 @@
 namespace DB
 {
 
+/*
+ * Round-robin proxy list resolver.
+ * */
 class ProxyListConfigurationResolver : public ProxyConfigurationResolver
 {
 public:

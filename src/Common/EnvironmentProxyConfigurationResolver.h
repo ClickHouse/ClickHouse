@@ -5,6 +5,9 @@
 namespace DB
 {
 
+/*
+ * Grabs proxy configuration from environment variables (http_proxy and https_proxy).
+ * */
 class EnvironmentProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
