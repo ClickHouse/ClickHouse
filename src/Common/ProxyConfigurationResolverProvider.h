@@ -14,11 +14,6 @@ public:
     static std::shared_ptr<ProxyConfigurationResolver> get();
 
 private:
-    static std::shared_ptr<ProxyConfigurationResolver> get(const String & config_prefix,
-                                                           const Poco::Util::AbstractConfiguration & configuration);
-
-    static std::shared_ptr<ProxyConfigurationResolver> get(const Poco::Util::AbstractConfiguration & configuration);
-
     static std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
         const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration);
 

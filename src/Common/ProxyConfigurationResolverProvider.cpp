@@ -21,7 +21,28 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 {
     if (auto context = Context::getGlobalContextInstance())
     {
-        return get(config_prefix, context->getConfigRef());
+        auto & configuration = context->getConfigRef();
+
+        auto proxy_prefix = config_prefix + ".proxy";
+
+        if (configuration.has(proxy_prefix))
+        {
+            std::vector<String> config_keys;
+            configuration.keys(proxy_prefix, config_keys);
+
+            if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
+            {
+                if (resolver_configs > 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
+
+                return getRemoteResolver(proxy_prefix + ".resolver", configuration);
+            }
+
+            if (auto list_resolver = getListResolver(proxy_prefix, configuration))
+            {
+                return list_resolver;
+            }
+        }
     }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>();
@@ -30,40 +51,6 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get()
 {
     return get("");
-}
-
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
-    const String & config_prefix,
-    const Poco::Util::AbstractConfiguration & configuration
-)
-{
-    auto proxy_prefix = config_prefix + ".proxy";
-
-    if (configuration.has(proxy_prefix))
-    {
-        std::vector<String> config_keys;
-        configuration.keys(proxy_prefix, config_keys);
-
-        if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
-        {
-            if (resolver_configs > 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
-
-            return getRemoteResolver(proxy_prefix + ".resolver", configuration);
-        }
-
-        if (auto list_resolver = getListResolver(proxy_prefix, configuration))
-        {
-            return list_resolver;
-        }
-    }
-
-    return std::make_shared<EnvironmentProxyConfigurationResolver>();
-}
-
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const Poco::Util::AbstractConfiguration & configuration)
-{
-    return get("", configuration);
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getRemoteResolver(
