@@ -666,7 +666,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         for (const auto & command : query_alter->command_list->children)
         {
-            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
+            if (!isSupportedAlterTypeForDDLQuery(command->as<ASTAlterCommand&>().type))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
@@ -1474,7 +1474,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr))
+        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr) || alter->isFreezeAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))

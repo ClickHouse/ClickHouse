@@ -321,12 +321,7 @@ def test_alter_attach(started_cluster, attachable_part, engine):
     dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
-@pytest.mark.parametrize("engine", ["mergetree", "replicatedmergetree"])
-def test_alter_freeze(started_cluster, engine):
-    pass
-
-
-@pytest.mark.parametrize("engine", ["mergetree", "replicatedmergetree"])
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_alter_drop_part(started_cluster, engine):
     database = f"alter_drop_part_{engine}"
     main_node.query(
