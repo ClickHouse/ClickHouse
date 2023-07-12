@@ -1,0 +1,17 @@
+-- { echoOn }
+select count() from data_r1 where _partition_id = '0';
+10
+select count() from data_r2 where _partition_id = '0';
+10
+select count(ignore(*)) from data_r1 where _partition_id = '0';
+10
+select count(ignore(*)) from data_r2 where _partition_id = '0';
+10
+select count() from data_r1 where indexHint(_partition_id = '0');
+10
+select count() from data_r2 where indexHint(_partition_id = '0');
+10
+select count(ignore(*)) from data_r1 where indexHint(_partition_id = '0');
+10
+select count(ignore(*)) from data_r2 where indexHint(_partition_id = '0');
+10

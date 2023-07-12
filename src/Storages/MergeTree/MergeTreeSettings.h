@@ -202,6 +202,10 @@ struct Settings;
     \
     /** Projection settings. */ \
     M(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
+    \
+    /** Replicated cluster. */ \
+    M(Bool, cluster, false, "Cluster mode", 0) \
+    M(UInt64, cluster_replication_factor, 1, "Replication factor in cluster", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
@@ -258,8 +262,12 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes"
-            || name == "enable_mixed_granularity_parts";
+        return name == "index_granularity"
+            || name == "index_granularity_bytes"
+            || name == "enable_mixed_granularity_parts"
+            /// NOTE(cluster): we can support at least some trivial cases
+            || name == "cluster"
+        ;
     }
 
     static bool isPartFormatSetting(const String & name)

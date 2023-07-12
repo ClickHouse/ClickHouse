@@ -1,0 +1,65 @@
+-- { echo }
+select count() from data_r1;
+10
+select count() from data_r2;
+10
+select count() from data_r3;
+10
+select count() from data_r4;
+10
+select * from data_r1 order by key limit 1;
+0	0	0
+select * from data_r2 order by key limit 1;
+0	0	0
+select * from data_r3 order by key limit 1;
+0	0	0
+select * from data_r4 order by key limit 1;
+0	0	0
+-- disable count() optimization (if any)
+select count(ignore(*)) from data_r1;
+10
+select count(ignore(*)) from data_r2;
+10
+select count(ignore(*)) from data_r3;
+10
+select count(ignore(*)) from data_r4;
+10
+-- just a smoke test of the system.parts.replicas, only smoke because now it is non-predictable -- pseudo random.
+select table, length(replicas) replicas_number, count() from system.cluster_partitions where database = currentDatabase() and table like 'data_%' group by table, replicas_number order by table;
+data_r1	2	10
+data_r2	2	10
+data_r3	2	10
+data_r4	2	10
+-- check that we are able to read all entries from ZooKeeper back
+detach table data_r1;
+detach table data_r2;
+detach table data_r3;
+detach table data_r4;
+attach table data_r1;
+attach table data_r2;
+attach table data_r3;
+attach table data_r4;
+select throwIf(is_readonly = 1) from system.replicas where database = currentDatabase() and table like 'data_%' format Null;
+select count() from data_r1;
+10
+select count() from data_r2;
+10
+select count() from data_r3;
+10
+select count() from data_r4;
+10
+-- one more time after DETACH
+select table, length(replicas) replicas_number, count() from system.cluster_partitions where database = currentDatabase() and table like 'data_%' group by table, replicas_number order by table;
+data_r1	2	10
+data_r2	2	10
+data_r3	2	10
+data_r4	2	10
+-- one more time SELECT after DETACH
+select count(ignore(*)) from data_r1;
+10
+select count(ignore(*)) from data_r2;
+10
+select count(ignore(*)) from data_r3;
+10
+select count(ignore(*)) from data_r4;
+10

@@ -41,6 +41,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/System/StorageSystemClusterPartitions.h>
 #include <Storages/System/StorageSystemServerSettings.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
@@ -191,6 +192,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue");
     attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue");
     attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue");
+    attach<StorageSystemClusterPartitions>(context, system_database, "cluster_partitions");
     attach<StorageSystemDictionaries>(context, system_database, "dictionaries");
     attach<StorageSystemModels>(context, system_database, "models");
     attach<StorageSystemClusters>(context, system_database, "clusters");

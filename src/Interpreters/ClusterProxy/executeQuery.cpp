@@ -9,9 +9,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTFunction.h>
-#include <Interpreters/ProcessList.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -22,6 +26,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCluster.h>
 
 
 namespace DB
@@ -430,6 +435,134 @@ void executeQueryWithParallelReplicas(
 
     query_plan.addStep(std::move(read_from_remote));
 }
+
+
+void executeQueryForReplicatedMergeTreeCluster(
+    QueryPlan & query_plan,
+    SelectStreamFactory & stream_factory,
+    Poco::Logger * log,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
+    const ReplicatedMergeTreeCluster & cluster)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    std::vector<QueryPlanPtr> plans;
+    SelectStreamFactory::Shards remote_shards;
+
+    auto new_context = updateSettingsForCluster(
+        /// FIXME: either build proper cluster or change the signature of updateSettingsForCluster()
+        *context->getCluster("default"),
+        context,
+        settings,
+        /// Required only for additional_table_filters, they are not supported yet.
+        StorageID::createEmpty(),
+        query_info.additional_filter_ast,
+        log);
+    new_context->increaseDistributedDepth();
+
+    auto cluster_partitions = cluster.getClusterPartitions();
+    UInt32 shards = 0;
+
+    for (const auto & cluster_partition : cluster_partitions)
+    {
+        /// TODO(cluster): support other replicas
+        const auto & partition_replica = cluster_partition.getReplicas().front();
+        Cluster::ShardInfo shard_info = partition_replica.makeShardInfo(context);
+        LOG_TRACE(log, "Querying partition {} from replica {}",
+            cluster_partition.getPartitionId(),
+            partition_replica.toStringForLog());
+
+        /// TODO(cluster): use tables by UUIDs
+        ASTPtr query_ast_for_shard = ClusterProxy::rewriteSelectQuery(
+            new_context, query_ast,
+            partition_replica.database, partition_replica.table,
+            /* table_function_ptr= */ nullptr);
+
+        /// Add filter by partition
+        {
+            auto partition_filter = makeASTFunction("equals",
+                std::make_shared<ASTIdentifier>("_partition_id"),
+                std::make_shared<ASTLiteral>(cluster_partition.getPartitionId()));
+
+            /// FIXME(cluster): move this optimization into a common place
+            partition_filter = makeASTFunction("indexHint", std::move(partition_filter));
+
+            auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
+            auto where_expression = select_query.where();
+            if (where_expression)
+                partition_filter = makeASTFunction("and", where_expression, partition_filter);
+            select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(partition_filter));
+        }
+
+        stream_factory.createForShard(shard_info,
+            query_ast_for_shard,
+            StorageID(partition_replica.database, partition_replica.table),
+            /* table_func_ptr= */ {},
+            new_context,
+            plans,
+            remote_shards,
+            shards,
+            /* parallel_replicas_enabled= */ false);
+
+        ++shards;
+    }
+
+    if (!shards)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No nodes in the cluster");
+    LOG_TEST(log, "The query will be sent to {} shards", shards);
+
+    if (!remote_shards.empty())
+    {
+        Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+        scalars.emplace(
+            "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+        auto external_tables = context->getExternalTables();
+
+        auto plan = std::make_unique<QueryPlan>();
+        auto read_from_remote = std::make_unique<ReadFromRemote>(
+            std::move(remote_shards),
+            stream_factory.header,
+            stream_factory.processed_stage,
+            /* main_table */ StorageID::createEmpty(),
+            /* table_func_ptr */ nullptr,
+            new_context,
+            getThrottler(context),
+            std::move(scalars),
+            std::move(external_tables),
+            log,
+            shards,
+            query_info.storage_limits,
+            /* cluster_name_ */ "");
+
+        read_from_remote->setStepDescription("Read from remote replica");
+        plan->addStep(std::move(read_from_remote));
+        plan->addInterpreterContext(new_context);
+        plans.emplace_back(std::move(plan));
+    }
+
+    if (plans.empty())
+        return;
+
+    if (plans.size() == 1)
+    {
+        query_plan = std::move(*plans.front());
+        return;
+    }
+
+    DataStreams input_streams;
+    input_streams.reserve(plans.size());
+    for (auto & plan : plans)
+        input_streams.emplace_back(plan->getCurrentDataStream());
+
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
+}
+
 
 }
 

@@ -24,6 +24,8 @@ struct StorageID;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
+class ReplicatedMergeTreeCluster;
+
 namespace ClusterProxy
 {
 
@@ -75,6 +77,19 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);
+
+
+/// TODO(cluster):
+/// -- sharding key and CLUSTER BY optimization
+void executeQueryForReplicatedMergeTreeCluster(
+    QueryPlan & query_plan,
+    SelectStreamFactory & stream_factory,
+    Poco::Logger * log,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
+    const ReplicatedMergeTreeCluster & cluster);
+
 }
 
 }

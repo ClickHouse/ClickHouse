@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCluster.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
@@ -151,6 +152,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
+    bool supportsTrivialCountOptimization() const override;
 
     void read(
         QueryPlan & query_plan,
@@ -361,6 +363,8 @@ public:
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
         const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
+    ReplicatedMergeTreeClusterPartitions getClusterPartitions() const;
+
     bool canUseZeroCopyReplication() const;
 
     bool isTableReadOnly () { return is_readonly; }
@@ -384,6 +388,7 @@ private:
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
+    friend class ReplicatedMergeTreeClusterSink;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
@@ -394,6 +399,7 @@ private:
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
+    friend class ReplicatedMergeTreeCluster;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
     friend class MergeFromLogEntryTask;
@@ -463,6 +469,9 @@ private:
     mutable std::mutex last_queue_update_exception_lock;
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
+
+    /// NOTE: marked as mutable for now (to avoid more conflicts in the code)
+    mutable std::optional<ReplicatedMergeTreeCluster> cluster;
 
     DataPartsExchange::Fetcher fetcher;
 
@@ -583,6 +592,16 @@ private:
         SelectQueryInfo & query_info,
         ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage);
+
+    void readClusterImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;

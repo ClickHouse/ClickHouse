@@ -196,6 +196,9 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.createNewZooKeeperNodes();
     storage.syncPinnedPartUUIDs();
 
+    if (storage.cluster.has_value())
+        storage.cluster->loadFromCoordinator();
+
     std::lock_guard lock(storage.table_shared_id_mutex);
     storage.createTableSharedID();
 };

@@ -196,6 +196,21 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             max_cleanup_delay_period, cleanup_delay_period);
     }
 
+    if (cluster_replication_factor < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of cluster_replication_factor setting ({}) is too low",
+            cluster_replication_factor);
+    }
+    /// TODO(cluster): too much corner cases I guess, let's just prohibit for now.
+    if (cluster && allow_remote_fs_zero_copy_replication)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "cluster is not compatible with allow_remote_fs_zero_copy_replication");
+    }
+
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
     {
         throw Exception(

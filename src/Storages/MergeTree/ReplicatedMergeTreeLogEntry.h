@@ -85,6 +85,9 @@ struct ReplicatedMergeTreeLogEntryData
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
     String source_shard;
 
+    /// Cluster
+    Strings replicas;
+
     String part_checksum; /// Part checksum for ATTACH_PART, empty otherwise.
 
     /// The name of resulting part for GET_PART and MERGE_PARTS

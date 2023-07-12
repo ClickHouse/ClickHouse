@@ -27,6 +27,7 @@ enum FormatVersion : UInt8
     FORMAT_WITH_UUID = 5,
     FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
     FORMAT_WITH_LOG_ENTRY_ID = 7,
+    FORMAT_CLUSTER = 8,
 
     FORMAT_LAST
 };
@@ -38,6 +39,8 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     if (!deduplicate_by_columns.empty())
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_DEDUPLICATE_BY_COLUMNS);
+    if (!replicas.empty())
+        format_version = std::max<UInt8>(format_version, FORMAT_CLUSTER);
 
     /// Conditionally bump format_version only when uuid has been assigned.
     /// If some other feature requires bumping format_version to >= 5 then this code becomes no-op.
@@ -54,6 +57,14 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
         out << "log_entry_id: " << escape << log_entry_id << '\n';
+
+    if (format_version >= FORMAT_CLUSTER)
+    {
+        out << "replicas\n";
+        for (const String & s : replicas)
+            out << escape << s << '\n';
+        out << '\n';
+    }
 
     switch (type)
     {
@@ -210,6 +221,21 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
     if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
         in >> "log_entry_id: " >> escape >> log_entry_id >> "\n";
+
+    if (format_version >= FORMAT_CLUSTER)
+    {
+        in >> "replicas\n";
+        while (true)
+        {
+            String replica;
+            in >> escape >> replica;
+            if (replica.empty())
+                break;
+            replicas.emplace_back(replica);
+            in >> "\n";
+        }
+        in >> "\n";
+    }
 
     in >> type_str >> "\n";
 
