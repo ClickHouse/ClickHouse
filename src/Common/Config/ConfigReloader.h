@@ -19,7 +19,7 @@ namespace DB
 
 class Context;
 
-/** Every two seconds checks configuration files for update.
+/** Every two seconds checks configuration files and possibly extra paths for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
   *  and the reloaded config will be applied via Updater functor.
   * It doesn't take into account changes of --config-file and <users_config>.
@@ -27,11 +27,16 @@ class Context;
 class ConfigReloader
 {
 public:
-    using Updater = std::function<void(ConfigurationPtr, bool)>;
+    using Paths = std::vector<std::string>;
+    using Updater = std::function<void(
+        ConfigurationPtr,
+        /* initial loading */bool,
+        /*way to alter extra paths on each update*/Paths&
+        )>;
 
     ConfigReloader(
-        std::string_view path_,
-        const std::vector<std::string>& extra_paths_,
+        std::string_view config_path_,
+        const Paths& extra_paths_,
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
@@ -72,7 +77,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("ConfigReloader");
 
     std::string config_path;
-    std::vector<std::string> extra_paths;
+    Paths extra_paths;
 
     std::string preprocessed_dir;
     FilesChangesTracker files;

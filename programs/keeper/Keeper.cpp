@@ -453,27 +453,27 @@ try
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
 
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
-
-    std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
-    if (!key_path.empty()) extra_paths.emplace_back(key_path);
-
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        extra_paths,
-        config().getString("path", ""),
+        std::vector{{include_from_path}},
+        config().getString("path", ""), // preprocessed dir
         std::move(unused_cache),
         unused_event,
-        [&](ConfigurationPtr config, bool /* initial_loading */)
+        [&](ConfigurationPtr config, bool, ConfigReloader::Paths& extra)
         {
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
+            // Now we have possibly updated the certificates paths, need to reflect that in extra paths
+            // so ConfigReloader would track them.
+            extra.resize(1); // Save only include_from_path in extra list.
+            std::string cert_path = config->getString("openSSL.server.certificateFile", "");
+            std::string key_path = config->getString("openSSL.server.privateKeyFile", "");
+            if (!cert_path.empty()) extra.emplace_back(std::move(cert_path));
+            if (!key_path.empty()) extra.emplace_back(std::move(key_path));
 #endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)

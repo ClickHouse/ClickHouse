@@ -1100,20 +1100,13 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
-
-    std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
-    if (!key_path.empty()) extra_paths.emplace_back(key_path);
-
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        extra_paths,
-        config().getString("path", ""),
+        std::vector{{include_from_path}}, // extra paths
+        config().getString("path", ""), // preprocessed dir
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr config, bool initial_loading, ConfigReloader::Paths& extra)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
@@ -1311,6 +1304,14 @@ try
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
+            // Now we have possibly updated the certificates paths, need to reflect that in extra paths
+            // so ConfigReloader would track them.
+            extra.resize(1); // Save only include_from_path in extra list.
+            std::string cert_path = config->getString("openSSL.server.certificateFile", "");
+            std::string key_path = config->getString("openSSL.server.privateKeyFile", "");
+            if (!cert_path.empty()) extra.emplace_back(std::move(cert_path));
+            if (!key_path.empty()) extra.emplace_back(std::move(key_path));
+
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
 
@@ -1720,10 +1721,6 @@ try
              throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                              "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
                              "to configuration file.)");
-
-#if USE_SSL
-        CertificateReloader::instance().tryLoad(config());
-#endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();

@@ -147,7 +147,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
 
         try
         {
-            updater(loaded_config.configuration, initial_loading);
+            updater(loaded_config.configuration, initial_loading, extra_paths);
         }
         catch (...)
         {
