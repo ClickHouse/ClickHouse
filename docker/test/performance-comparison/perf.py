@@ -369,6 +369,7 @@ for query_index in queries_to_run:
                         "max_execution_time": args.prewarm_max_query_seconds,
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
+                        "metrics_perf_events_enabled": 1,
                         "memory_profiler_step": "4Mi",
                     },
                 )
@@ -503,6 +504,7 @@ for query_index in queries_to_run:
                     settings={
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
+                        "metrics_perf_events_enabled": 1,
                     },
                 )
                 print(
