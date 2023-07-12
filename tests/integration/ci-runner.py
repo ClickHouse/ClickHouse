@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import random
+import re
 import shutil
 import subprocess
 import time
@@ -111,16 +112,36 @@ def get_counters(fname):
             if not (".py::" in line and " " in line):
                 continue
 
-            line_arr = line.strip().split(" ")
+            line = line.strip()
+            # [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            # ^^^^^^^^^^^^^
+            if line.strip().startswith("["):
+                line = re.sub("^\[[^\[\]]*\] \[[^\[\]]*\] ", "", line)
+
+            line_arr = line.split(" ")
             if len(line_arr) < 2:
                 logging.debug("Strange line %s", line)
                 continue
 
             # Lines like:
-            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            #     [gw3] [ 40%] PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
-            state = line_arr[-2]
-            test_name = line_arr[-1]
+            #
+            #     ERROR test_mysql_protocol/test.py::test_golang_client
+            #     PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
+            #     PASSED test_drop_is_lock_free/test.py::test_query_is_lock_free[detach part]
+            #
+            state = line_arr.pop(0)
+            test_name = " ".join(line_arr)
+
+            # Normalize test names for lines like this:
+            #
+            #    FAILED test_storage_s3/test.py::test_url_reconnect_in_the_middle - Exception
+            #    FAILED test_distributed_ddl/test.py::test_default_database[configs] - AssertionError: assert ...
+            #
+            test_name = re.sub(
+                r"^(?P<test_name>[^\[\] ]+)(?P<test_param>\[[^\[\]]*\]|)(?P<test_error> - .*|)$",
+                r"\g<test_name>\g<test_param>",
+                test_name,
+            )
 
             if state in counters:
                 counters[state].add(test_name)
@@ -999,16 +1020,6 @@ class ClickhouseIntegrationTestsRunner:
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
-
-        for res in test_result:
-            # It's not easy to parse output of pytest
-            # Especially when test names may contain spaces
-            # Do not allow it to avoid obscure failures
-            if " " not in res[0]:
-                continue
-            logging.warning("Found invalid test name with space: %s", res[0])
-            status_text = "Found test with invalid name, see main log"
-            result_state = "failure"
 
         return result_state, status_text, test_result, []
 
