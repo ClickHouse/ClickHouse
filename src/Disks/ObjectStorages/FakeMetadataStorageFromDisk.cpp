@@ -205,9 +205,10 @@ void FakeMetadataStorageFromDiskTransaction::addBlobToMetadata(
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
 
-void FakeMetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
+UnlinkMetadataFileOperationOutcomePtr FakeMetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
     disk->removeFile(path);
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
 
 }
