@@ -29,7 +29,11 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ASTPtr type;
     ASTPtr granularity;
 
-    if (open.ignore(pos, expected))
+    /// Skip name parser for SQL-standard CREATE INDEX
+    if (expression_p.parse(pos, expr, expected))
+    {
+    }
+    else if (open.ignore(pos, expected))
     {
         if (!order_list.parse(pos, order, expected))
             return false;
@@ -37,10 +41,6 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         if (!close.ignore(pos, expected))
             return false;
     }
-    /// Skip name parser for SQL-standard CREATE INDEX
-    else if (!expression_p.parse(pos, expr, expected))
-        return false;
-
 
     if (s_type.ignore(pos, expected))
     {
