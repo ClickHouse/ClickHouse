@@ -23,6 +23,9 @@
 
 #include <Common/logger_useful.h>
 
+#include <IO/S3/ProxyConfigurationProvider.h>
+#include <Interpreters/Context.h>
+
 namespace DB
 {
 
@@ -784,14 +787,21 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const ThrottlerPtr & get_request_throttler,
     const ThrottlerPtr & put_request_throttler)
 {
+    auto proxy_configuration_resolver = S3::ProxyConfigurationProvider::get(Context::getGlobalContextInstance()->getConfigRef());
+
+    auto per_request_configuration = [&] (const Aws::Http::HttpRequest & req) { return proxy_configuration_resolver->getConfiguration(req); };
+    auto error_report = [&] (const ClientConfigurationPerRequest & req) { proxy_configuration_resolver->errorReport(req); };
+
     return PocoHTTPClientConfiguration(
+        per_request_configuration,
         force_region,
         remote_host_filter,
         s3_max_redirects,
         enable_s3_requests_logging,
         for_disk_s3,
         get_request_throttler,
-        put_request_throttler);
+        put_request_throttler,
+        error_report);
 }
 
 }

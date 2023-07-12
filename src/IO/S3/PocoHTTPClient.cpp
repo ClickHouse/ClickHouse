@@ -85,20 +85,24 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
+        std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_)
-    : force_region(force_region_)
+        const ThrottlerPtr & put_request_throttler_,
+        std::function<void(const ClientConfigurationPerRequest &)> error_report_)
+    : per_request_configuration(per_request_configuration_)
+    , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
     , put_request_throttler(put_request_throttler_)
+    , error_report(error_report_)
 {
 }
 

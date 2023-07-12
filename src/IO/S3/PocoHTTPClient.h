@@ -43,7 +43,7 @@ struct ClientConfigurationPerRequest
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
-    std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration = [] (const Aws::Http::HttpRequest &) { return ClientConfigurationPerRequest(); };
+    std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
@@ -66,13 +66,15 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
 private:
     PocoHTTPClientConfiguration(
+        std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_
+        const ThrottlerPtr & put_request_throttler_,
+        std::function<void(const ClientConfigurationPerRequest &)> error_report_
     );
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
