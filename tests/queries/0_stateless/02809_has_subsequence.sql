@@ -8,6 +8,8 @@ select hasSubsequence('garbage', 'gr');
 select hasSubsequence('garbage', 'ab');
 select hasSubsequence('garbage', 'be');
 select hasSubsequence('garbage', 'arg');
+select hasSubsequence('garbage', 'gra');
+select hasSubsequence('garbage', 'rga');s
 select hasSubsequence('garbage', 'garbage');
 select hasSubsequence('garbage', 'garbage1');
 select hasSubsequence('garbage', 'arbw');
