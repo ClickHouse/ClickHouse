@@ -4617,6 +4617,7 @@ is_currently_used:          0
 """
     )
 
+    instance.query("DROP TABLE test.kafka")
     kafka_delete_topic(admin_client, topic)
 
 

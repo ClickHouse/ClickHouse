@@ -543,6 +543,20 @@ void KafkaConsumer::setExceptionInfo(const String & text)
     last_exception_text = text;
 }
 
+/*
+ * Needed until
+ * https://github.com/mfontanini/cppkafka/pull/309
+ * is merged,
+ * because consumer->get_member_id() contains a leak
+ */
+std::string KafkaConsumer::getMemberId()
+{
+    char * memberid_ptr = rd_kafka_memberid(consumer->get_handle());
+    std::string memberid_string = memberid_ptr;
+    rd_kafka_mem_free(nullptr, memberid_ptr);
+    return memberid_string;
+}
+
 
 KafkaConsumer::Stat KafkaConsumer::getStat()
 {
@@ -562,7 +576,7 @@ KafkaConsumer::Stat KafkaConsumer::getStat()
     }
 
     return {
-        .consumer_id = consumer->get_member_id(),
+        .consumer_id = getMemberId() /* consumer->get_member_id() */ ,
         .assignments = std::move(assignments),
         .last_exception = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
             return last_exception_text;}(),
