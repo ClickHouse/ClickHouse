@@ -49,7 +49,7 @@ public:
 
     static std::shared_ptr<SystemLogQueue<TextLogElement>> getLogQueue()
     {
-        static std::shared_ptr<SystemLogQueue<TextLogElement>> queue = std::make_shared<SystemLogQueue<TextLogElement>>();
+        static std::shared_ptr<SystemLogQueue<TextLogElement>> queue = std::make_shared<SystemLogQueue<TextLogElement>>("text_log");
         return queue;
     }
 };

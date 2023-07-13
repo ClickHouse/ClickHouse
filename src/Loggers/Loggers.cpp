@@ -49,15 +49,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Use extended interface of Channel for more comprehensive logging.
     split = new DB::OwnSplitChannel();
 
-#ifndef WITHOUT_TEXT_LOG
-    if (config.has("text_log"))
-    {
-        String text_log_level_str = config.getString("text_log.level", "");
-        int text_log_level = text_log_level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(text_log_level_str);
-        split->addTextLog(DB::TextLog::getLogQueue(), text_log_level);
-    }
-#endif
-
     auto log_level_string = config.getString("logger.level", "trace");
 
     /// different channels (log, console, syslog) may have different loglevels configured
@@ -258,6 +249,14 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
+#ifndef WITHOUT_TEXT_LOG
+    if (config.has("text_log"))
+    {
+        String text_log_level_str = config.getString("text_log.level", "");
+        int text_log_level = text_log_level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(text_log_level_str);
+        split->addTextLog(DB::TextLog::getLogQueue(), text_log_level);
+    }
+#endif
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)
