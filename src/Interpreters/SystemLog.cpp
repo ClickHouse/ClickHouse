@@ -333,8 +333,8 @@ SystemLog<LogElement>::SystemLog(
     const String & table_name_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_,
-    std::shared_ptr<SystemLogQueue<LogElement>> ex_queue)
-    : Base(ex_queue)
+    std::shared_ptr<SystemLogQueue<LogElement>> queue_)
+    : Base(database_name_ + "." + table_name_, queue_)
     , WithContext(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)

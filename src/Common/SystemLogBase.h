@@ -74,6 +74,7 @@ template <typename LogElement>
 class SystemLogQueue
 {
 public:
+    SystemLogQueue(const String & name_);
 
     void add(const LogElement & element);
     size_t size() const { return queue.size(); }
@@ -109,7 +110,9 @@ class SystemLogBase : public ISystemLog
 public:
     using Self = SystemLogBase;
 
-    SystemLogBase(std::shared_ptr<SystemLogQueue<LogElement>> ex_queue = nullptr);
+    SystemLogBase(
+        const String & name_,
+        std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.

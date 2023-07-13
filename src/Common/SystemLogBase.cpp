@@ -39,12 +39,14 @@ namespace
 ISystemLog::~ISystemLog() = default;
 
 template <typename LogElement>
-SystemLogBase<LogElement>::SystemLogBase(std::shared_ptr<SystemLogQueue<LogElement>> ex_queue)
+SystemLogBase<LogElement>::SystemLogBase(
+    const String & name_,
+    std::shared_ptr<SystemLogQueue<LogElement>> queue_)
 {
-    if (ex_queue)
-        queue = ex_queue;
+    if (queue_)
+        queue = queue_;
     else
-        queue = std::make_shared<SystemLogQueue<LogElement>>();
+        queue = std::make_shared<SystemLogQueue<LogElement>>(name_);
 }
 
 template <typename LogElement>
@@ -75,6 +77,11 @@ void SystemLogBase<LogElement>::startup()
     saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 
+template <typename LogElement>
+SystemLogQueue<LogElement>::SystemLogQueue(const String & name_)
+    : log(&Poco::Logger::get(name_))
+{}
+
 static thread_local bool recursive_add_call = false;
 
 template <typename LogElement>
@@ -91,7 +98,6 @@ void SystemLogQueue<LogElement>::add(const LogElement & element)
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
-
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
@@ -193,5 +199,8 @@ void SystemLogBase<LogElement>::flush(bool force)
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
+
+#define INSTANTIATE_SYSTEM_LOG_BASE2(ELEMENT) template class SystemLogQueue<ELEMENT>;
+SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE2)
 
 }
