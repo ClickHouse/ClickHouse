@@ -72,7 +72,6 @@ template <typename LogElement>
 void SystemLogBase<LogElement>::startup()
 {
     std::lock_guard lock(queue->mutex);
-    std::cout << "void ISystemLog::startup()" << std::endl;
     saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 

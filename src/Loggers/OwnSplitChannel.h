@@ -47,8 +47,6 @@ private:
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::map<std::string, ExtendedChannelPtrPair> channels;
 
-    std::mutex text_log_mutex;
-
 #ifndef WITHOUT_TEXT_LOG
     std::weak_ptr<DB::FooBar> text_log;
     std::atomic<int> text_log_max_priority = -1;
