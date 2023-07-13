@@ -56,7 +56,6 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
-        RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -108,8 +107,6 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
-    std::string delete_key;
-    std::optional<size_t> delete_offset;
 
     String backup_name;
 
