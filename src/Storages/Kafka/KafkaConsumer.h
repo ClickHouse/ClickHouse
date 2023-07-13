@@ -159,6 +159,8 @@ private:
     /// Return number of messages with an error.
     size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
+
+    std::string getMemberId();
 };
 
 }
