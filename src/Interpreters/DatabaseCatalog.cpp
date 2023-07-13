@@ -413,6 +413,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #endif
         return db_and_table;
     }
+
+    
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
         /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
@@ -452,7 +454,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
     {
-        std::string exception_message;
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
@@ -524,7 +525,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name, hints.getAllRegisteredNames());
+        std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -609,7 +610,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
+    
     db->shutdown();
+    
     if (drop)
     {
         UUID db_uuid = db->getUUID();
@@ -652,10 +655,10 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
+    assert(!database_name.empty());
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        assert(!database_name.empty());
         if (auto it = databases.find(database_name); it != databases.end())
             db = it->second;
     }
