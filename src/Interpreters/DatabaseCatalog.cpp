@@ -414,7 +414,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return db_and_table;
     }
 
-    
+
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
         /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
@@ -610,9 +610,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
-    
+
     db->shutdown();
-    
+
     if (drop)
     {
         UUID db_uuid = db->getUUID();
