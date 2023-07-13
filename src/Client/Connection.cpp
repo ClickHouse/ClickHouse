@@ -725,7 +725,7 @@ void Connection::sendFragments(
 
 void Connection::sendExecuteQueryPipelines(const String & query_id_)
 {
-    writeVarUInt(Protocol::Client::PlanFragmentsBeginProcess, *out);
+    writeVarUInt(Protocol::Client::PipelinesBeginExecute, *out);
     writeStringBinary(query_id_, *out);
     out->next();
 }

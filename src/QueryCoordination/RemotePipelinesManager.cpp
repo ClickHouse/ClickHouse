@@ -33,40 +33,53 @@ void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
             /// TODO select or epoll
             for (auto & node : managed_nodes)
             {
-                if (node.is_local)
+                if (node.is_local || node.is_finished)
                     continue;
 
                 Packet packet = node.connection->receivePacket();
                 switch (packet.type)
                 {
-                    case Protocol::Server::ProfileInfo: {
+                    case Protocol::Server::ProfileInfo:
+                    {
                         if (profile_info_callback)
                             profile_info_callback(packet.profile_info);
                         break;
                     }
-                    case Protocol::Server::Log: {
+                    case Protocol::Server::Log:
+                    {
                         /// Pass logs from remote server to client
                         if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                             log_queue->pushBlock(std::move(packet.block));
                         break;
                     }
-                    case Protocol::Server::Progress: {
+                    case Protocol::Server::Progress:
+                    {
                         /// update progress
                         if (progress_callback)
                             progress_callback(packet.progress);
                         break;
                     }
-                    case Protocol::Server::ProfileEvents: {
+                    case Protocol::Server::ProfileEvents:
+                    {
                         /// Pass profile events from remote server to client
                         if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                             if (!profile_queue->emplace(std::move(packet.block)))
                                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
                         break;
                     }
-                    case Protocol::Server::Exception: {
+                    case Protocol::Server::Exception:
+                    {
                         packet.exception->rethrow();
                         break;
                     }
+                    case Protocol::Server::EndOfStream:
+                    {
+                        node.is_finished = true;
+
+                        LOG_DEBUG(log, "{} is finished", node.host_port);
+                        break;
+                    }
+
                     default:
                         throw;
                 }
@@ -107,6 +120,8 @@ void RemotePipelinesManager::cancel()
 
     if (receive_reporter_thread.joinable())
         receive_reporter_thread.join();
+
+    LOG_DEBUG(log, "cancelled");
 }
 
 
@@ -118,7 +133,7 @@ RemotePipelinesManager::~RemotePipelinesManager()
     }
     catch (...)
     {
-        tryLogCurrentException("CompletedPipelinesExecutor");
+        tryLogCurrentException("RemotePipelinesManager");
     }
 }
 

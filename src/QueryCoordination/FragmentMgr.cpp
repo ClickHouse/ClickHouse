@@ -21,12 +21,6 @@ std::shared_ptr<FragmentMgr::Data> FragmentMgr::find(const String & query_id) co
     return query_fragment.find(query_id)->second;
 }
 
-ContextMutablePtr FragmentMgr::findQueryContext(const String & query_id)
-{
-    auto data = find(query_id);
-    return data->query_context;
-}
-
 // for SECONDARY_QUERY from tcphandler, for INITIAL_QUERY from InterpreterSelectQueryFragments
 void FragmentMgr::addFragment(const String & query_id, PlanFragmentPtr fragment, ContextMutablePtr context_)
 {
@@ -74,8 +68,6 @@ void FragmentMgr::fragmentsToDistributed(const String & query_id, const std::vec
     }
 
     fragmentsToQueryPipelines(query_id);
-
-    /// create Coordination reporter
 }
 
 void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
@@ -160,7 +152,7 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 
         data->query_pipelines.emplace_back(std::move(pipeline));
     }
-
+    data->assignThreadNum();
 }
 
 std::shared_ptr<CompletedPipelinesExecutor> FragmentMgr::createPipelinesExecutor(const String & query_id)
@@ -201,26 +193,6 @@ QueryPipeline FragmentMgr::findRootQueryPipeline(const String & query_id)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found root query pipeline");
 }
 
-void FragmentMgr::rootQueryPipelineFinish(const String & query_id)
-{
-    auto data = find(query_id);
-
-    std::optional<FragmentID> root_fragment_id;
-    {
-        std::lock_guard lock(data->mutex);
-        for (auto & fragment_distributed : data->fragments_distributed)
-        {
-            if (!fragment_distributed.fragment->getDestFragment())
-            {
-                root_fragment_id.emplace(fragment_distributed.fragment->getFragmentID());
-            }
-        }
-    }
-
-    if (root_fragment_id.has_value())
-        onFinish(query_id, root_fragment_id.value());
-}
-
 std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDataRequest & exchange_data_request) const
 {
     std::shared_ptr<ExchangeDataReceiver> receiver;
@@ -254,39 +226,6 @@ void FragmentMgr::onFinish(const String & query_id)
     LOG_DEBUG(log, "Query {} execute finished", query_id);
     std::lock_guard lock(fragments_mutex);
     query_fragment.erase(query_id);
-}
-
-void FragmentMgr::onFinish(const String & query_id, FragmentID fragment_id)
-{
-    LOG_DEBUG(log, "Query {} fragment {} execute finished", query_id, fragment_id);
-    auto data = find(query_id);
-
-    bool all_finished = true;
-    {
-        std::lock_guard lock(data->mutex);
-
-        for (auto & fragment : data->fragments_distributed)
-        {
-            if (fragment.fragment->getFragmentID() == fragment_id)
-            {
-                fragment.is_finished = true;
-            }
-            else
-            {
-                if (!fragment.is_finished)
-                {
-                    all_finished = false;
-                }
-            }
-        }
-    }
-
-    if (all_finished)
-    {
-        LOG_DEBUG(log, "Query {} fragment all finished", query_id);
-        std::lock_guard lock(fragments_mutex);
-        query_fragment.erase(query_id);
-    }
 }
 
 }

@@ -122,13 +122,12 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
+    /// for query coordination
     std::optional<FragmentsRequest> fragments_request;
 
     std::optional<ExchangeDataRequest> exchange_data_request;
 
     std::shared_ptr<ExchangeDataReceiver> exchange_data_receiver;
-
-    std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor;
 
     /// sample block from ExchangeData
     Block exchange_data_header;
@@ -261,6 +260,7 @@ private:
     [[noreturn]] void receiveUnexpectedIgnoredPartUUIDs();
     [[noreturn]] void receiveUnexpectedHello();
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
+    bool receivePipelinesBeginExecute();
 
     /// Process INSERT query
     void processInsertQuery();

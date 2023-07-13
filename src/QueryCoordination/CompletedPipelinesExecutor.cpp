@@ -72,6 +72,16 @@ struct CompletedPipelinesExecutor::Datas
         }
     }
 
+    void join()
+    {
+        std::lock_guard lock(mutex);
+        for (auto & data : datas)
+        {
+            if (data->thread.joinable())
+                data->thread.join();
+        }
+    }
+
     size_t size()
     {
         std::lock_guard lock(mutex);
@@ -95,7 +105,7 @@ static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupP
         if (thread_group)
             CurrentThread::detachFromGroupIfNotDetached();
     );
-    setThreadName("QueryCompPipesEx");
+    setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used test query cancel
 
     try
     {
@@ -211,21 +221,27 @@ void CompletedPipelinesExecutor::execute()
 
 void CompletedPipelinesExecutor::cancel()
 {
-    if (cancelled)
-        return;
+//    if (cancelled)
+//        return;
 
     LOG_DEBUG(log, "cancel");
 
-    cancelled = true;
+//    cancelled = true;
 
     if (datas)
     {
-        datas->finish_event.set();
         datas->cancel();
+        /// Join thread here to wait for possible exception.
+        datas->join();
+        datas->finish_event.set();
     }
 
     if (thread.joinable())
+    {
+        LOG_DEBUG(log, "thread joinable");
         thread.join();
+        LOG_DEBUG(log, "thread joined");
+    }
 
     LOG_DEBUG(log, "cancelled");
 }

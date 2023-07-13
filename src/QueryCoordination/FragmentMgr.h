@@ -42,15 +42,9 @@ public:
     // Keep fragments that need to be executed by themselves
     void fragmentsToDistributed(const String & query_id, const std::vector<FragmentRequest> & need_execute_fragments);
 
-    void executeQueryPipelines(const String & query_id);
-
     std::shared_ptr<ExchangeDataReceiver> findReceiver(const ExchangeDataRequest & exchange_data_request) const;
 
-    void rootQueryPipelineFinish(const String & query_id);
-
     QueryPipeline findRootQueryPipeline(const String & query_id);
-
-    ContextMutablePtr findQueryContext(const String & query_id);
 
     static FragmentMgr & getInstance()
     {
@@ -63,8 +57,6 @@ public:
     void onFinish(const String & query_id);
 
     std::shared_ptr<CompletedPipelinesExecutor> createPipelinesExecutor(const String & query_id);
-
-    /// TODO cancel by query_id
 
 private:
     FragmentMgr() : log(&Poco::Logger::get("FragmentMgr")) { }
@@ -79,6 +71,26 @@ private:
         ContextMutablePtr query_context;
 
         mutable std::mutex mutex;
+
+        void assignThreadNum()
+        {
+            std::vector<size_t> threads_weight;
+            size_t total_weight = 0;
+
+            for (const auto & query_pipeline : query_pipelines)
+            {
+                size_t weight = query_pipeline.getProcessors().size();
+                total_weight += weight;
+                threads_weight.emplace_back(weight);
+            }
+
+            size_t max_threads = query_context->getSettingsRef().max_threads;
+            for (size_t i = 0; i < query_pipelines.size(); ++i)
+            {
+                size_t num_threads = (threads_weight[i] / total_weight) * max_threads;
+                query_pipelines[i].setNumThreads(num_threads);
+            }
+        }
     };
 
     std::shared_ptr<Data> find(const String & query_id) const;

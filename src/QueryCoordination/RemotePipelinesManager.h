@@ -51,7 +51,8 @@ private:
 
     struct ManagedNode
     {
-        bool is_local;
+        bool is_local = false;
+        bool is_finished = false;
         String host_port;
         IConnectionPool::Entry connection;
     };

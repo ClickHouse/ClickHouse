@@ -435,7 +435,7 @@ void TCPHandler::runImpl()
                 out->next();
 
                 /// receive begin
-                receivePacket();
+                receivePipelinesBeginExecute();
             }
 
             after_check_cancelled.restart();
@@ -822,23 +822,27 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
 
     if (secondary_query_coordination)
     {
-        auto callback = [this]()
         {
-            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+            auto completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
 
-            if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
-                return true;
+            auto callback = [this]()
+            {
+                std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
-            sendProgress();
-            sendSelectProfileEvents();
-            sendLogs();
+                if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                    return true;
 
-            return false;
-        };
+                sendProgress();
+                sendSelectProfileEvents();
+                sendLogs();
 
-        state.completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+                return false;
+            };
 
-        state.completed_pipelines_executor->execute();
+            completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+            completed_pipelines_executor->execute();
+        }
+
         finish_or_cancel();
 
         std::lock_guard lock(task_callback_mutex);
@@ -876,6 +880,10 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
         {
+            std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(state.io.pipeline);
+
+            auto completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
+
             auto callback = [this]()
             {
                 std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
@@ -885,17 +893,12 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
 
                 return false;
             };
-
-            state.completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
-            state.completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
-
-            std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(state.io.pipeline);
+            completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
 
             auto & remote_pipelines_manager = query_context->getCoordinator()->remote_pipelines_manager;
-
             remote_pipelines_manager->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
-            QueryCoordinationExecutor executor(pulling_executor, state.completed_pipelines_executor, remote_pipelines_manager);
+            QueryCoordinationExecutor executor(pulling_executor, completed_pipelines_executor, remote_pipelines_manager);
 
             CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
@@ -1476,6 +1479,19 @@ void TCPHandler::receiveUnexpectedHello()
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
 
+bool TCPHandler::receivePipelinesBeginExecute()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::PipelinesBeginExecute)
+    {
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet PipelinesBeginExecute received from client");
+    }
+
+    readStringBinary(state.query_id, *in);
+    return true;
+}
+
 
 void TCPHandler::sendHello()
 {
@@ -1538,10 +1554,8 @@ bool TCPHandler::receivePacket()
             receiveFragments();
             return true;
 
-        case Protocol::Client::PlanFragmentsBeginProcess:
-            readStringBinary(state.query_id, *in);
-            state.completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
-            return false;
+        case Protocol::Client::PipelinesBeginExecute:
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet PipelinesBeginExecute received from client");
 
         case Protocol::Client::ExchangeData:
         {
@@ -2262,6 +2276,17 @@ void TCPHandler::sendProgress()
     UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
     increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
     state.prev_elapsed_ns = current_elapsed_ns;
+
+    LOG_DEBUG(log, "Send progress read_rows {}", increment.read_rows);
+    LOG_DEBUG(log, "Send progress read_bytes {}", increment.read_bytes);
+    LOG_DEBUG(log, "Send progress total_rows_to_read {}", increment.total_rows_to_read);
+    LOG_DEBUG(log, "Send progress total_bytes_to_read {}", increment.total_bytes_to_read);
+    LOG_DEBUG(log, "Send progress written_rows {}", increment.written_rows);
+    LOG_DEBUG(log, "Send progress written_bytes {}", increment.written_bytes);
+    LOG_DEBUG(log, "Send progress result_rows {}", increment.result_rows);
+    LOG_DEBUG(log, "Send progress result_bytes {}", increment.result_bytes);
+    LOG_DEBUG(log, "Send progress elapsed_ns {}", increment.elapsed_ns);
+
     increment.write(*out, client_tcp_protocol_version);
     out->next();
 }

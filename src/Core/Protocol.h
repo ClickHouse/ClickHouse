@@ -151,7 +151,7 @@ namespace Protocol
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
             PlanFragments = 11,             ///
-            PlanFragmentsBeginProcess = 12, ///
+            PipelinesBeginExecute = 12, ///
             ExchangeData = 13,              ///
             MAX = ExchangeData,
         };
