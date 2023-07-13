@@ -56,7 +56,19 @@ void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
                     {
                         /// update progress
                         if (progress_callback)
+                        {
+                            LOG_DEBUG(log, "Update progress read_rows {}", packet.progress.read_rows);
+                            LOG_DEBUG(log, "Update progress read_bytes {}", packet.progress.read_bytes);
+                            LOG_DEBUG(log, "Update progress total_rows_to_read {}", packet.progress.total_rows_to_read);
+                            LOG_DEBUG(log, "Update progress total_bytes_to_read {}", packet.progress.total_bytes_to_read);
+                            LOG_DEBUG(log, "Update progress written_rows {}", packet.progress.written_rows);
+                            LOG_DEBUG(log, "Update progress written_bytes {}", packet.progress.written_bytes);
+                            LOG_DEBUG(log, "Update progress result_rows {}", packet.progress.result_rows);
+                            LOG_DEBUG(log, "Update progress result_bytes {}", packet.progress.result_bytes);
+                            LOG_DEBUG(log, "Update progress elapsed_ns {}", packet.progress.elapsed_ns);
                             progress_callback(packet.progress);
+                            LOG_DEBUG(log, "Updated progress from {}", node.host_port);
+                        }
                         break;
                     }
                     case Protocol::Server::ProfileEvents:

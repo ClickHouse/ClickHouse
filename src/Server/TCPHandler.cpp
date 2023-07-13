@@ -882,7 +882,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         {
             std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(state.io.pipeline);
 
-            auto completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(state.query_id);
+            auto completed_pipelines_executor = FragmentMgr::getInstance().createPipelinesExecutor(query_context->getCurrentQueryId());
 
             auto callback = [this]()
             {
@@ -1488,7 +1488,12 @@ bool TCPHandler::receivePipelinesBeginExecute()
         throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet PipelinesBeginExecute received from client");
     }
 
-    readStringBinary(state.query_id, *in);
+    String query_id;
+    readStringBinary(query_id, *in);
+
+    LOG_DEBUG(log, "Receive PipelinesBeginExecute packet for query {}", query_id);
+
+    state.query_id = query_id;
     return true;
 }
 

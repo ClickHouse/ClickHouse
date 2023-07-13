@@ -157,6 +157,8 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 
 std::shared_ptr<CompletedPipelinesExecutor> FragmentMgr::createPipelinesExecutor(const String & query_id)
 {
+    LOG_DEBUG(log, "Create pipelines executor for query {}", query_id);
+
     auto data = find(query_id);
 
     std::lock_guard lock(data->mutex);
@@ -168,7 +170,12 @@ std::shared_ptr<CompletedPipelinesExecutor> FragmentMgr::createPipelinesExecutor
         auto & fragment = data->fragments_distributed[i].fragment;
         if (fragment->getDestFragment())
         {
-            LOG_DEBUG(log, "Create CompletedPipelinesExecutor for fragment {}", fragment->getFragmentID());
+            LOG_DEBUG(
+                log,
+                "Add to CompletedPipelinesExecutor for fragment {}, pipeline thread size {}",
+                fragment->getFragmentID(),
+                data->query_pipelines[i].getNumThreads());
+
             pipelines.emplace_back(std::move(data->query_pipelines[i]));
             fragment_ids.emplace_back(fragment->getFragmentID());
         }

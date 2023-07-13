@@ -67,8 +67,8 @@ struct CompletedPipelinesExecutor::Datas
         std::lock_guard lock(mutex);
         for (auto & data : datas)
         {
-            if (data->executor)
-                data->executor->cancel();
+            if (!data->is_finished && data->executor)
+                data->executor->cancel(); /// TODO if finished call cancel() will hang?
         }
     }
 
@@ -77,7 +77,7 @@ struct CompletedPipelinesExecutor::Datas
         std::lock_guard lock(mutex);
         for (auto & data : datas)
         {
-            if (data->thread.joinable())
+            if (!data->is_finished && data->thread.joinable())
                 data->thread.join();
         }
     }
@@ -208,7 +208,10 @@ void CompletedPipelinesExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
+            {
+                LOG_DEBUG(log, "is_cancelled_callback try cancel");
                 cancel();
+            }
         }
     }
     else
@@ -250,6 +253,7 @@ CompletedPipelinesExecutor::~CompletedPipelinesExecutor()
 {
     try
     {
+        LOG_DEBUG(log, "~CompletedPipelinesExecutor try cancel");
         cancel();
     }
     catch (...)

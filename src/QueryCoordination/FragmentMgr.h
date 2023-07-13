@@ -52,8 +52,6 @@ public:
         return fragment_mgr;
     }
 
-    void onFinish(const String & query_id, FragmentID fragment_id);
-
     void onFinish(const String & query_id);
 
     std::shared_ptr<CompletedPipelinesExecutor> createPipelinesExecutor(const String & query_id);
@@ -74,12 +72,12 @@ private:
 
         void assignThreadNum()
         {
-            std::vector<size_t> threads_weight;
-            size_t total_weight = 0;
+            std::vector<Float64> threads_weight;
+            Float64 total_weight = 0;
 
             for (const auto & query_pipeline : query_pipelines)
             {
-                size_t weight = query_pipeline.getProcessors().size();
+                Float64 weight = query_pipeline.getProcessors().size();
                 total_weight += weight;
                 threads_weight.emplace_back(weight);
             }
@@ -87,7 +85,7 @@ private:
             size_t max_threads = query_context->getSettingsRef().max_threads;
             for (size_t i = 0; i < query_pipelines.size(); ++i)
             {
-                size_t num_threads = (threads_weight[i] / total_weight) * max_threads;
+                size_t num_threads = static_cast<size_t>((threads_weight[i] / total_weight) * max_threads);
                 query_pipelines[i].setNumThreads(num_threads);
             }
         }
