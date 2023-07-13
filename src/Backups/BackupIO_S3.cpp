@@ -177,7 +177,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
 
 BackupWriterS3::BackupWriterS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
+    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_,  const String & storage_class_name, const ContextPtr & context_)
     : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
@@ -186,6 +186,7 @@ BackupWriterS3::BackupWriterS3(
 {
     request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
+    request_settings.setStorageClassName(storage_class_name);
 }
 
 void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,

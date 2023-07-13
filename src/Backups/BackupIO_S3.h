@@ -38,7 +38,7 @@ private:
 class BackupWriterS3 : public BackupWriterDefault
 {
 public:
-    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_);
+    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const String & storage_class_name, const ContextPtr & context_);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;
