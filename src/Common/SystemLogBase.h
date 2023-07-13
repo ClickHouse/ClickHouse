@@ -67,7 +67,7 @@ public:
     virtual void savingThreadFunction() = 0;
 
 protected:
-    std::unique_ptr<ThreadFromGlobalPool> saving_thread;    
+    std::unique_ptr<ThreadFromGlobalPool> saving_thread;
 };
 
 template <typename LogElement>
