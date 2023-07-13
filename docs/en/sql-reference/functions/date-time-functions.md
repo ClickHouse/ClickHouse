@@ -700,6 +700,7 @@ The mode argument works like the mode argument to `toWeek()`. For the single-arg
 
 :::warning
 The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
+:::
 
 **Syntax**
 
