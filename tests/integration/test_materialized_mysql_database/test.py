@@ -262,6 +262,12 @@ def test_materialized_database_ddl_with_empty_transaction_8_0(
     )
 
 
+def test_text_blob_charset(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.text_blob_with_charset_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
 def test_select_without_columns_5_7(
     started_cluster, started_mysql_5_7, clickhouse_node
 ):
