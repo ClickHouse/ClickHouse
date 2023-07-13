@@ -28,9 +28,4 @@ FileCacheKey FileCacheKey::random()
     return FileCacheKey(UUIDHelpers::generateV4().toUnderType());
 }
 
-FileCacheKey FileCacheKey::fromKeyString(const std::string & key_str)
-{
-    return FileCacheKey(unhexUInt<UInt128>(key_str.data()));
-}
-
 }
