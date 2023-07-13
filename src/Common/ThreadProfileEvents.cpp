@@ -506,6 +506,8 @@ void PerfEventsCounters::initializeProfileEvents(const std::string & events_list
         // can't be reset anyway and we have to calculate deltas.
         enablePerfEvent(fd);
     }
+
+    disabled = false;
 }
 
 void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile_events)
@@ -517,6 +519,11 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
             continue;
         disablePerfEvent(fd);
     }
+
+    if (disabled)
+        return;
+
+    disabled = true;
 
     // Read the counter values.
     PerfEventValue current_values[NUMBER_OF_RAW_EVENTS];
@@ -587,6 +594,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
 
 void PerfEventsCounters::closeEventDescriptors()
 {
+    disabled = true;
     thread_events_descriptors_holder.releaseResources();
 }
 
