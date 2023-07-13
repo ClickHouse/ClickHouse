@@ -3,7 +3,7 @@
 
 #include <Core/ProtocolDefines.h>
 #include <Common/SipHash.h>
-#include "IO/VarInt.h"
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -15,6 +15,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+}
+
+namespace
+{
+     CoordinationMode validateAndGet(uint8_t candidate)
+    {
+        if (candidate <= static_cast<uint8_t>(CoordinationMode::MAX))
+            return static_cast<CoordinationMode>(candidate);
+
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown reading mode: {}", candidate);
+    }
 }
 
 void ParallelReadRequest::serialize(WriteBuffer & out) const
@@ -39,7 +51,7 @@ String ParallelReadRequest::describe() const
     return result;
 }
 
-void ParallelReadRequest::deserialize(ReadBuffer & in)
+ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -48,10 +60,24 @@ void ParallelReadRequest::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    readIntBinary(mode, in);
+    CoordinationMode mode;
+    size_t replica_num;
+    size_t min_number_of_marks;
+    RangesInDataPartsDescription description;
+
+    uint8_t mode_candidate;
+    readIntBinary(mode_candidate, in);
+    mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
     readIntBinary(min_number_of_marks, in);
     description.deserialize(in);
+
+    return ParallelReadRequest(
+        mode,
+        replica_num,
+        min_number_of_marks,
+        std::move(description)
+    );
 }
 
 void ParallelReadRequest::merge(ParallelReadRequest & other)
@@ -74,10 +100,7 @@ void ParallelReadResponse::serialize(WriteBuffer & out) const
 
 String ParallelReadResponse::describe() const
 {
-    String result;
-    result += fmt::format("finish: {} \n", finish);
-    result += description.describe();
-    return result;
+    return fmt::format("{}. Finish: {}", description.describe(), finish);
 }
 
 void ParallelReadResponse::deserialize(ReadBuffer & in)
@@ -100,6 +123,7 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
     /// Must be the first
     writeIntBinary(version, out);
 
+    writeIntBinary(mode, out);
     description.serialize(out);
     writeIntBinary(replica_num, out);
 }
@@ -113,7 +137,7 @@ String InitialAllRangesAnnouncement::describe()
     return result;
 }
 
-void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
+InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -122,8 +146,21 @@ void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
+    CoordinationMode mode;
+    RangesInDataPartsDescription description;
+    size_t replica_num;
+
+    uint8_t mode_candidate;
+    readIntBinary(mode_candidate, in);
+    mode = validateAndGet(mode_candidate);
     description.deserialize(in);
     readIntBinary(replica_num, in);
+
+    return InitialAllRangesAnnouncement {
+        mode,
+        description,
+        replica_num
+    };
 }
 
 }

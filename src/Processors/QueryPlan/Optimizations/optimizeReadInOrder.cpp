@@ -1,34 +1,37 @@
-#include <Parsers/ASTWindowDefinition.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
-#include <Common/typeid_cast.h>
+#include <Parsers/ASTWindowDefinition.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/StorageMerge.h>
-#include <Functions/IFunction.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
+
 #include <stack>
 
 
 namespace DB::QueryPlanOptimizations
 {
 
-ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
+static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 {
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
@@ -65,7 +68,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 
 using StepStack = std::vector<IQueryPlanStep*>;
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
@@ -117,7 +120,7 @@ using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
+static void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -166,7 +169,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
     }
 }
 
-void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
+static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 {
     if (dag)
         dag->mergeInplace(std::move(*expression->clone()));
@@ -174,14 +177,14 @@ void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
         dag = expression->clone();
 }
 
-/// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
+/// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
 void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
-        if (const auto * prewhere_info = reading->getPrewhereInfo())
+        if (const auto prewhere_info = reading->getPrewhereInfo())
         {
             /// Should ignore limit if there is filtering.
             limit = 0;
@@ -316,246 +319,6 @@ void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
             }
         }
     }
-}
-
-/// This structure stores a node mapping from one DAG to another.
-/// The rule is following:
-/// * Input nodes are mapped by name.
-/// * Function is mapped to function if all children are mapped and function names are same.
-/// * Alias is mapped to it's children mapping.
-/// * Monotonic function can be mapped to it's children mapping if direct mapping does not exist.
-///   In this case, information about monotonicity is filled.
-/// * Mapped node is nullptr if there is no mapping found.
-///
-/// Overall, directly mapped nodes represent equal calculations.
-/// Notes:
-/// * Mapped DAG can contain many nodes which represent the same calculation.
-///   In this case mapping is ambiguous and only one node is mapped.
-/// * Aliases for mapped DAG are not supported.
-/// DAG for PK does not contain aliases and ambiguous nodes.
-struct MatchedTrees
-{
-    /// Monotonicity is calculated for monotonic functions chain.
-    /// Chain is not strict if there is any non-strict monotonic function.
-    struct Monotonicity
-    {
-        int direction = 1;
-        bool strict = true;
-    };
-
-    struct Match
-    {
-        const ActionsDAG::Node * node = nullptr;
-        std::optional<Monotonicity> monotonicity;
-    };
-
-    using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
-};
-
-MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG & outer_dag)
-{
-    using Parents = std::set<const ActionsDAG::Node *>;
-    std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
-
-    {
-        std::stack<const ActionsDAG::Node *> stack;
-        for (const auto * out : inner_dag.getOutputs())
-        {
-            if (inner_parents.contains(out))
-                continue;
-
-            stack.push(out);
-            inner_parents.emplace(out, Parents());
-            while (!stack.empty())
-            {
-                const auto * node = stack.top();
-                stack.pop();
-
-                if (node->type == ActionsDAG::ActionType::INPUT)
-                    inner_inputs.emplace(node->result_name, node);
-
-                for (const auto * child : node->children)
-                {
-                    auto [it, inserted] = inner_parents.emplace(child, Parents());
-                    it->second.emplace(node);
-
-                    if (inserted)
-                        stack.push(child);
-                }
-            }
-        }
-    }
-
-    struct Frame
-    {
-        const ActionsDAG::Node * node;
-        ActionsDAG::NodeRawConstPtrs mapped_children;
-    };
-
-    MatchedTrees::Matches matches;
-    std::stack<Frame> stack;
-
-    for (const auto & node : outer_dag.getNodes())
-    {
-        if (matches.contains(&node))
-            continue;
-
-        stack.push(Frame{&node, {}});
-        while (!stack.empty())
-        {
-            auto & frame = stack.top();
-            frame.mapped_children.reserve(frame.node->children.size());
-
-            while (frame.mapped_children.size() < frame.node->children.size())
-            {
-                const auto * child = frame.node->children[frame.mapped_children.size()];
-                auto it = matches.find(child);
-                if (it == matches.end())
-                {
-                    /// If match map does not contain a child, it was not visited.
-                    stack.push(Frame{child, {}});
-                    break;
-                }
-                /// A node from found match may be nullptr.
-                /// It means that node is visited, but no match was found.
-                frame.mapped_children.push_back(it->second.node);
-            }
-
-            if (frame.mapped_children.size() < frame.node->children.size())
-                continue;
-
-            /// Create an empty match for current node.
-            /// natch.node will be set if match is found.
-            auto & match = matches[frame.node];
-
-            if (frame.node->type == ActionsDAG::ActionType::INPUT)
-            {
-                const ActionsDAG::Node * mapped = nullptr;
-                if (auto it = inner_inputs.find(frame.node->result_name); it != inner_inputs.end())
-                    mapped = it->second;
-
-                match.node = mapped;
-            }
-            else if (frame.node->type == ActionsDAG::ActionType::ALIAS)
-            {
-                match = matches[frame.node->children.at(0)];
-            }
-            else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
-            {
-
-                //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
-
-                bool found_all_children = true;
-                for (const auto * child : frame.mapped_children)
-                    if (!child)
-                        found_all_children = false;
-
-                if (found_all_children && !frame.mapped_children.empty())
-                {
-                    Parents container;
-                    Parents * intersection = &inner_parents[frame.mapped_children[0]];
-
-                    if (frame.mapped_children.size() > 1)
-                    {
-                        std::vector<Parents *> other_parents;
-                        size_t mapped_children_size = frame.mapped_children.size();
-                        other_parents.reserve(mapped_children_size);
-                        for (size_t i = 1; i < mapped_children_size; ++i)
-                            other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
-
-                        for (const auto * parent : *intersection)
-                        {
-                            bool is_common = true;
-                            for (const auto * set : other_parents)
-                            {
-                                if (!set->contains(parent))
-                                {
-                                    is_common = false;
-                                    break;
-                                }
-                            }
-
-                            if (is_common)
-                                container.insert(parent);
-                        }
-
-                        intersection = &container;
-                    }
-
-                    //std::cerr << ".. Candidate parents " << intersection->size() << std::endl;
-
-                    if (!intersection->empty())
-                    {
-                        auto func_name = frame.node->function_base->getName();
-                        for (const auto * parent : *intersection)
-                        {
-                            //std::cerr << ".. candidate " << parent->result_name << std::endl;
-                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
-                            {
-                                const auto & children = parent->children;
-                                size_t num_children = children.size();
-                                if (frame.mapped_children.size() == num_children)
-                                {
-                                    bool all_children_matched = true;
-                                    for (size_t i = 0; all_children_matched && i < num_children; ++i)
-                                        all_children_matched = frame.mapped_children[i] == children[i];
-
-                                    if (all_children_matched)
-                                    {
-                                        match.node = parent;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (!match.node && frame.node->function_base->hasInformationAboutMonotonicity())
-                {
-                    size_t num_const_args = 0;
-                    const ActionsDAG::Node * monotonic_child = nullptr;
-                    for (const auto * child : frame.node->children)
-                    {
-                        if (child->column)
-                            ++num_const_args;
-                        else
-                            monotonic_child = child;
-                    }
-
-                    if (monotonic_child && num_const_args + 1 == frame.node->children.size())
-                    {
-                        const auto & child_match = matches[monotonic_child];
-                        if (child_match.node)
-                        {
-                            auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
-                            if (info.is_monotonic)
-                            {
-                                MatchedTrees::Monotonicity monotonicity;
-                                monotonicity.direction *= info.is_positive ? 1 : -1;
-                                monotonicity.strict = info.is_strict;
-
-                                if (child_match.monotonicity)
-                                {
-                                    monotonicity.direction *= child_match.monotonicity->direction;
-                                    if (!child_match.monotonicity->strict)
-                                        monotonicity.strict = false;
-                                }
-
-                                match.node = child_match.node;
-                                match.monotonicity = monotonicity;
-                            }
-                        }
-                    }
-                }
-            }
-
-            stack.pop();
-        }
-    }
-
-    return matches;
 }
 
 InputOrderInfoPtr buildInputOrderInfo(
@@ -757,8 +520,9 @@ AggregationInputOrder buildInputOrderInfo(
 
         enreachFixedColumns(sorting_key_dag, fixed_key_columns);
 
-        for (auto it = matches.cbegin(); it != matches.cend(); ++it)
+        for (const auto * output : dag->getOutputs())
         {
+            auto it = matches.find(output);
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
@@ -1217,6 +981,10 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
+        return;
+
+    /// It just does not work, see 02515_projections_with_totals
+    if (aggregating->getParams().overflow_row)
         return;
 
     /// TODO: maybe add support for UNION later.

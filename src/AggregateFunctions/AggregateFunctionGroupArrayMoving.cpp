@@ -21,18 +21,21 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO Proper support for Decimal256.
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
-    using Data = MovingSumData<std::conditional_t<is_decimal<T>, Decimal128, NearestFieldType<T>>>;
+    using Data = MovingSumData<std::conditional_t<is_decimal<T>,
+        std::conditional_t<sizeof(T) <= sizeof(Decimal128), Decimal128, Decimal256>,
+        NearestFieldType<T>>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
 template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
-    using Data = MovingAvgData<std::conditional_t<is_decimal<T>, Decimal128, Float64>>;
+    using Data = MovingAvgData<std::conditional_t<is_decimal<T>,
+        std::conditional_t<sizeof(T) <= sizeof(Decimal128), Decimal128, Decimal256>,
+        Float64>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 

@@ -390,12 +390,12 @@ struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
     size_t bytesSize() const override { return ZooKeeperListResponse::bytesSize() - sizeof(stat); }
 };
 
-struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
+struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
 {
     ZooKeeperCheckRequest() = default;
     explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Check; }
+    OpNum getOpNum() const override { return not_exists ? OpNum::CheckNotExists : OpNum::Check; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     std::string toStringImpl() const override;
@@ -408,13 +408,19 @@ struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCheckResponse final : CheckResponse, ZooKeeperResponse
+struct ZooKeeperCheckResponse : CheckResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
     OpNum getOpNum() const override { return OpNum::Check; }
 
     size_t bytesSize() const override { return CheckResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperCheckNotExistsResponse : public ZooKeeperCheckResponse
+{
+    OpNum getOpNum() const override { return OpNum::CheckNotExists; }
+    using ZooKeeperCheckResponse::ZooKeeperCheckResponse;
 };
 
 /// This response may be received only as an element of responses in MultiResponse.

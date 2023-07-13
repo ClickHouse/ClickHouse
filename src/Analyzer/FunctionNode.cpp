@@ -2,11 +2,12 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
-#include <DataTypes/IDataType.h>
-#include <Analyzer/ConstantNode.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeSet.h>
 
 #include <Parsers/ASTFunction.h>
 
@@ -14,6 +15,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Analyzer/Utils.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 
 namespace DB
@@ -44,17 +47,29 @@ const DataTypes & FunctionNode::getArgumentTypes() const
 ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 {
     const auto & arguments = getArguments().getNodes();
+    size_t arguments_size = arguments.size();
+
     ColumnsWithTypeAndName argument_columns;
     argument_columns.reserve(arguments.size());
 
-    for (const auto & arg : arguments)
+    for (size_t i = 0; i < arguments_size; ++i)
     {
-        ColumnWithTypeAndName argument;
-        argument.type = arg->getResultType();
-        if (auto * constant = arg->as<ConstantNode>())
-            argument.column = argument.type->createColumnConst(1, constant->getValue());
-        argument_columns.push_back(std::move(argument));
+        const auto & argument = arguments[i];
+
+        ColumnWithTypeAndName argument_column;
+
+        if (isNameOfInFunction(function_name) && i == 1)
+            argument_column.type = std::make_shared<DataTypeSet>();
+        else
+            argument_column.type = argument->getResultType();
+
+        auto * constant = argument->as<ConstantNode>();
+        if (constant && !isNotCreatable(argument_column.type))
+            argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
+
+        argument_columns.push_back(std::move(argument_column));
     }
+
     return argument_columns;
 }
 
@@ -99,7 +114,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_type: " << function_type;
 
     if (function)
-        buffer << ", result_type: " + function->getResultType()->getName();
+        buffer << ", result_type: " + getResultType()->getName();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -177,11 +192,12 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       */
     result_function->function = function;
     result_function->kind = kind;
+    result_function->wrap_with_nullable = wrap_with_nullable;
 
     return result_function;
 }
 
-ASTPtr FunctionNode::toASTImpl() const
+ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto function_ast = std::make_shared<ASTFunction>();
 
@@ -193,15 +209,20 @@ ASTPtr FunctionNode::toASTImpl() const
         function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
     }
 
+    auto new_options = options;
+    /// To avoid surrounding constants with several internal casts.
+    if (function_name == "_CAST" && (*getArguments().begin())->getNodeType() == QueryTreeNodeType::CONSTANT)
+        new_options.add_cast_for_constants = false;
+
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
-        function_ast->children.push_back(parameters.toAST());
+        function_ast->children.push_back(parameters.toAST(new_options));
         function_ast->parameters = function_ast->children.back();
     }
 
     const auto & arguments = getArguments();
-    function_ast->children.push_back(arguments.toAST());
+    function_ast->children.push_back(arguments.toAST(new_options));
     function_ast->arguments = function_ast->children.back();
 
     auto window_node = getWindowNode();
@@ -210,7 +231,7 @@ ASTPtr FunctionNode::toASTImpl() const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-            function_ast->window_definition = window_node->toAST();
+            function_ast->window_definition = window_node->toAST(new_options);
     }
 
     return function_ast;

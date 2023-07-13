@@ -10,14 +10,14 @@ sidebar_label: gRPC Interface
 
 ClickHouse supports [gRPC](https://grpc.io/) interface. It is an open source remote procedure call system that uses HTTP/2 and [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). The implementation of gRPC in ClickHouse supports:
 
--   SSL;
--   authentication;
--   sessions;
--   compression;
--   parallel queries through the same channel;
--   cancellation of queries;
--   getting progress and logs;
--   external tables.
+- SSL;
+- authentication;
+- sessions;
+- compression;
+- parallel queries through the same channel;
+- cancellation of queries;
+- getting progress and logs;
+- external tables.
 
 The specification of the interface is described in [clickhouse_grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 
@@ -64,15 +64,15 @@ Or you can use a built-in Python client. It is placed in [utils/grpc-client/clic
 
 The client supports the following arguments:
 
--   `--help` – Shows a help message and exits.
--   `--host HOST, -h HOST` – A server name. Default value: `localhost`. You can use IPv4 or IPv6 addresses also.
--   `--port PORT` – A port to connect to. This port should be enabled in the ClickHouse server configuration (see `grpc_port`). Default value: `9100`.
--   `--user USER_NAME, -u USER_NAME` – A user name. Default value: `default`.
--   `--password PASSWORD` – A password. Default value: empty string.
--   `--query QUERY, -q QUERY` – A query to process when using non-interactive mode.
--   `--database DATABASE, -d DATABASE` – A default database. If not specified, the current database set in the server settings is used (`default` by default).
--   `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – A result output [format](formats.md). Default value for interactive mode: `PrettyCompact`.
--   `--debug` – Enables showing debug information.
+- `--help` – Shows a help message and exits.
+- `--host HOST, -h HOST` – A server name. Default value: `localhost`. You can use IPv4 or IPv6 addresses also.
+- `--port PORT` – A port to connect to. This port should be enabled in the ClickHouse server configuration (see `grpc_port`). Default value: `9100`.
+- `--user USER_NAME, -u USER_NAME` – A user name. Default value: `default`.
+- `--password PASSWORD` – A password. Default value: empty string.
+- `--query QUERY, -q QUERY` – A query to process when using non-interactive mode.
+- `--database DATABASE, -d DATABASE` – A default database. If not specified, the current database set in the server settings is used (`default` by default).
+- `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – A result output [format](formats.md). Default value for interactive mode: `PrettyCompact`.
+- `--debug` – Enables showing debug information.
 
 To run the client in an interactive mode call it without `--query` argument.
 

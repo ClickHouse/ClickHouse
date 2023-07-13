@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Common/HashTable/Hash.h>
-
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -45,59 +44,26 @@ private:
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 
-/** PlannerSet is wrapper around Set that is used during query planning.
-  *
-  * If subquery node is null, such set is already prepared for execution.
-  *
-  * If subquery node is not null, then set must be build from the result of the subquery.
-  * If subquery node is not null, it must have QUERY or UNION type.
-  */
-class PlannerSet
-{
-public:
-    /// Construct planner set that is ready for execution
-    explicit PlannerSet(SetPtr set_)
-        : set(std::move(set_))
-    {}
-
-    /// Construct planner set with set and subquery node
-    explicit PlannerSet(SetPtr set_, QueryTreeNodePtr subquery_node_)
-        : set(std::move(set_))
-        , subquery_node(std::move(subquery_node_))
-    {}
-
-    /// Get set
-    const SetPtr & getSet() const
-    {
-        return set;
-    }
-
-    /// Get subquery node
-    const QueryTreeNodePtr & getSubqueryNode() const
-    {
-        return subquery_node;
-    }
-
-private:
-    SetPtr set;
-
-    QueryTreeNodePtr subquery_node;
-};
-
 class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextPtr query_context_, GlobalPlannerContextPtr global_planner_context_);
+    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
 
     /// Get planner context query context
-    const ContextPtr & getQueryContext() const
+    ContextPtr getQueryContext() const
     {
         return query_context;
     }
 
-    /// Get planner context query context
-    ContextPtr & getQueryContext()
+    /// Get planner context mutable query context
+    const ContextMutablePtr & getMutableQueryContext() const
+    {
+        return query_context;
+    }
+
+    /// Get planner context mutable query context
+    ContextMutablePtr & getMutableQueryContext()
     {
         return query_context;
     }
@@ -137,8 +103,14 @@ public:
       */
     TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node);
 
-    /// Get table expression node to data read only map
+    /// Get table expression node to data map
     const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
+    {
+        return table_expression_node_to_data;
+    }
+
+    /// Get table expression node to data map
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData()
     {
         return table_expression_node_to_data;
     }
@@ -159,32 +131,14 @@ public:
 
     using SetKey = std::string;
 
-    using SetKeyToSet = std::unordered_map<String, PlannerSet>;
-
     /// Create set key for set source node
     static SetKey createSetKey(const QueryTreeNodePtr & set_source_node);
 
-    /// Register set for set key
-    void registerSet(const SetKey & key, PlannerSet planner_set);
-
-    /// Returns true if set is registered for key, false otherwise
-    bool hasSet(const SetKey & key) const;
-
-    /// Get set for key, if no set is registered logical exception is thrown
-    const PlannerSet & getSetOrThrow(const SetKey & key) const;
-
-    /// Get set for key, if no set is registered null is returned
-    const PlannerSet * getSetOrNull(const SetKey & key) const;
-
-    /// Get registered sets
-    const SetKeyToSet & getRegisteredSets() const
-    {
-        return set_key_to_set;
-    }
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 
 private:
     /// Query context
-    ContextPtr query_context;
+    ContextMutablePtr query_context;
 
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;
@@ -196,8 +150,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Set key to set
-    SetKeyToSet set_key_to_set;
-
+    PreparedSets prepared_sets;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

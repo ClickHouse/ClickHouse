@@ -15,9 +15,9 @@ topKWeighted(N)(x, weight)
 
 **Arguments**
 
--   `N` — The number of elements to return.
--   `x` — The value.
--   `weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `N` — The number of elements to return.
+- `x` — The value.
+- `weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -42,4 +42,4 @@ Result:
 
 **See Also**
 
--   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
+- [topK](../../../sql-reference/aggregate-functions/reference/topk.md)

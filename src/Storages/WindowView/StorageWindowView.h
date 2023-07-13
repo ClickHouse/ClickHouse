@@ -3,7 +3,7 @@
 #include <Common/SharedMutex.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
 

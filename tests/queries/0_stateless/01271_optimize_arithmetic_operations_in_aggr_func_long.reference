@@ -22,7 +22,7 @@ SELECT
     min(n) + 1,
     1 + min(n),
     min(n) - 1,
-    1 - min(n)
+    1 - max(n)
 FROM
 (
     SELECT number AS n
@@ -42,7 +42,7 @@ SELECT
     max(n) + 1,
     1 + max(n),
     max(n) - 1,
-    1 - max(n)
+    1 - min(n)
 FROM
 (
     SELECT number AS n
@@ -82,7 +82,7 @@ SELECT
     min(n) + -1,
     -1 + min(n),
     min(n) - -1,
-    -1 - min(n)
+    -1 - max(n)
 FROM
 (
     SELECT number AS n
@@ -102,7 +102,7 @@ SELECT
     max(n) + -1,
     -1 + max(n),
     max(n) - -1,
-    -1 - max(n)
+    -1 - min(n)
 FROM
 (
     SELECT number AS n
@@ -142,7 +142,7 @@ SELECT
     min(abs(2)) + 1,
     min(abs(2) + n),
     min(n - abs(2)),
-    1 - min(abs(2))
+    1 - max(abs(2))
 FROM
 (
     SELECT number AS n
@@ -162,7 +162,7 @@ SELECT
     max(abs(2)) + 1,
     max(abs(2) + n),
     max(n - abs(2)),
-    1 - max(abs(2))
+    1 - min(abs(2))
 FROM
 (
     SELECT number AS n
@@ -202,7 +202,7 @@ SELECT
     min(abs(n)) + 1,
     min(abs(n) + n),
     min(n - abs(n)),
-    1 - min(abs(n))
+    1 - max(abs(n))
 FROM
 (
     SELECT number AS n
@@ -222,7 +222,7 @@ SELECT
     max(abs(n)) + 1,
     max(abs(n) + n),
     max(n - abs(n)),
-    1 - max(abs(n))
+    1 - min(abs(n))
 FROM
 (
     SELECT number AS n
@@ -262,7 +262,7 @@ SELECT
     min(n * n) + 1,
     1 + min(n * n),
     min(n * n) - 1,
-    1 - min(n * n)
+    1 - max(n * n)
 FROM
 (
     SELECT number AS n
@@ -282,7 +282,7 @@ SELECT
     max(n * n) + 1,
     1 + max(n * n),
     max(n * n) - 1,
-    1 - max(n * n)
+    1 - min(n * n)
 FROM
 (
     SELECT number AS n
@@ -382,7 +382,7 @@ SELECT
     (min(n) + -1) + -1,
     (-1 + min(n)) + -1,
     (min(n) - -1) + -1,
-    (-1 - min(n)) + -1
+    (-1 - max(n)) + -1
 FROM
 (
     SELECT number AS n
@@ -402,7 +402,7 @@ SELECT
     (max(n) + -1) + -1,
     (-1 + max(n)) + -1,
     (max(n) - -1) + -1,
-    (-1 - max(n)) + -1
+    (-1 - min(n)) + -1
 FROM
 (
     SELECT number AS n
@@ -430,7 +430,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT (((min(n) + 1) + (1 + min(n))) + (min(n) - 1)) + (1 - min(n))
+SELECT (((min(n) + 1) + (1 + min(n))) + (min(n) - 1)) + (1 - max(n))
 FROM
 (
     SELECT number AS n
@@ -442,7 +442,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT (((max(n) + 1) + (1 + max(n))) + (max(n) - 1)) + (1 - max(n))
+SELECT (((max(n) + 1) + (1 + max(n))) + (max(n) - 1)) + (1 - min(n))
 FROM
 (
     SELECT number AS n
@@ -456,15 +456,15 @@ FROM
 )
 55	55	35	-35
 90	90	22.5	inf
-1	1	-1	1
+1	1	-1	-8
 0	0	0	0.1111111111111111
-10	10	8	-8
+10	10	8	1
 18	18	4.5	inf
 35	35	55	-55
 -90	-90	-22.5	-inf
--1	-1	1	-1
+-1	-1	1	-10
 -18	-18	-4.5	-inf
-8	8	10	-10
+8	8	10	-1
 0	0	-0	-0.1111111111111111
 30	65	25	-10
 40	90	22.5	5
@@ -474,15 +474,15 @@ FROM
 4	18	4.5	0.5
 55	90	0	-35
 90	285	nan	inf
-1	0	0	1
+1	0	0	-8
 0	0	nan	0.1111111111111111
-10	18	0	-8
+10	18	0	1
 18	81	nan	inf
 295	295	275	-275
 570	570	142.5	nan
-1	1	-1	1
+1	1	-1	-80
 0	0	0	nan
-82	82	80	-80
+82	82	80	1
 162	162	40.5	nan
 65	65	45	-25
 100	100	32.5	inf
@@ -492,15 +492,15 @@ FROM
 19	19	5.5	inf
 25	25	45	-65
 90	90	22.5	inf
--2	-2	0	-2
+-2	-2	0	-11
 0	0	0	0.1111111111111111
-7	7	9	-11
+7	7	9	-2
 18	18	4.5	inf
 110
 inf
-2
+-7
 0.1111111111111111
-20
+29
 inf
 -15444
 68.62157087543459

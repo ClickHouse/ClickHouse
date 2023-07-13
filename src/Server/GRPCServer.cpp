@@ -9,6 +9,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
@@ -836,13 +837,14 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope.emplace(query_context);
+        query_scope.emplace(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
             query_context->getClientInfo().client_trace_context,
             query_context->getSettingsRef(),
             query_context->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
@@ -854,7 +856,6 @@ namespace
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
             logs_queue->setSourceRegexp(settings.send_logs_source_regexp);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
-            CurrentThread::setFatalErrorCallback([this]{ onFatalError(); });
         }
 
         /// Set the current database if specified.
@@ -984,7 +985,10 @@ namespace
                 executor.push(block);
         }
 
-        executor.finish();
+        if (isQueryCancelled())
+            executor.cancel();
+        else
+            executor.finish();
     }
 
     void Call::initializePipeline(const Block & header)
@@ -1097,7 +1101,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
+                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
                     buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
@@ -1295,7 +1299,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessageAndPattern(exception, /* with_stacktrace */ true));
+        LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
 
         if (responder && !responder_finished)
         {

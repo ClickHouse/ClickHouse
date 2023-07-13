@@ -22,6 +22,10 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 
 Deletes the table.
 
+:::tip
+Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
+:::
+
 Syntax:
 
 ``` sql

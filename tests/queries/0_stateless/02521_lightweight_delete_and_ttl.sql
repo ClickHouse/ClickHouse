@@ -11,7 +11,6 @@ INSERT INTO lwd_test_02521 SELECT number, randomString(10), now() FROM numbers(5
 OPTIMIZE TABLE lwd_test_02521 FINAL SETTINGS mutations_sync = 1;
 
 SET mutations_sync=1;
-SET allow_experimental_lightweight_delete = 1;
 
 -- { echoOn }
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test_02521' AND active;

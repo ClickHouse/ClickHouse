@@ -30,7 +30,34 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
 
-Examples: `sumMap(map(1,1))`, `avgMap(map('a', 1))`.
+**Example**
+
+```sql
+CREATE TABLE map_map(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = Log;
+
+INSERT INTO map_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
+    
+SELECT
+    timeslot,
+    sumMap(status),
+    avgMap(status),
+    minMap(status)
+FROM map_map
+GROUP BY timeslot;
+
+┌────────────timeslot─┬─sumMap(status)───────────────────────┬─avgMap(status)───────────────────────┬─minMap(status)───────────────────────┐
+│ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
+│ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
+└─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
+```
 
 ## -SimpleState
 
@@ -44,7 +71,7 @@ If you apply this combinator, the aggregate function returns the same value but 
 
 **Arguments**
 
--   `x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
@@ -70,13 +97,17 @@ Result:
 
 If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
+:::note
+Please notice, that -MapState is not an invariant for the same data due to the fact that order of data in intermediate state can change, though it doesn't impact ingestion of this data.
+:::
+
 To work with these states, use:
 
--   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
--   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
--   [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
--   [-Merge](#aggregate_functions_combinators-merge) combinator.
--   [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
+- [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
+- [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
+- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
+- [-Merge](#aggregate_functions_combinators-merge) combinator.
+- [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
 
 ## -Merge
 
@@ -111,7 +142,7 @@ If an aggregate function does not have input values, with this combinator it ret
 
 **Arguments**
 
--   `x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
@@ -171,12 +202,12 @@ This combinator converts a result of an aggregate function to the [Nullable](../
 
 **Arguments**
 
--   `x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
--   The result of the aggregate function, converted to the `Nullable` data type.
--   `NULL`, if there is nothing to aggregate.
+- The result of the aggregate function, converted to the `Nullable` data type.
+- `NULL`, if there is nothing to aggregate.
 
 Type: `Nullable(aggregate function return type)`.
 
@@ -228,15 +259,15 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 **Arguments**
 
--   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
--   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
--   `resampling_key` — Column whose values are used for separating data into intervals.
--   `aggFunction_params` — `aggFunction` parameters.
+- `start` — Starting value of the whole required interval for `resampling_key` values.
+- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
+- `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+- `resampling_key` — Column whose values are used for separating data into intervals.
+- `aggFunction_params` — `aggFunction` parameters.
 
 **Returned values**
 
--   Array of `aggFunction` results for each subinterval.
+- Array of `aggFunction` results for each subinterval.
 
 **Example**
 
@@ -285,3 +316,8 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
+
+
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

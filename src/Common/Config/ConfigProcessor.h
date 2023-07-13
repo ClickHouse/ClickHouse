@@ -16,8 +16,9 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 
+
+namespace Poco { class Logger; }
 
 namespace zkutil
 {

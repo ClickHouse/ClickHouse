@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -76,6 +76,9 @@ public:
 
     /// Releases the currently used session ID so it becomes available for reuse by another session.
     void releaseSessionID();
+
+    /// Closes and removes session
+    void closeSession(const String & session_id);
 
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;

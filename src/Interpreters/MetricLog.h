@@ -3,6 +3,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 
@@ -50,7 +51,7 @@ public:
 private:
     void metricThreadFunction();
 
-    ThreadFromGlobalPool metric_flush_thread;
+    std::unique_ptr<ThreadFromGlobalPool> metric_flush_thread;
     size_t collect_interval_milliseconds;
     std::atomic<bool> is_shutdown_metric_thread{false};
 };

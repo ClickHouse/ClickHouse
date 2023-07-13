@@ -24,5 +24,17 @@
                 <priority>1</priority>
             </node>
         </secure>
+
+        <secure_backward>
+            <secret>foo_backward</secret>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>backward</host>
+                <port>9000</port>
+            </node>
+        </secure_backward>
     </remote_servers>
 </clickhouse>

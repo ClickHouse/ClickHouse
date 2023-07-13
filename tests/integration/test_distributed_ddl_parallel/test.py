@@ -10,6 +10,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+
 # By default the exceptions that was throwed in threads will be ignored
 # (they will not mark the test as failed, only printed to stderr).
 #

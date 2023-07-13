@@ -14,7 +14,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
 
@@ -252,17 +252,17 @@ void StorageSystemParts::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_all_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_uncompressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.uncompressed_hash_of_compressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum));
             }
         }
 

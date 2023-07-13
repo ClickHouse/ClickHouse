@@ -149,5 +149,9 @@
     "docker/docs/release": {
         "name": "clickhouse/docs-release",
         "dependent": []
+    },
+    "docker/test/sqllogic": {
+        "name": "clickhouse/sqllogic-test",
+        "dependent": []
     }
 }

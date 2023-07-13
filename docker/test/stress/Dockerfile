@@ -8,8 +8,6 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             tzdata \
-            fakeroot \
-            debhelper \
             parallel \
             expect \
             python3 \
@@ -20,11 +18,9 @@ RUN apt-get update -y \
             sudo \
             openssl \
             netcat-openbsd \
-            telnet \
-            llvm-9 \
-            brotli
+            brotli \
+    && apt-get clean
 
-COPY ./stress /stress
 COPY run.sh /
 
 ENV DATASETS="hits visits"

@@ -66,7 +66,7 @@ class ReadFromParallelRemoteReplicasStep : public ISourceStep
 public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
-        Cluster::ShardInfo shard_info,
+        ClusterPtr cluster_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
@@ -77,8 +77,7 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         Poco::Logger * log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_,
-        UUID uuid);
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -91,7 +90,7 @@ private:
 
     void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
 
-    Cluster::ShardInfo shard_info;
+    ClusterPtr cluster;
     ASTPtr query_ast;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
@@ -101,10 +100,8 @@ private:
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
-
     std::shared_ptr<const StorageLimitsList> storage_limits;
     Poco::Logger * log;
-    UUID uuid;
 };
 
 }

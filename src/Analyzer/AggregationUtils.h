@@ -15,14 +15,19 @@ QueryTreeNodes collectAggregateFunctionNodes(const QueryTreeNodePtr & node);
   */
 void collectAggregateFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes & result);
 
+/** Returns true if there are aggregate function nodes in node children, false otherwise.
+  * Do not visit subqueries.
+  */
+bool hasAggregateFunctionNodes(const QueryTreeNodePtr & node);
+
 /** Assert that there are no aggregate function nodes in node children.
   * Do not visit subqueries.
   */
 void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message);
 
-/** Assert that there are no GROUPING functions in node children.
+/** Assert that there are no GROUPING function nodes in node children.
   * Do not visit subqueries.
   */
-void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message);
+void assertNoGroupingFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message);
 
 }

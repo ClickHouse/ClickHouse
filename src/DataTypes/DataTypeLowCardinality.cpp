@@ -55,7 +55,7 @@ namespace
         }
 
         template <typename T>
-        void operator()(Id<T>)
+        void operator()(TypeList<T>)
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
                 column = creator(static_cast<ColumnVector<T> *>(nullptr));

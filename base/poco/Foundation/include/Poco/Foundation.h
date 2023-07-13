@@ -98,10 +98,8 @@
 #    define POCO_DEPRECATED
 #elif defined(_GNUC_)
 #    define POCO_DEPRECATED __attribute__((deprecated))
-#elif defined(__clang__)
-#    define POCO_DEPRECATED __attribute__((deprecated))
 #else
-#    define POCO_DEPRECATED
+#    define POCO_DEPRECATED __attribute__((deprecated))
 #endif
 
 

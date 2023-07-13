@@ -33,9 +33,17 @@ public:
         SourceId source_id_,
         bool is_mutable_);
 
+    bool has(const Key & key) const;
+
+    bool hasAny(const std::initializer_list<Key> & keys) const;
+
     template <typename T> T get(const Key & key) const;
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
+
+    template <typename T> T getAny(const std::initializer_list<Key> & keys) const;
+
+    template <typename T> T getAnyOrDefault(const std::initializer_list<Key> & keys, const T & default_value) const;
 
     std::unique_lock<std::mutex> lock();
 

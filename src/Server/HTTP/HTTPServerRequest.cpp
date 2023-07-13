@@ -12,6 +12,8 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#include <Common/logger_useful.h>
+
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
@@ -44,12 +46,28 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
     readRequest(*in);  /// Try parse according to RFC7230
 
+    /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
+    /// So we will get 0 from recv(...) and will not be able to understand that something went wrong (well, we probably
+    /// will get RST later on attempt to write to the socket that closed on the other side, but it will happen when the query is finished).
+    /// If we are extremely unlucky and data format is TSV, for example, then we may stop parsing exactly between rows
+    /// and decide that it's EOF (but it is not). It may break deduplication, because clients cannot control it
+    /// and retry with exactly the same (incomplete) set of rows.
+    /// That's why we have to check body size if it's provided.
     if (getChunkedTransferEncoding())
         stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), context->getMaxChunkSize());
     else if (hasContentLength())
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), getContentLength(), false);
+    {
+        size_t content_length = getContentLength();
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), content_length,
+                                                   /* trow_exception */ true, /* exact_limit */ content_length);
+    }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
+    {
         stream = std::move(in);
+        if (!startsWith(getContentType(), "multipart/form-data"))
+            LOG_WARNING(LogFrequencyLimiter(&Poco::Logger::get("HTTPServerRequest"), 10), "Got an HTTP request with no content length "
+                "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
+    }
     else
         /// We have to distinguish empty buffer and nullptr.
         stream = std::make_unique<EmptyReadBuffer>();

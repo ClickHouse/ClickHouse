@@ -4,8 +4,15 @@
 
 namespace DB
 {
-/// Rewrite possible 'arrayExists(func, arr)' to 'has(arr, elem)' to improve performance
-/// arrayExists(x -> x = 1, arr) -> has(arr, 1)
+
+/** Rewrite possible 'arrayExists(func, arr)' to 'has(arr, elem)' to improve performance.
+  *
+  * Example: SELECT arrayExists(x -> x = 1, arr);
+  * Result: SELECT has(arr, 1);
+  *
+  * Example: SELECT arrayExists(x -> 1 = x, arr);
+  * Result: SELECT has(arr, 1);
+  */
 class RewriteArrayExistsToHasPass final : public IQueryTreePass
 {
 public:
@@ -15,4 +22,5 @@ public:
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 };
+
 }

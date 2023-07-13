@@ -1,11 +1,16 @@
 #include "LocalServer.h"
 
+#include <sys/resource.h>
+#include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -23,12 +28,13 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -37,7 +43,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -46,6 +51,8 @@
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
+
+#include "config.h"
 
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
@@ -68,6 +75,15 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
 }
 
+void applySettingsOverridesForLocal(ContextMutablePtr context)
+{
+    Settings settings = context->getSettings();
+
+    settings.allow_introspection_functions = true;
+    settings.storage_file_read_method = LocalFSReadMethod::mmap;
+
+    context->setSettings(settings);
+}
 
 void LocalServer::processError(const String &) const
 {
@@ -127,12 +143,31 @@ void LocalServer::initialize(Poco::Util::Application & self)
     });
 #endif
 
-    IOThreadPool::initialize(
+    getIOThreadPool().initialize(
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionUtils::loadFromConfig(config());
+
+    const size_t active_parts_loading_threads = config().getUInt("max_active_parts_loading_thread_pool_size", 64);
+    getActivePartsLoadingThreadPool().initialize(
+        active_parts_loading_threads,
+        0, // We don't need any threads one all the parts will be loaded
+        active_parts_loading_threads);
+
+    const size_t outdated_parts_loading_threads = config().getUInt("max_outdated_parts_loading_thread_pool_size", 32);
+    getOutdatedPartsLoadingThreadPool().initialize(
+        outdated_parts_loading_threads,
+        0, // We don't need any threads one all the parts will be loaded
+        outdated_parts_loading_threads);
+
+    getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
+
+    const size_t cleanup_threads = config().getUInt("max_parts_cleaning_thread_pool_size", 128);
+    getPartsCleaningThreadPool().initialize(
+        cleanup_threads,
+        0, // We don't need any threads one all the parts will be deleted
+        cleanup_threads);
 }
 
 
@@ -148,6 +183,13 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
+static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
+{
+    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
+    return databaseCombiner;
+}
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
@@ -182,9 +224,9 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::temp_directory_path();
 
         }
-        catch (const fs::filesystem_error& e)
+        catch (const fs::filesystem_error & e)
         {
-            // tmp folder don't exists? misconfiguration? chroot?
+            // The tmp folder doesn't exist? Is it a misconfiguration? Or chroot?
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
@@ -223,8 +265,6 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
-
-    NamedCollectionUtils::loadFromSQL(global_context);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
@@ -395,6 +435,21 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
+    /// Try to increase limit on number of open files.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NOFILE, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur < rlim.rlim_max)
+        {
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
+            int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+            if (rc != 0)
+                std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
+        }
+    }
+
 #if defined(FUZZING_MODE)
     static bool first_time = true;
     if (first_time)
@@ -497,12 +552,12 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
+    if (config().has("query") && config().has("queries-file"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
     if (is_interactive && !delayed_interactive)
     {
-        if (config().has("query") && config().has("queries-file"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
-
         if (config().has("multiquery"))
             is_multiquery = true;
     }
@@ -587,13 +642,13 @@ void LocalServer::processConfig()
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables).
     String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
@@ -622,6 +677,12 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
 #endif
 
+    /// NOTE: it is important to apply any overrides before
+    /// setDefaultProfiles() calls since it will copy current context (i.e.
+    /// there is separate context for Buffer tables).
+    applySettingsOverridesForLocal(global_context);
+    applyCmdOptions(global_context);
+
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -634,9 +695,8 @@ void LocalServer::processConfig()
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
-    applyCmdOptions(global_context);
 
     if (config().has("path"))
     {
@@ -654,8 +714,9 @@ void LocalServer::processConfig()
 
         if (!config().has("only-system-tables"))
         {
+            DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().loadDatabases();
+            DatabaseCatalog::instance().startupBackgroundCleanup();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
@@ -798,8 +859,16 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 {
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
-        const char * arg = argv[arg_num];
-        common_arguments.emplace_back(arg);
+        std::string_view arg = argv[arg_num];
+        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+        {
+            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
+            ++arg_num;
+            arg = argv[arg_num];
+            addMultiquery(arg, common_arguments);
+        }
+        else
+            common_arguments.emplace_back(arg);
     }
 }
 

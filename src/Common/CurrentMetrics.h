@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <utility>
 #include <atomic>
+#include <cassert>
 #include <base/types.h>
+#include <base/strong_typedef.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.
@@ -21,7 +23,7 @@
 namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
-    using Metric = size_t;
+    using Metric = StrongTypedef<size_t, struct MetricTag>;
     using Value = DB::Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
@@ -73,7 +75,10 @@ namespace CurrentMetrics
 
     public:
         explicit Increment(Metric metric, Value amount_ = 1)
-            : Increment(&values[metric], amount_) {}
+            : Increment(&values[metric], amount_)
+        {
+            assert(metric < CurrentMetrics::end());
+        }
 
         ~Increment()
         {

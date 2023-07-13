@@ -92,7 +92,7 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty //-V730
+struct StringHashTableEmpty
 {
     using Self = StringHashTableEmpty;
 

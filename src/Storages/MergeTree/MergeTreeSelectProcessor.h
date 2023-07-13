@@ -20,7 +20,8 @@ public:
     MergeTreeSelectAlgorithm(
         const MergeTreeData & storage,
         const StorageSnapshotPtr & storage_snapshot_,
-        const MergeTreeData::DataPartPtr & owned_data_part,
+        const MergeTreeData::DataPartPtr & owned_data_part_,
+        const AlterConversionsPtr & alter_conversions_,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
@@ -28,7 +29,7 @@ public:
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
-        ExpressionActionsSettings actions_settings,
+        const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings,
         MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
         const Names & virt_column_names = {},
@@ -53,6 +54,9 @@ protected:
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
+
+    /// Alter converversionss that should be applied on-fly for part.
+    AlterConversionsPtr alter_conversions;
 
     /// Cache getSampleBlock call, which might be heavy.
     Block sample_block;

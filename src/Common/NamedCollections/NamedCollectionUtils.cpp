@@ -32,6 +32,9 @@ namespace ErrorCodes
 namespace NamedCollectionUtils
 {
 
+static std::atomic<bool> is_loaded_from_config = false;
+static std::atomic<bool> is_loaded_from_sql = false;
+
 class LoadFromConfig
 {
 private:
@@ -329,10 +332,21 @@ std::unique_lock<std::mutex> lockNamedCollectionsTransaction()
     return std::unique_lock(transaction_lock);
 }
 
+void loadFromConfigUnlocked(const Poco::Util::AbstractConfiguration & config, std::unique_lock<std::mutex> &)
+{
+    auto named_collections = LoadFromConfig(config).getAll();
+    LOG_TRACE(
+        &Poco::Logger::get("NamedCollectionsUtils"),
+        "Loaded {} collections from config", named_collections.size());
+
+    NamedCollectionFactory::instance().add(std::move(named_collections));
+    is_loaded_from_config = true;
+}
+
 void loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = lockNamedCollectionsTransaction();
-    NamedCollectionFactory::instance().add(LoadFromConfig(config).getAll());
+    loadFromConfigUnlocked(config, lock);
 }
 
 void reloadFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -342,17 +356,47 @@ void reloadFromConfig(const Poco::Util::AbstractConfiguration & config)
     auto & instance = NamedCollectionFactory::instance();
     instance.removeById(SourceId::CONFIG);
     instance.add(collections);
+    is_loaded_from_config = true;
+}
+
+void loadFromSQLUnlocked(ContextPtr context, std::unique_lock<std::mutex> &)
+{
+    auto named_collections = LoadFromSQL(context).getAll();
+    LOG_TRACE(
+        &Poco::Logger::get("NamedCollectionsUtils"),
+        "Loaded {} collections from SQL", named_collections.size());
+
+    NamedCollectionFactory::instance().add(std::move(named_collections));
+    is_loaded_from_sql = true;
 }
 
 void loadFromSQL(ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
-    NamedCollectionFactory::instance().add(LoadFromSQL(context).getAll());
+    loadFromSQLUnlocked(context, lock);
+}
+
+void loadIfNotUnlocked(std::unique_lock<std::mutex> & lock)
+{
+    auto global_context = Context::getGlobalContextInstance();
+    if (!is_loaded_from_config)
+        loadFromConfigUnlocked(global_context->getConfigRef(), lock);
+    if (!is_loaded_from_sql)
+        loadFromSQLUnlocked(global_context, lock);
+}
+
+void loadIfNot()
+{
+    if (is_loaded_from_sql && is_loaded_from_config)
+        return;
+    auto lock = lockNamedCollectionsTransaction();
+    return loadIfNotUnlocked(lock);
 }
 
 void removeFromSQL(const std::string & collection_name, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
+    loadIfNotUnlocked(lock);
     LoadFromSQL(context).remove(collection_name);
     NamedCollectionFactory::instance().remove(collection_name);
 }
@@ -360,6 +404,7 @@ void removeFromSQL(const std::string & collection_name, ContextPtr context)
 void removeIfExistsFromSQL(const std::string & collection_name, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
+    loadIfNotUnlocked(lock);
     LoadFromSQL(context).removeIfExists(collection_name);
     NamedCollectionFactory::instance().removeIfExists(collection_name);
 }
@@ -367,12 +412,14 @@ void removeIfExistsFromSQL(const std::string & collection_name, ContextPtr conte
 void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
+    loadIfNotUnlocked(lock);
     NamedCollectionFactory::instance().add(query.collection_name, LoadFromSQL(context).create(query));
 }
 
 void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
+    loadIfNotUnlocked(lock);
     LoadFromSQL(context).update(query);
 
     auto collection = NamedCollectionFactory::instance().getMutable(query.collection_name);

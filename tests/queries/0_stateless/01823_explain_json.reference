@@ -37,63 +37,59 @@
           "Node Type": "Aggregating",
           "Header": [
             {
-              "Name": "number",
+              "Name": "number_0",
               "Type": "UInt64"
             },
             {
-              "Name": "plus(number, 1)",
-              "Type": "UInt64"
-            },
-            {
-              "Name": "quantile(0.2)(number)",
+              "Name": "quantile(0.2_Float64)(number_0)",
               "Type": "Float64"
             },
             {
-              "Name": "sumIf(number, greater(number, 0))",
+              "Name": "sumIf(number_0, greater(number_0, 0_UInt8))",
               "Type": "UInt64"
             }
           ],
-          "Keys": ["number", "plus(number, 1)"],
+          "Keys": ["number_0"],
           "Aggregates": [
             {
-              "Name": "quantile(0.2)(number)",
+              "Name": "quantile(0.2_Float64)(number_0)",
               "Function": {
                 "Name": "quantile",
                 "Parameters": ["0.2"],
                 "Argument Types": ["UInt64"],
                 "Result Type": "Float64"
               },
-              "Arguments": ["number"]
+              "Arguments": ["number_0"]
             },
             {
-              "Name": "sumIf(number, greater(number, 0))",
+              "Name": "sumIf(number_0, greater(number_0, 0_UInt8))",
               "Function": {
                 "Name": "sumIf",
                 "Argument Types": ["UInt64", "UInt8"],
                 "Result Type": "UInt64"
               },
-              "Arguments": ["number", "greater(number, 0)"]
+              "Arguments": ["number_0", "greater(number_0, 0_UInt8)"]
             }
           ],
 --------
           "Node Type": "ArrayJoin",
           "Left": false,
-          "Columns": ["x", "y"],
+          "Columns": ["x_0", "y_1"],
 --------
           "Node Type": "Distinct",
-          "Columns": ["intDiv(number, 3)", "intDiv(number, 2)"],
+          "Columns": ["intDiv(number_0, 2_UInt8)", "intDiv(number_0, 3_UInt8)"],
 --
               "Node Type": "Distinct",
-              "Columns": ["intDiv(number, 3)", "intDiv(number, 2)"],
+              "Columns": ["intDiv(number_0, 2_UInt8)", "intDiv(number_0, 3_UInt8)"],
 --------
               "Sort Description": [
                 {
-                  "Column": "number",
+                  "Column": "number_0",
                   "Ascending": false,
                   "With Fill": false
                 },
                 {
-                  "Column": "plus(number, 1)",
+                  "Column": "plus(number_0, 1_UInt8)",
                   "Ascending": true,
                   "With Fill": false
                 }

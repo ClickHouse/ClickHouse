@@ -166,6 +166,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
         /// Write segment ID 1
         writeVarUInt(1, *ostr);
         ostr->sync();
+        ostr->finalize();
     }
 
     /// Read id in file
@@ -188,6 +189,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
         writeVarUInt(result + n, *ostr);
         ostr->sync();
+        ostr->finalize();
     }
     return result;
 }
@@ -317,8 +319,13 @@ void GinIndexStore::writeSegment()
     current_segment.segment_id = getNextSegmentID();
 
     metadata_file_stream->sync();
+    metadata_file_stream->finalize();
+
     dict_file_stream->sync();
+    dict_file_stream->finalize();
+
     postings_file_stream->sync();
+    postings_file_stream->finalize();
 }
 
 GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & store_)

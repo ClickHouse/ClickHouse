@@ -11,7 +11,15 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-using SetResultDetailsFunc = std::function<void(const String &, const String &, const String &, const String &)>;
+struct QueryResultDetails
+{
+    String query_id;
+    std::optional<String> content_type;
+    std::optional<String> format;
+    std::optional<String> timezone;
+};
+
+using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 
 /// Parse and execute a query.
 void executeQuery(

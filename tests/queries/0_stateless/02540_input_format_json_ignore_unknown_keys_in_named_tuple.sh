@@ -60,7 +60,7 @@ gharchive_structure=(
              closed_at DateTime('UTC')
          ),
          pull_request Tuple(
-             merged_at Nullable(DateTime('UTC')),
+             merged_at DateTime('UTC'),
              merge_commit_sha String,
              requested_reviewers Nested(
                  login String
@@ -80,16 +80,9 @@ gharchive_structure=(
              mergeable UInt8,
              rebaseable UInt8,
              mergeable_state String,
-             merged_by Nullable(String),
-             /* NOTE: correct type is Tuple, however Tuple cannot be Nullable,
-              * so you still have to use Nullable(String) and rely on
-              * input_format_json_read_objects_as_strings, but see also
-              * https://github.com/ClickHouse/ClickHouse/issues/36464
-              */
-             /* merged_by Tuple(
-              *     login String
-              * ),
-             */
+             merged_by Tuple(
+                 login String
+             ),
              review_comments UInt32,
              maintainer_can_modify UInt8,
              commits UInt32,
@@ -122,12 +115,10 @@ EOL
 # NOTE: due to [1] we cannot use dot.dot notation, only tupleElement()
 #
 #   [1]: https://github.com/ClickHouse/ClickHouse/issues/24607
-$CLICKHOUSE_LOCAL "${gharchive_settings[@]}" --structure="${gharchive_structure[*]}" -q "
-    WITH
-        tupleElement(tupleElement(payload, 'pull_request'), 'merged_by') AS merged_by_
+$CLICKHOUSE_LOCAL --allow_experimental_analyzer=1 "${gharchive_settings[@]}" --structure="${gharchive_structure[*]}" -q "
     SELECT
-        tupleElement(tupleElement(tupleElement(payload, 'issue'), 'labels'), 'name') AS labels,
-        if(merged_by_ IS NULL, '<not_merged>', JSONExtractString(merged_by_, 'login')) AS merged_by
+        payload.issue.labels.name AS labels,
+        payload.pull_request.merged_by.login AS merged_by
     FROM table
 " <<EOL
 {"type":"PullRequestEvent","actor":{"login":"foobar"},"repo":{"name":"ClickHouse/ClickHouse"},"payload":{"ref":"backport","ref_type":"branch","pull_request":{"merged_by":null}}}

@@ -23,12 +23,12 @@ namespace ErrorCodes
     M(String, password) \
     M(Bool, structure_only) \
     M(Bool, async) \
+    M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path) \
     M(OptionalUUID, backup_uuid)
     /// M(Int64, compression_level)
 

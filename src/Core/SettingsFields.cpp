@@ -13,7 +13,6 @@
 
 #include <cmath>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -150,10 +149,16 @@ template struct SettingFieldNumber<UInt64>;
 template struct SettingFieldNumber<Int64>;
 template struct SettingFieldNumber<float>;
 template struct SettingFieldNumber<bool>;
+template struct SettingFieldNumber<Int32>;
+template struct SettingFieldNumber<UInt32>;
+template struct SettingFieldNumber<double>;
 
 template struct SettingAutoWrapper<SettingFieldNumber<UInt64>>;
 template struct SettingAutoWrapper<SettingFieldNumber<Int64>>;
 template struct SettingAutoWrapper<SettingFieldNumber<float>>;
+template struct SettingAutoWrapper<SettingFieldNumber<UInt32>>;
+template struct SettingAutoWrapper<SettingFieldNumber<Int32>>;
+template struct SettingAutoWrapper<SettingFieldNumber<double>>;
 
 namespace
 {
@@ -332,7 +337,7 @@ void SettingFieldString::readBinary(ReadBuffer & in)
 /// that. The linker does not complain only because clickhouse-keeper does not call any of below
 /// functions. A cleaner alternative would be more modular libraries, e.g. one for data types, which
 /// could then be linked by the server and the linker.
-#ifndef KEEPER_STANDALONE_BUILD
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
 
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
@@ -371,6 +376,40 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     Map map;
     DB::readBinary(map, in);
     *this = map;
+}
+
+#else
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+SettingFieldMap::SettingFieldMap(const Field &) : value(Map()) {}
+String SettingFieldMap::toString() const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+
+SettingFieldMap & SettingFieldMap::operator =(const Field &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::parseFromString(const String &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::writeBinary(WriteBuffer &) const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::readBinary(ReadBuffer &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
 }
 
 #endif
@@ -445,6 +484,17 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
+void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value, out);
+}
+
+void SettingFieldTimezone::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    *this = std::move(str);
+}
 
 String SettingFieldCustom::toString() const
 {

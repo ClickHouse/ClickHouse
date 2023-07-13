@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/formatAST.h>
 
 namespace DB
 {
@@ -13,7 +12,8 @@ struct FieldFromASTImpl : public CustomType::CustomTypeImpl
     explicit FieldFromASTImpl(ASTPtr ast_) : ast(ast_) {}
 
     const char * getTypeName() const override { return name; }
-    String toString() const override { return serializeAST(*ast); }
+    String toString(bool show_secrets) const override;
+    bool isSecret() const override;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const;
 

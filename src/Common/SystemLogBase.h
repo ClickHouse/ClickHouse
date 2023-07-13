@@ -10,7 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
@@ -60,12 +60,12 @@ public:
     /// Stop the background flush thread before destructor. No more data will be written.
     virtual void shutdown() = 0;
 
-    virtual ~ISystemLog() = default;
+    virtual ~ISystemLog();
 
     virtual void savingThreadFunction() = 0;
 
 protected:
-    ThreadFromGlobalPool saving_thread;
+    std::unique_ptr<ThreadFromGlobalPool> saving_thread;
 
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
@@ -87,12 +87,15 @@ public:
       */
     void add(const LogElement & element);
 
-    /// Flush data in the buffer to disk
+    /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
     void flush(bool force) override;
+
+    /// Non-blocking flush data in the buffer to disk.
+    void notifyFlush(bool force);
 
     String getName() const override { return LogElement::name(); }
 
-    static const char * getDefaultOrderBy() { return "(event_date, event_time)"; }
+    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
 
 protected:
     Poco::Logger * log;
@@ -112,6 +115,10 @@ protected:
     uint64_t flushed_up_to = 0;
     // Logged overflow message at this queue front index
     uint64_t logged_queue_full_at_index = -1;
+
+private:
+    uint64_t notifyFlushImpl(bool force);
+
 };
 
 }

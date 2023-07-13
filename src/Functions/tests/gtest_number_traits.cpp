@@ -5,8 +5,6 @@
 
 #include <DataTypes/NumberTraits.h>
 
-#pragma GCC diagnostic ignored "-Wframe-larger-than="
-
 static const std::map<std::pair<std::string, std::string>, std::string> answer =
 {
     {{"UInt8", "UInt8"}, "UInt8"},

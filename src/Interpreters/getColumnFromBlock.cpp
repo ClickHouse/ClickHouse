@@ -15,22 +15,17 @@ ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & req
     if (!elem)
         return nullptr;
 
-    DataTypePtr elem_type;
-    ColumnPtr elem_column;
+    auto elem_type = elem->type;
+    auto elem_column = elem->column->decompress();
 
     if (requested_column.isSubcolumn())
     {
         auto subcolumn_name = requested_column.getSubcolumnName();
-        elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
-        elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column);
+        elem_column = elem_type->tryGetSubcolumn(subcolumn_name, elem_column);
+        elem_type = elem_type->tryGetSubcolumnType(subcolumn_name);
 
         if (!elem_type || !elem_column)
             return nullptr;
-    }
-    else
-    {
-        elem_type = elem->type;
-        elem_column = elem->column;
     }
 
     return castColumn({elem_column, elem_type, ""}, requested_column.type);

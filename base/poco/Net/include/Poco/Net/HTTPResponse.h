@@ -188,14 +188,10 @@ namespace Net
         /// Writes the HTTP response to the given
         /// output stream, but do not finish with \r\n delimiter.
 
-#if __clang__
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Woverloaded-virtual"
-#endif
         void read(std::istream & istr);
-#if __clang__
 #    pragma clang diagnostic pop
-#endif
         /// Reads the HTTP response from the
         /// given input stream.
         ///

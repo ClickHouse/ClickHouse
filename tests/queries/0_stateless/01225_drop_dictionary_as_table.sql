@@ -16,7 +16,7 @@ LAYOUT(FLAT());
 
 SYSTEM RELOAD DICTIONARY dict_db_01225.dict;
 
-DROP TABLE dict_db_01225.dict; -- { serverError 520; }
+DROP TABLE dict_db_01225.dict; -- { serverError 520 }
 DROP DICTIONARY dict_db_01225.dict;
 
 DROP DATABASE dict_db_01225;

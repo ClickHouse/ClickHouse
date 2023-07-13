@@ -55,14 +55,19 @@ private:
                 getName(), arguments.size());
         }
 
-        for (const auto & arg : arguments)
+        DataTypes arg_types;
+        for (size_t i = 0, size = arguments.size(); i < size; ++i)
         {
-            if (!isInteger(arg))
+            if (i < 2 && WhichDataType(arguments[i]).isIPv4())
+                arg_types.emplace_back(std::make_shared<DataTypeUInt32>());
+            else if (isInteger(arguments[i]))
+                arg_types.push_back(arguments[i]);
+            else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arg->getName(), getName());
+                    arguments[i]->getName(), getName());
         }
 
-        DataTypePtr common_type = getLeastSupertype(arguments);
+        DataTypePtr common_type = getLeastSupertype(arg_types);
         return std::make_shared<DataTypeArray>(common_type);
     }
 

@@ -17,13 +17,20 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/assert_cast.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Common/assert_cast.h>
 #include <filesystem>
-#include <Common/filesystemHelpers.h>
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric DatabaseOnDiskThreads;
+    extern const Metric DatabaseOnDiskThreadsActive;
+}
 
 namespace DB
 {
@@ -620,7 +627,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     }
 
     /// Read and parse metadata in parallel
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive);
     for (const auto & file : metadata_files)
     {
         pool.scheduleOrThrowOnError([&]()

@@ -1,13 +1,12 @@
 #pragma once
 
-#include "Storages/MergeTree/MergeTreePartInfo.h"
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/Throttler.h>
 
 
@@ -21,6 +20,7 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
+class PooledReadWriteBufferFromHTTP;
 
 namespace DataPartsExchange
 {
@@ -66,10 +66,11 @@ public:
     explicit Fetcher(StorageReplicatedMergeTree & data_);
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
-    MergeTreeData::MutableDataPartPtr fetchSelectedPart(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
+        const String & zookeeper_name,
         const String & replica_path,
         const String & host,
         int port,
