@@ -73,9 +73,7 @@ void SystemLogBase<LogElement>::startup()
 {
     std::lock_guard lock(queue->mutex);
     std::cout << "void ISystemLog::startup()" << std::endl;
-    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { 
-        std::cout << "void ISystemLog::ThreadFromGlobalPool()" << std::endl;
-        savingThreadFunction(); });
+    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 
 static thread_local bool recursive_add_call = false;
