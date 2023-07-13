@@ -39,6 +39,8 @@ private:
     std::function<bool()> is_cancelled_callback;
     size_t interactive_timeout_ms = 0;
     std::unique_ptr<Datas> datas;
+    Poco::Event datas_init;
+
     ThreadFromGlobalPool thread;
 
     DB::setExceptionCallback exception_callback;

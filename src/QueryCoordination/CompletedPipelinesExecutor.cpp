@@ -47,13 +47,13 @@ struct CompletedPipelinesExecutor::Datas
 
     void finishCallBack()
     {
+        std::lock_guard lock(mutex);
         if (isFinished())
             finish_event.set();
     }
 
     bool isFinished()
     {
-        std::lock_guard lock(mutex);
         for (auto & data : datas)
         {
             if (!data->is_finished)
@@ -64,7 +64,6 @@ struct CompletedPipelinesExecutor::Datas
 
     void cancel()
     {
-        std::lock_guard lock(mutex);
         for (auto & data : datas)
         {
             if (!data->is_finished && data->executor)
@@ -74,7 +73,6 @@ struct CompletedPipelinesExecutor::Datas
 
     void join()
     {
-        std::lock_guard lock(mutex);
         for (auto & data : datas)
         {
             if (!data->is_finished && data->thread.joinable())
@@ -84,13 +82,11 @@ struct CompletedPipelinesExecutor::Datas
 
     size_t size()
     {
-        std::lock_guard lock(mutex);
         return datas.size();
     }
 
     void rethrowFirstExceptionIfHas()
     {
-        std::lock_guard lock(mutex);
         for (auto & data : datas)
         {
             if (data->has_exception)
@@ -169,6 +165,8 @@ void CompletedPipelinesExecutor::asyncExecute()
     };
 
     thread = ThreadFromGlobalPool(std::move(func));
+
+    datas_init.wait(); /// avoid data thread join before data thread init
 }
 
 void CompletedPipelinesExecutor::execute()
@@ -199,6 +197,8 @@ void CompletedPipelinesExecutor::execute()
 
         data->thread = ThreadFromGlobalPool(std::move(func));
     }
+
+    datas_init.set();
 
     if (interactive_timeout_ms)
     {
@@ -239,6 +239,7 @@ void CompletedPipelinesExecutor::cancel()
         datas->finish_event.set();
     }
 
+    datas_init.set();
     if (thread.joinable())
     {
         LOG_DEBUG(log, "thread joinable");
