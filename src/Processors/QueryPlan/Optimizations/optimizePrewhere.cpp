@@ -60,6 +60,7 @@ void matchDAGOutputNodesOrderWithHeader(ActionsDAGPtr & actions_dag, const Block
 
 namespace QueryPlanOptimizations
 {
+
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
 {
     if (stack.size() < 3)
