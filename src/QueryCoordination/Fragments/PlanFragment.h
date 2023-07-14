@@ -3,10 +3,10 @@
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <QueryCoordination/ExchangeDataStep.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryCoordination/DataSink.h>
+#include <QueryCoordination/Exchange/ExchangeDataSink.h>
 #include <QueryCoordination/DataPartition.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -169,8 +169,8 @@ ISource (DB)
     DictionarySource (DB)
     DistributedAsyncInsertSource (DB)
     EmbeddedRocksDBSource (DB)
-    ExchangeDataReceiver (DB)
-    ExchangeDataReceiver (DB)
+    ExchangeDataSource (DB)
+    ExchangeDataSource (DB)
     GenerateSource (DB)
     IInputFormat (DB)
     JoinSource (DB)
@@ -231,8 +231,8 @@ ISource (DB)
     DictionarySource (DB)
     DistributedAsyncInsertSource (DB)
     EmbeddedRocksDBSource (DB)
-    ExchangeDataReceiver (DB)
-    ExchangeDataReceiver (DB)
+    ExchangeDataSource (DB)
+    ExchangeDataSource (DB)
     GenerateSource (DB)
     IInputFormat (DB)
     JoinSource (DB)
@@ -418,7 +418,7 @@ public:
 
     Int32 getFragmentID() const { return fragment_id; }
 
-    QueryPipeline buildQueryPipeline(std::vector<DataSink::Channel> & channels, const String & local_host);
+    QueryPipeline buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host);
 
     void unitePlanFragments(QueryPlanStepPtr step, std::vector<std::shared_ptr<PlanFragment>> fragments, StorageLimitsList storage_limits_ = {});
     void unitePlanFragments(

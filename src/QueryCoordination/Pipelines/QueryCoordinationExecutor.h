@@ -1,8 +1,8 @@
 #pragma once
 #include <functional>
 #include <memory>
-#include <QueryCoordination/CompletedPipelinesExecutor.h>
-#include <QueryCoordination/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 /// Includes 3 parts of logic

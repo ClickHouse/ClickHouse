@@ -4,8 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryFragments.h>
-#include <Interpreters/InterpreterSelectWithUnionQueryFragments.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
+#include <QueryCoordination/Fragments/PlanFragmentBuilder.h>
 #include <QueryCoordination/Coordinator.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -297,108 +298,141 @@ Block InterpreterSelectWithUnionQueryFragments::getSampleBlock(const ASTPtr & qu
 }
 
 /// maybe abstract createFragments to here
-void InterpreterSelectWithUnionQueryFragments::buildFragments()
+PlanFragmentPtrs InterpreterSelectWithUnionQueryFragments::buildFragments()
 {
-    size_t num_child_fragments = nested_interpreters.size();
-    const Settings & settings = context->getSettingsRef();
+//    size_t num_child_fragments = nested_interpreters.size();
+//    const Settings & settings = context->getSettingsRef();
+//
+//    auto local_limits = getStorageLimits(*context, options);
+//    storage_limits.emplace_back(local_limits);
+//    for (auto & interpreter : nested_interpreters)
+//        interpreter->addStorageLimits(storage_limits);
+//
+//    PlanFragmentPtr fragment;
+//    /// Skip union for single interpreter.
+//    if (num_child_fragments == 1)
+//    {
+//        auto * select_interpreter = dynamic_cast<InterpreterSelectQueryFragments *>(nested_interpreters.front().get());
+//        if (select_interpreter)
+//        {
+//            auto nested_fragments = select_interpreter->buildFragments();
+//            fragment = nested_fragments.back();
+//
+//            fragments.insert(fragments.end(), nested_fragments.begin(), nested_fragments.end());
+//        }
+//    }
+//    else
+//    {
+//        std::vector<PlanFragmentPtr> child_fragments(num_child_fragments);
+//        DataStreams data_streams(num_child_fragments);
+//
+//        for (size_t i = 0; i < num_child_fragments; ++i)
+//        {
+//            auto * select_interpreter = dynamic_cast<InterpreterSelectQueryFragments *>(nested_interpreters[i].get());
+//            if (select_interpreter)
+//            {
+//                auto nested_fragments = select_interpreter->buildFragments();
+//
+//                child_fragments[i] = nested_fragments.back();
+//
+//                auto top_fragment = child_fragments[i];
+//                if (!blocksHaveEqualStructure(top_fragment->getCurrentDataStream().header, result_header))
+//                {
+//                    auto actions_dag = ActionsDAG::makeConvertingActions(
+//                        top_fragment->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+//                        result_header.getColumnsWithTypeAndName(),
+//                        ActionsDAG::MatchColumnsMode::Position);
+//                    auto converting_step = std::make_unique<ExpressionStep>(top_fragment->getCurrentDataStream(), std::move(actions_dag));
+//                    converting_step->setStepDescription("Conversion before UNION");
+//                    top_fragment->addStep(std::move(converting_step));
+//                }
+//
+//                data_streams[i] = top_fragment->getCurrentDataStream();
+//
+//                fragments.insert(fragments.end(), nested_fragments.begin(), nested_fragments.end());
+//            }
+//        }
+//
+//        auto max_threads = settings.max_threads;
+//        auto step = std::make_shared<UnionStep>(std::move(data_streams), max_threads);
+//
+//        DataPartition partition{.type = PartitionType::UNPARTITIONED};
+//        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
+//        parent_fragment->unitePlanFragments(step, child_fragments);
+//
+//        const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
+//        if (query.union_mode == SelectUnionMode::UNION_DISTINCT)
+//        {
+//            /// Add distinct transform
+//            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+//
+//            auto distinct_step = std::make_shared<DistinctStep>(
+//                parent_fragment->getCurrentDataStream(),
+//                limits,
+//                0,
+//                result_header.getNames(),
+//                false,
+//                settings.optimize_distinct_in_order);
+//
+//            parent_fragment->addStep(std::move(distinct_step));
+//        }
+//
+//        fragment = parent_fragment;
+//        fragments.emplace_back(parent_fragment);
+//    }
+//
+//    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
+//    {
+//        if (settings.limit > 0)
+//        {
+//            auto limit = std::make_unique<LimitStep>(fragment->getCurrentDataStream(), settings.limit, settings.offset, settings.exact_rows_before_limit);
+//            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
+//            fragment->addStep(std::move(limit));
+//        }
+//        else
+//        {
+//            auto offset = std::make_unique<OffsetStep>(fragment->getCurrentDataStream(), settings.offset);
+//            offset->setStepDescription("OFFSET for SETTINGS");
+//            fragment->addStep(std::move(offset));
+//        }
+//    }
+//
+//    addAdditionalPostFilter(*fragment);
+//
+//    fragment->addInterpreterContext(context);
 
-    auto local_limits = getStorageLimits(*context, options);
-    storage_limits.emplace_back(local_limits);
-    for (auto & interpreter : nested_interpreters)
-        interpreter->addStorageLimits(storage_limits);
+    QueryPlan query_plan;
+    buildQueryPlan(query_plan);
 
-    PlanFragmentPtr fragment;
-    /// Skip union for single interpreter.
-    if (num_child_fragments == 1)
+    query_plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+
+    const auto & resources = query_plan.getResources();
+
+    PlanFragmentBuilder builder(storage_limits, context, query_plan);
+    const auto & res_fragments = builder.buildFragments();
+
+    /// query_plan resources move to fragments
+    /// Extend lifetime of context, table lock, storage.
+    /// TODO every fragment need context, table lock, storage ?
+    for (const auto & fragment : res_fragments)
     {
-        auto * select_interpreter = dynamic_cast<InterpreterSelectQueryFragments *>(nested_interpreters.front().get());
-        if (select_interpreter)
+        for (const auto & context_ : resources.interpreter_context)
         {
-            auto nested_fragments = select_interpreter->buildFragments();
-            fragment = nested_fragments.back();
+            fragment->addInterpreterContext(context_);
+        }
 
-            fragments.insert(fragments.end(), nested_fragments.begin(), nested_fragments.end());
+        for (const auto & storage_holder : resources.storage_holders)
+        {
+            fragment->addStorageHolder(storage_holder);
+        }
+
+        for (const auto & table_lock_ : resources.table_locks)
+        {
+            fragment->addTableLock(table_lock_);
         }
     }
-    else
-    {
-        std::vector<PlanFragmentPtr> child_fragments(num_child_fragments);
-        DataStreams data_streams(num_child_fragments);
 
-        for (size_t i = 0; i < num_child_fragments; ++i)
-        {
-            auto * select_interpreter = dynamic_cast<InterpreterSelectQueryFragments *>(nested_interpreters[i].get());
-            if (select_interpreter)
-            {
-                auto nested_fragments = select_interpreter->buildFragments();
-
-                child_fragments[i] = nested_fragments.back();
-
-                auto top_fragment = child_fragments[i];
-                if (!blocksHaveEqualStructure(top_fragment->getCurrentDataStream().header, result_header))
-                {
-                    auto actions_dag = ActionsDAG::makeConvertingActions(
-                        top_fragment->getCurrentDataStream().header.getColumnsWithTypeAndName(),
-                        result_header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Position);
-                    auto converting_step = std::make_unique<ExpressionStep>(top_fragment->getCurrentDataStream(), std::move(actions_dag));
-                    converting_step->setStepDescription("Conversion before UNION");
-                    top_fragment->addStep(std::move(converting_step));
-                }
-
-                data_streams[i] = top_fragment->getCurrentDataStream();
-
-                fragments.insert(fragments.end(), nested_fragments.begin(), nested_fragments.end());
-            }
-        }
-
-        auto max_threads = settings.max_threads;
-        auto step = std::make_shared<UnionStep>(std::move(data_streams), max_threads);
-
-        DataPartition partition{.type = PartitionType::UNPARTITIONED};
-        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
-        parent_fragment->unitePlanFragments(step, child_fragments);
-
-        const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-        if (query.union_mode == SelectUnionMode::UNION_DISTINCT)
-        {
-            /// Add distinct transform
-            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
-
-            auto distinct_step = std::make_shared<DistinctStep>(
-                parent_fragment->getCurrentDataStream(),
-                limits,
-                0,
-                result_header.getNames(),
-                false,
-                settings.optimize_distinct_in_order);
-
-            parent_fragment->addStep(std::move(distinct_step));
-        }
-
-        fragment = parent_fragment;
-        fragments.emplace_back(parent_fragment);
-    }
-
-    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        if (settings.limit > 0)
-        {
-            auto limit = std::make_unique<LimitStep>(fragment->getCurrentDataStream(), settings.limit, settings.offset, settings.exact_rows_before_limit);
-            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
-            fragment->addStep(std::move(limit));
-        }
-        else
-        {
-            auto offset = std::make_unique<OffsetStep>(fragment->getCurrentDataStream(), settings.offset);
-            offset->setStepDescription("OFFSET for SETTINGS");
-            fragment->addStep(std::move(offset));
-        }
-    }
-
-    addAdditionalPostFilter(*fragment);
-
-    fragment->addInterpreterContext(context);
+    return res_fragments;
 }
 
 static String formattedAST(const ASTPtr & ast)
@@ -418,7 +452,7 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
 {
     BlockIO res;
 
-    buildFragments();
+    const auto & fragments = buildFragments();
 
     WriteBufferFromOwnString buffer;
     fragments.back()->dump(buffer);

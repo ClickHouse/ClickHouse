@@ -9,23 +9,23 @@
 namespace DB
 {
 
-class ExchangeDataReceiver;
+class ExchangeDataSource;
 
-/// Sink which sends data for exchange data. like ExternalTableDataSink
-class DataSink : public ISink
+/// Sink which sends data for exchange data. like ExternalTableExchangeDataSink
+class ExchangeDataSink : public ISink
 {
 public:
     struct Channel
     {
         IConnectionPool::Entry connection;
         bool is_local;
-        std::shared_ptr<ExchangeDataReceiver> local_receiver;
+        std::shared_ptr<ExchangeDataSource> local_receiver;
 
         void prepareSendData(const ExchangeDataRequest & prepare_request);
         void sendData(const Block & block);
     };
 
-    DataSink(
+    ExchangeDataSink(
         Block header,
         std::vector<Channel> & channels_,
         DataPartition & partition,
@@ -34,7 +34,7 @@ public:
         Int32 fragment_id,
         Int32 exchange_id)
         : ISink(std::move(header))
-        , log(&Poco::Logger::get("DataSink"))
+        , log(&Poco::Logger::get("ExchangeDataSink"))
         , channels(channels_)
         , output_partition(partition)
         , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
@@ -43,7 +43,7 @@ public:
             calculateKeysPositions();
     }
 
-    String getName() const override { return "DataSink"; }
+    String getName() const override { return "ExchangeDataSink"; }
 
     size_t getNumReadRows() const { return num_rows; }
 

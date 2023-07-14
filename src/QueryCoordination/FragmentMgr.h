@@ -3,18 +3,18 @@
 #include <unordered_map>
 #include <string_view>
 
-#include <QueryCoordination/PlanFragment.h>
+#include <QueryCoordination/Fragments/PlanFragment.h>
 #include <QueryCoordination/IO/FragmentRequest.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <Core/Block.h>
 #include <QueryCoordination/PipelineExecutors.h>
-#include <QueryCoordination/ExchangeDataReceiver.h>
+#include <QueryCoordination/ExchangeDataSource.h>
 #include <QueryCoordination/CompletedPipelinesExecutor.h>
 
 namespace DB
 {
 
-using ExchangeDataReceivers = std::unordered_map<String, std::shared_ptr<ExchangeDataReceiver>>;
+using ExchangeDataSources = std::unordered_map<String, std::shared_ptr<ExchangeDataSource>>;
 
 struct FragmentDistributed
 {
@@ -24,7 +24,7 @@ struct FragmentDistributed
 
     bool is_finished = false;
 
-    ExchangeDataReceivers receivers;
+    ExchangeDataSources receivers;
 
     static String receiverKey(PlanID exchange_id, const String & source)
     {
@@ -42,7 +42,7 @@ public:
     // Keep fragments that need to be executed by themselves
     void fragmentsToDistributed(const String & query_id, const std::vector<FragmentRequest> & need_execute_fragments);
 
-    std::shared_ptr<ExchangeDataReceiver> findReceiver(const ExchangeDataRequest & exchange_data_request) const;
+    std::shared_ptr<ExchangeDataSource> findReceiver(const ExchangeDataRequest & exchange_data_request) const;
 
     QueryPipeline findRootQueryPipeline(const String & query_id);
 

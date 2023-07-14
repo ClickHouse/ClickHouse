@@ -1,19 +1,19 @@
-#include <QueryCoordination/DataSink.h>
+#include <QueryCoordination/ExchangeDataSink.h>
 #include <QueryCoordination/FragmentMgr.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
-void DataSink::Channel::prepareSendData(const ExchangeDataRequest & prepare_request)
+void ExchangeDataSink::Channel::prepareSendData(const ExchangeDataRequest & prepare_request)
 {
     if (!is_local)
         connection->sendExchangeData(prepare_request);
     else if (is_local && !local_receiver)
-        local_receiver = FragmentMgr::getInstance().findReceiver(prepare_request);
+        local_receiver = ExchangeManager::getInstance().findExchangeDataSource(
 }
 
-void DataSink::Channel::sendData(const Block & block)
+void ExchangeDataSink::Channel::sendData(const Block & block)
 {
     if (is_local)
         local_receiver->receive(block);
@@ -21,11 +21,11 @@ void DataSink::Channel::sendData(const Block & block)
         connection->sendData(block, "", false);
 }
 
-void DataSink::onStart()
+void ExchangeDataSink::onStart()
 {
     if (!was_begin_sent)
     {
-        LOG_DEBUG(log, "DataSink start for request {}", request.toString());
+        LOG_DEBUG(log, "ExchangeDataSink start for request {}", request.toString());
         for (auto & channel : channels)
             channel.prepareSendData(request);
 
@@ -33,7 +33,7 @@ void DataSink::onStart()
     }
 }
 
-void DataSink::calculateKeysPositions()
+void ExchangeDataSink::calculateKeysPositions()
 {
     const auto & sample = getPort().getHeader();
     keys_positions.resize(output_partition.keys_size);
@@ -41,7 +41,7 @@ void DataSink::calculateKeysPositions()
         keys_positions[i] = sample.getPositionByName(output_partition.keys[i]);
 }
 
-void DataSink::consume(Chunk chunk)
+void ExchangeDataSink::consume(Chunk chunk)
 {
     size_t rows = chunk.getNumRows();
     num_rows += rows;
@@ -111,9 +111,9 @@ void DataSink::consume(Chunk chunk)
     }
 }
 
-void DataSink::onFinish()
+void ExchangeDataSink::onFinish()
 {
-    LOG_DEBUG(log, "DataSink finish for request {}", request.toString());
+    LOG_DEBUG(log, "ExchangeDataSink finish for request {}", request.toString());
 
     for (auto & channel : channels)
     {

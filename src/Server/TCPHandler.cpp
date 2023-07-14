@@ -52,6 +52,7 @@
 #include <QueryCoordination/QueryCoordinationExecutor.h>
 #include <QueryCoordination/Coordinator.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryCoordination/Exchange/ExchangeManager.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -1590,7 +1591,7 @@ bool TCPHandler::receivePacket()
 
             LOG_DEBUG(log, "Read compression");
 
-            state.exchange_data_receiver = FragmentMgr::getInstance().findReceiver(*state.exchange_data_request);
+            state.exchange_data_receiver = ExchangeManager::getInstance().findExchangeDataSource(*state.exchange_data_request);
             state.exchange_data_header = state.exchange_data_receiver->getHeader();
 
             LOG_DEBUG(log, "Found exchange data receiver");

@@ -139,12 +139,12 @@ void FragmentMgr::fragmentsToQueryPipelines(const String & query_id)
 
         QueryPipeline && pipeline = fragments_distributed.fragment->buildQueryPipeline(channels, local_host);
 
-        // register ExchangeDataReceiver
+        // register ExchangeDataSource
         for (const auto & processor : pipeline.getProcessors())
         {
-            if (ExchangeDataReceiver * receiver = dynamic_cast<ExchangeDataReceiver *>(processor.get()))
+            if (ExchangeDataSource * receiver = dynamic_cast<ExchangeDataSource *>(processor.get()))
             {
-                // register ExchangeDataReceiver
+                // register ExchangeDataSource
                 const auto & receiver_key = FragmentDistributed::receiverKey(receiver->getPlanId(), receiver->getSource());
                 fragments_distributed.receivers.emplace(receiver_key, receiver->shared_from_this());
             }
@@ -200,9 +200,9 @@ QueryPipeline FragmentMgr::findRootQueryPipeline(const String & query_id)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found root query pipeline");
 }
 
-std::shared_ptr<ExchangeDataReceiver> FragmentMgr::findReceiver(const ExchangeDataRequest & exchange_data_request) const
+std::shared_ptr<ExchangeDataSource> FragmentMgr::findReceiver(const ExchangeDataRequest & exchange_data_request) const
 {
-    std::shared_ptr<ExchangeDataReceiver> receiver;
+    std::shared_ptr<ExchangeDataSource> receiver;
     {
         auto data = find(exchange_data_request.query_id);
 

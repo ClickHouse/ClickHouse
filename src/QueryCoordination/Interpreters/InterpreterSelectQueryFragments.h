@@ -137,7 +137,6 @@ public:
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
     PlanFragmentPtrs buildFragments();
-    PlanFragmentPtrs buildFragments(const QueryPlan & query_plan);
 
 private:
     InterpreterSelectQueryFragments(
@@ -168,17 +167,6 @@ private:
     Block getSampleBlockImpl();
 
     void executeSinglePlan(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
-    PlanFragmentPtrs executeDistributedPlan(const QueryPlan & query_plan);
-
-    PlanFragmentPtrs createPlanFragments(const QueryPlan & single_plan, Node & single_node_plan);
-    PlanFragmentPtr createPlanFragments(const QueryPlan & single_plan, Node & root_node, PlanFragmentPtrs & all_fragments);
-    PlanFragmentPtr createOrderByFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments);
-    PlanFragmentPtr createScanFragment(QueryPlanStepPtr step, PlanFragmentPtrs & all_fragments);
-    PlanFragmentPtr createAggregationFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments);
-    PlanFragmentPtr createParentFragment(PlanFragmentPtr child_fragment, const DataPartition & partition);
-    PlanFragmentPtr createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment, PlanFragmentPtrs & all_fragments);
-    PlanFragmentPtr createCreatingSetsFragment(Node & root_node, PlanFragmentPtrs child_fragments);
-    PlanFragmentPtr createUnpartitionedFragment(QueryPlanStepPtr step, PlanFragmentPtr child_fragment, PlanFragmentPtrs & all_fragments);
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryPlan & query_plan);
@@ -267,8 +255,6 @@ private:
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSetsPtr prepared_sets;
-
-    PlanFragmentPtrs fragments;
 };
 
 }

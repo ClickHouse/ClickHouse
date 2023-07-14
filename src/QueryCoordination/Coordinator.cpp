@@ -6,6 +6,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
+#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
 
 namespace DB
 {
@@ -271,7 +273,11 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
 
         if (host == local_shard_host)
         {
-            FragmentMgr::getInstance().fragmentsToDistributed(context->getCurrentQueryId(), fragments_request.fragments_request);
+            DistributedFragmentBuilder builder(fragments_request.fragments_request);
+            const DistributedFragments & distributed_fragments = builder.build();
+
+            PipelinesBuilder pipelines_builder(context->getCurrentQueryId(), context->getSettingsRef(), distributed_fragments);
+            pipelines = pipelines_builder.build();
         }
         else
         {

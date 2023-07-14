@@ -2,7 +2,7 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
-#include <QueryCoordination/PlanFragment.h>
+#include <QueryCoordination/Fragments/PlanFragment.h>
 
 namespace DB
 {
@@ -34,7 +34,7 @@ public:
     /// Builds QueryPlan for current query.
     void buildQueryPlan(QueryPlan & query_plan) override;
 
-    void buildFragments();
+    PlanFragmentPtrs buildFragments();
 
     BlockIO execute() override;
 
@@ -56,7 +56,7 @@ public:
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 
-    PlanFragmentPtrs fragments;
+//    PlanFragmentPtrs fragments;
 
     static Block getCommonHeaderForUnion(const Blocks & headers);
 

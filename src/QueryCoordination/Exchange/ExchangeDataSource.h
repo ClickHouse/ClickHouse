@@ -13,10 +13,10 @@
 namespace DB
 {
 
-class ExchangeDataReceiver final : public ISource, public std::enable_shared_from_this<ExchangeDataReceiver>
+class ExchangeDataSource final : public ISource, public std::enable_shared_from_this<ExchangeDataSource>
 {
 public:
-    ExchangeDataReceiver(const DataStream & data_stream, Int32 fragment_id_, Int32 plan_id_, const String & source_)
+    ExchangeDataSource(const DataStream & data_stream, Int32 fragment_id_, Int32 plan_id_, const String & source_)
         : ISource(data_stream.header, false), fragment_id(fragment_id_), plan_id(plan_id_), source(source_)
     {
         const auto & sample = getPort().getHeader();
@@ -25,7 +25,7 @@ public:
                 add_aggregation_info = true;
     }
 
-    ~ExchangeDataReceiver() override = default;
+    ~ExchangeDataSource() override = default;
 
     void receive(Block block)
     {

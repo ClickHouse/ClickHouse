@@ -33,6 +33,10 @@ public:
 
     bool withTies() const { return with_ties; }
 
+    bool getLimit() const { return limit; }
+
+    bool getOffset() const { return offset; }
+
 private:
     void updateOutputStream() override
     {

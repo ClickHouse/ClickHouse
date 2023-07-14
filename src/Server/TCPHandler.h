@@ -46,7 +46,7 @@ struct ProfileInfo;
 class TCPServer;
 class NativeWriter;
 class NativeReader;
-class ExchangeDataReceiver;
+class ExchangeDataSource;
 
 /// State of query processing.
 struct QueryState
@@ -127,7 +127,7 @@ struct QueryState
 
     std::optional<ExchangeDataRequest> exchange_data_request;
 
-    std::shared_ptr<ExchangeDataReceiver> exchange_data_receiver;
+    std::shared_ptr<ExchangeDataSource> exchange_data_receiver;
 
     /// sample block from ExchangeData
     Block exchange_data_header;

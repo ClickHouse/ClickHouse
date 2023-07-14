@@ -1,4 +1,4 @@
-#include <QueryCoordination/PlanFragment.h>
+#include <QueryCoordination/Fragments/PlanFragment.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -519,7 +519,7 @@ void PlanFragment::explainEstimate(MutableColumns & /*columns*/)
 
 }
 
-QueryPipeline PlanFragment::buildQueryPipeline(std::vector<DataSink::Channel> & channels, const String & local_host)
+QueryPipeline PlanFragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host)
 {
     auto builder = buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
@@ -537,7 +537,7 @@ QueryPipeline PlanFragment::buildQueryPipeline(std::vector<DataSink::Channel> & 
         {
             query_id = context->getInitialQueryId();
         }
-        auto sink = std::make_shared<DataSink>(
+        auto sink = std::make_shared<ExchangeDataSink>(
             pipeline.getHeader(), channels, output_partition, local_host, query_id, dest_fragment->getFragmentID(), dest_node->plan_id);
 
         pipeline.complete(sink);

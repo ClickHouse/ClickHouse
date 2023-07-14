@@ -2,8 +2,8 @@
 
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
-#include <QueryCoordination/PlanFragment.h>
-#include <QueryCoordination/RemotePipelinesManager.h>
+#include <QueryCoordination/Fragments/PlanFragment.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -31,6 +31,8 @@ public:
     void scheduleExecuteDistributedPlan();
 
     std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager;
+
+    Pipelines pipelines;
 
 private:
     String assignFragmentToHost();
