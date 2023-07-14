@@ -34,7 +34,7 @@ Also, keep an eye out for upcoming meetups around the world. Somewhere else you 
 
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v23.6 Release Webinar**](https://www.youtube.com/watch?v=cuf_hYn7dqU) All the features of 23.7, one convenient video! Watch it now!
+* **Recording available**: [**v23.6 Release Webinar**](https://www.youtube.com/watch?v=cuf_hYn7dqU) All the features of 23.6, one convenient video! Watch it now!
 * **All release webinar recordings**: [YouTube playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU)
 
   
