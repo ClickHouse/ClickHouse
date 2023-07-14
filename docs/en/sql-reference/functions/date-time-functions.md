@@ -1130,7 +1130,7 @@ Result:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## now
+## now/current_timestamp
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
@@ -1259,7 +1259,7 @@ Result:
 └─────────────────────┴─────────────────────┴──────────┘
 ```
 
-## today
+## today/curdate/current_date
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
