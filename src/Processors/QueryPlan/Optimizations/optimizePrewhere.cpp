@@ -6,7 +6,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Planner/ActionsChain.h>
 #include <deque>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -61,75 +60,6 @@ void matchDAGOutputNodesOrderWithHeader(ActionsDAGPtr & actions_dag, const Block
 
 namespace QueryPlanOptimizations
 {
-#ifdef WHATEVERSOMETHING
-static void removeAliases(ActionsDAG * dag)
-{
-    using Node = ActionsDAG::Node;
-    struct Frame
-    {
-        const ActionsDAG::Node * node;
-        const ActionsDAG::Node * parent;
-        size_t next_child = 0;
-    };
-    std::vector<Frame> stack;
-    std::vector<std::pair<Node*, Node*>> aliases;
-
-    /// collect aliases
-    auto output_nodes = dag->getOutputs();
-    for (const auto * output_node : output_nodes)
-    {
-        stack.push_back({output_node, nullptr});
-        while (!stack.empty())
-        {
-            auto & frame = stack.back();
-            const auto * parent = frame.parent;
-            const auto * node = frame.node;
-
-            if (frame.next_child < node->children.size())
-            {
-                auto next_frame = Frame{.node = node->children[frame.next_child], .parent = node};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-
-            if (parent && node->type == ActionsDAG::ActionType::ALIAS)
-                aliases.emplace_back(const_cast<Node*>(node), const_cast<Node*>(parent));
-
-            stack.pop_back();
-        }
-    }
-
-    /// remove aliases from output nodes if any
-    for(auto it = output_nodes.begin(); it != output_nodes.end();)
-    {
-        if ((*it)->type == ActionsDAG::ActionType::ALIAS)
-            it = output_nodes.erase(it);
-        else
-            ++it;
-    }
-
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "aliases found: {}", aliases.size());
-
-    /// disconnect aliases
-    for(auto [alias, parent]: aliases)
-    {
-        /// find alias in parent's children and replace it with alias child
-        for (auto & child : parent->children)
-        {
-            if (child == alias)
-            {
-                child = alias->children.front();
-                break;
-            }
-        }
-    }
-
-    /// remove aliases
-    dag->removeUnusedActions();
-}
-#endif
-
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
 {
     if (stack.size() < 3)
@@ -231,8 +161,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
         storage.supportedPrewhereColumns(),
         &Poco::Logger::get("QueryPlanOptimizePrewhere")};
 
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "filter expression\n{}", filter_step->getExpression()->dumpDAG());
-
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         read_from_merge_tree->getContext(),
@@ -249,10 +177,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
     prewhere_info->need_filter = true;
 
     auto & prewhere_filter_actions = optimize_result->prewhere_filter_actions;
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "prewhere_filter_actions\n{}", prewhere_filter_actions->dumpDAG());
-
-    // removeAliases(prewhere_filter_actions.get());
-    // LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "removeAliases\n{}", prewhere_filter_actions->dumpDAG());
 
     ActionsChain actions_chain;
 
@@ -335,9 +259,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
     prewhere_info->prewhere_column_name = prewere_filter_node_name;
     prewhere_info->remove_prewhere_column = !prewhere_actions_chain_node->getChildRequiredOutputColumnsNames().contains(prewere_filter_node_name);
 
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "header BEFORE prewhere update\n{}", read_from_merge_tree->getOutputStream().header.dumpStructure());
     read_from_merge_tree->updatePrewhereInfo(prewhere_info);
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "header AFTER prewhere update\n{}", read_from_merge_tree->getOutputStream().header.dumpStructure());
 
     QueryPlan::Node * replace_old_filter_node = nullptr;
     bool remove_filter_node = false;
@@ -398,12 +320,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
 
         bool apply_match_step = false;
 
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "read header\n{}", read_from_merge_tree->getOutputStream().header.dumpStructure());
         /// If column order does not match old filter step column order, match dag output nodes with header
         if (!blocksHaveEqualStructure(read_from_merge_tree->getOutputStream().header, filter_step->getOutputStream().header))
         {
             apply_match_step = true;
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "rename_actions_dag\n{}", rename_actions_dag->dumpDAG());
             matchDAGOutputNodesOrderWithHeader(rename_actions_dag, filter_step->getOutputStream().header);
         }
 
