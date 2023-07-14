@@ -59,12 +59,6 @@ public:
         if (!getSettings().optimize_move_functions_out_of_any)
             return;
 
-        if (rewritten.contains(node.get()))
-        {
-            node = rewritten.at(node.get());
-            return;
-        }
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
@@ -93,6 +87,12 @@ public:
         /// case any(f())
         if (inside_arguments.empty())
             return;
+
+        if (rewritten.contains(node.get()))
+        {
+            node = rewritten.at(node.get());
+            return;
+        }
 
         /// checking done, rewrite function
         bool pushed = false;
