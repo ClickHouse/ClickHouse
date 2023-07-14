@@ -38,8 +38,10 @@ public:
             return;
 
         auto * inside_function_node = arguments[0]->as<FunctionNode>();
-        /// check argument is a function
-        if (!inside_function_node)
+
+        /// check argument is a function and can not be arrayJoin or lambda
+        if (!inside_function_node || inside_function_node->getFunctionName() == "arrayJoin"
+            || inside_function_node->getFunctionName() == "lambda")
             return;
 
         auto & inside_arguments = inside_function_node->getArguments().getNodes();
@@ -47,6 +49,12 @@ public:
         /// case any(f())
         if (inside_arguments.empty())
             return;
+
+        if (rewritten.count(node.get()))
+        {
+            node = rewritten.at(node.get());
+            return;
+        }
 
         /// checking done, rewrite function
         bool pushed = false;
@@ -60,21 +68,26 @@ public:
 
             auto any_function = std::make_shared<FunctionNode>(function_name);
             any_function->resolveAsAggregateFunction(std::move(aggregate_function));
-            any_function->setAlias(inside_argument->getAlias());
 
             auto & any_function_arguments = any_function->getArguments().getNodes();
             any_function_arguments.push_back(std::move(inside_argument));
-            inside_argument = std::move(any_function);
 
+            inside_argument = std::move(any_function);
             pushed = true;
         }
 
         if (pushed)
         {
-            arguments[0]->setAlias(node->getAlias());
+            rewritten.insert({node.get(), arguments[0]});
             node = arguments[0];
         }
     }
+
+private:
+    /// After query analysis alias will be rewritten to QueryTreeNode
+    /// whose memory address is same with the original one.
+    /// So we can reuse the rewritten one.
+    std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr > rewritten;
 };
 
 }
