@@ -18,7 +18,7 @@ ClientConfigurationPerRequest ProxyConfigurationResolverAdapter::getConfiguratio
 
 void ProxyConfigurationResolverAdapter::errorReport(const ClientConfigurationPerRequest & config)
 {
-    return resolver->errorReport(DB::ProxyConfiguration{
+    return resolver->errorReport(DB::ProxyConfiguration {
         config.proxy_host,
         Aws::Http::SchemeMapper::ToString(config.proxy_scheme),
         static_cast<uint16_t>(config.proxy_port)
