@@ -62,6 +62,7 @@ void SystemLogBase<LogElement>::stopFlushThread()
             return;
 
         is_shutdown = true;
+        queue->shutdown();
 
         /// Tell thread to shutdown.
         queue->flush_event.notify_all();
@@ -105,8 +106,8 @@ void SystemLogQueue<LogElement>::add(const LogElement & element)
     {
         std::unique_lock lock(mutex);
 
-        // if (queue.is_shutdown)
-        //     return;              // TODO
+        if (is_shutdown)
+            return;
 
         if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
         {
@@ -191,18 +192,18 @@ uint64_t SystemLogBase<LogElement>::notifyFlushImpl(bool force)
     uint64_t this_thread_requested_offset;
 
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(queue->mutex);
         if (is_shutdown)
             return uint64_t(-1);
 
-        this_thread_requested_offset = queue_front_index + queue.size();
+        this_thread_requested_offset = queue->queue_front_index + queue->queue.size();
 
         // Publish our flush request, taking care not to overwrite the requests
         // made by other threads.
         is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
+        queue->requested_flush_up_to = std::max(queue->requested_flush_up_to, this_thread_requested_offset);
 
-        flush_event.notify_all();
+        queue->flush_event.notify_all();
     }
 
     LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
