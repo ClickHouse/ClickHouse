@@ -344,6 +344,7 @@ void BackupsWorker::doBackup(
         backup_create_params.compression_method = backup_settings.compression_method;
         backup_create_params.compression_level = backup_settings.compression_level;
         backup_create_params.password = backup_settings.password;
+        backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
         backup_create_params.is_internal_backup = backup_settings.internal;
         backup_create_params.backup_coordination = backup_coordination;
         backup_create_params.backup_uuid = backup_settings.backup_uuid;

@@ -21,6 +21,7 @@ namespace ErrorCodes
     M(String, id) \
     M(String, compression_method) \
     M(String, password) \
+    M(String, s3_storage_class) \
     M(Bool, structure_only) \
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
