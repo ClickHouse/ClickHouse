@@ -137,6 +137,12 @@ The maximum rows of data to read for automatic schema inference.
 
 Default value: `25'000`.
 
+## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
+
+The maximum amount of data in bytes to read for automatic schema inference.
+
+Default value: `33554432` (32 Mb).
+
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
@@ -728,6 +734,12 @@ My NULL
 My NULL
 ```
 
+### input_format_tsv_skip_trailing_empty_lines {input_format_tsv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of TSV file will be skipped.
+
+Disabled by default.
+
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -882,6 +894,12 @@ My NULL
 My NULL
 ```
 
+### input_format_csv_skip_trailing_empty_lines {input_format_csv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of CSV file will be skipped.
+
+Disabled by default.
+
 ### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
 
 Trims spaces and tabs in non-quoted CSV strings.
@@ -912,6 +930,43 @@ Result
 
 ```text
 "  string  "
+```
+### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+
+Disabled by default.
+
+### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
+
+Allow to use whitespace or tab as field delimiter in CSV strings.
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter=' '
+```
+
+Result
+
+```text
+a  b
+```
+
+Query
+
+```bash
+echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter='\t'
+```
+
+Result
+
+```text
+a  b
 ```
 
 ## Values format settings {#values-format-settings}
@@ -1474,6 +1529,12 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md/#format-customseparated) data format.
 
 Default value: `''`.
+
+### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
+
+Disabled by default.
 
 ## Regexp format settings {#regexp-format-settings}
 

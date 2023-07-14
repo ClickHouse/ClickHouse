@@ -36,6 +36,7 @@ try:
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
+    from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
@@ -51,7 +52,6 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
-from .hdfs_api import HDFSApi
 
 from .config_cluster import *
 
@@ -624,10 +624,12 @@ class ClickHouseCluster:
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
-                .config(
-                    "spark.jars.packages",
-                    "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                )
+                # The jars are now linked to "$SPARK_HOME/jars" and we don't
+                # need packages to be downloaded once and once again
+                # .config(
+                #     "spark.jars.packages",
+                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+                # )
                 .master("local")
                 .getOrCreate()
                 .stop()
@@ -3054,7 +3056,6 @@ CLICKHOUSE_STAY_ALIVE_COMMAND = "bash -c \"trap 'pkill tail' INT TERM; {} --daem
     CLICKHOUSE_START_COMMAND
 )
 
-# /run/xtables.lock passed inside for correct iptables --wait
 DOCKER_COMPOSE_TEMPLATE = """
 version: '2.3'
 services:
@@ -3066,7 +3067,6 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
-            - /run/xtables.lock:/run/xtables.lock:ro
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
@@ -3376,6 +3376,7 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(
@@ -3386,6 +3387,7 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         )
 
     def query_and_get_error_with_retry(
@@ -3414,13 +3416,14 @@ class ClickHouseInstance:
                     database=database,
                 )
                 time.sleep(sleep_time)
+
+                if result is not None:
+                    return result
             except QueryRuntimeException as ex:
                 logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
-        if result is not None:
-            return result
-        raise Exception("Query {sql} did not fail".format(sql))
+        raise Exception("Query {} did not fail".format(sql))
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
@@ -4187,6 +4190,8 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
+        if os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None:
+            write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)

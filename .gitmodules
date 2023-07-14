@@ -19,7 +19,7 @@
 	url = https://github.com/google/googletest
 [submodule "contrib/capnproto"]
 	path = contrib/capnproto
-	url = https://github.com/capnproto/capnproto
+	url = https://github.com/ClickHouse/capnproto
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/google/double-conversion

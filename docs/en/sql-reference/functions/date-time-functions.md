@@ -139,8 +139,8 @@ makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, t
 
 ## timeZone
 
-Returns the timezone of the server.
-If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
+Returns the timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
 
 **Syntax**
 
@@ -155,6 +155,33 @@ Alias: `timezone`.
 - Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [serverTimeZone](#serverTimeZone)
+
+## serverTimeZone
+
+Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
+
+**Syntax**
+
+``` sql
+serverTimeZone()
+```
+
+Alias: `serverTimezone`.
+
+**Returned value**
+
+-   Timezone.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [timeZone](#timeZone)
 
 ## toTimeZone
 
@@ -691,7 +718,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 second.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
 For an alternative to `age`, see function `date\_diff`.
@@ -707,6 +734,8 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
     - `second` (possible abbreviations: `ss`, `s`)
     - `minute` (possible abbreviations: `mi`, `n`)
     - `hour` (possible abbreviations: `hh`, `h`)
@@ -782,6 +811,8 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
     - `second` (possible abbreviations: `ss`, `s`)
     - `minute` (possible abbreviations: `mi`, `n`)
     - `hour` (possible abbreviations: `hh`, `h`)

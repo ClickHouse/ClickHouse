@@ -176,6 +176,15 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+#define SHUTDOWN(log, desc, ptr, method) do             \
+{                                                       \
+    if (ptr)                                            \
+    {                                                   \
+        LOG_DEBUG(log, "Shutting down " desc);          \
+        (ptr)->method;                                  \
+    }                                                   \
+} while (false)                                         \
+
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -377,7 +386,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
                 asynchronous_remote_fs_reader->wait();
                 asynchronous_remote_fs_reader.reset();
             }
@@ -391,7 +400,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 asynchronous_local_fs_reader->wait();
                 asynchronous_local_fs_reader.reset();
             }
@@ -405,7 +414,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 synchronous_local_fs_reader->wait();
                 synchronous_local_fs_reader.reset();
             }
@@ -419,7 +428,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing threadpool writer");
+                LOG_DEBUG(log, "Destructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
@@ -433,7 +442,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing marks loader");
+                LOG_DEBUG(log, "Destructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
@@ -447,7 +456,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                LOG_DEBUG(log, "Destructing prefetch threadpool");
                 prefetch_threadpool->wait();
                 prefetch_threadpool.reset();
             }
@@ -479,35 +488,29 @@ struct ContextSharedPart : boost::noncopyable
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
-        if (external_dictionaries_loader)
-            external_dictionaries_loader->enablePeriodicUpdates(false);
-        if (external_user_defined_executable_functions_loader)
-            external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
-        if (user_defined_sql_objects_loader)
-            user_defined_sql_objects_loader->stopWatching();
 
+        SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
+        SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
+        SHUTDOWN(log, "another UDFs loader", user_defined_sql_objects_loader, stopWatching());
+
+        LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
 
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        if (backups_worker)
-            backups_worker->shutdown();
+        SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        if (system_logs)
-            system_logs->shutdown();
+        SHUTDOWN(log, "system logs", system_logs, shutdown());
 
+        LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
 
-        if (merge_mutate_executor)
-            merge_mutate_executor->wait();
-        if (fetch_executor)
-            fetch_executor->wait();
-        if (moves_executor)
-            moves_executor->wait();
-        if (common_executor)
-            common_executor->wait();
+        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
+        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
+        SHUTDOWN(log, "moves executor", moves_executor, wait());
+        SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
 
@@ -533,10 +536,12 @@ struct ContextSharedPart : boost::noncopyable
 
         /// DDLWorker should be deleted without lock, cause its internal thread can
         /// take it as well, which will cause deadlock.
+        LOG_TRACE(log, "Shutting down DDLWorker");
         delete_ddl_worker.reset();
 
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
+        LOG_TRACE(log, "Shutting down caches");
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
@@ -875,9 +880,9 @@ catch (...)
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
-static VolumePtr createLocalSingleDiskVolume(const std::string & path)
+static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
-    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
 }
@@ -893,7 +898,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
 
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
 
     for (const auto & disk : volume->getDisks())
     {
@@ -966,7 +971,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
     shared->tmp_path = file_cache->getBasePath();
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
@@ -1319,6 +1324,21 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
+std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    std::shared_ptr<TemporaryTableHolder> holder;
+    {
+        auto lock = getLock();
+        auto iter = external_tables_mapping.find(table_name);
+        if (iter == external_tables_mapping.end())
+            return {};
+        holder = iter->second;
+    }
+    return holder;
+}
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
@@ -1476,7 +1496,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
-        if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
+        if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
             function->prefer_subquery_to_function_formatting = true;
             return table;

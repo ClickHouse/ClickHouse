@@ -184,8 +184,14 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
                 field_type_size,
                 tmp.size());
         else if (tmp.size() != field_type_size)
-            /// Add padding with 0-bytes.
-            tmp = std::string(field_type_size - tmp.size(), '\0') + tmp;
+        {
+            /// Extent value to required size by adding padding.
+            /// Check if value is negative or positive.
+            if (tmp[0] & 128)
+                tmp = std::string(field_type_size - tmp.size(), 0xff) + tmp;
+            else
+                tmp = std::string(field_type_size - tmp.size(), 0) + tmp;
+        }
 
         typename DecimalType::FieldType field;
         ReadBufferFromString buf(tmp);
@@ -929,23 +935,17 @@ private:
                 request.setHost(url.getHost());
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
-                std::istream * response_body{};
-                try
-                {
-                    session->sendRequest(request);
+                session->sendRequest(request);
 
-                    Poco::Net::HTTPResponse response;
-                    response_body = receiveResponse(*session, request, response, false);
-                }
-                catch (const Poco::Exception & e)
-                {
-                    /// We use session data storage as storage for exception text
-                    /// Depend on it we can deduce to reconnect session or reresolve session host
-                    session->attachSessionData(e.message());
-                    throw;
-                }
+                Poco::Net::HTTPResponse response;
+                std::istream * response_body = receiveResponse(*session, request, response, false);
+
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
+
+                /// Response was fully read.
+                markSessionForReuse(session);
+
                 auto schema = json_body->getValue<std::string>("schema");
                 LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
