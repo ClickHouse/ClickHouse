@@ -73,7 +73,7 @@ std::unique_ptr<S3::Client> getClient(
     /*
      * Override proxy configuration for backwards compatibility with old configuration format.
      * */
-    auto proxy_config = S3::ProxyConfigurationProvider::get(config_prefix);
+    auto proxy_config = S3::ProxyConfigurationProvider::get(config_prefix, config);
     if (proxy_config)
     {
         client_configuration.per_request_configuration

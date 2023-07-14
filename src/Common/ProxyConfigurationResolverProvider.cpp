@@ -19,34 +19,37 @@ namespace ErrorCodes
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get()
 {
-    return get("");
-}
-
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(const String & config_prefix)
-{
     if (auto context = Context::getGlobalContextInstance())
     {
-        const auto & configuration = context->getConfigRef();
+        return get("", context->getConfigRef());
+    }
 
-        auto proxy_prefix = config_prefix + ".proxy";
+    return std::make_shared<EnvironmentProxyConfigurationResolver>();
+}
 
-        if (configuration.has(proxy_prefix))
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
+    const String & config_prefix,
+    const Poco::Util::AbstractConfiguration & configuration
+)
+{
+    auto proxy_prefix = config_prefix + ".proxy";
+
+    if (configuration.has(proxy_prefix))
+    {
+        std::vector<String> config_keys;
+        configuration.keys(proxy_prefix, config_keys);
+
+        if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
         {
-            std::vector<String> config_keys;
-            configuration.keys(proxy_prefix, config_keys);
+            if (resolver_configs > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
 
-            if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
-            {
-                if (resolver_configs > 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
+            return getRemoteResolver(proxy_prefix + ".resolver", configuration);
+        }
 
-                return getRemoteResolver(proxy_prefix + ".resolver", configuration);
-            }
-
-            if (auto list_resolver = getListResolver(proxy_prefix, configuration))
-            {
-                return list_resolver;
-            }
+        if (auto list_resolver = getListResolver(proxy_prefix, configuration))
+        {
+            return list_resolver;
         }
     }
 

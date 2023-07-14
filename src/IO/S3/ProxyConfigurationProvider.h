@@ -12,7 +12,7 @@ namespace DB::S3
 class ProxyConfigurationProvider
 {
 public:
-    static std::shared_ptr<ProxyConfiguration> get(const String & config_prefix);
+    static std::shared_ptr<ProxyConfiguration> get(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration);
 
     static std::shared_ptr<ProxyConfiguration> get();
 };

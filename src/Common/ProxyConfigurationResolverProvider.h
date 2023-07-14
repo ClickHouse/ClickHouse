@@ -15,7 +15,11 @@ class ProxyConfigurationResolverProvider
 {
 public:
     static std::shared_ptr<ProxyConfigurationResolver> get();
-    static std::shared_ptr<ProxyConfigurationResolver> get(const String & config_prefix);
+
+    /*
+     * This API exists exclusively for backward compatibility with old S3 storage specific proxy configuration.
+     * */
+    static std::shared_ptr<ProxyConfigurationResolver> get(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration);
 
 private:
     static std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(

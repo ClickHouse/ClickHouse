@@ -8,14 +8,17 @@
 namespace DB::S3
 {
 
-std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(const String & config_prefix)
+std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(
+    const String & config_prefix,
+    const Poco::Util::AbstractConfiguration & configuration
+)
 {
-    return std::make_shared<ProxyConfigurationResolverAdapter>(ProxyConfigurationResolverProvider::get(config_prefix));
+    return std::make_shared<ProxyConfigurationResolverAdapter>(ProxyConfigurationResolverProvider::get(config_prefix, configuration));
 }
 
 std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get()
 {
-    return get("");
+    return std::make_shared<ProxyConfigurationResolverAdapter>(ProxyConfigurationResolverProvider::get());
 }
 
 }
