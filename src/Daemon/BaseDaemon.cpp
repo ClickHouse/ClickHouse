@@ -154,7 +154,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::thread_frame_pointers, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::thread_frame_pointers : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
@@ -173,6 +173,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             /// This coarse method of synchronization is perfectly ok for fatal signals.
             sleepForSeconds(1);
         }
+
+        /// Wait for all logs flush operations
+        sleepForSeconds(3);
         call_default_signal_handler(sig);
     }
 
@@ -986,7 +989,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    String build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    String build_id_hex = SymbolIndex::instance().getBuildIDHex();
     if (build_id_hex.empty())
         build_id = "";
     else
@@ -1123,6 +1126,7 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            updateCurrentThreadIdAfterFork();
             logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
