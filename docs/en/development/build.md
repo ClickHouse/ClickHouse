@@ -11,7 +11,8 @@ Supported platforms:
 
 - x86_64
 - AArch64
-- Power9 (experimental)
+- PowerPC 64 LE (experimental)
+- RISC-V 64 (experimental)
 
 ## Building on Ubuntu
 
