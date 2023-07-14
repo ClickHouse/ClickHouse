@@ -137,25 +137,9 @@ void SystemLogBase<LogElement>::add(const LogElement & element)
 template <typename LogElement>
 void SystemLogBase<LogElement>::flush(bool force)
 {
-    uint64_t this_thread_requested_offset;
-
-    {
-        std::lock_guard lock(mutex);
-
-        if (is_shutdown)
-            return;
-
-        this_thread_requested_offset = queue_front_index + queue.size();
-
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
-
-        flush_event.notify_all();
-    }
-
-    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
+    uint64_t this_thread_requested_offset = notifyFlushImpl(force);
+    if (this_thread_requested_offset == uint64_t(-1))
+        return;
 
     // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
     // too fast for our parallel functional tests, probably because they
@@ -172,6 +156,33 @@ void SystemLogBase<LogElement>::flush(bool force)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while flushing system log '{}'.",
             toString(timeout_seconds), demangle(typeid(*this).name()));
     }
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::notifyFlush(bool force) { notifyFlushImpl(force); }
+
+template <typename LogElement>
+uint64_t SystemLogBase<LogElement>::notifyFlushImpl(bool force)
+{
+    uint64_t this_thread_requested_offset;
+
+    {
+        std::lock_guard lock(mutex);
+        if (is_shutdown)
+            return uint64_t(-1);
+
+        this_thread_requested_offset = queue_front_index + queue.size();
+
+        // Publish our flush request, taking care not to overwrite the requests
+        // made by other threads.
+        is_force_prepare_tables |= force;
+        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
+
+        flush_event.notify_all();
+    }
+
+    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
+    return this_thread_requested_offset;
 }
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
