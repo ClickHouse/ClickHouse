@@ -52,7 +52,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         const auto & args = params.backup_info.args;
 
         String s3_uri, access_key_id, secret_access_key;
-        String storage_class;
+        String storage_class = params.s3_storage_class;
 
         if (!id_arg.empty())
         {
