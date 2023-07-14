@@ -176,6 +176,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 void WriteBufferFromHTTPServerResponse::onMemoryUsage(Int64 usage)
 {
+    std::lock_guard lock(mutex);
     peak_memory_usage = usage;
 }
 
