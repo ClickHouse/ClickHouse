@@ -59,7 +59,7 @@ public:
         if (!getSettings().optimize_move_functions_out_of_any)
             return;
 
-        if (rewritten.count(node.get()))
+        if (rewritten.contains(node.get()))
         {
             node = rewritten.at(node.get());
             return;
