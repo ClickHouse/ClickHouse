@@ -329,7 +329,7 @@ bool CSVFormatReader::readField(
                 SerializationNullable::deserializeTextCSVImpl(column, tmp, format_settings, serialization);
             else
                 serialization->deserializeTextCSV(column, tmp, format_settings);
-            if (column.size() == col_size + 1 && field.size() > 0 && !tm.eof())
+            if (column.size() == col_size + 1 && field.size() > 0 && !tmp.eof())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Text CSV deserialize field bytes logical error.");
         }
         else
@@ -346,7 +346,7 @@ bool CSVFormatReader::readField(
     catch (Exception & e)
     {
         LOG_DEBUG(&Poco::Logger::get("CSVRowInputFormat"), "Failed to deserialize CSV column, exception message:{}", e.what());
-        if (format_settings.csv.allow_set_column_default_value_if_deserialize_failed)
+        if (format_settings.csv.set_default_if_deserialize_failed)
         {
             // Reset the column and buffer position, then skip the field and set column default value.
             if (column.size() == col_size + 1)
