@@ -58,3 +58,11 @@ select hasSubsequenceCaseInsensitiveUTF8('для онлайн обработки
 select hasSubsequenceCaseInsensitiveUTF8('для онлайн обработки аналитических запросов (OLAP)', materialize('зло()'));
 select hasSubsequenceCaseInsensitiveUTF8(materialize('для онлайн обработки аналитических запросов (OLAP)'), materialize('аналитика'));
 select hasSubsequenceCaseInsensitiveUTF8(materialize('для онлайн обработки аналитических запросов (OLAP)'), materialize('аналитика для аналитиков'));
+
+select 'Nullable';
+select hasSubsequence(Null, Null);
+select hasSubsequence(Null, 'a');
+select hasSubsequence(Null::Nullable(String), 'arg'::Nullable(String));
+select hasSubsequence('garbage'::Nullable(String), 'a');
+select hasSubsequence('garbage'::Nullable(String), 'arg'::Nullable(String));
+select hasSubsequence(materialize('garbage'::Nullable(String)), materialize('arg'::Nullable(String)));
