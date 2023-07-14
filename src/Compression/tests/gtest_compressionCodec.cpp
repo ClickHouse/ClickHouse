@@ -172,7 +172,7 @@ private:
             throw std::runtime_error("No more data to read");
         }
 
-        current_value = unalignedLoadLE<T>(data);
+        current_value = unalignedLoadLittleEndian<T>(data);
         data = reinterpret_cast<const char *>(data) + sizeof(T);
     }
 };
@@ -368,7 +368,7 @@ CodecTestSequence makeSeq(Args && ... args)
     char * write_pos = data.data();
     for (const auto & v : vals)
     {
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -390,7 +390,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = static_cast<T>(gen(i));
 
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -1297,9 +1297,9 @@ TEST(LZ4Test, DecompressMalformedInput)
 
     DB::Memory<> memory;
     memory.resize(ICompressionCodec::getHeaderSize() + uncompressed_size + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-    unalignedStoreLE<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
-    unalignedStoreLE<uint32_t>(&memory[1], source_size);
-    unalignedStoreLE<uint32_t>(&memory[5], uncompressed_size);
+    unalignedStoreLittleEndian<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
+    unalignedStoreLittleEndian<uint32_t>(&memory[1], source_size);
+    unalignedStoreLittleEndian<uint32_t>(&memory[5], uncompressed_size);
 
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);

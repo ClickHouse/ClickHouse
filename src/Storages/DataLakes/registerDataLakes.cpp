@@ -24,16 +24,21 @@ namespace DB
             .source_access_type = AccessType::S3,       \
         });
 
-
+#if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory)
 {
     REGISTER_DATA_LAKE_STORAGE(StorageDeltaLakeS3, StorageDeltaLakeName::name)
 }
+#endif
+
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
 void registerStorageIceberg(StorageFactory & factory)
 {
     REGISTER_DATA_LAKE_STORAGE(StorageIcebergS3, StorageIcebergName::name)
 }
+
+#endif
 
 void registerStorageHudi(StorageFactory & factory)
 {

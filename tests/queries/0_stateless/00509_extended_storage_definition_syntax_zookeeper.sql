@@ -1,5 +1,4 @@
--- Tags: zookeeper, no-parallel
--- Tag no-parallel: leftovers
+-- Tags: zookeeper
 
 SET optimize_on_insert = 0;
 

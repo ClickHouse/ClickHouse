@@ -88,10 +88,14 @@ public:
     ///                     (for which this code was written in general).
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
-    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY);
+    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+
+    int sendQueryAsync();
 
     /// Query is resent to a replica, the query itself can be modified.
-    std::atomic<bool> resent_query { false };
+    bool resent_query { false };
+    bool recreate_read_context { false };
 
     struct ReadResult
     {
@@ -145,16 +149,15 @@ public:
     ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
-    /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
-    ReadResult read(std::unique_ptr<ReadContext> & read_context);
+    ReadResult readAsync();
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
+    void finish();
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
-    void cancel(std::unique_ptr<ReadContext> * read_context = nullptr);
+    void cancel();
 
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
@@ -179,6 +182,10 @@ public:
 
     const Block & getHeader() const { return header; }
 
+    IConnections & getConnections() { return *connections; }
+
+    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+
 private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
@@ -189,8 +196,9 @@ private:
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::function<std::unique_ptr<IConnections>(AsyncCallback)> create_connections;
     std::unique_ptr<IConnections> connections;
+    std::unique_ptr<ReadContext> read_context;
 
     const String query;
     String query_id;
@@ -204,10 +212,10 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+
+    std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
-
-    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
 
     /// This is needed only for parallel reading from replicas, because
     /// we create a RemoteQueryExecutor per replica and have to store additional info
@@ -220,39 +228,39 @@ private:
     std::mutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
-    std::atomic<bool> established { false };
+    bool established = false;
 
     /// Query is sent (used before getting first block)
-    std::atomic<bool> sent_query { false };
+    bool sent_query { false };
 
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
       * read all packets before EndOfStream
       */
-    std::atomic<bool> finished { false };
+    bool finished = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    std::atomic<bool> was_cancelled { false };
+    bool was_cancelled = false;
     std::mutex was_cancelled_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
-    std::atomic<bool> got_exception_from_replica { false };
+    bool got_exception_from_replica = false;
 
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
-    std::atomic<bool> got_unknown_packet_from_replica { false };
+    bool got_unknown_packet_from_replica = false;
 
     /** Got duplicated uuids from replica
       */
-    std::atomic<bool> got_duplicated_part_uuids{ false };
+    bool got_duplicated_part_uuids = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;
@@ -279,10 +287,11 @@ private:
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
+    ReadResult restartQueryWithoutDuplicatedUUIDs();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
+    void cancelUnlocked();
+    void tryCancel(const char * reason);
 
     /// Returns true if query was sent
     bool isQueryPending() const;

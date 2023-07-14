@@ -84,6 +84,7 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
     group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
     group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
     group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
+    group->memory_tracker.setParent(&background_memory_tracker);
     if (settings.memory_tracker_fault_probability > 0.0)
         group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 
@@ -157,6 +158,17 @@ void CurrentThread::attachQueryForLog(const String & query_)
     current_thread->attachQueryForLog(query_);
 }
 
+void ThreadStatus::applyGlobalSettings()
+{
+    auto global_context_ptr = global_context.lock();
+    if (!global_context_ptr)
+        return;
+
+    const Settings & settings = global_context_ptr->getSettingsRef();
+
+    DB::Exception::enable_job_stack_trace = settings.enable_job_stack_trace;
+}
+
 void ThreadStatus::applyQuerySettings()
 {
     auto query_context_ptr = query_context.lock();
@@ -164,6 +176,8 @@ void ThreadStatus::applyQuerySettings()
         return;
 
     const Settings & settings = query_context_ptr->getSettingsRef();
+
+    DB::Exception::enable_job_stack_trace = settings.enable_job_stack_trace;
 
     query_id_from_query_context = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
@@ -203,6 +217,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     local_data = thread_group->getSharedData();
 
+    applyGlobalSettings();
     applyQuerySettings();
     initPerformanceCounters();
 }
@@ -223,7 +238,8 @@ void ThreadStatus::detachFromGroup()
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     memory_tracker.reset();
-    memory_tracker.setParent(thread_group->memory_tracker.getParent());
+    /// Extract MemoryTracker out from query and user context
+    memory_tracker.setParent(&total_memory_tracker);
 
     thread_group.reset();
 

@@ -18,12 +18,12 @@ deltaSumTimestamp(value, timestamp)
 
 **Arguments**
 
--   `value` — Input values, must be some [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
--   `timestamp` — The parameter for order values, must be some [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
+- `value` — Input values, must be some [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
+- `timestamp` — The parameter for order values, must be some [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
 
 **Returned value**
 
--   Accumulated differences between consecutive values, ordered by the `timestamp` parameter.
+- Accumulated differences between consecutive values, ordered by the `timestamp` parameter.
 
 Type: [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) or [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
 

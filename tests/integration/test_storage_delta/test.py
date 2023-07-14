@@ -53,6 +53,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
+            user_configs=["configs/users.d/users.xml"],
             with_minio=True,
         )
 
@@ -251,8 +252,10 @@ def test_checkpoint(started_cluster):
     assert (
         instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1").strip()
         == instance.query(
+            "SELECT * FROM ("
             "SELECT number, toString(number + 1) FROM numbers(5) "
-            "UNION ALL SELECT number, toString(number + 1) FROM numbers(10, 15) ORDER BY 1"
+            "UNION ALL SELECT number, toString(number + 1) FROM numbers(10, 15) "
+            ") ORDER BY 1"
         ).strip()
     )
 

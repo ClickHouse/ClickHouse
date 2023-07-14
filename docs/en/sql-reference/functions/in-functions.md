@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/in-functions
-sidebar_position: 60
+sidebar_position: 90
 sidebar_label: IN Operator
 ---
 

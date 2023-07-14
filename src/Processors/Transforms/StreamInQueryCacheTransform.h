@@ -11,11 +11,8 @@ class StreamInQueryCacheTransform : public ISimpleTransform
 public:
     StreamInQueryCacheTransform(
         const Block & header_,
-        QueryCachePtr cache,
-        const QueryCache::Key & cache_key,
-        std::chrono::milliseconds min_query_duration,
-        bool squash_partial_results,
-        size_t max_block_size);
+        std::shared_ptr<QueryCache::Writer> query_cache_writer,
+        QueryCache::Writer::ChunkType chunk_type);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -25,7 +22,8 @@ public:
     String getName() const override { return "StreamInQueryCacheTransform"; }
 
 private:
-    QueryCache::Writer cache_writer;
+    const std::shared_ptr<QueryCache::Writer> query_cache_writer;
+    const QueryCache::Writer::ChunkType chunk_type;
 };
 
 }

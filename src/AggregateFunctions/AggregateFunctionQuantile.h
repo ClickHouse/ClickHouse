@@ -30,7 +30,7 @@ namespace ErrorCodes
 }
 
 template <typename> class QuantileTiming;
-template <typename> class QuantileApprox;
+template <typename> class QuantileGK;
 
 
 /** Generic aggregate function for calculation of quantiles.
@@ -62,7 +62,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static constexpr bool is_quantile_approx = std::is_same_v<Data, QuantileApprox<Value>>;
+    static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -79,14 +79,14 @@ public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels(is_quantile_approx && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
+        , levels(is_quantile_gk && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
-        if constexpr (is_quantile_approx)
+        if constexpr (is_quantile_gk)
         {
             if (params.empty())
                 throw Exception(
@@ -115,7 +115,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if constexpr (is_quantile_approx)
+        if constexpr (is_quantile_gk)
             new (place) Data(accuracy);
         else
             new (place) Data;
@@ -163,15 +163,11 @@ public:
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
             /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
-#ifdef OS_DARWIN
 #   pragma clang diagnostic push
 #   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-#endif
             if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
                 return;
-#ifdef OS_DARWIN
 #   pragma clang diagnostic pop
-#endif
         }
 
         if constexpr (has_second_arg)
@@ -295,7 +291,7 @@ struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16";
 struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
 struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
-struct NameQuantileApprox { static constexpr auto name = "quantileApprox"; };
-struct NameQuantilesApprox { static constexpr auto name = "quantilesApprox"; };
+struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
+struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
 }

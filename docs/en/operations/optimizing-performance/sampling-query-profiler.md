@@ -25,11 +25,11 @@ SETTINGS allow_introspection_functions = 1
 
 In self-managed deployments, to use query profiler:
 
--   Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
+- Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
 
     This section configures the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
 
--   Setup the [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) or [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
+- Setup the [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) or [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
 
     These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
 
@@ -37,13 +37,13 @@ The default sampling frequency is one sample per second and both CPU and real ti
 
 To analyze the `trace_log` system table:
 
--   Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
+- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
--   Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting.
+- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting.
 
     For security reasons, introspection functions are disabled by default.
 
--   Use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
+- Use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
 If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui.md#clickhouse-flamegraph-clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
@@ -51,14 +51,14 @@ If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/thi
 
 In this example we:
 
--   Filtering `trace_log` data by a query identifier and the current date.
+- Filtering `trace_log` data by a query identifier and the current date.
 
--   Aggregating by stack trace.
+- Aggregating by stack trace.
 
--   Using introspection functions, we will get a report of:
+- Using introspection functions, we will get a report of:
 
-    -   Names of symbols and corresponding source code functions.
-    -   Source code locations of these functions.
+    - Names of symbols and corresponding source code functions.
+    - Source code locations of these functions.
 
 <!-- -->
 

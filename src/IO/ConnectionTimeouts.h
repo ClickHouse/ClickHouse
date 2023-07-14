@@ -23,6 +23,9 @@ struct ConnectionTimeouts
     Poco::Timespan hedged_connection_timeout;
     Poco::Timespan receive_data_timeout;
 
+    /// Timeout for receiving HELLO packet
+    Poco::Timespan handshake_timeout;
+
     /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus)
     Poco::Timespan sync_request_timeout = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0);
 
@@ -35,13 +38,15 @@ struct ConnectionTimeouts
     ConnectionTimeouts(Poco::Timespan connection_timeout_,
                        Poco::Timespan send_timeout_,
                        Poco::Timespan receive_timeout_,
-                       Poco::Timespan tcp_keep_alive_timeout_);
+                       Poco::Timespan tcp_keep_alive_timeout_,
+                       Poco::Timespan handshake_timeout_);
 
     ConnectionTimeouts(Poco::Timespan connection_timeout_,
                        Poco::Timespan send_timeout_,
                        Poco::Timespan receive_timeout_,
                        Poco::Timespan tcp_keep_alive_timeout_,
-                       Poco::Timespan http_keep_alive_timeout_);
+                       Poco::Timespan http_keep_alive_timeout_,
+                       Poco::Timespan handshake_timeout_);
 
     ConnectionTimeouts(Poco::Timespan connection_timeout_,
                        Poco::Timespan send_timeout_,
@@ -49,8 +54,9 @@ struct ConnectionTimeouts
                        Poco::Timespan tcp_keep_alive_timeout_,
                        Poco::Timespan http_keep_alive_timeout_,
                        Poco::Timespan secure_connection_timeout_,
-                       Poco::Timespan receive_hello_timeout_,
-                       Poco::Timespan receive_data_timeout_);
+                       Poco::Timespan hedged_connection_timeout_,
+                       Poco::Timespan receive_data_timeout_,
+                       Poco::Timespan handshake_timeout_);
 
     static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit);
     ConnectionTimeouts getSaturated(Poco::Timespan limit) const;

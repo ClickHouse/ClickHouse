@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/materialized-postgresql
-sidebar_position: 12
+sidebar_position: 130
 sidebar_label: MaterializedPostgreSQL
 title: MaterializedPostgreSQL
 ---
@@ -19,11 +19,11 @@ PRIMARY KEY key;
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `table` — Remote table name.
--   `user` — PostgreSQL user.
--   `password` — User password.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
 
 ## Requirements {#requirements}
 
@@ -37,9 +37,9 @@ PRIMARY KEY key;
 
 ## Virtual columns {#virtual-columns}
 
--   `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
--   `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
+- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 

@@ -19,7 +19,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 class ArrowFieldIndexUtil
@@ -75,7 +75,7 @@ public:
             {
                 if (!allow_missing_columns)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
+                        ErrorCodes::THERE_IS_NO_COLUMN, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
                 else
                     continue;
             }

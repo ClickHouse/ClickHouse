@@ -345,6 +345,11 @@ public:
       */
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
+    {
+        serializeTextJSON(column, row_num, ostr, settings);
+    }
+
 
     /** Text serialization for putting into the XML format.
       */

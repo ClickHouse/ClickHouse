@@ -31,7 +31,8 @@ void DisksApp::printHelpMessage(ProgramOptionsDescription & command_option_descr
     help_description->add(command_option_description);
 
     std::cout << "ClickHouse disk management tool\n";
-    std::cout << "usage clickhouse disks [OPTION]\n" << "clickhouse-disks\n\n";
+    std::cout << "Usage: ./clickhouse-disks [OPTION]\n";
+    std::cout << "clickhouse-disks\n\n";
 
     for (const auto & current_command : supported_commands)
         std::cout << command_descriptions[current_command]->command_name

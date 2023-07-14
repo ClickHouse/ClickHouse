@@ -11,10 +11,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -44,11 +44,10 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <re2/re2.h>
+
 #include <chrono>
 #include <sstream>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -292,14 +291,15 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        IReadableWriteBuffer * write_buf_concrete;
-        ReadBufferPtr reread_buf;
+        if (!write_buf)
+            continue;
 
-        if (write_buf
-            && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
-            && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
+        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
+        if (write_buf_concrete)
         {
-            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
+            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
+            if (reread_buf)
+                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
@@ -623,12 +623,11 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(server.context()->getGlobalTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
+            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
 
-            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
+            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return WriteBufferFromTemporaryFile::create(tmp_path_template);
+                return tmp_data->createRawStream();
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
@@ -804,11 +803,11 @@ void HTTPHandler::processQuery(
     if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out->addHeaderCORS(true);
 
-    auto append_callback = [context = context] (ProgressCallback callback)
+    auto append_callback = [my_context = context] (ProgressCallback callback)
     {
-        auto prev = context->getProgressCallback();
+        auto prev = my_context->getProgressCallback();
 
-        context->setProgressCallback([prev, callback] (const Progress & progress)
+        my_context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -904,7 +903,12 @@ try
     {
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
+        {
+            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
+            /// exception is written into used_output.out_maybe_compressed later
+            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
             used_output.out_maybe_delayed_and_compressed.reset();
+        }
 
         /// Send the error message into already used (and possibly compressed) stream.
         /// Note that the error message will possibly be sent after some data.
@@ -1160,8 +1164,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        re2::StringPiece matches[num_captures];
-        re2::StringPiece input(begin, end - begin);
+        std::string_view matches[num_captures];
+        std::string_view input(begin, end - begin);
         if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())

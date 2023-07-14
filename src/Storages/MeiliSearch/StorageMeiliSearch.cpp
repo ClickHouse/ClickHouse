@@ -18,6 +18,7 @@
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
 
 namespace DB
 {
@@ -37,10 +38,25 @@ StorageMeiliSearch::StorageMeiliSearch(
     : IStorage(table_id), config{config_}, log(&Poco::Logger::get("StorageMeiliSearch (" + table_id.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = getTableStructureFromData(config);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+}
+
+ColumnsDescription StorageMeiliSearch::getTableStructureFromData(const MeiliSearchConfiguration & config_)
+{
+    MeiliSearchColumnDescriptionFetcher fetcher(config_);
+    fetcher.addParam(doubleQuoteString("limit"), "1");
+    return fetcher.fetchColumnsDescription();
 }
 
 String convertASTtoStr(ASTPtr ptr)
@@ -121,7 +137,7 @@ Pipe StorageMeiliSearch::read(
     return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, route, kv_pairs_params));
 }
 
-SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     LOG_TRACE(log, "Trying update index: {}", config.index);
     return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);
@@ -175,6 +191,7 @@ void registerStorageMeiliSearch(StorageFactory & factory)
             return std::make_shared<StorageMeiliSearch>(args.table_id, config, args.columns, args.constraints, args.comment);
         },
         {
+            .supports_schema_inference = true,
             .source_access_type = AccessType::MEILISEARCH,
         });
 }

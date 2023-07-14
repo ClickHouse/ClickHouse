@@ -1,10 +1,10 @@
 ---
 slug: /en/operations/query-cache
 sidebar_position: 65
-sidebar_label: Query Cache [experimental]
+sidebar_label: Query Cache
 ---
 
-# Query Cache [experimental]
+# Query Cache
 
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
@@ -29,21 +29,10 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-:::note
-The query cache is an experimental feature that should not be used in production. There are known cases (e.g. in distributed query
-processing) where wrong results are returned.
-:::
-
 ## Configuration Settings and Usage
 
-As long as the result cache is experimental it must be activated using the following configuration setting:
-
-```sql
-SET allow_experimental_query_cache = true;
-```
-
-Afterwards, setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries
-of the current session should utilize the query cache. For example, the first execution of query
+Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
+current session should utilize the query cache. For example, the first execution of query
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -87,6 +76,33 @@ If the query was aborted due to an exception or user cancellation, no entry is w
 
 The size of the query cache in bytes, the maximum number of cache entries and the maximum size of individual cache entries (in bytes and in
 records) can be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
+
+It is also possible to limit the cache usage of individual users using [settings profiles](settings/settings-profiles.md) and [settings
+constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
+allocate in the query cache and the the maximum number of stored query results. For that, first provide configurations
+[query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
+[query_cache_max_entries](settings/settings.md#query-cache-size-max-items) in a user profile in `users.xml`, then make both settings
+readonly:
+
+``` xml
+<profiles>
+    <default>
+        <!-- The maximum cache size in bytes for user/profile 'default' -->
+        <query_cache_max_size_in_bytes>10000</query_cache_max_size_in_bytes>
+        <!-- The maximum number of SELECT query results stored in the cache for user/profile 'default' -->
+        <query_cache_max_entries>100</query_cache_max_entries>
+        <!-- Make both settings read-only so the user cannot change them -->
+        <constraints>
+            <query_cache_max_size_in_bytes>
+                <readonly/>
+            </query_cache_max_size_in_bytes>
+            <query_cache_max_entries>
+                <readonly/>
+            <query_cache_max_entries>
+        </constraints>
+    </default>
+</profiles>
+```
 
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](settings/settings.md#query-cache-min-query-duration). For example, the result of query

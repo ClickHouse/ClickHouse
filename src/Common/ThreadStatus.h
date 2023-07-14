@@ -37,7 +37,6 @@ class QueryThreadLog;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
-class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
@@ -225,8 +224,10 @@ private:
 
     Poco::Logger * log = nullptr;
 
+    bool check_current_thread_on_destruction;
+
 public:
-    ThreadStatus();
+    explicit ThreadStatus(bool check_current_thread_on_destruction_ = true);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
@@ -291,6 +292,7 @@ public:
     void flushUntrackedMemory();
 
 private:
+    void applyGlobalSettings();
     void applyQuerySettings();
 
     void initPerformanceCounters();

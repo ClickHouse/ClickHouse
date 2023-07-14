@@ -189,6 +189,11 @@ namespace
 
     using ReplaceFunctionNowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowData>, true>;
 
+    inline UInt32 now()
+    {
+        return static_cast<UInt32>(Poco::Timestamp().epochMicroseconds() / 1000000);
+    }
+
     class ToIdentifierMatcher
     {
     public:
@@ -1020,7 +1025,7 @@ void StorageWindowView::threadFuncFireProc()
 
     std::lock_guard lock(fire_signal_mutex);
     /// TODO: consider using time_t instead (for every timestamp in this class)
-    UInt32 timestamp_now = static_cast<UInt32>(std::time(nullptr));
+    UInt32 timestamp_now = now();
 
     while (next_fire_signal <= timestamp_now)
     {
@@ -1195,7 +1200,7 @@ StorageWindowView::StorageWindowView(
     target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
-        next_fire_signal = getWindowUpperBound(static_cast<UInt32>(std::time(nullptr)));
+        next_fire_signal = getWindowUpperBound(now());
 
     std::exchange(has_inner_table, true);
     if (!attach_)
@@ -1335,7 +1340,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         time_zone = &DateLUT::instance(window_view_timezone);
     }
     else
-        time_zone = &DateLUT::instance();
+        time_zone = &DateLUT::serverTimezoneInstance();
 
     return result;
 }
@@ -1464,7 +1469,7 @@ void StorageWindowView::writeIntoWindowView(
                 column.type = std::make_shared<DataTypeDateTime>();
             else
                 column.type = std::make_shared<DataTypeDateTime>(timezone);
-            column.column = column.type->createColumnConst(0, Field(std::time(nullptr)));
+            column.column = column.type->createColumnConst(0, Field(now()));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
@@ -1544,7 +1549,7 @@ void StorageWindowView::writeIntoWindowView(
     auto lock = inner_table->lockForShare(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
+    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
     output->addTableLock(lock);
 
     if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))

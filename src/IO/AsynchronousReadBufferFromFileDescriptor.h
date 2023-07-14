@@ -4,6 +4,7 @@
 #include <IO/AsynchronousReader.h>
 #include <Interpreters/Context.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/Priority.h>
 
 #include <optional>
 #include <unistd.h>
@@ -18,7 +19,7 @@ class AsynchronousReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
     IAsynchronousReader & reader;
-    int64_t base_priority;
+    Priority base_priority;
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
@@ -39,7 +40,7 @@ protected:
 public:
     AsynchronousReadBufferFromFileDescriptor(
         IAsynchronousReader & reader_,
-        Int32 priority_,
+        Priority priority_,
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -49,7 +50,7 @@ public:
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
-    void prefetch(int64_t priority) override;
+    void prefetch(Priority priority) override;
 
     int getFD() const
     {
@@ -70,7 +71,7 @@ public:
     size_t getFileSize() override;
 
 private:
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 };
 
 }

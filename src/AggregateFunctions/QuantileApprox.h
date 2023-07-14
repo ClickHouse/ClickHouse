@@ -395,16 +395,16 @@ private:
 };
 
 template <typename Value>
-class QuantileApprox
+class QuantileGK
 {
 private:
     using Data = ApproxSampler<Value>;
     mutable Data data;
 
 public:
-    QuantileApprox() = default;
+    QuantileGK() = default;
 
-    explicit QuantileApprox(size_t accuracy) : data(1.0 / static_cast<double>(accuracy)) { }
+    explicit QuantileGK(size_t accuracy) : data(1.0 / static_cast<double>(accuracy)) { }
 
     void add(const Value & x)
     {
@@ -417,7 +417,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for GKSampler");
     }
 
-    void merge(const QuantileApprox & rhs)
+    void merge(const QuantileGK & rhs)
     {
         if (!data.isCompressed())
             data.compress();

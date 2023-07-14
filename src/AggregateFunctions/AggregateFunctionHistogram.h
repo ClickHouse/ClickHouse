@@ -2,7 +2,6 @@
 
 #include <base/sort.h>
 
-#include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
 #include <Columns/ColumnVector.h>
@@ -29,6 +28,7 @@
 namespace DB
 {
 struct Settings;
+class Arena;
 
 namespace ErrorCodes
 {

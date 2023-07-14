@@ -50,7 +50,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
                                    INNER JOIN system.filesystem_cache AS caches
                                    ON data_paths.cache_path = caches.cache_path"
 
-    $CLICKHOUSE_CLIENT --query "DROP TABLE test_02286 NO DELAY"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE test_02286 SYNC"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SELECT cache_path FROM system.filesystem_cache"

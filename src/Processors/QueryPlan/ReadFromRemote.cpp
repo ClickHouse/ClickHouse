@@ -137,6 +137,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+    const bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
@@ -144,31 +146,31 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     }
 
     auto lazily_create_stream = [
-            shard = shard, shard_count = shard_count, query = shard.query, header = shard.header,
-            context = context, throttler = throttler,
-            main_table = main_table, table_func_ptr = table_func_ptr,
-            scalars = scalars, external_tables = external_tables,
-            stage = stage, local_delay = shard.local_delay,
-            add_agg_info, add_totals, add_extremes, async_read]() mutable
+            my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
+            my_context = context, my_throttler = throttler,
+            my_main_table = main_table, my_table_func_ptr = table_func_ptr,
+            my_scalars = scalars, my_external_tables = external_tables,
+            my_stage = stage, local_delay = shard.local_delay,
+            add_agg_info, add_totals, add_extremes, async_read, async_query_sending]() mutable
         -> QueryPipelineBuilder
     {
-        auto current_settings = context->getSettingsRef();
+        auto current_settings = my_context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
             current_settings).getSaturated(
                 current_settings.max_execution_time);
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
         {
-            if (table_func_ptr)
-                try_results = shard.shard_info.pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
+            if (my_table_func_ptr)
+                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
             else
-                try_results = shard.shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, main_table.getQualifiedName());
+                try_results = my_shard.shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
         {
             if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
                 LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
-                    "Connections to remote replicas of local shard {} failed, will use stale local replica", shard.shard_info.shard_num);
+                    "Connections to remote replicas of local shard {} failed, will use stale local replica", my_shard.shard_info.shard_num);
             else
                 throw;
         }
@@ -183,11 +185,11 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(
-                query, header, context, stage, shard.shard_info.shard_num, shard_count, 0, 0, /*coordinator=*/nullptr);
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, 0, 0, /*coordinator=*/nullptr);
 
             return std::move(*plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context)));
+                QueryPlanOptimizationSettings::fromContext(my_context),
+                BuildQueryPipelineSettings::fromContext(my_context)));
         }
         else
         {
@@ -198,12 +200,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
             String query_string = formattedAST(query);
 
-            scalars["_shard_num"]
-                = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+            my_scalars["_shard_num"]
+                = Block{{DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
+                std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, my_stage);
 
-            auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
+            auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
             QueryPipelineBuilder builder;
             builder.init(std::move(pipe));
             return builder;
@@ -220,6 +222,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
@@ -242,7 +245,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     if (!table_func_ptr)
         remote_query_executor->setMainTable(main_table);
 
-    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
+    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
@@ -328,7 +331,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = cluster->getShardsInfo().size();
     }
 
-    /// Find local shard
+    /// Find local shard. It might happen that there is no local shard, but that's fine
     for (const auto & shard: cluster->getShardsInfo())
     {
         if (shard.isLocal())
@@ -342,9 +345,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
         }
     }
-
-    if (pipes.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No local shard");
 
     auto current_shard = cluster->getShardsInfo().begin();
     while (pipes.size() != all_replicas_count)
@@ -381,6 +381,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
 
     if (stage == QueryProcessingStage::Complete)
     {
@@ -399,7 +400,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
 
     remote_query_executor->setLogger(log);
 
-    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read));
+    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 

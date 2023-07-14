@@ -235,7 +235,7 @@ Most common uses of live view tables include:
 - Watching metrics from system tables using periodic refresh.
 
 **See Also**
--   [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
+- [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
 
 ## Window View [Experimental]
 

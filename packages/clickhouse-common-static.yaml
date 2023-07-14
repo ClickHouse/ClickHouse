@@ -41,8 +41,6 @@ contents:
   dst: /usr/bin/clickhouse-library-bridge
 - src: root/usr/bin/clickhouse-odbc-bridge
   dst: /usr/bin/clickhouse-odbc-bridge
-- src: root/usr/bin/clickhouse-static-files-disk-uploader
-  dst: /usr/bin/clickhouse-static-files-disk-uploader
 - src: root/usr/share/bash-completion/completions
   dst: /usr/share/bash-completion/completions
 # docs

@@ -19,6 +19,7 @@ namespace DB
 {
 
 class RabbitMQHandler;
+class RabbitMQConnection;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
 
@@ -27,54 +28,43 @@ class RabbitMQConsumer
 
 public:
     RabbitMQConsumer(
-            RabbitMQHandler & event_handler_,
-            std::vector<String> & queues_,
-            size_t channel_id_base_,
-            const String & channel_base_,
-            Poco::Logger * log_,
-            uint32_t queue_size_);
+        RabbitMQHandler & event_handler_,
+        std::vector<String> & queues_,
+        size_t channel_id_base_,
+        const String & channel_base_,
+        Poco::Logger * log_,
+        uint32_t queue_size_);
 
-    struct AckTracker
+    struct CommitInfo
     {
-        UInt64 delivery_tag;
+        UInt64 delivery_tag = 0;
         String channel_id;
-
-        AckTracker() = default;
-        AckTracker(UInt64 tag, String id) : delivery_tag(tag), channel_id(id) {}
     };
 
     struct MessageData
     {
         String message;
         String message_id;
-        uint64_t timestamp = 0;
+        UInt64 timestamp = 0;
         bool redelivered = false;
-        AckTracker track{};
+        UInt64 delivery_tag = 0;
+        String channel_id;
     };
+    const MessageData & currentMessage() { return current; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
     ReadBufferPtr consume();
 
-    ChannelPtr & getChannel() { return consumer_channel; }
-    void setupChannel();
     bool needChannelUpdate();
-    void shutdown();
+    void updateChannel(RabbitMQConnection & connection);
 
-    void updateQueues(std::vector<String> & queues_) { queues = queues_; }
-    size_t queuesCount() { return queues.size(); }
-
+    void stop();
     bool isConsumerStopped() const { return stopped.load(); }
-    bool ackMessages();
-    void updateAckTracker(AckTracker record = AckTracker());
+
+    bool ackMessages(const CommitInfo & commit_info);
 
     bool hasPendingMessages() { return !received.empty(); }
-
-    auto getChannelID() const { return current.track.channel_id; }
-    auto getDeliveryTag() const { return current.track.delivery_tag; }
-    auto getRedelivered() const { return current.redelivered; }
-    auto getMessageID() const { return current.message_id; }
-    auto getTimestamp() const { return current.timestamp; }
 
     void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt)
     {
@@ -88,24 +78,36 @@ public:
 
 private:
     void subscribe();
-    void iterateEventLoop();
+    bool isChannelUsable();
+    void updateCommitInfo(CommitInfo record);
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
-    std::vector<String> queues;
+
+    const std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;
+
     Poco::Logger * log;
     std::atomic<bool> stopped;
 
     String channel_id;
-    std::atomic<bool> channel_error = true, wait_subscription = false;
+    UInt64 channel_id_counter = 0;
+
+    enum class State
+    {
+        NONE,
+        INITIALIZING,
+        OK,
+        ERROR,
+    };
+    std::atomic<State> state = State::NONE;
+    size_t subscriptions_num = 0;
+
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
-    size_t subscribed = 0;
 
-    AckTracker last_inserted_record_info;
-    UInt64 prev_tag = 0, channel_id_counter = 0;
+    UInt64 last_commited_delivery_tag;
 
     std::condition_variable cv;
     std::mutex mutex;

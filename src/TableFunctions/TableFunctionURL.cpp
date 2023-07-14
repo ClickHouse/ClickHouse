@@ -12,21 +12,12 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 
-
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromVector.h>
 namespace DB
 {
-static const String bad_arguments_error_message = "Table function URL can have the following arguments: "
-    "url, name of used format (taken from file extension by default), "
-    "optional table structure, optional compression method, "
-    "optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
@@ -48,15 +39,13 @@ std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNo
 
 void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 {
-    const auto & ast_function = assert_cast<const ASTFunction *>(ast.get());
+    /// Clone ast function, because we can modify it's arguments like removing headers.
+    ITableFunctionFileLike::parseArguments(ast->clone(), context);
+}
 
-    const auto & args = ast_function->children;
-    if (args.empty())
-        throw Exception::createDeprecated(bad_arguments_error_message, ErrorCodes::BAD_ARGUMENTS);
-
-    auto & url_function_args = assert_cast<ASTExpressionList *>(args[0].get())->children;
-
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(url_function_args, context))
+void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
+{
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 
@@ -68,16 +57,46 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
         if (format == "auto")
             format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 
-        StorageURL::collectHeaders(url_function_args, configuration.headers, context);
+        StorageURL::collectHeaders(args, configuration.headers, context);
     }
     else
     {
-        auto * headers_it = StorageURL::collectHeaders(url_function_args, configuration.headers, context);
+        auto * headers_it = StorageURL::collectHeaders(args, configuration.headers, context);
         /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        if (headers_it != url_function_args.end())
-            url_function_args.erase(headers_it);
+        if (headers_it != args.end())
+            args.erase(headers_it);
 
-        ITableFunctionFileLike::parseArguments(ast, context);
+        ITableFunctionFileLike::parseArgumentsImpl(args, context);
+    }
+}
+
+void TableFunctionURL::addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context)
+{
+    if (tryGetNamedCollectionWithOverrides(args, context))
+    {
+        /// In case of named collection, just add key-value pair "structure='...'"
+        /// at the end of arguments to override existed structure.
+        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(desired_structure)};
+        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
+        args.push_back(equal_func);
+    }
+    else
+    {
+        /// If arguments contain headers, just remove it and add to the end of arguments later
+        /// (header argument can be at any position).
+        HTTPHeaderEntries tmp_headers;
+        auto * headers_it = StorageURL::collectHeaders(args, tmp_headers, context);
+        ASTPtr headers_ast;
+        if (headers_it != args.end())
+        {
+            headers_ast = *headers_it;
+            args.erase(headers_it);
+        }
+
+        ITableFunctionFileLike::addColumnsStructureToArguments(args, desired_structure, context);
+
+        if (headers_ast)
+            args.push_back(headers_ast);
     }
 }
 

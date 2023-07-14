@@ -1074,7 +1074,7 @@ ClickHouse服务器日志文件中相应的跟踪日志确认了ClickHouse正在
 <a href="https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#projections" target="_blank">Projections</a>目前是一个实验性的功能，因此我们需要告诉ClickHouse：
 
 ```sql
-SET allow_experimental_projection_optimization = 1;
+SET optimize_use_projections = 1;
 ```
 
 

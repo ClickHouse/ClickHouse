@@ -59,8 +59,6 @@ contents:
   dst: /usr/bin/clickhouse-report
 - src: root/usr/bin/clickhouse-server
   dst: /usr/bin/clickhouse-server
-- src: root/usr/bin/clickhouse-su
-  dst: /usr/bin/clickhouse-su
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-server/AUTHORS
