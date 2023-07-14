@@ -28,11 +28,9 @@ public:
         if (!function_node)
             return;
 
-        auto is_any = [](const String & name) { return name == "any" || name == "anylast"; };
-
         /// check function is any
-        auto lower_function_name = Poco::toLower(function_node->getFunctionName());
-        if (!is_any(lower_function_name))
+        const auto & function_name = function_node->getFunctionName();
+        if (!(function_name == "any" || function_name == "anyLast"))
             return;
 
         auto & arguments = function_node->getArguments().getNodes();
@@ -58,9 +56,9 @@ public:
                 break;
 
             AggregateFunctionProperties properties;
-            auto aggregate_function = AggregateFunctionFactory::instance().get(lower_function_name, {inside_argument->getResultType()}, {}, properties);
+            auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, {inside_argument->getResultType()}, {}, properties);
 
-            auto any_function = std::make_shared<FunctionNode>(lower_function_name);
+            auto any_function = std::make_shared<FunctionNode>(function_name);
             any_function->resolveAsAggregateFunction(std::move(aggregate_function));
             any_function->setAlias(inside_argument->getAlias());
 

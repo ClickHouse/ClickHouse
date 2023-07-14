@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Analyzer/IQueryTreePass.h>
 
 namespace DB
