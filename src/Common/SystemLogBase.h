@@ -78,10 +78,8 @@ public:
 
     void add(const LogElement & element);
     size_t size() const { return queue.size(); }
-    void push_back(const LogElement & element)
-    {
-        queue.push_back(element);
-    }
+    //void push_back(const LogElement & element) { queue.push_back(element); }
+    void shutdown() { is_shutdown = true; }
 
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
@@ -101,7 +99,9 @@ public:
     // Logged overflow message at this queue front index
     uint64_t logged_queue_full_at_index = -1;
 
+private:
     Poco::Logger * log;
+    bool is_shutdown = false;
 };
 
 template <typename LogElement>
