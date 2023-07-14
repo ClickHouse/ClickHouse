@@ -177,7 +177,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
 
 BackupWriterS3::BackupWriterS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_,  const String & storage_class_name, const ContextPtr & context_)
+    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const String & storage_class_name, const ContextPtr & context_)
     : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
