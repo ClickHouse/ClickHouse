@@ -20,7 +20,7 @@ class AnyFunctionVisitor : public InDepthQueryTreeVisitorWithContext<AnyFunction
 private:
     bool canRewrite(const FunctionNode * function_node)
     {
-        for (auto & argument : function_node->getArguments().getNodes())
+        for (const auto & argument : function_node->getArguments().getNodes())
         {
             /// arrayJoin() is special and should not be optimized (think about
             /// it as a an aggregate function), otherwise wrong result will be
