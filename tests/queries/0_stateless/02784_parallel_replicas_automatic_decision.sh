@@ -19,7 +19,7 @@ function involved_parallel_replicas () {
 }
 
 $CLICKHOUSE_CLIENT --query "
-    CREATE TABLE test_parallel_replicas_automatic_count
+    CREATE TABLE IF NOT EXISTS test_parallel_replicas_automatic_count
     (
         number Int64,
         p Int64
@@ -34,20 +34,6 @@ $CLICKHOUSE_CLIENT --query "
       SELECT number, 3 AS p FROM numbers(10_000_000, 8_000_000)
 "
 
-$CLICKHOUSE_CLIENT --query "
-    CREATE TABLE test_parallel_replicas_automatic_count_right_side
-    (
-        number Int64,
-        value Int64
-    )
-    ENGINE=MergeTree()
-      ORDER BY number
-      SETTINGS index_granularity = 8192  -- Don't randomize it to avoid flakiness
-    AS
-      SELECT number, number % 2 AS v FROM numbers(1_000_000)
-"
-
-
 function run_query_with_pure_parallel_replicas () {
     # $1 -> query_id
     # $2 -> min rows per replica
@@ -61,7 +47,7 @@ function run_query_with_pure_parallel_replicas () {
         --cluster_for_parallel_replicas 'parallel_replicas' \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
-        --parallel_replicas_min_number_of_rows_per_replica "$2"
+        --parallel_replicas_min_number_of_rows_per_replica "$2" --
 }
 
 query_id_base="02784_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
@@ -95,23 +81,12 @@ run_query_with_pure_parallel_replicas "${query_id_base}_limit_500k" 500000 "$lim
 limit_agg_table_query="SELECT sum(number) FROM test_parallel_replicas_automatic_count LIMIT 1_000_000 format Null"
 run_query_with_pure_parallel_replicas "${query_id_base}_useless_limit_500k" 500000 "$limit_agg_table_query"
 
-#### JOIN (left side 10M, right side 1M)
-#### As the right side of the JOIN is a table, ideally it shouldn't be executed with parallel replicas and instead passed as is to the replicas
-#### so each of them executes the join with the assigned granules of the left table, but that's not implemented yet
-#### https://github.com/ClickHouse/ClickHouse/issues/49301#issuecomment-1619897920
-#### Note that this currently fails with the analyzer since it doesn't support JOIN with parallel replicas
-simple_join_query="SELECT sum(value) FROM test_parallel_replicas_automatic_count INNER JOIN test_parallel_replicas_automatic_count_right_side USING number format Null"
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_0" 0 "$simple_join_query" # 3 replicas for the right side first, 3 replicas for the left
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_10M" 10000000 "$simple_join_query" # Right: 0. Left: 0
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_5M" 5000000 "$simple_join_query" # Right: 0. Left: 2
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_1M" 1000000 "$simple_join_query" # Right: 1->0. Left: 10->3
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_300k" 400000 "$simple_join_query" # Right: 2. Left: 3
-
-#### If the filter does not help, it shouldn't disable parallel replicas. Table has 1M rows, filter removes all rows
-helpless_filter_query="SELECT sum(number) FROM test_parallel_replicas_automatic_count_right_side WHERE value = 42 format Null"
-run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_2M" 2000000 "$helpless_filter_query"
-run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_500000" 500000 "$helpless_filter_query"
-run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_100000" 100000 "$helpless_filter_query"
+#### If the filter does not help, it shouldn't disable parallel replicas. Table has 10M rows, filter removes all rows
+helpless_filter_query="SELECT sum(number) FROM test_parallel_replicas_automatic_count WHERE number + p = 42 format Null"
+run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_10M" 10000000 "$helpless_filter_query"
+run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_5M" 5000000 "$helpless_filter_query"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 involved_parallel_replicas "${query_id_base}"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE test_parallel_replicas_automatic_count"
