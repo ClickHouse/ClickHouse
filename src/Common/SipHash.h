@@ -182,7 +182,7 @@ public:
     ALWAYS_INLINE void update(const std::string_view x) { update(x.data(), x.size()); }
     ALWAYS_INLINE void update(const char * s) { update(std::string_view(s)); }
 
-    UInt64 get64()
+    ALWAYS_INLINE UInt64 get64()
     {
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
@@ -197,7 +197,7 @@ public:
         hi = v2 ^ v3;
     }
 
-    UInt128 get128()
+    ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
