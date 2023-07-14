@@ -95,9 +95,9 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
-        std::lock_guard lock(storage_kafka_ptr->mutex);
+        auto safe_consumers = storage_kafka_ptr->getSafeConsumers();
 
-        for (const auto & weak_consumer : storage_kafka_ptr->all_consumers)
+        for (const auto & weak_consumer : safe_consumers.consumers)
         {
             if (auto consumer = weak_consumer.lock())
             {

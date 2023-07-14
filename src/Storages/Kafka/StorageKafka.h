@@ -81,6 +81,15 @@ public:
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
     std::shared_ptr<const String> getRdkafkaStat() const { return rdkafka_stat; }
 
+    struct SafeConsumers
+    {
+        std::unique_lock<std::mutex> lock;
+        std::vector<KafkaConsumerWeakPtr> & consumers;
+        std::shared_ptr<IStorage> storage_ptr;
+    };
+
+    SafeConsumers getSafeConsumers() { return {std::unique_lock(mutex), all_consumers, shared_from_this()};  }
+
 private:
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
@@ -149,8 +158,6 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     std::shared_ptr<const String> rdkafka_stat;
-
-    friend class DB::StorageSystemKafkaConsumers;
 };
 
 }
