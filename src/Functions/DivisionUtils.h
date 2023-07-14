@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 #include <type_traits>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -139,21 +140,17 @@ struct ModuloImpl
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            if constexpr (!std::numeric_limits<IntegerAType>::is_signed && std::numeric_limits<IntegerBType>::is_signed)
             {
-                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
-                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
-
-                CastA int_a(a);
-                CastB int_b(b);
-
-                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
-                    return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
-                else
-                    return static_cast<Result>(int_a % static_cast<CastA>(int_b));
+                using CastA = typename NumberTraits::Construct<true, false, NumberTraits::nextSize(sizeof(IntegerAType), true)>::Type;
+                return static_cast<Result>(static_cast<CastA>(a) % b);
             }
-            else
-                return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
+            else if constexpr (!std::numeric_limits<IntegerBType>::is_signed && std::numeric_limits<IntegerAType>::is_signed)
+            {
+                using CastB = typename NumberTraits::Construct<true, false, NumberTraits::nextSize(sizeof(IntegerBType), true)>::Type;
+                return static_cast<Result>(a % static_cast<CastB>(b));
+            }
+            return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
         }
     }
 
