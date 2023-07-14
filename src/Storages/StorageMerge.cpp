@@ -268,7 +268,6 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
-
     if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
         return QueryProcessingStage::FetchColumns;
 
@@ -315,6 +314,7 @@ void StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
+    modified_context->setSetting("optimize_move_to_prewhere", false);
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
@@ -376,9 +376,13 @@ void StorageMerge::read(
     query_plan.addStep(std::move(step));
 }
 
+/// A transient object of this helper class is created
+///  when processing a Merge table data source (subordinary table)
+///  to guarantee that row policies are applied
 class ReadFromMerge::RowPolicyData
 {
 public:
+    /// Row policy requires extra filtering
     bool needCare()
     {
         return static_cast<bool>(row_policy_filter_ptr);
@@ -386,17 +390,27 @@ public:
     void init(RowPolicyFilterPtr,
         const std::shared_ptr<DB::IStorage>,
         ContextPtr);
+
+    /// Add columns that needed for row policies to data stream
+    /// SELECT x from T  if  T has row policy  y=42
+    /// required y in data pipeline
     void extendNames(Names &);
+
+    /// Use storage facilities to filter data
+    /// does not guarantee accuracy, but reduce number of rows
     void addStorageFilter(SourceStepWithFilter *);
+
+    /// Create explicit filter transform to stop
+    /// rows that are not conform to row level policy
     void addFilterTransform(QueryPipelineBuilder &);
+
 private:
     static std::string namesDifference(Names && outer_set, Names && inner_set);
     RowPolicyFilterPtr row_policy_filter_ptr;
-    std::string filter_column_name;
+    std::string filter_column_name; // complex filer, may contain logic operations
     ActionsDAGPtr actions_dag;
     ExpressionActionsPtr filter_actions;
 };
-
 
 ReadFromMerge::ReadFromMerge(
     Block common_header_,
@@ -687,7 +701,11 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)
         {
-            row_policy_data.init(modified_context->getRowPolicyFilter(database_name, table_name, RowPolicyFilterType::SELECT_FILTER),
+            row_policy_data.init(
+                modified_context->getRowPolicyFilter(
+                    database_name,
+                    table_name,
+                    RowPolicyFilterType::SELECT_FILTER),
                 storage,
                 modified_context);
 
@@ -707,7 +725,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
             if (!plan.isInitialized())
                 return {};
-
 
             if (row_policy_data.needCare())
             {
@@ -742,14 +759,12 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             size_t filters_dags_size = filter_dags.size();
             for (size_t i = 0; i < filters_dags_size; ++i)
-            {
                 read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
-            }
         }
+
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),
             BuildQueryPipelineSettings::fromContext(modified_context));
-
     }
     else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
     {
@@ -835,6 +850,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
+        /// Besides this we add FilterTransform if it is needed to follow row level policies.
 
         convertingSourceStream(header,
             storage_snapshot->metadata,
@@ -852,7 +868,6 @@ void ReadFromMerge::RowPolicyData::init(RowPolicyFilterPtr row_policy_filter_ptr
     const std::shared_ptr<DB::IStorage> storage,
     ContextPtr local_context)
 {
-
     if (row_policy_filter_ptr_)
     {
         row_policy_filter_ptr = row_policy_filter_ptr_;
@@ -861,19 +876,20 @@ void ReadFromMerge::RowPolicyData::init(RowPolicyFilterPtr row_policy_filter_ptr
 
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
-        auto needed_columns = storage_columns.getAllPhysical(); // header.getNamesAndTypesList()
+        auto needed_columns = storage_columns.getAllPhysical();
 
-
-        auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns /* pipe_columns */);
+        auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
         auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
         actions_dag = expression_analyzer.getActionsDAG(true, false);
-        filter_actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+        filter_actions = std::make_shared<ExpressionActions>(actions_dag,
+            ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
         filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
     }
-
 }
 
+// Add columns that needed to evaluate row policies
+// SELECT x from t  if  t has row policy
 void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 {
     assert(row_policy_filter_ptr);
@@ -885,7 +901,6 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names)
     auto req_columns = columns_context.requiredColumns();
     for (const auto & req_column : req_columns)
     {
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::extendNames"), "req.column: {}", req_column);
         std::sort(names.begin(), names.end());
 
         if (!std::binary_search(names.begin(), names.end(), req_column))
@@ -898,30 +913,22 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
 {
     assert(row_policy_filter_ptr);
-    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::createSources"), "filter_actions_dag: {},<> {}, <> {}",
-        filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
-        step->addFilter(actions_dag, filter_column_name);
+    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::addStorageFilter"), "filter_actions_dag: {},<> {}, <> {}",
+        filter_actions->getActionsDAG().dumpNames(),
+        filter_actions->getActionsDAG().dumpDAG(),
+        filter_actions->getSampleBlock().dumpStructure());
+
+    step->addFilter(actions_dag, filter_column_name);
 }
 
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & builder)
 {
     assert(row_policy_filter_ptr);
 
-    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertinfSourceStream"), "filter_actions_dag: {},<> {}, <> {}",
-        filter_actions->getActionsDAG().dumpNames(), filter_actions->getActionsDAG().dumpDAG(), filter_actions->getSampleBlock().dumpStructure());
-
-
-    for (auto & colname : filter_actions->getSampleBlock().getNames())
-    {
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "filter_actions->getSampleBlock().getNames(): {}", colname);
-    }
-
-    for (auto & colname : filter_actions->getRequiredColumns())
-    {
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"), "filter_actions->getRequiredColumns(): {}", colname);
-    }
-
-    // auto filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
+    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::addFilterTransform"), "filter_actions_dag: {},<> {}, <> {}",
+        filter_actions->getActionsDAG().dumpNames(),
+        filter_actions->getActionsDAG().dumpDAG(),
+        filter_actions->getSampleBlock().dumpStructure());
 
     builder.addSimpleTransform([&](const Block & stream_header)
     {
@@ -929,10 +936,10 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & bui
     });
 }
 
+/// Find out an item that in outer_set vector, but not in inner_set vector
 std::string ReadFromMerge::RowPolicyData::namesDifference(Names && outer_set, Names && inner_set)
 {
     std::sort(outer_set.begin(), outer_set.end());
-
     std::sort(inner_set.begin(), inner_set.end());
 
     Names result;
@@ -948,6 +955,7 @@ std::string ReadFromMerge::RowPolicyData::namesDifference(Names && outer_set, Na
 
     return result.front();
 }
+
 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     ContextPtr query_context,
@@ -1171,8 +1179,6 @@ void ReadFromMerge::convertingSourceStream(
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
     });
-
-
 }
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
