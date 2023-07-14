@@ -64,6 +64,14 @@ DEFAULT_ENV_NAME = ".env"
 
 SANITIZER_SIGN = "=================="
 
+CLICKHOUSE_START_COMMAND = (
+    "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
+)
+
+CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
+
+CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -1497,6 +1505,8 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        clickhouse_log_file=CLICKHOUSE_LOG_FILE,
+        clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
@@ -1563,6 +1573,13 @@ class ClickHouseCluster:
             "LLVM_PROFILE_FILE"
         ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
 
+        clickhouse_start_command = CLICKHOUSE_START_COMMAND
+        if clickhouse_log_file:
+            clickhouse_start_command += " --log-file=" + clickhouse_log_file
+        if clickhouse_error_log_file:
+            clickhouse_start_command += " --errorlog-file=" + clickhouse_error_log_file
+        logging.debug(f"clickhouse_start_command: {clickhouse_start_command}")
+
         instance = ClickHouseInstance(
             cluster=self,
             base_path=self.base_dir,
@@ -1592,10 +1609,10 @@ class ClickHouseCluster:
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
-            with_cassandra=with_cassandra,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
             with_coredns=with_coredns,
+            with_cassandra=with_cassandra,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -1604,6 +1621,10 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            clickhouse_start_command=clickhouse_start_command,
+            main_config_name=main_config_name,
+            users_config_name=users_config_name,
+            copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
             image=image,
@@ -1612,9 +1633,6 @@ class ClickHouseCluster:
             ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary,
-            main_config_name=main_config_name,
-            users_config_name=users_config_name,
-            copy_common_configs=copy_common_configs,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             config_root_name=config_root_name,
@@ -3046,16 +3064,6 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
 
-CLICKHOUSE_START_COMMAND = (
-    "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
-    " --log-file=/var/log/clickhouse-server/clickhouse-server.log "
-    " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
-)
-
-CLICKHOUSE_STAY_ALIVE_COMMAND = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
-    CLICKHOUSE_START_COMMAND
-)
-
 DOCKER_COMPOSE_TEMPLATE = """
 version: '2.3'
 services:
@@ -3229,6 +3237,9 @@ class ClickHouseInstance:
 
         self.clickhouse_start_command = clickhouse_start_command.replace(
             "{main_config_file}", self.main_config_name
+        )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
+            clickhouse_start_command
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
@@ -4321,7 +4332,7 @@ class ClickHouseInstance:
         entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace(
+            entrypoint_cmd = self.clickhouse_stay_alive_command.replace(
                 "{main_config_file}", self.main_config_name
             )
         else:
