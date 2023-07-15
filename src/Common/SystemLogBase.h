@@ -87,8 +87,11 @@ public:
       */
     void add(const LogElement & element);
 
-    /// Flush data in the buffer to disk
+    /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
     void flush(bool force) override;
+
+    /// Non-blocking flush data in the buffer to disk.
+    void notifyFlush(bool force);
 
     String getName() const override { return LogElement::name(); }
 
@@ -112,6 +115,10 @@ protected:
     uint64_t flushed_up_to = 0;
     // Logged overflow message at this queue front index
     uint64_t logged_queue_full_at_index = -1;
+
+private:
+    uint64_t notifyFlushImpl(bool force);
+
 };
 
 }

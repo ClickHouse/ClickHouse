@@ -287,7 +287,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     task_context = Context::createCopy(storage.getContext());
     task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
+    task_context->setCurrentQueryId(getQueryId());
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
