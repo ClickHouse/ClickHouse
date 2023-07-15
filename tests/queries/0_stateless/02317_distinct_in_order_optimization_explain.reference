@@ -51,12 +51,12 @@ MergeTreeInOrder
 MergeTreeInOrder
 -- enabled, only part of distinct columns form prefix of sorting key
 MergeTreeThread
+=== disable new analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 -- check that reading in order optimization for ORDER BY and DISTINCT applied correctly in the same query
--- disable new analyzer
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
 Sorting (Stream): a ASC
 Sorting (Stream): a ASC
@@ -81,7 +81,12 @@ Sorting (Stream): a DESC, b DESC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
--- enable new analyzer
+=== enable new analyzer ===
+-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b ASC
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
 Sorting (Stream): a_1 ASC
 Sorting (Stream): a_1 ASC
