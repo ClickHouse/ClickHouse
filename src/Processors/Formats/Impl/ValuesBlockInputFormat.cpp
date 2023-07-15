@@ -61,6 +61,7 @@ Chunk ValuesBlockInputFormat::generate()
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
+    size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     for (size_t rows_in_block = 0; rows_in_block < params.max_block_size; ++rows_in_block)
     {
@@ -78,6 +79,8 @@ Chunk ValuesBlockInputFormat::generate()
             throw;
         }
     }
+
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
 
     /// Evaluate expressions, which were parsed using templates, if any
     for (size_t i = 0; i < columns.size(); ++i)

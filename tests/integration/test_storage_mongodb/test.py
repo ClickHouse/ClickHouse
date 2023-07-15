@@ -17,6 +17,7 @@ def started_cluster(request):
                 "configs_secure/config.d/ssl_conf.xml",
                 "configs/named_collections.xml",
             ],
+            user_configs=["configs/users.xml"],
             with_mongo=True,
             with_mongo_secure=request.param,
         )

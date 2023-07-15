@@ -81,7 +81,7 @@ namespace impl
 
     static SipHashKey parseSipHashKey(const ColumnWithTypeAndName & key)
     {
-        SipHashKey ret;
+        SipHashKey ret{};
 
         const auto * tuple = checkAndGetColumn<ColumnTuple>(key.column.get());
         if (!tuple)
@@ -89,6 +89,9 @@ namespace impl
 
         if (tuple->tupleSize() != 2)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+
+        if (tuple->empty())
+            return ret;
 
         if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
             ret.key0 = key0col->get64(0);
@@ -402,34 +405,6 @@ struct SipHash128ReferenceImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct SipHash128ReferenceKeyedImpl
-{
-    static constexpr auto name = "sipHash128ReferenceKeyed";
-    using ReturnType = UInt128;
-    using Key = impl::SipHashKey;
-
-    static Key parseKey(const ColumnWithTypeAndName & key) { return impl::parseSipHashKey(key); }
-
-    static UInt128 applyKeyed(const Key & key, const char * begin, size_t size)
-    {
-        return sipHash128ReferenceKeyed(key.key0, key.key1, begin, size);
-    }
-
-    static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
-    {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
-        UInt128 hashes[] = {h1, h2};
-        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
 
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
@@ -1737,7 +1712,6 @@ using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key>;
 using FunctionSipHash128Reference = FunctionAnyHash<SipHash128ReferenceImpl>;
-using FunctionSipHash128ReferenceKeyed = FunctionAnyHash<SipHash128ReferenceKeyedImpl, true, SipHash128ReferenceKeyedImpl::Key>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
