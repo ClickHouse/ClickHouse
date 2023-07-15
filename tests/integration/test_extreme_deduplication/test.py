@@ -51,7 +51,7 @@ def test_deduplication_window_in_seconds(started_cluster):
 
     # Wait for the cleanup thread.
     for i in range(100):
-        time.sleep(1)
+        time.sleep(5)
 
         if (
             TSV.toMat(
