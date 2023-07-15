@@ -2,6 +2,14 @@
     <storage_configuration>
         <disks>
             <!-- s3 disks -->
+            <s3_common_disk>
+                <type>s3</type>
+                <path>s3_common_disk/</path>
+                <endpoint>http://localhost:11111/test/common/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <request_timeout_ms>20000</request_timeout_ms>
+            </s3_common_disk>
             <s3_disk>
                 <type>s3</type>
                 <path>s3_disk/</path>
