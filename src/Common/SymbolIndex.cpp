@@ -509,7 +509,7 @@ const T * find(const void * address, const std::vector<T> & vec)
 }
 
 
-void SymbolIndex::update()
+void SymbolIndex::load()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
@@ -549,15 +549,10 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-MultiVersion<SymbolIndex> & SymbolIndex::instanceImpl()
+const SymbolIndex & SymbolIndex::instance()
 {
-    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    static SymbolIndex instance;
     return instance;
-}
-
-MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
-{
-    return instanceImpl().get();
 }
 
 }

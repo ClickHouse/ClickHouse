@@ -91,7 +91,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#if USE_UNWIND
+#ifndef __APPLE__
 Timer::Timer()
     : log(&Poco::Logger::get("Timer"))
 {}
@@ -209,13 +209,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     UNUSED(pause_signal);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif !USE_UNWIND
+#elif defined(__APPLE__)
     UNUSED(thread_id);
     UNUSED(clock_type);
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
     if (!hasPHDRCache())
@@ -264,7 +264,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
-#if USE_UNWIND
+#ifndef __APPLE__
     timer.stop();
     signal_handler_disarmed = true;
 #endif
