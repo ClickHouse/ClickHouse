@@ -50,7 +50,7 @@ def test_deduplication_window_in_seconds(started_cluster):
     assert TSV(node.query("SELECT count() FROM simple")) == TSV("2\n")
 
     # wait clean thread
-    time.sleep(2)
+    time.sleep(5)
 
     assert (
         TSV.toMat(

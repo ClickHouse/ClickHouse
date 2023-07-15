@@ -17,7 +17,8 @@ Default value: 0.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SELECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -30,7 +31,7 @@ insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```sql
 SELECT *
 FROM table_1
-SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 ```
 ```response
 ┌─x─┬─y────┐
@@ -50,7 +51,8 @@ Default value: `''`.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SElECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -1322,7 +1324,7 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
-## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
@@ -2941,7 +2943,7 @@ Default value: `0`.
 
 ## mutations_sync {#mutations_sync}
 
-Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
+Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
 
 Possible values:
 
@@ -3201,6 +3203,40 @@ ENGINE = Log
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+## default_temporary_table_engine {#default_temporary_table_engine}
+
+Same as [default_table_engine](#default_table_engine) but for temporary tables.
+
+Default value: `Memory`.
+
+In this example, any new temporary table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+SET default_temporary_table_engine = 'Log';
+
+CREATE TEMPORARY TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TEMPORARY TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TEMPORARY TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md/#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
@@ -3328,7 +3364,35 @@ Possible values:
 
 Default value: `0`.
 
-## s3_truncate_on_insert
+## engine_file_allow_create_multiple_files {#engine_file_allow_create_multiple_files}
+
+Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## engine_file_skip_empty_files {#engine_file_skip_empty_files}
+
+Enables or disables skipping empty files in [File](../../engines/table-engines/special/file.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## storage_file_read_method {#storage_file_read_method}
+
+Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
+
+Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
@@ -3338,7 +3402,29 @@ Possible values:
 
 Default value: `0`.
 
-## hdfs_truncate_on_insert
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
+
+Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
+
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## s3_skip_empty_files {#s3_skip_empty_files}
+
+Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
 
@@ -3348,31 +3434,7 @@ Possible values:
 
 Default value: `0`.
 
-## engine_file_allow_create_multiple_files
-
-Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
-
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## s3_create_new_file_on_insert
-
-Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
-
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## hdfs_create_new_file_on_insert
+## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert
 
 Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
 
@@ -3380,7 +3442,27 @@ initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## hdfs_skip_empty_files {#hdfs_skip_empty_files}
+
+Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
+
+Enables or disables skipping empty files in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
 
 Default value: `0`.
 
@@ -3455,7 +3537,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -3466,7 +3548,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -4204,6 +4286,69 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## session_timezone {#session_timezone}
+
+Sets the implicit time zone of the current session or query.
+The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone. 
+The setting takes precedence over the globally configured (server-level) implicit time zone.
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+
+You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
+
+Possible values:
+
+-    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+
+Default value: `''`.
+
+Examples:
+
+```sql
+SELECT timeZone(), serverTimeZone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
+```
+
+```sql
+SELECT timeZone(), serverTimeZone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+
+Asia/Novosibirsk	Europe/Berlin
+```
+
+Assign session time zone 'America/Denver' to the inner DateTime without explicitly specified time zone:
+
+```sql
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
+```
+
+:::warning
+Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors. 
+See the following example and explanation.
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timeZone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timeZone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+This happens due to different parsing pipelines:
+
+- `toDateTime()` without explicitly given time zone used in the first `SELECT` query honors setting `session_timezone` and the global time zone.
+- In the second query, a DateTime is parsed from a String, and inherits the type and time zone of the existing column`d`. Thus, setting `session_timezone` and the global time zone are not honored.
+
+**See also**
+
+- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 
 ## final {#final}
 

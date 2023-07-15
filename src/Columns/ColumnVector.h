@@ -107,8 +107,8 @@ struct FloatCompareHelper
     }
 };
 
-template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
-template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
+template <typename U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
+template <typename U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
 
 /** A template for columns that use a simple array to store.

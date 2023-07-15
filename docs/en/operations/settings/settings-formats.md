@@ -931,6 +931,43 @@ Result
 ```text
 "  string  "
 ```
+### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+
+Disabled by default.
+
+### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
+
+Allow to use whitespace or tab as field delimiter in CSV strings.
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter=' '
+```
+
+Result
+
+```text
+a  b
+```
+
+Query
+
+```bash
+echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter='\t'
+```
+
+Result
+
+```text
+a  b
+```
 
 ## Values format settings {#values-format-settings}
 
