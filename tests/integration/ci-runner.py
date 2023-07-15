@@ -987,9 +987,7 @@ class ClickhouseIntegrationTestsRunner:
             ]
 
         failed_sum = len(counters["FAILED"]) + len(counters["ERROR"])
-        status_text = "fail: {}, passed: {}".format(
-            failed_sum, len(counters["PASSED"])
-        )
+        status_text = "fail: {}, passed: {}".format(failed_sum, len(counters["PASSED"]))
 
         if self.soft_deadline_time < time.time():
             status_text = "Timeout, " + status_text
