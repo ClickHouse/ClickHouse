@@ -194,7 +194,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorMap(factory);
     }
 
-	{
+    {
         auto & factory = AggregateFunctionFactory::instance();
 
         /// Must register after registerCombinator
