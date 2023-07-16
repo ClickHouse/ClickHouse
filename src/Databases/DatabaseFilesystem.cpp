@@ -11,8 +11,10 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
+#include <Formats/FormatFactory.h>
 
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -138,10 +140,15 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
         return table;
 
     auto table_path = getTablePath(name);
-    checkTableFilePath(table_path, context_, throw_on_error);
+    if (!checkTableFilePath(table_path, context_, throw_on_error))
+        return {};
+
+    String format = FormatFactory::instance().getFormatFromFileName(table_path, throw_on_error);
+    if (format.empty())
+        return {};
 
     /// If the file exists, create a new table using TableFunctionFile and return it.
-    auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
+    auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
