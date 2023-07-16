@@ -83,12 +83,12 @@ public:
 
     struct SafeConsumers
     {
+        std::shared_ptr<IStorage> storage_ptr;
         std::unique_lock<std::mutex> lock;
         std::vector<KafkaConsumerWeakPtr> & consumers;
-        std::shared_ptr<IStorage> storage_ptr;
     };
 
-    SafeConsumers getSafeConsumers() { return {std::unique_lock(mutex), all_consumers, shared_from_this()};  }
+    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), all_consumers};  }
 
 private:
     // Configuration and state

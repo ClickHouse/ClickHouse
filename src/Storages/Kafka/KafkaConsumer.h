@@ -34,7 +34,6 @@ public:
             String topic_str;
             Int32 partition_id;
             Int64 current_offset;
-            Int64 offset_committed;
         };
         using Assignments = std::vector<Assignment>;
 

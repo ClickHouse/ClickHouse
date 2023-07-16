@@ -563,7 +563,6 @@ KafkaConsumer::Stat KafkaConsumer::getStat()
     KafkaConsumer::Stat::Assignments assignments;
     auto cpp_assignments = consumer->get_assignment();
     auto cpp_offsets = consumer->get_offsets_position(cpp_assignments);
-    auto cpp_offsets_committed = consumer->get_offsets_committed(cpp_assignments);
 
     for (size_t num = 0; num < cpp_assignments.size(); ++num)
     {
@@ -571,7 +570,6 @@ KafkaConsumer::Stat KafkaConsumer::getStat()
             cpp_assignments[num].get_topic(),
             cpp_assignments[num].get_partition(),
             cpp_offsets[num].get_offset(),
-            cpp_offsets_committed[num].get_offset()
         });
     }
 

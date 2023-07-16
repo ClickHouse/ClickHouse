@@ -14,7 +14,6 @@ Columns:
 - `assignments.topic` (Array(String)) - Kafka topic.
 - `assignments.partition_id` (Array(Int32)) - Kafka partition id. Note, that only one consumer can be assigned to a partition.
 - `assignments.current_offset` (Array(Int64)) - current offset.
-- `assignments.offset_committed` (Array(Int64)) - committed offset.
 - `last_exception_time`, (DateTime) - timestamp when the most recent exception was generated.
 - `last_exception`, (String) - text of the most recent exception.
 - `last_poll_time`, (DateTime) - timestamp of the most recent poll.
