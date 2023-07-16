@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
@@ -61,6 +62,11 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
         ast->setAlias("constant_expression");
     }
 
+    if (ast->as<ASTSetQuery>() != nullptr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
+            "is not a constant expression (unexpected AST node type): {}", ast->getID());
+
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
@@ -94,18 +100,18 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
     if (!result_column)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Logical error: empty result column after evaluation "
-                        "of constant expression for IN, VALUES or LIMIT or aggregate function parameter");
+                        "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
 
     /// Expressions like rand() or now() are not constant
     if (!isColumnConst(*result_column))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column is not const): {}", result_name);
 
     return std::make_pair((*result_column)[0], result_type);
