@@ -8,7 +8,7 @@
 
 namespace DB
 {
-MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG & outer_dag)
+MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
 {
     using Parents = std::set<const ActionsDAG::Node *>;
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
@@ -182,7 +182,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                     }
                 }
 
-                if (!match.node && frame.node->function_base->hasInformationAboutMonotonicity())
+                if (!match.node && check_monotonicity && frame.node->function_base->hasInformationAboutMonotonicity())
                 {
                     size_t num_const_args = 0;
                     const ActionsDAG::Node * monotonic_child = nullptr;
