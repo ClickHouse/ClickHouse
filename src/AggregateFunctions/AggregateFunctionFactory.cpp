@@ -59,6 +59,34 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
     }
 }
 
+void AggregateFunctionFactory::registerAliasForAggregateFunctionWithCombinator(
+    const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness)
+{
+    if (!isAggregateFunctionName(real_name))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "{}: can't create alias '{}', the real name '{}' is not registered",
+            getFactoryName(),
+            alias_name,
+            real_name);
+
+    auto alias_name_lowercase = Poco::toLower(alias_name);
+
+    if (aggregate_functions.contains(alias_name) || case_insensitive_aggregate_functions.contains(alias_name_lowercase))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "{}: the alias name '{}' is already registered as real name", getFactoryName(), alias_name);
+
+    if (case_sensitiveness == CaseInsensitive)
+    {
+        if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_name).second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: case insensitive alias name '{}' is not unique", getFactoryName(), alias_name);
+        case_insensitive_name_mapping[alias_name_lowercase] = real_name;
+    }
+
+    if (!aliases.emplace(alias_name, real_name).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: alias name '{}' is not unique", getFactoryName(), alias_name);
+}
+
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 {
     DataTypes res_types;
@@ -221,7 +249,6 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(
         ? get(name, argument_types, parameters, out_properties)
         : nullptr;
 }
-
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name) const
 {

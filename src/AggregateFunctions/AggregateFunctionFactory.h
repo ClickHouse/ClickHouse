@@ -62,6 +62,9 @@ public:
         Value creator,
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
+    void registerAliasForAggregateFunctionWithCombinator(
+        const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive);
+
     /// Throws an exception if not found.
     AggregateFunctionPtr
     get(const String & name,

@@ -193,6 +193,14 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorDistinct(factory);
         registerAggregateFunctionCombinatorMap(factory);
     }
+
+	{
+        auto & factory = AggregateFunctionFactory::instance();
+
+        /// Must register after registerCombinator
+        factory.registerAliasForAggregateFunctionWithCombinator(
+            "array_concat_agg", "groupArrayArray", AggregateFunctionFactory::CaseInsensitive);
+    }
 }
 
 }
