@@ -466,6 +466,11 @@ int main(int argc_, char ** argv_)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
 
+    /// This is used for testing. For example,
+    /// clickhouse-local should be able to run a simple query without throw/catch.
+    if (getenv("CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION")) // NOLINT(concurrency-mt-unsafe)
+        DB::terminate_on_any_exception = true;
+
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
