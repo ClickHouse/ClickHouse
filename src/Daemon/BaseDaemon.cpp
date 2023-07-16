@@ -173,6 +173,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             /// This coarse method of synchronization is perfectly ok for fatal signals.
             sleepForSeconds(1);
         }
+
+        /// Wait for all logs flush operations
+        sleepForSeconds(3);
         call_default_signal_handler(sig);
     }
 
