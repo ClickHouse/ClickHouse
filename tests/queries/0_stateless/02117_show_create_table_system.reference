@@ -89,7 +89,9 @@ ENGINE = SystemColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.contributors
 (
-    `name` String
+    `name` String,
+    `email` String,
+    `commits` UInt32
 )
 ENGINE = SystemContributors
 COMMENT 'SYSTEM TABLE is built on the fly.'
