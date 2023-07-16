@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class AggregateFunctionFactory;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -24,7 +22,6 @@ namespace ErrorCodes
 template <typename ValueType>
 class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<ValueType>>
 {
-    friend AggregateFunctionFactory;
 protected:
     using Value = ValueType;
 
@@ -55,34 +52,37 @@ public:
     {
         const auto & creator_map = getMap();
         const auto & case_insensitive_creator_map = getCaseInsensitiveMap();
-        const String factory_name = getFactoryName();
 
-        String real_dict_name;
-        if (creator_map.contains(real_name))
-            real_dict_name = real_name;
-        else if (auto real_name_lowercase = Poco::toLower(real_name); case_insensitive_creator_map.contains(real_name_lowercase))
-            real_dict_name = real_name_lowercase;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: can't create alias '{}', the real name '{}' is not registered",
-                            factory_name, alias_name, real_name);
+        auto real_name_lowercase = Poco::toLower(real_name);
+        if (!creator_map.contains(real_name) && !case_insensitive_creator_map.contains(real_name_lowercase))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{}: can't create alias '{}', the real name '{}' is not registered",
+                getFactoryName(),
+                alias_name,
+                real_name);
 
+        registerAliasUnchecked(alias_name, real_name, case_sensitiveness);
+    }
+
+    /// We need sure the real_name exactly exists when call the function directly.
+    void registerAliasUnchecked(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    {
         String alias_name_lowercase = Poco::toLower(alias_name);
-
-        if (creator_map.contains(alias_name) || case_insensitive_creator_map.contains(alias_name_lowercase))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: the alias name '{}' is already registered as real name",
-                            factory_name, alias_name);
+        String real_name_lowercase = Poco::toLower(real_name);
+        const String factory_name = getFactoryName();
 
         if (case_sensitiveness == CaseInsensitive)
         {
-            if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_dict_name).second)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: case insensitive alias name '{}' is not unique",
-                                factory_name, alias_name);
+            if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_name).second)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: case insensitive alias name '{}' is not unique", factory_name, alias_name);
             case_insensitive_name_mapping[alias_name_lowercase] = real_name;
         }
 
-        if (!aliases.emplace(alias_name, real_dict_name).second)
+        if (!aliases.emplace(alias_name, real_name).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: alias name '{}' is not unique", factory_name, alias_name);
     }
+
 
     std::vector<String> getAllRegisteredNames() const override
     {
