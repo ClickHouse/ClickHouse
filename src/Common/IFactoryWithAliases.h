@@ -10,6 +10,8 @@
 namespace DB
 {
 
+class AggregateFunctionFactory;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -22,6 +24,7 @@ namespace ErrorCodes
 template <typename ValueType>
 class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<ValueType>>
 {
+    friend AggregateFunctionFactory;
 protected:
     using Value = ValueType;
 
@@ -55,9 +58,9 @@ public:
         const String factory_name = getFactoryName();
 
         String real_dict_name;
-        if (creator_map.count(real_name))
+        if (creator_map.contains(real_name))
             real_dict_name = real_name;
-        else if (auto real_name_lowercase = Poco::toLower(real_name); case_insensitive_creator_map.count(real_name_lowercase))
+        else if (auto real_name_lowercase = Poco::toLower(real_name); case_insensitive_creator_map.contains(real_name_lowercase))
             real_dict_name = real_name_lowercase;
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: can't create alias '{}', the real name '{}' is not registered",
@@ -65,7 +68,7 @@ public:
 
         String alias_name_lowercase = Poco::toLower(alias_name);
 
-        if (creator_map.count(alias_name) || case_insensitive_creator_map.count(alias_name_lowercase))
+        if (creator_map.contains(alias_name) || case_insensitive_creator_map.contains(alias_name_lowercase))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: the alias name '{}' is already registered as real name",
                             factory_name, alias_name);
 
@@ -93,7 +96,7 @@ public:
     bool isCaseInsensitive(const String & name) const
     {
         String name_lowercase = Poco::toLower(name);
-        return getCaseInsensitiveMap().count(name_lowercase) || case_insensitive_aliases.count(name_lowercase);
+        return getCaseInsensitiveMap().contains(name_lowercase) || case_insensitive_aliases.contains(name_lowercase);
     }
 
     const String & aliasTo(const String & name) const
@@ -106,14 +109,11 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
     }
 
-    bool isAlias(const String & name) const
-    {
-        return aliases.count(name) || case_insensitive_aliases.contains(name);
-    }
+    bool isAlias(const String & name) const { return aliases.contains(name) || case_insensitive_aliases.contains(name); }
 
     bool hasNameOrAlias(const String & name) const
     {
-        return getMap().count(name) || getCaseInsensitiveMap().count(name) || isAlias(name);
+        return getMap().contains(name) || getCaseInsensitiveMap().contains(name) || isAlias(name);
     }
 
     /// Return the canonical name (the name used in registration) if it's different from `name`.
@@ -129,7 +129,7 @@ public:
 
 private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator
-    using AliasMap = std::unordered_map<String, String>; // alias -> original type
+    using AliasMap = std::unordered_map<String, String>; // alias -> original name
 
     virtual const InnerMap & getMap() const = 0;
     virtual const InnerMap & getCaseInsensitiveMap() const = 0;
