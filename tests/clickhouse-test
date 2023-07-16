@@ -1229,7 +1229,7 @@ class TestCase:
                     .replace("\n", ", ")
                 )
 
-                if 0 != len(leftover_tables):
+                if len(leftover_tables) != 0:
                     raise Exception(
                         f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
                     )
