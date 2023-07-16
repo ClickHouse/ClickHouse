@@ -130,7 +130,7 @@ public:
         const ClientInfo * client_info,
         const FragmentsRequest & fragment);
 
-    void sendExecuteQueryPipelines(const String & query_id_);
+    void sendBeginExecutePipelines(const String & query_id_);
 
     void sendExchangeData(const ExchangeDataRequest & request);
 

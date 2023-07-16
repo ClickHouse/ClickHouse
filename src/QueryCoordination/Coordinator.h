@@ -28,9 +28,9 @@ public:
     {
     }
 
-    void scheduleExecuteDistributedPlan();
+    void schedulePrepareDistributedPipelines();
 
-    std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager;
+    std::unordered_map<String, IConnectionPool::Entry> getRemoteHostConnection();
 
     Pipelines pipelines;
 
@@ -39,9 +39,9 @@ private:
 
     bool isUpToDate(const QualifiedTableName & table_name);
 
-    void sendFragmentToDistributed(const String & local_shard_host);
+    void sendFragmentsToPreparePipelines();
 
-    void sendExecuteQueryPipelines(const String & local_shard_host);
+    void sendBeginExecutePipelines();
 
     std::unordered_map<FragmentID, FragmentRequest> buildFragmentRequest();
 
@@ -59,6 +59,8 @@ private:
     ContextMutablePtr context;
 
     String query;
+
+    String local_host;
 
 //    bool is_subquery;
 //

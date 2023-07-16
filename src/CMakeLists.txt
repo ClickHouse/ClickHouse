@@ -80,7 +80,7 @@ add_subdirectory (QueryCoordination)
 
 
 set(dbms_headers)
-set(dbms_sources)
+set(dbms_sources QueryCoordination/QueryCoordinationState.cpp QueryCoordination/QueryCoordinationState.h)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)

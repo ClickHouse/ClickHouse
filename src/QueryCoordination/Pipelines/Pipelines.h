@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryCoordination/Pipelines/QueryCoordinationExecutor.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
 
 namespace DB
 {

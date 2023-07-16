@@ -33,7 +33,7 @@ void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
             /// TODO select or epoll
             for (auto & node : managed_nodes)
             {
-                if (node.is_local || node.is_finished)
+                if (node.is_finished)
                     continue;
 
                 Packet packet = node.connection->receivePacket();
@@ -124,9 +124,6 @@ void RemotePipelinesManager::cancel()
 
     for (auto & node : managed_nodes)
     {
-        if (node.is_local)
-            continue;
-
         node.connection->sendCancel();
     }
 

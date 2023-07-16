@@ -39,22 +39,6 @@ QueryCoordinationExecutor::QueryCoordinationExecutor(
     , completed_pipelines_executor(completed_pipelines_executor_)
     , remote_pipelines_manager(remote_pipelines_manager_)
 {
-    auto exception_callback = [this](std::exception_ptr exception_)
-    {
-        setException(exception_);
-    };
-
-    if (completed_pipelines_executor)
-    {
-        completed_pipelines_executor->setExceptionCallback(exception_callback);
-        completed_pipelines_executor->asyncExecute();
-    }
-
-    if (remote_pipelines_manager)
-    {
-        remote_pipelines_manager->setExceptionCallback(exception_callback);
-        remote_pipelines_manager->asyncReceiveReporter();
-    }
 }
 
 QueryCoordinationExecutor::~QueryCoordinationExecutor()
@@ -77,6 +61,27 @@ const Block & QueryCoordinationExecutor::getHeader() const
 
 bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
 {
+    if (!begin_execute)
+    {
+        auto exception_callback = [this](std::exception_ptr exception_)
+        {
+            setException(exception_);
+        };
+
+        if (completed_pipelines_executor)
+        {
+            completed_pipelines_executor->setExceptionCallback(exception_callback);
+            completed_pipelines_executor->asyncExecute();
+        }
+
+        if (remote_pipelines_manager)
+        {
+            remote_pipelines_manager->setExceptionCallback(exception_callback);
+            remote_pipelines_manager->asyncReceiveReporter();
+        }
+        begin_execute = true;
+    }
+
     rethrowExceptionIfHas();
 
     bool is_execution_finished = !pulling_async_pipeline_executor->pull(block, milliseconds);

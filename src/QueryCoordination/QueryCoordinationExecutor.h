@@ -1,9 +1,9 @@
 #pragma once
 #include <functional>
 #include <memory>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include "QueryCoordination/Pipelines/CompletedPipelinesExecutor.h"
+#include "QueryCoordination/Pipelines/RemotePipelinesManager.h"
+#include "Processors/Executors/PullingAsyncPipelineExecutor.h"
 
 /// Includes 3 parts of logic
 /// main PullingAsyncPipelineExecutor::pull
@@ -57,6 +57,16 @@ public:
     /// Get query profile info.
     ProfileInfo & getProfileInfo();
 
+    std::shared_ptr<CompletedPipelinesExecutor> getCompletedPipelinesExecutor()
+    {
+        return completed_pipelines_executor;
+    }
+
+    std::shared_ptr<RemotePipelinesManager> getRemotePipelinesManager()
+    {
+        return remote_pipelines_manager;
+    }
+
     /// Internal executor data.
     struct Data;
 
@@ -85,6 +95,8 @@ private:
     std::mutex mutex;
     std::exception_ptr exception;
     bool has_exception = false;
+
+    bool begin_execute = false;
 };
 
 }

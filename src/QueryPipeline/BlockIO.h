@@ -2,7 +2,7 @@
 
 #include <functional>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryCoordination/Pipelines//Pipelines.h>
+#include <QueryCoordination/QueryCoordinationState.h>
 
 
 namespace DB
@@ -26,7 +26,7 @@ struct BlockIO
     QueryPipeline pipeline;
 
     /// for query coordination
-    Pipelines pipelines;
+    QueryCoordinationState query_coord_state;
 
     /// Callbacks for query logging could be set here.
     std::function<void(QueryPipeline &)> finish_callback;

@@ -260,7 +260,7 @@ private:
     [[noreturn]] void receiveUnexpectedIgnoredPartUUIDs();
     [[noreturn]] void receiveUnexpectedHello();
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
-    bool receivePipelinesBeginExecute();
+    bool receiveBeginExecutePipelines();
 
     /// Process INSERT query
     void processInsertQuery();

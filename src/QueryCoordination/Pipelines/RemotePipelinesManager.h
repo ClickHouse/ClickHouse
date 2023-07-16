@@ -26,7 +26,7 @@ public:
     {
         for (auto & [host, connection] : host_connection)
         {
-            managed_nodes.emplace_back(ManagedNode{.is_local = (local_host == host), .host_port = host, .connection = connection});
+            managed_nodes.emplace_back(ManagedNode{.host_port = host, .connection = connection});
         }
     }
 
@@ -51,7 +51,6 @@ private:
 
     struct ManagedNode
     {
-        bool is_local = false;
         bool is_finished = false;
         String host_port;
         IConnectionPool::Entry connection;

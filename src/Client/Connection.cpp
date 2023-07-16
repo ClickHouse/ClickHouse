@@ -723,9 +723,9 @@ void Connection::sendFragments(
     out->next();
 }
 
-void Connection::sendExecuteQueryPipelines(const String & query_id_)
+void Connection::sendBeginExecutePipelines(const String & query_id_)
 {
-    writeVarUInt(Protocol::Client::PipelinesBeginExecute, *out);
+    writeVarUInt(Protocol::Client::BeginExecutePipelines, *out);
     writeStringBinary(query_id_, *out);
     out->next();
 }
@@ -1061,7 +1061,7 @@ Packet Connection::receivePacket()
                 res.block = receiveProfileEvents();
                 return res;
 
-            case Protocol::Server::FragmentsReady:
+            case Protocol::Server::PipelinesReady:
                 return res;
 
             default:

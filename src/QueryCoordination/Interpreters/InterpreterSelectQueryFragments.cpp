@@ -953,19 +953,21 @@ BlockIO InterpreterSelectQueryFragments::execute()
     for (const auto & fragment : fragments)
     {
         /// add fragment wait for be scheduled
-        FragmentMgr::getInstance().addFragment(context->getCurrentQueryId(), fragment, context);
+        res.query_coord_state.fragments = fragments;
     }
 
     /// schedule fragments
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        std::shared_ptr<Coordinator> coord = std::make_shared<Coordinator>(fragments, context, formattedAST(query_ptr));
-        coord->scheduleExecuteDistributedPlan();
+        Coordinator coord(fragments, context, formattedAST(query_ptr));
+        coord.schedulePrepareDistributedPipelines();
 
-        context->setCoordinator(coord);
-
-        res.pipelines = std::move(coord->pipelines);
+        /// local already be scheduled
+        res.query_coord_state.pipelines = std::move(coord.pipelines);
+        res.query_coord_state.remote_host_connection = coord.getRemoteHostConnection();
         res.pipeline = res.pipelines.rootPipeline();
+
+        /// TODO quota only use to root pipeline?
         setQuota(res.pipeline);
     }
 

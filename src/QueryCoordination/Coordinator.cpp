@@ -8,6 +8,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
 #include <QueryCoordination/Pipelines/PipelinesBuilder.h>
+#include <QueryCoordination/fragmentsToPipelines.h>
 
 namespace DB
 {
@@ -17,10 +18,10 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-void Coordinator::scheduleExecuteDistributedPlan()
+void Coordinator::schedulePrepareDistributedPipelines()
 {
     // If the fragment has a scanstep, it is scheduled according to the cluster copy fragment
-    const String & local_host = assignFragmentToHost();
+    local_host = assignFragmentToHost();
 
     for (auto & [host, fragment_ids] : host_fragments)
     {
@@ -38,9 +39,9 @@ void Coordinator::scheduleExecuteDistributedPlan()
         }
     }
 
-    sendFragmentToDistributed(local_host);
+    sendFragmentsToPreparePipelines();
 
-    sendExecuteQueryPipelines(local_host);
+    sendBeginExecutePipelines();
 
     remote_pipelines_manager->setManagedNode(host_connection, local_host);
 }
@@ -244,7 +245,7 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
 }
 
 
-void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
+void Coordinator::sendFragmentsToPreparePipelines()
 {
     const std::unordered_map<FragmentID, FragmentRequest> & fragment_requests = buildFragmentRequest();
 
@@ -271,13 +272,9 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
             fragments_request.fragments_request.emplace_back(request);
         }
 
-        if (host == local_shard_host)
+        if (host == local_host)
         {
-            DistributedFragmentBuilder builder(fragments_request.fragments_request);
-            const DistributedFragments & distributed_fragments = builder.build();
-
-            PipelinesBuilder pipelines_builder(context->getCurrentQueryId(), context->getSettingsRef(), distributed_fragments);
-            pipelines = pipelines_builder.build();
+            pipelines = fragmentsToPipelines(fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef());
         }
         else
         {
@@ -296,13 +293,13 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
     // receive ready
     for (auto & [host, _] : host_fragments)
     {
-        if (host != local_shard_host)
+        if (host != local_host)
         {
             auto package = host_connection[host]->receivePacket();
 
             size_t max_try_num = 5;
             size_t try_num = 0;
-            while (package.type != Protocol::Server::FragmentsReady)
+            while (package.type != Protocol::Server::PipelinesReady)
             {
                 if (try_num >= max_try_num)
                 {
@@ -313,19 +310,31 @@ void Coordinator::sendFragmentToDistributed(const String & local_shard_host)
                 try_num++;
             }
 
-            if (package.type != Protocol::Server::FragmentsReady)
+            if (package.type != Protocol::Server::PipelinesReady)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Didn't receive ready from {}", host);
         }
     }
 }
 
-void Coordinator::sendExecuteQueryPipelines(const String & local_shard_host)
+void Coordinator::sendBeginExecutePipelines()
 {
-    for (auto [host, fragments_for_dump] : host_fragments)
+    for (auto [host, _] : host_fragments)
     {
-        if (host != local_shard_host)
+        if (host != local_host)
         {
-            host_connection[host]->sendExecuteQueryPipelines(context->getCurrentQueryId());
+            host_connection[host]->sendBeginExecutePipelines(context->getCurrentQueryId());
+        }
+    }
+}
+
+std::unordered_map<String, IConnectionPool::Entry> Coordinator::getRemoteHostConnection()
+{
+    std::unordered_map<String, IConnectionPool::Entry> res;
+    for (auto [host, _] : host_fragments)
+    {
+        if (host != local_host)
+        {
+            res.emplace(host, host_connection[host]);
         }
     }
 }
