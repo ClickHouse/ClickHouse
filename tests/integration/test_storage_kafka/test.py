@@ -4656,7 +4656,6 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
                      kafka_commit_on_select = 1,
                      kafka_group_name = '{topic}',
                      kafka_format = 'JSONEachRow';
-        DROP TABLE IF EXISTS test.kafka_persistent;
         """
     )
 
@@ -4736,6 +4735,71 @@ is_currently_used:          0
 """
     )
 
+    instance.query("DROP TABLE test.kafka")
+    instance.query("DROP TABLE test.kafka2")
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    topic = "system_kafka_cons_mv"
+    kafka_create_topic(admin_client, topic, num_partitions=2)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
+        DROP TABLE IF EXISTS test.kafka_persistent;
+        DROP TABLE IF EXISTS test.kafka_persistent2;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka_persistent (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.kafka_persistent2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv TO test.kafka_persistent AS
+        SELECT key, value
+        FROM test.kafka;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv2 TO test.kafka_persistent2 AS
+        SELECT key, value
+        FROM test.kafka2;
+        """
+    )
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
+    time.sleep(3)
+
+
     retries = 0
     result_rdkafka_stat = ""
     while True:
@@ -4761,6 +4825,10 @@ JSONExtractString(rdkafka_stat, 'type'): consumer
 
     instance.query("DROP TABLE test.kafka")
     instance.query("DROP TABLE test.kafka2")
+    instance.query("DROP TABLE test.kafka_persistent")
+    instance.query("DROP TABLE test.kafka_persistent2")
+    instance.query("DROP TABLE test.persistent_kafka_mv")
+    instance.query("DROP TABLE test.persistent_kafka_mv2")
 
     kafka_delete_topic(admin_client, topic)
 

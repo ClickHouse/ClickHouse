@@ -31,7 +31,6 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"assignments.topic", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
         {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
-        {"assignments.offset_committed", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
         {"last_exception_time", std::make_shared<DataTypeDateTime>()},
         {"last_exception", std::make_shared<DataTypeString>()},
         {"last_poll_time", std::make_shared<DataTypeDateTime>()},
@@ -66,9 +65,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
     auto & assigments_current_offset = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_current_offset_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
-
-    auto & assigments_offset_committed = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
-    auto & assigments_offset_committed_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
     auto & last_exception_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
     auto & last_exception = assert_cast<ColumnString &>(*res_columns[index++]);
@@ -118,15 +114,12 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
                     assigments_partition_id.insert(assign.partition_id);
                     assigments_current_offset.insert(assign.current_offset);
-                    assigments_offset_committed.insert(assign.offset_committed);
                 }
                 last_assignment_num += num_assignnemts;
 
                 assigments_topics_offsets.push_back(last_assignment_num);
                 assigments_partition_id_offsets.push_back(last_assignment_num);
                 assigments_current_offset_offsets.push_back(last_assignment_num);
-                assigments_offset_committed_offsets.push_back(last_assignment_num);
-
 
                 last_exception.insertData(consumer_stat.last_exception.data(), consumer_stat.last_exception.size());
                 last_exception_time.insert(consumer_stat.last_exception_time);
