@@ -15,13 +15,12 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <unordered_map>
+
 
 namespace DB
 {
