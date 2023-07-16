@@ -128,17 +128,17 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
     if (tryGetTableFromCache(name))
         return true;
 
-    return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */false);
+    return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */ false);
 }
 
-StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_) const
+StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
     /// Check if table exists in loaded tables map.
     if (auto table = tryGetTableFromCache(name))
         return table;
 
     auto table_path = getTablePath(name);
-    checkTableFilePath(table_path, context_, /* throw_on_error */true);
+    checkTableFilePath(table_path, context_, throw_on_error);
 
     /// If the file exists, create a new table using TableFunctionFile and return it.
     auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
@@ -158,7 +158,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
 StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_) const
 {
     /// getTableImpl can throw exceptions, do not catch them to show correct error to user.
-    if (auto storage = getTableImpl(name, context_))
+    if (auto storage = getTableImpl(name, context_, true))
         return storage;
 
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
@@ -167,20 +167,7 @@ StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_
 
 StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const
 {
-    try
-    {
-        return getTableImpl(name, context_);
-    }
-    catch (const Exception & e)
-    {
-        /// Ignore exceptions thrown by TableFunctionFile, which indicate that there is no table
-        /// see tests/02722_database_filesystem.sh for more details.
-        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-        {
-            return nullptr;
-        }
-        throw;
-    }
+    return getTableImpl(name, context_, false);
 }
 
 bool DatabaseFilesystem::empty() const
