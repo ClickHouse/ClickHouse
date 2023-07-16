@@ -4799,7 +4799,6 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
     time.sleep(3)
 
-
     retries = 0
     result_rdkafka_stat = ""
     while True:
