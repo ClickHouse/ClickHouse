@@ -487,36 +487,23 @@ class ClickhouseIntegrationTestsRunner:
 
     def _update_counters(self, main_counters, current_counters, broken_tests):
         for test in current_counters["PASSED"]:
-            if (
-                test not in main_counters["PASSED"]
-                and test not in main_counters["FLAKY"]
-            ):
-                is_flaky = False
+            if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
                     main_counters["FAILED"].remove(test)
-                    is_flaky = True
                 if test in main_counters["ERROR"]:
                     main_counters["ERROR"].remove(test)
-                    is_flaky = True
                 if test in main_counters["BROKEN"]:
                     main_counters["BROKEN"].remove(test)
-                    is_flaky = True
 
-                if is_flaky:
-                    main_counters["FLAKY"].append(test)
+                if test not in broken_tests:
+                    main_counters["PASSED"].append(test)
                 else:
-                    if test not in broken_tests:
-                        main_counters["PASSED"].append(test)
-                    else:
-                        main_counters["NOT_FAILED"].append(test)
+                    main_counters["NOT_FAILED"].append(test)
 
         for state in ("ERROR", "FAILED"):
             for test in current_counters[state]:
-                if test in main_counters["FLAKY"]:
-                    continue
                 if test in main_counters["PASSED"]:
                     main_counters["PASSED"].remove(test)
-                    main_counters["FLAKY"].append(test)
                     continue
                 if test not in broken_tests:
                     if test not in main_counters[state]:
@@ -605,7 +592,6 @@ class ClickhouseIntegrationTestsRunner:
                 "PASSED": [],
                 "FAILED": [],
                 "SKIPPED": [],
-                "FLAKY": [],
             }
             tests_times = defaultdict(float)
             for test in tests_in_group:
@@ -627,7 +613,6 @@ class ClickhouseIntegrationTestsRunner:
             "PASSED": [],
             "FAILED": [],
             "SKIPPED": [],
-            "FLAKY": [],
             "BROKEN": [],
             "NOT_FAILED": [],
         }
@@ -757,11 +742,11 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 log_paths.append(extras_result_path)
 
-            if len(counters["PASSED"]) + len(counters["FLAKY"]) == len(tests_in_group):
+            if len(counters["PASSED"]) == len(tests_in_group):
                 logging.info("All tests from group %s passed", test_group)
                 break
             if (
-                len(counters["PASSED"]) + len(counters["FLAKY"]) >= 0
+                len(counters["PASSED"]) >= 0
                 and len(counters["FAILED"]) == 0
                 and len(counters["ERROR"]) == 0
             ):
@@ -825,7 +810,7 @@ class ClickhouseIntegrationTestsRunner:
                 result_state = "failure"
                 if not should_fail:
                     break
-            assert len(counters["FLAKY"]) == 0 or should_fail
+            assert should_fail
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
             logging.info("And going to sleep for some time")
@@ -835,7 +820,7 @@ class ClickhouseIntegrationTestsRunner:
             time.sleep(5)
 
         test_result = []
-        for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY"):
+        for state in ("ERROR", "FAILED", "PASSED", "SKIPPED"):
             if state == "PASSED":
                 text_state = "OK"
             elif state == "FAILED":
@@ -928,7 +913,6 @@ class ClickhouseIntegrationTestsRunner:
             "PASSED": [],
             "FAILED": [],
             "SKIPPED": [],
-            "FLAKY": [],
             "BROKEN": [],
             "NOT_FAILED": [],
         }
@@ -988,7 +972,6 @@ class ClickhouseIntegrationTestsRunner:
             "FAILED",
             "PASSED",
             "SKIPPED",
-            "FLAKY",
             "BROKEN",
             "NOT_FAILED",
         ):
@@ -1004,15 +987,12 @@ class ClickhouseIntegrationTestsRunner:
             ]
 
         failed_sum = len(counters["FAILED"]) + len(counters["ERROR"])
-        status_text = "fail: {}, passed: {}, flaky: {}".format(
-            failed_sum, len(counters["PASSED"]), len(counters["FLAKY"])
-        )
+        status_text = "fail: {}, passed: {}".format(failed_sum, len(counters["PASSED"]))
 
         if self.soft_deadline_time < time.time():
             status_text = "Timeout, " + status_text
             result_state = "failure"
 
-        counters["FLAKY"] = []
         if not counters or sum(len(counter) for counter in counters.values()) == 0:
             status_text = "No tests found for some reason! It's a bug"
             result_state = "failure"
