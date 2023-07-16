@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import logging
 import os.path as p
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, ArgumentTypeError
@@ -287,6 +288,19 @@ def update_cmake_version(
         f.write(VERSIONS_TEMPLATE.format_map(version.as_dict()))
 
 
+def parse_git_shortlog(data_string):
+    results = []
+    pattern = re.compile(r"(\d+)\s+([^<]*)(<.*>)")
+    for line in data_string.split("\n"):
+        match = pattern.match(line.strip())
+        if match:
+            commits, name, email = match.groups()
+            results.append(
+                f'    {{ "{name.strip()}", "{email.strip("<>")}", {commits} }},'
+            )
+    return results
+
+
 def update_contributors(
     relative_contributors_path: str = GENERATED_CONTRIBUTORS,
     force: bool = False,
@@ -303,14 +317,7 @@ def update_contributors(
     # format: "  1016  Alexey Arno"
     shortlog = git_runner.run("git shortlog HEAD --summary --email")
 
-    contributors = [c.split() for c in shortlog.split("\n")]
-
-    contributors = [
-        [" ".join(c[1:-1]).replace('"', r"\""), c[-1].strip("<>"), c[0]]
-        for c in contributors
-    ]
-
-    contributors = [f'    {{ "{c[0]}", "{c[1]}", {c[2]} }},' for c in contributors]
+    contributors = parse_git_shortlog(shortlog)
 
     executer = p.relpath(p.realpath(__file__), git_runner.cwd)
     content = CONTRIBUTORS_TEMPLATE.format(
