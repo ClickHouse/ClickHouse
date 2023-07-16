@@ -6,7 +6,7 @@ sidebar_position: 110
 # array_concat_agg 
 - Alias of `groupArrayArray`. The function is case insensitive.
 
-**Exampla**
+**Example**
 
 ```text
 SELECT *
