@@ -695,6 +695,7 @@ def test_too_many_parts(started_cluster):
                 break
             time.sleep(1)
             print(f"wait sync try {i}")
+        instance2.query("SYSTEM FLUSH LOGS")
         if instance2.contains_in_log("DB::Exception: Too many parts"):
             num = num - 1
             break
