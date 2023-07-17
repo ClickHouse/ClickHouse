@@ -65,7 +65,7 @@ BlockIO InterpreterDropQuery::execute()
     if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
         drop.sync = true;
 
-    if (drop.table)
+    if (!drop.databases_tables.empty())
         return executeToTable(drop);
     else if (drop.database)
         return executeToDatabase(drop);
@@ -87,11 +87,22 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
 
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 {
+    BlockIO res;
+    for (const auto & database_table : query.databases_tables)
+    {
     DatabasePtr database;
     UUID table_to_wait_on = UUIDHelpers::Nil;
-    auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
-    if (query.sync)
-        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
+    ASTPtr drop_table_ptr=query.clone();
+    auto & drop_single_table=drop_table_ptr->as<ASTDropQuery &>();
+
+    drop_single_table.database=std::get<0>(database_table);
+    drop_single_table.table=std::get<1>(database_table);
+     
+    res = executeToTableImpl(getContext(), drop_single_table, database, table_to_wait_on);
+    if (drop_single_table.sync)
+        waitForTableToBeActuallyDroppedOrDetached(drop_single_table, database, table_to_wait_on);
+    }
+
     return res;
 }
 
