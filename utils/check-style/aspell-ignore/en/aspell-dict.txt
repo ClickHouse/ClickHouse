@@ -2539,3 +2539,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+curdate
