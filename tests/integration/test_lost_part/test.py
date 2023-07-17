@@ -278,9 +278,9 @@ def test_lost_last_part(start_cluster):
             assert int(result) <= 2, "Have a lot of entries in queue {}".format(
                 node1.query("SELECT * FROM system.replication_queue FORMAT Vertical")
             )
-            if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log(
-                "DROP/DETACH PARTITION"
-            ):
+            if node1.contains_in_log(
+                "Cannot create empty part"
+            ) and node1.contains_in_log("DROP/DETACH PARTITION"):
                 break
             if node1.contains_in_log(
                 "Created empty part 8b8f0fede53df97513a9fb4cb19dc1e4_0_0_0 "
