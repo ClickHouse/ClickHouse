@@ -460,7 +460,7 @@ try
         config().getString("path", ""), // preprocessed dir
         std::move(unused_cache),
         unused_event,
-        [&](ConfigurationPtr config, bool, [[maybe_unused]] ConfigReloader::Paths& extra)
+        [&](ConfigurationPtr config, bool, [[maybe_unused]] ConfigReloader::Paths & extra)
         {
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
