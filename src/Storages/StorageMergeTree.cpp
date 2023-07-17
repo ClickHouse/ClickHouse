@@ -599,7 +599,14 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
-    Int64 version = startMutation(commands, query_context);
+    Int64 version;
+    {
+        /// It's important to serialize order of mutations with alter queries because
+        /// they can depend on each other.
+        auto alter_lock = lockForAlter(query_context->getSettings().lock_acquire_timeout);
+        version = startMutation(commands, query_context);
+    }
+
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version, false);
 }
