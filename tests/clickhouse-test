@@ -57,6 +57,8 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    # This is from LSan, and it indicates its own internal problem:
+    "Unable to get registers from thread",
 ]
 
 MAX_RETRIES = 3
@@ -1210,7 +1212,29 @@ class TestCase:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
-            drop_database_query = "DROP DATABASE IF EXISTS " + database
+
+            # Check if the test does not cleanup its tables.
+            # Only for newly added tests. Please extend this check to the old tests as well.
+            if self.case_file >= "02800":
+                leftover_tables = (
+                    clickhouse_execute(
+                        args,
+                        f"SHOW TABLES FROM {database}",
+                        timeout=seconds_left,
+                        settings={
+                            "log_comment": args.testcase_basename,
+                        },
+                    )
+                    .decode()
+                    .replace("\n", ", ")
+                )
+
+                if len(leftover_tables) != 0:
+                    raise Exception(
+                        f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
+                    )
+
+            drop_database_query = f"DROP DATABASE IF EXISTS {database}"
             if args.replicated_database:
                 drop_database_query += " ON CLUSTER test_cluster_database_replicated"
 
