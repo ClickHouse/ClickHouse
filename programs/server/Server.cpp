@@ -94,8 +94,6 @@
 #include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
-
-#include <Poco/Environment.h>
 #include <Common/VersionNumber.h>
 
 #include "config.h"

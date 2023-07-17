@@ -111,7 +111,7 @@ On newer Linux kernels transparent huge pages are alright.
 $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-Defragmentation settings might also be important. Refer to [this](https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#global-thp-controls) article for the details.
+De-fragmentation settings might also be important. Refer to [this](https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#global-thp-controls) article for the details.
 
 ``` bash
 $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
