@@ -33,11 +33,12 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
+    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
         read_info, columns_to_read,
         metadata_snapshot, uncompressed_cache,
@@ -257,6 +258,18 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     });
 
     return res;
+}
+
+std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const String & column_name) const
+{
+    try
+    {
+        return getDataPartStorage().getFileLastModified(column_name + DATA_FILE_EXTENSION).epochTime();
+    }
+    catch (const fs::filesystem_error &)
+    {
+        return {};
+    }
 }
 
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const

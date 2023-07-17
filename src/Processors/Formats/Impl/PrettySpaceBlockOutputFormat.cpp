@@ -100,7 +100,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
 void PrettySpaceBlockOutputFormat::writeSuffix()
 {
-    writeSquashedChunkIfNeeded();
+    writeMonoChunkIfNeeded();
 
     if (total_rows >= format_settings.pretty.max_rows)
     {

@@ -279,6 +279,8 @@ cityHash64(par1,...)
 
 This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
+Note that Google changed the algorithm of CityHash after it has been added to ClickHouse. In other words, ClickHouse's cityHash64 and Google's upstream CityHash now produce different results. ClickHouse cityHash64 corresponds to CityHash v1.0.2.
+
 **Arguments**
 
 The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
@@ -624,7 +626,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## gccMurmurHash
 
-Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between CLang and GCC builds.
+Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between Clang and GCC builds.
 
 **Syntax**
 
@@ -1088,7 +1090,7 @@ wordShingleSimHashUTF8(string[, shinglesize])
 **Arguments**
 
 - `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
-- `shinglesize` — The size of a word shingle. Optinal. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Returned value**
 

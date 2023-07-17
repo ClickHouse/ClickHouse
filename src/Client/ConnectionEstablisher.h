@@ -91,7 +91,7 @@ private:
 
         ConnectionEstablisherAsync & connection_establisher_async;
 
-        void run(AsyncCallback async_callback, ResumeCallback suspend_callback) override;
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
     void cancelAfter() override;

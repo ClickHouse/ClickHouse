@@ -15,8 +15,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)
-                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias.c_str()}.ignore(pos, expected)))
+            if (ParserKeyword{type_info.plural_name}.ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias}.ignore(pos, expected)))
             {
                 type = i;
                 return true;
