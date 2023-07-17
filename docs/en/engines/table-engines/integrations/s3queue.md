@@ -69,7 +69,7 @@ SETTINGS
 
 Possible values:
 
-- unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKepeer.
+- unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, only the max name of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
 Default value: `unordered`.
@@ -222,4 +222,3 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 :::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
-
