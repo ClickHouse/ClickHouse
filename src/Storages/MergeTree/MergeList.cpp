@@ -1,19 +1,16 @@
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
-#include <base/getThreadId.h>
 
 
 namespace DB
 {
 
-MergeListElement::MergeListElement(
-    const StorageID & table_id_,
-    FutureMergedMutatedPartPtr future_part,
-    const ContextPtr & context)
+MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
     , result_part_name{future_part->name}
@@ -40,8 +37,9 @@ MergeListElement::MergeListElement(
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
 
-        WriteBufferFromString out(partition);
-        future_part->getPartition().serializeText(future_part->parts[0]->storage, out, {});
+        partition = "jianfei-debugging-sigsev";
+        // WriteBufferFromString out(partition);
+        // future_part->getPartition().serializeText(future_part->parts[0]->storage, out, {});
     }
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
