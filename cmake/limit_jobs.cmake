@@ -1,7 +1,11 @@
+# Limit compiler/linker job concurrency to avoid OOMs on subtrees where compilation/linking is memory-intensive.
+#
 # Usage from CMake:
-# set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "") # megabyte
-# set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "") # megabyte
-# include (cmake/limit_jobs.cmake)
+#    set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "") # megabyte
+#    set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "") # megabyte
+#    include (cmake/limit_jobs.cmake)
+#
+# (bigger values mean fewer jobs)
 
 cmake_host_system_information(RESULT TOTAL_PHYSICAL_MEMORY QUERY TOTAL_PHYSICAL_MEMORY)
 cmake_host_system_information(RESULT NUMBER_OF_LOGICAL_CORES QUERY NUMBER_OF_LOGICAL_CORES)
@@ -17,7 +21,7 @@ if (NOT PARALLEL_COMPILE_JOBS AND MAX_COMPILER_MEMORY)
         set (PARALLEL_COMPILE_JOBS 1)
     endif ()
     if (PARALLEL_COMPILE_JOBS LESS NUMBER_OF_LOGICAL_CORES)
-        message(WARNING "The autocalculated compile jobs limit (${PARALLEL_COMPILE_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_COMPILE_JOBS to override.")
+        message(WARNING "The auto-calculated compile jobs limit (${PARALLEL_COMPILE_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_COMPILE_JOBS to override.")
     endif()
 endif ()
 
@@ -28,7 +32,7 @@ if (NOT PARALLEL_LINK_JOBS AND MAX_LINKER_MEMORY)
         set (PARALLEL_LINK_JOBS 1)
     endif ()
     if (PARALLEL_LINK_JOBS LESS NUMBER_OF_LOGICAL_CORES)
-        message(WARNING "The autocalculated link jobs limit (${PARALLEL_LINK_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_LINK_JOBS to override.")
+        message(WARNING "The auto-calculated link jobs limit (${PARALLEL_LINK_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_LINK_JOBS to override.")
     endif()
 endif ()
 
@@ -43,7 +47,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLE
     set (PARALLEL_LINK_JOBS 2)
 endif()
 
-message(STATUS "System has ${NUMBER_OF_LOGICAL_CORES} logical cores and ${TOTAL_PHYSICAL_MEMORY} megabytes of memory. Building with ${PARALLEL_COMPILE_JOBS} compile jobs and ${PARALLEL_LINK_JOBS} linker jobs.")
+message(STATUS "Building sub-tree with ${PARALLEL_COMPILE_JOBS} compile jobs and ${PARALLEL_LINK_JOBS} linker jobs (system: ${NUMBER_OF_LOGICAL_CORES} cores, ${TOTAL_PHYSICAL_MEMORY} MB DRAM, 'OFF' means the native core count).")
 
 if (PARALLEL_COMPILE_JOBS LESS NUMBER_OF_LOGICAL_CORES)
     set(CMAKE_JOB_POOL_COMPILE compile_job_pool${CMAKE_CURRENT_SOURCE_DIR})
