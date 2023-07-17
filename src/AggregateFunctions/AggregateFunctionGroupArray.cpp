@@ -125,6 +125,7 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
+    factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }
