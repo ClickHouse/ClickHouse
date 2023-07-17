@@ -3,8 +3,10 @@
 #include "KeeperException.h"
 #include "TestKeeper.h"
 
-#include <functional>
 #include <filesystem>
+#include <functional>
+#include <ranges>
+#include <vector>
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -350,15 +352,33 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 
 void ZooKeeper::createAncestors(const std::string & path)
 {
-    size_t pos = 1;
+    std::string data = "";
+    std::string path_created; // Ignored
+    std::vector<std::string> pending_nodes;
+
+    size_t last_pos = path.rfind('/');
+    std::string current_node = path.substr(0, last_pos);
+
     while (true)
     {
-        pos = path.find('/', pos);
-        if (pos == std::string::npos)
+        Coordination::Error code = createImpl(current_node, data, CreateMode::Persistent, path_created);
+        if (code == Coordination::Error::ZNONODE)
+        {
+            /// The parent node doesn't exist. Save the current node and try with the parent
+            last_pos = current_node.rfind('/');
+            if (last_pos == std::string::npos || last_pos == 0)
+                throw KeeperException(code, path);
+            pending_nodes.emplace_back(std::move(current_node));
+            current_node = path.substr(0, last_pos);
+        }
+        else if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
             break;
-        createIfNotExists(path.substr(0, pos), "");
-        ++pos;
+        else
+            throw KeeperException(code, path);
     }
+
+    for (const std::string & pending : pending_nodes | std::views::reverse)
+        createIfNotExists(pending, data);
 }
 
 void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
