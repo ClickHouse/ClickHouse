@@ -1,22 +1,5 @@
 <test>
-    <settings>
-        <max_threads>8</max_threads>
-        <max_size_to_preallocate_for_aggregation>1000000000</max_size_to_preallocate_for_aggregation>
-    </settings>
-
-    <substitutions>
-        <substitution>
-            <name>size</name>
-            <values>
-                <value>50000000</value>
-                <value>100000000</value>
-            </values>
-        </substitution>
-    </substitutions>
-
-    <query>select * from numbers_mt(50000000) group by number format Null</query>
-    <query>select * from numbers_mt(100000000) group by number format Null</query>
-
-    <query>select * from numbers_mt(50000000) group by number format Null settings collect_hash_table_stats_during_aggregation=0</query>
-    <query>select * from numbers_mt(100000000) group by number format Null settings collect_hash_table_stats_during_aggregation=0</query>
+    <query>SELECT ClientIP AS k, uniqUpTo(100)(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT count() FROM zeros(100000) WHERE NOT ignore(randomFixedString(10000))</query>
+    <query>SELECT arrayReduce('count', range(100000000))</query>
 </test>

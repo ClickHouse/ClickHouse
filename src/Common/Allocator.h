@@ -35,9 +35,6 @@
 
 #include <Common/Allocator_fwd.h>
 
-#include <Poco/Environment.h>
-#include <Common/VersionNumber.h>
-
 #include <base/errnoToString.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -86,6 +83,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 }
+
+void setEnableHugePagesFlag(bool flag);
+bool isHugePagesEnabled();
+
 
 /** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
   * Also used in hash tables.
@@ -306,19 +307,21 @@ private:
 
     static void ALWAYS_INLINE considerEnablingHugePages(void * buf, size_t new_size)
     {
+        /// MADV_HUGEPAGE is a non-standard flag according to https://manpages.ubuntu.com/manpages/focal/en/man2/madvise.2.html.
+#if defined(MADV_HUGEPAGE)
         /// In reality the technology is not flawless, but most of the problems (relevant to CH) people observed when allocators returned small parts of huge pages back to the system.
         /// We hope to avoid these problems by applying MADV_HUGEPAGE only to allocations that go past jemalloc straight to mmap.
         if (new_size < MMAP_THRESHOLD)
             return;
 
-        /// The version used by Ubuntu 20.04 LTS; supposed to be fresh enough to not contain any significant bugs.
-        /* if (DB::VersionNumber{Poco::Environment::osVersion()} < DB::VersionNumber{5, 4, 0}) */
-        /* return; */
+        if (!isHugePagesEnabled())
+            return;
 
         /// The address should be aligned to page size boundary, but no need to check since it is returned by mmap.
         auto rc = ::madvise(buf, new_size, MADV_HUGEPAGE);
         if (rc != 0)
             LOG_WARNING(&Poco::Logger::get("Allocator"), "requesting madvise to use huge pages error: {}", errnoToString(errno));
+#endif
     }
 };
 

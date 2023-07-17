@@ -95,6 +95,9 @@
 #include <filesystem>
 #include <unordered_set>
 
+#include <Poco/Environment.h>
+#include <Common/VersionNumber.h>
+
 #include "config.h"
 #include "config_version.h"
 
@@ -127,6 +130,36 @@
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
+
+namespace
+{
+String readString(const String & path)
+{
+    DB::ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
+}
+
+int readNumber(const String & path)
+{
+    DB::ReadBufferFromFile in(path);
+    int result;
+    readText(result, in);
+    return result;
+}
+
+bool isTransparentHugePagesApplicable()
+{
+    /// The version used by Ubuntu 20.04 LTS; supposed to be fresh enough to not contain any significant bugs.
+    if (DB::VersionNumber{Poco::Environment::osVersion()} < DB::VersionNumber{5, 4, 0})
+        return false;
+
+    const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+    /// Other alternatives are "always" when there is no need to set MADV_HUGEPAGE and "never" when HPs are simply disabled.
+    return readString(filename).find("[madvise]") != std::string::npos;
+}
+}
 
 namespace CurrentMetrics
 {
@@ -443,26 +476,6 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-/// Unused in other builds
-#if defined(OS_LINUX)
-static String readString(const String & path)
-{
-    ReadBufferFromFile in(path);
-    String contents;
-    readStringUntilEOF(contents, in);
-    return contents;
-}
-
-static int readNumber(const String & path)
-{
-    ReadBufferFromFile in(path);
-    int result;
-    readText(result, in);
-    return result;
-}
-
-#endif
-
 static void sanityChecks(Server & server)
 {
     std::string data_path = getCanonicalPath(server.config().getString("path", DBMS_DEFAULT_PATH));
@@ -475,7 +488,7 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        String clocksource = readString(filename);
+        String clocksource = ::readString(filename);
         if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
@@ -496,7 +509,7 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readString(filename).find("[always]") != std::string::npos)
+        if (::readString(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
@@ -1179,6 +1192,8 @@ try
             background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
 
             total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
+
+            setEnableHugePagesFlag(server_settings_.allow_use_huge_pages && isTransparentHugePagesApplicable());
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
