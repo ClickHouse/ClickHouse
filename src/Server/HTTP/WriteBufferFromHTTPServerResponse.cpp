@@ -29,7 +29,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     }
 }
 
-void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
 {
     if (headers_finished_sending)
         return;
@@ -43,19 +43,17 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
     writeCString("\"}", progress_string_writer);
 
     if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+        *response_header_ostr << header_name << progress_string_writer.str() << "\r\n" << std::flush;
+}
+
+void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+{
+    writeHeaderProgressImpl("X-ClickHouse-Summary: ");
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-    if (headers_finished_sending)
-        return;
-
-    WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
-
-    if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
+    writeHeaderProgressImpl("X-ClickHouse-Progress: ");
 }
 
 void WriteBufferFromHTTPServerResponse::writeExceptionCode()
@@ -154,7 +152,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 }
 
 
-void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
+void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Int64 peak_memory_usage_)
 {
     std::lock_guard lock(mutex);
 
@@ -163,7 +161,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-
+    peak_memory_usage = peak_memory_usage_;
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
         progress_watch.restart();
@@ -172,12 +170,6 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         startSendHeaders();
         writeHeaderProgress();
     }
-}
-
-void WriteBufferFromHTTPServerResponse::onMemoryUsage(Int64 usage)
-{
-    std::lock_guard lock(mutex);
-    peak_memory_usage = usage;
 }
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
