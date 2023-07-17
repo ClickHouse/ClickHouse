@@ -7,11 +7,16 @@ description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 
 # Build Clickhouse with DEFLATE_QPL
 
-- Make sure your target machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
-- Pass the following flag to CMake when building ClickHouse:
+- Make sure your host machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
+- For Clickhouse version [v23.5.1.3174-stable](docs/changelogs/v23.5.1.3174-stable.md) and later, deflate_qpl is enabled by default which means no additional flags required pass to cmake build.
+- For Clickhouse version between [v22.8.1.2097-lts](docs/changelogs/v22.8.1.2097-lts.md) and [v23.5.1.3174-stable](docs/changelogs/v23.5.1.3174-stable.md), you need pass the following flag to CMake when building ClickHouse:
 
 ``` bash
-cmake -DENABLE_QPL=1 ..
+cmake -DAVX512=1 -DENABLE_QPL=1 ..
+```
+or
+``` bash
+cmake -DAVX2=1 -DENABLE_QPL=1 ..
 ```
 
 - For generic requirements, please refer to Clickhouse generic [build instructions](/docs/en/development/build.md)
