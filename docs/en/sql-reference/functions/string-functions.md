@@ -90,6 +90,8 @@ Returns the length of a string in bytes (not: in characters or Unicode code poin
 
 The function also works for arrays.
 
+Alias: `OCTET_LENGTH`
+
 ## lengthUTF8
 
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
