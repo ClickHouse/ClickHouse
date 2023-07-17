@@ -114,7 +114,9 @@ private:
 
 using Chunks = std::vector<Chunk>;
 
-/// ChunkOffsets marks offsets of different sub-chunks, which will be used by async inserts.
+/// AsyncInsert needs two kinds of information:
+/// - offsets of different sub-chunks
+/// - tokens of different sub-chunks, which are assigned by setting `insert_deduplication_token`.
 class AsyncInsertInfo : public ChunkInfo
 {
 public:
