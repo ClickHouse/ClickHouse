@@ -112,6 +112,7 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -363,6 +364,8 @@ in
 inIgnoreSet
 indexHint
 indexOf
+initcap
+initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
