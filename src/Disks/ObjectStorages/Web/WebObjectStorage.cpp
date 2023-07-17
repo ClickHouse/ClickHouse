@@ -140,6 +140,7 @@ bool WebObjectStorage::exists(const std::string & path) const
 
             initialize(index_file_dir, unique_lock);
         }
+        /// Files are never deleted from `files` as disk is read only, so no worry that we unlock now.
         unique_lock.unlock();
         shared_lock.lock();
     }
