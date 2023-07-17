@@ -215,7 +215,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     else if (ParserKeyword("FALSE").ignore(pos, expected))
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name.starts_with("disk"))
     {
         tryGetIdentifierNameInto(name, change.name);
         change.value = createFieldFromAST(function_ast);
@@ -280,7 +280,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
     else if (ParserKeyword("FALSE").ignore(pos, expected))
         node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
-    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name.starts_with("disk"))
     {
         change.name = name;
         change.value = createFieldFromAST(function_ast);

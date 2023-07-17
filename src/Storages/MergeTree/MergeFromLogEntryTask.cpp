@@ -287,7 +287,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     task_context = Context::createCopy(storage.getContext());
     task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
+    task_context->setCurrentQueryId(getQueryId());
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
@@ -392,7 +392,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
      * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
      */
-    storage.merge_selecting_task->schedule();
+    finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});

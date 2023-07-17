@@ -205,7 +205,6 @@ public:
         return keeper_context;
     }
 
-
     void incrementPacketsSent()
     {
         keeper_stats.incrementPacketsSent();
