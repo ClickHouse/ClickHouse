@@ -2,8 +2,6 @@
 
 # shellcheck disable=SC2154
 
-unset CLICKHOUSE_LOG_COMMENT
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -12,6 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 check_replicas_read_in_order() {
     # to check this we actually look for at least one log message from MergeTreeInOrderSelectProcessor.
     # hopefully logger's names are a bit more stable than log messages itself
+    #
+    # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
     $CLICKHOUSE_CLIENT -nq "
         SYSTEM FLUSH LOGS;
 

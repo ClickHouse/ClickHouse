@@ -917,9 +917,9 @@ from
 ;
 Expression ((Project names + Projection))
   Window (Window step for window \'\')
-    Window (Window step for window \'PARTITION BY t.p_0\')
-      Window (Window step for window \'PARTITION BY t.p_0 ORDER BY t.o_1 ASC\')
-        Sorting (Sorting for window \'PARTITION BY t.p_0 ORDER BY t.o_1 ASC\')
+    Window (Window step for window \'PARTITION BY p_0\')
+      Window (Window step for window \'PARTITION BY p_0 ORDER BY o_1 ASC\')
+        Sorting (Sorting for window \'PARTITION BY p_0 ORDER BY o_1 ASC\')
           Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
             ReadFromStorage (SystemNumbers)
 explain select
@@ -930,11 +930,11 @@ from
         from numbers(16)) t
 ;
 Expression ((Project names + Projection))
-  Window (Window step for window \'ORDER BY t.o_0 ASC, t.number_1 ASC\')
-    Sorting (Sorting for window \'ORDER BY t.o_0 ASC, t.number_1 ASC\')
-      Window (Window step for window \'ORDER BY t.number_1 ASC\')
+  Window (Window step for window \'ORDER BY o_0 ASC, number_1 ASC\')
+    Sorting (Sorting for window \'ORDER BY o_0 ASC, number_1 ASC\')
+      Window (Window step for window \'ORDER BY number_1 ASC\')
         Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))) [lifted up part])
-          Sorting (Sorting for window \'ORDER BY t.number_1 ASC\')
+          Sorting (Sorting for window \'ORDER BY number_1 ASC\')
             Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
               ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.

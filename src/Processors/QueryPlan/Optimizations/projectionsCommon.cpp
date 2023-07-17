@@ -38,8 +38,15 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->isParallelReadingEnabled())
         return false;
 
+    if (reading->readsInOrder())
+        return false;
+
     // Currently projection don't support deduplication when moving parts between shards.
     if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
+        return false;
+
+    // Currently projection don't support settings which implicitly modify aggregate functions.
+    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
         return false;
 
     return true;
@@ -244,7 +251,7 @@ bool analyzeProjectionCandidate(
 
     if (!normal_parts.empty())
     {
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), /* alter_conversions = */ {});
 
         if (normal_result_ptr->error())
             return false;

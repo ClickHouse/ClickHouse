@@ -31,6 +31,12 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withEscaping()
     return *this;
 }
 
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withMaxNumberOfPairs(uint64_t max_number_of_pairs_)
+{
+    max_number_of_pairs = max_number_of_pairs_;
+    return *this;
+}
+
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build() const
 {
     if (with_escaping)
@@ -46,9 +52,9 @@ namespace
 using namespace extractKV;
 
 template <typename T>
-auto makeStateHandler(const T && handler)
+auto makeStateHandler(const T && handler, uint64_t max_number_of_pairs)
 {
-    return std::make_shared<CHKeyValuePairExtractor<T>>(handler);
+    return std::make_shared<CHKeyValuePairExtractor<T>>(handler, max_number_of_pairs);
 }
 
 }
@@ -57,14 +63,14 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithou
 {
     auto configuration = ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
 
-    return makeStateHandler(NoEscapingStateHandler(configuration));
+    return makeStateHandler(NoEscapingStateHandler(configuration), max_number_of_pairs);
 }
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping() const
 {
     auto configuration = ConfigurationFactory::createWithEscaping(key_value_delimiter, quoting_character, item_delimiters);
 
-    return makeStateHandler(InlineEscapingStateHandler(configuration));
+    return makeStateHandler(InlineEscapingStateHandler(configuration), max_number_of_pairs);
 }
 
 }

@@ -38,7 +38,10 @@ public:
     Chunk generate() override
     {
         block_missing_values.clear();
+        size_t block_start = getDataOffsetMaybeCompressed(*in);
         auto block = reader->read();
+        approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
+
         if (!block)
             return {};
 
@@ -57,10 +60,13 @@ public:
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 private:
     std::unique_ptr<NativeReader> reader;
     Block header;
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk;
 };
 
 class NativeOutputFormat final : public IOutputFormat

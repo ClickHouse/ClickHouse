@@ -142,6 +142,14 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
+
+    auto settings_query = std::make_shared<ASTSetQuery>();
+    SettingsChanges settings_changes;
+    settings_changes.insertSetting("optimize_aggregators_of_group_by_keys", false);
+    settings_changes.insertSetting("optimize_group_by_function_keys", false);
+    settings_query->changes = std::move(settings_changes);
+    settings_query->is_standalone = false;
+    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     return node;
 }
 

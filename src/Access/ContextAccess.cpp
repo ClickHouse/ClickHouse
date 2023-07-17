@@ -228,6 +228,12 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
+ContextAccess::ContextAccess(FullAccess)
+    : is_full_access(true), access(std::make_shared<AccessRights>(AccessRights::getFullAccess())), access_with_implicit(access)
+{
+}
+
+
 ContextAccess::~ContextAccess()
 {
     enabled_settings.reset();
@@ -333,7 +339,7 @@ void ContextAccess::calculateAccessRights() const
                 boost::algorithm::join(roles_info->getCurrentRolesNames(), ", "),
                 boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
-        LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", params.readonly, params.allow_ddl, params.allow_introspection);
+        LOG_TRACE(trace_log, "Settings: readonly = {}, allow_ddl = {}, allow_introspection_functions = {}", params.readonly, params.allow_ddl, params.allow_introspection);
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
@@ -413,14 +419,8 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 
 std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 {
-    static const std::shared_ptr<const ContextAccess> res = []
-    {
-        auto full_access = std::make_shared<ContextAccess>();
-        full_access->is_full_access = true;
-        full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = full_access->access;
-        return full_access;
-    }();
+    static const std::shared_ptr<const ContextAccess> res =
+        [] { return std::shared_ptr<ContextAccess>(new ContextAccess{kFullAccess}); }();
     return res;
 }
 

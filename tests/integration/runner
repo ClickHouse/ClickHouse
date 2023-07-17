@@ -284,6 +284,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--analyzer",
+        action="store_true",
+        default=False,
+        dest="analyzer",
+        help="Use new analyzer infrastructure",
+    )
+
+    parser.add_argument(
         "--cleanup-containers",
         action="store_true",
         default=False,
@@ -336,6 +344,8 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
             elif image == "clickhouse/postgresql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
+            elif image == "clickhouse/integration-helper":
+                env_tags += "-e {}={} ".format("DOCKER_HELPER_TAG", tag)
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
             elif image == "clickhouse/kerberized-hadoop":
@@ -393,39 +403,31 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    cmd_base = "docker run {net} {tty} --rm --name {name} --privileged \
-        --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
-        --volume={library_bridge_bin}:/clickhouse-library-bridge \
-        --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
-        --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        --volume=/run:/run/host:ro \
-        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
-        -e XTABLES_LOCKFILE=/run/host/xtables.lock \
-        -e PYTHONUNBUFFERED=1 \
-        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} {rand} -vvv' {img}".format(
-        net=net,
-        tty=tty,
-        bin=args.binary,
-        odbc_bridge_bin=args.odbc_bridge_binary,
-        library_bridge_bin=args.library_bridge_binary,
-        base_cfg=args.base_configs_dir,
-        cases_dir=args.cases_dir,
-        src_dir=args.src_dir,
-        env_tags=env_tags,
-        env_cleanup=env_cleanup,
-        parallel=parallel_args,
-        rand=rand_args,
-        opts=" ".join(args.pytest_args).replace("'", "\\'"),
-        tests_list=" ".join(args.tests_list),
-        dockerd_internal_volume=dockerd_internal_volume,
-        img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
-        name=CONTAINER_NAME,
+    use_analyzer = ""
+    if args.analyzer:
+        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
+
+    pytest_opts = " ".join(args.pytest_args).replace("'", "\\'")
+    tests_list = " ".join(args.tests_list)
+    cmd_base = (
+        f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
+        "--privileged --dns-search='.' "  # since recent dns search leaks from host
+        f"--volume={args.odbc_bridge_binary}:/clickhouse-odbc-bridge "
+        f"--volume={args.binary}:/clickhouse "
+        f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
+        f"--volume={args.base_configs_dir}:/clickhouse-config "
+        f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
+        f"--volume={args.src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos "
+        f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "
+        f"-e PYTEST_OPTS='{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv'"
+        f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
-        cmd_base
-        + " find /compose -name docker_compose_*.yml -exec docker-compose -f '{}' pull \;"
+        f"{cmd_base} find /compose -name docker_compose_*.yml "
+        r"-exec docker-compose -f '{}' pull \;"
     )
 
     containers = subprocess.check_output(

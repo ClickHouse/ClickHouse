@@ -36,6 +36,7 @@ try:
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
+    from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
@@ -51,7 +52,6 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
-from .hdfs_api import HDFSApi
 
 from .config_cluster import *
 
@@ -63,6 +63,14 @@ LOCAL_DOCKER_COMPOSE_DIR = p.join(
 DEFAULT_ENV_NAME = ".env"
 
 SANITIZER_SIGN = "=================="
+
+CLICKHOUSE_START_COMMAND = (
+    "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
+)
+
+CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
+
+CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
 
 # to create docker-compose env file
@@ -624,10 +632,12 @@ class ClickHouseCluster:
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
-                .config(
-                    "spark.jars.packages",
-                    "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                )
+                # The jars are now linked to "$SPARK_HOME/jars" and we don't
+                # need packages to be downloaded once and once again
+                # .config(
+                #     "spark.jars.packages",
+                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+                # )
                 .master("local")
                 .getOrCreate()
                 .stop()
@@ -1495,6 +1505,8 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        clickhouse_log_file=CLICKHOUSE_LOG_FILE,
+        clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
@@ -1561,6 +1573,13 @@ class ClickHouseCluster:
             "LLVM_PROFILE_FILE"
         ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
 
+        clickhouse_start_command = CLICKHOUSE_START_COMMAND
+        if clickhouse_log_file:
+            clickhouse_start_command += " --log-file=" + clickhouse_log_file
+        if clickhouse_error_log_file:
+            clickhouse_start_command += " --errorlog-file=" + clickhouse_error_log_file
+        logging.debug(f"clickhouse_start_command: {clickhouse_start_command}")
+
         instance = ClickHouseInstance(
             cluster=self,
             base_path=self.base_dir,
@@ -1590,10 +1609,10 @@ class ClickHouseCluster:
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
-            with_cassandra=with_cassandra,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
             with_coredns=with_coredns,
+            with_cassandra=with_cassandra,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -1602,6 +1621,10 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            clickhouse_start_command=clickhouse_start_command,
+            main_config_name=main_config_name,
+            users_config_name=users_config_name,
+            copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
             image=image,
@@ -1610,9 +1633,6 @@ class ClickHouseCluster:
             ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary,
-            main_config_name=main_config_name,
-            users_config_name=users_config_name,
-            copy_common_configs=copy_common_configs,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             config_root_name=config_root_name,
@@ -1963,9 +1983,9 @@ class ClickHouseCluster:
             return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
-        with open(local_path, "r") as fdata:
+        with open(local_path, "rb") as fdata:
             data = fdata.read()
-            encodedBytes = base64.b64encode(data.encode("utf-8"))
+            encodedBytes = base64.b64encode(data)
             encodedStr = str(encodedBytes, "utf-8")
             self.exec_in_container(
                 container_id,
@@ -1974,7 +1994,6 @@ class ClickHouseCluster:
                     "-c",
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
-                user="root",
             )
 
     def wait_for_url(
@@ -3045,17 +3064,6 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
 
-CLICKHOUSE_START_COMMAND = (
-    "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
-    " --log-file=/var/log/clickhouse-server/clickhouse-server.log "
-    " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
-)
-
-CLICKHOUSE_STAY_ALIVE_COMMAND = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
-    CLICKHOUSE_START_COMMAND
-)
-
-# /run/xtables.lock passed inside for correct iptables --wait
 DOCKER_COMPOSE_TEMPLATE = """
 version: '2.3'
 services:
@@ -3067,7 +3075,6 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
-            - /run/xtables.lock:/run/xtables.lock:ro
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
@@ -3231,6 +3238,9 @@ class ClickHouseInstance:
         self.clickhouse_start_command = clickhouse_start_command.replace(
             "{main_config_file}", self.main_config_name
         )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
+            clickhouse_start_command
+        )
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, "docker-compose.yml")
@@ -3377,6 +3387,7 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(
@@ -3387,6 +3398,7 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         )
 
     def query_and_get_error_with_retry(
@@ -3415,13 +3427,14 @@ class ClickHouseInstance:
                     database=database,
                 )
                 time.sleep(sleep_time)
+
+                if result is not None:
+                    return result
             except QueryRuntimeException as ex:
                 logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
-        if result is not None:
-            return result
-        raise Exception("Query {sql} did not fail".format(sql))
+        raise Exception("Query {} did not fail".format(sql))
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
@@ -4188,6 +4201,8 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
+        if os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None:
+            write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
@@ -4317,7 +4332,7 @@ class ClickHouseInstance:
         entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace(
+            entrypoint_cmd = self.clickhouse_stay_alive_command.replace(
                 "{main_config_file}", self.main_config_name
             )
         else:

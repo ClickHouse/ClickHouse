@@ -68,13 +68,13 @@ $CLICKHOUSE_CLIENT -n --query="
 insert into user_agents select ua from input('ua String') FORMAT LineAsString" < $CURDIR/data_ua_parser/useragents.txt
 
 $CLICKHOUSE_CLIENT -n --query="
-select device,
+select ua, device,
 concat(tupleElement(browser, 1), ' ', tupleElement(browser, 2), '.', tupleElement(browser, 3)) as browser ,
 concat(tupleElement(os, 1), ' ', tupleElement(os, 2), '.', tupleElement(os, 3), '.', tupleElement(os, 4)) as os
 from (
-     select dictGet('regexp_os', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), ua) os,
+     select ua, dictGet('regexp_os', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), ua) os,
      dictGet('regexp_browser', ('family_replacement', 'v1_replacement', 'v2_replacement'), ua) as browser,
-     dictGet('regexp_device', 'device_replacement', ua) device from user_agents);
+     dictGet('regexp_device', 'device_replacement', ua) device from user_agents) order by ua;
 "
 
 $CLICKHOUSE_CLIENT -n --query="

@@ -32,9 +32,9 @@ void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr
 {
     const Array & a = field.get<const Array &>();
     writeVarUInt(a.size(), ostr);
-    for (size_t i = 0; i < a.size(); ++i)
+    for (const auto & i : a)
     {
-        nested->serializeBinary(a[i], ostr, settings);
+        nested->serializeBinary(i, ostr, settings);
     }
 }
 
