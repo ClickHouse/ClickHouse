@@ -810,7 +810,6 @@ class ClickhouseIntegrationTestsRunner:
                 result_state = "failure"
                 if not should_fail:
                     break
-            assert should_fail
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
             logging.info("And going to sleep for some time")
