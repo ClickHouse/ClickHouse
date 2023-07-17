@@ -13,6 +13,7 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <re2/re2.h>
