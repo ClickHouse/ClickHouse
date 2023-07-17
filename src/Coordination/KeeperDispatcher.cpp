@@ -400,8 +400,7 @@ void KeeperDispatcher::shutdown()
     try
     {
         {
-            bool expected = false;
-            if (!shutdown_called.compare_exchange_strong(expected, true))
+            if (shutdown_called.exchange(true))
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
