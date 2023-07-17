@@ -115,7 +115,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
 
-        const auto database = databases.at(database_name);
+        const auto & database = databases.at(database_name);
 
         res_columns[0]->insert(database_name);
         res_columns[1]->insert(database->getEngineName());
