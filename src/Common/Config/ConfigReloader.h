@@ -30,13 +30,13 @@ public:
     using Paths = std::vector<std::string>;
     using Updater = std::function<void(
         ConfigurationPtr,
-        /* initial loading */bool,
-        /*way to alter extra paths on each update*/Paths&
+        bool, // is initial loading
+        Paths & // extra paths to check on each update
         )>;
 
     ConfigReloader(
         std::string_view config_path_,
-        const Paths& extra_paths_,
+        const Paths & extra_paths_,
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
