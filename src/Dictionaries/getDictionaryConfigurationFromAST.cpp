@@ -156,11 +156,11 @@ void buildLayoutConfiguration(
 
         const auto value_field = value_literal->value;
 
-        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::String)
+        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
                 value_field.getTypeName());
         }
 

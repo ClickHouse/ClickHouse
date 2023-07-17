@@ -176,6 +176,15 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+#define SHUTDOWN(log, desc, ptr, method) do             \
+{                                                       \
+    if (ptr)                                            \
+    {                                                   \
+        LOG_DEBUG(log, "Shutting down " desc);          \
+        (ptr)->method;                                  \
+    }                                                   \
+} while (false)                                         \
+
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -377,7 +386,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
+                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
                 asynchronous_remote_fs_reader->wait();
                 asynchronous_remote_fs_reader.reset();
             }
@@ -391,7 +400,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 asynchronous_local_fs_reader->wait();
                 asynchronous_local_fs_reader.reset();
             }
@@ -405,7 +414,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
+                LOG_DEBUG(log, "Destructing local fs threadpool reader");
                 synchronous_local_fs_reader->wait();
                 synchronous_local_fs_reader.reset();
             }
@@ -419,7 +428,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing threadpool writer");
+                LOG_DEBUG(log, "Destructing threadpool writer");
                 threadpool_writer->wait();
                 threadpool_writer.reset();
             }
@@ -433,7 +442,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing marks loader");
+                LOG_DEBUG(log, "Destructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
@@ -447,7 +456,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                LOG_DEBUG(log, "Destructing prefetch threadpool");
                 prefetch_threadpool->wait();
                 prefetch_threadpool.reset();
             }
@@ -479,35 +488,29 @@ struct ContextSharedPart : boost::noncopyable
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
-        if (external_dictionaries_loader)
-            external_dictionaries_loader->enablePeriodicUpdates(false);
-        if (external_user_defined_executable_functions_loader)
-            external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
-        if (user_defined_sql_objects_loader)
-            user_defined_sql_objects_loader->stopWatching();
 
+        SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
+        SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
+        SHUTDOWN(log, "another UDFs loader", user_defined_sql_objects_loader, stopWatching());
+
+        LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
 
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        if (backups_worker)
-            backups_worker->shutdown();
+        SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        if (system_logs)
-            system_logs->shutdown();
+        SHUTDOWN(log, "system logs", system_logs, shutdown());
 
+        LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
 
-        if (merge_mutate_executor)
-            merge_mutate_executor->wait();
-        if (fetch_executor)
-            fetch_executor->wait();
-        if (moves_executor)
-            moves_executor->wait();
-        if (common_executor)
-            common_executor->wait();
+        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
+        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
+        SHUTDOWN(log, "moves executor", moves_executor, wait());
+        SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
 
@@ -533,10 +536,12 @@ struct ContextSharedPart : boost::noncopyable
 
         /// DDLWorker should be deleted without lock, cause its internal thread can
         /// take it as well, which will cause deadlock.
+        LOG_TRACE(log, "Shutting down DDLWorker");
         delete_ddl_worker.reset();
 
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
+        LOG_TRACE(log, "Shutting down caches");
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
@@ -630,6 +635,30 @@ struct ContextSharedPart : boost::noncopyable
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
         log->warning(message);
         warnings.push_back(message);
+    }
+
+    void configureServerWideThrottling()
+    {
+        if (auto bandwidth = server_settings.max_replicated_fetches_network_bandwidth_for_server)
+            replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_replicated_sends_network_bandwidth_for_server)
+            replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_remote_read_network_bandwidth_for_server)
+            remote_read_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_remote_write_network_bandwidth_for_server)
+            remote_write_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_local_read_bandwidth_for_server)
+            local_read_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_local_write_bandwidth_for_server)
+            local_write_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
+            backups_server_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
 
@@ -851,9 +880,9 @@ catch (...)
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
-static VolumePtr createLocalSingleDiskVolume(const std::string & path)
+static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
-    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0);
+    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
 }
@@ -869,7 +898,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
 
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
 
     for (const auto & disk : volume->getDisks())
     {
@@ -942,7 +971,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
     shared->tmp_path = file_cache->getBasePath();
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, getConfigRef());
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
@@ -1220,7 +1249,7 @@ ResourceManagerPtr Context::getResourceManager() const
 {
     auto lock = getLock();
     if (!shared->resource_manager)
-        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "static"));
+        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "dynamic"));
     return shared->resource_manager;
 }
 
@@ -1295,6 +1324,21 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
+std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    std::shared_ptr<TemporaryTableHolder> holder;
+    {
+        auto lock = getLock();
+        auto iter = external_tables_mapping.find(table_name);
+        if (iter == external_tables_mapping.end())
+            return {};
+        holder = iter->second;
+    }
+    return holder;
+}
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
@@ -1360,6 +1404,20 @@ void Context::addQueryAccessInfo(
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
     if (!view_name.empty())
         query_access_info.views.emplace(view_name);
+}
+
+void Context::addQueryAccessInfo(const Names & partition_names)
+{
+    if (isGlobalContext())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+    }
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    for (const auto & partition_name : partition_names)
+    {
+        query_access_info.partitions.emplace(partition_name);
+    }
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
@@ -1438,7 +1496,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
-        if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
+        if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
             function->prefer_subquery_to_function_formatting = true;
             return table;
@@ -1466,7 +1524,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
         if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            const auto & insert_structure = DatabaseCatalog::instance()
+                                                .getTable(getInsertionTable(), shared_from_this())
+                                                ->getInMemoryMetadataPtr()
+                                                ->getColumns()
+                                                .getInsertable();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -1596,6 +1658,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             table_function_results[key] = res;
         }
     }
+    return res;
+}
+
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
+{
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+    StoragePtr & res = table_function_results[key];
+
+    if (!res)
+    {
+        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+    }
+
     return res;
 }
 
@@ -1897,16 +1973,22 @@ void Context::makeQueryContext()
 {
     query_context = shared_from_this();
 
-    /// Create throttlers, to inherit the ThrottlePtr in the context copies.
-    {
-        getRemoteReadThrottler();
-        getRemoteWriteThrottler();
-
-        getLocalReadThrottler();
-        getLocalWriteThrottler();
-
-        getBackupsThrottler();
-    }
+    /// Throttling should not be inherited, otherwise if you will set
+    /// throttling for default profile you will not able to overwrite it
+    /// per-user/query.
+    ///
+    /// Note, that if you need to set it server-wide, you should use
+    /// per-server settings, i.e.:
+    /// - max_backup_bandwidth_for_server
+    /// - max_remote_read_network_bandwidth_for_server
+    /// - max_remote_write_network_bandwidth_for_server
+    /// - max_local_read_bandwidth_for_server
+    /// - max_local_write_bandwidth_for_server
+    remote_read_query_throttler.reset();
+    remote_write_query_throttler.reset();
+    local_read_query_throttler.reset();
+    local_write_query_throttler.reset();
+    backups_query_throttler.reset();
 }
 
 void Context::makeSessionContext()
@@ -2438,143 +2520,76 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 
 ThrottlerPtr Context::getReplicatedFetchesThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->replicated_fetches_throttler)
-        shared->replicated_fetches_throttler = std::make_shared<Throttler>(
-            settings.max_replicated_fetches_network_bandwidth_for_server);
-
     return shared->replicated_fetches_throttler;
 }
 
 ThrottlerPtr Context::getReplicatedSendsThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->replicated_sends_throttler)
-        shared->replicated_sends_throttler = std::make_shared<Throttler>(
-            settings.max_replicated_sends_network_bandwidth_for_server);
-
     return shared->replicated_sends_throttler;
 }
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    ThrottlerPtr throttler;
-
-    const auto & query_settings = getSettingsRef();
-    UInt64 bandwidth_for_server = shared->server_settings.max_remote_read_network_bandwidth_for_server;
-    if (bandwidth_for_server)
-    {
-        auto lock = getLock();
-        if (!shared->remote_read_throttler)
-            shared->remote_read_throttler = std::make_shared<Throttler>(bandwidth_for_server);
-        throttler = shared->remote_read_throttler;
-    }
-
-    if (query_settings.max_remote_read_network_bandwidth)
+    ThrottlerPtr throttler = shared->remote_read_throttler;
+    if (auto bandwidth = getSettingsRef().max_remote_read_network_bandwidth)
     {
         auto lock = getLock();
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_read_network_bandwidth, throttler);
+            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = remote_read_query_throttler;
     }
-
     return throttler;
 }
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    ThrottlerPtr throttler;
-
-    const auto & query_settings = getSettingsRef();
-    UInt64 bandwidth_for_server = shared->server_settings.max_remote_write_network_bandwidth_for_server;
-    if (bandwidth_for_server)
-    {
-        auto lock = getLock();
-        if (!shared->remote_write_throttler)
-            shared->remote_write_throttler = std::make_shared<Throttler>(bandwidth_for_server);
-        throttler = shared->remote_write_throttler;
-    }
-
-    if (query_settings.max_remote_write_network_bandwidth)
+    ThrottlerPtr throttler = shared->remote_write_throttler;
+    if (auto bandwidth = getSettingsRef().max_remote_write_network_bandwidth)
     {
         auto lock = getLock();
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_write_network_bandwidth, throttler);
+            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = remote_write_query_throttler;
     }
-
     return throttler;
 }
 
 ThrottlerPtr Context::getLocalReadThrottler() const
 {
-    ThrottlerPtr throttler;
-
-    if (shared->server_settings.max_local_read_bandwidth_for_server)
-    {
-        auto lock = getLock();
-        if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_read_bandwidth_for_server);
-        throttler = shared->local_read_throttler;
-    }
-
-    const auto & query_settings = getSettingsRef();
-    if (query_settings.max_local_read_bandwidth)
+    ThrottlerPtr throttler = shared->local_read_throttler;
+    if (auto bandwidth = getSettingsRef().max_local_read_bandwidth)
     {
         auto lock = getLock();
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(query_settings.max_local_read_bandwidth, throttler);
+            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = local_read_query_throttler;
     }
-
     return throttler;
 }
 
 ThrottlerPtr Context::getLocalWriteThrottler() const
 {
-    ThrottlerPtr throttler;
-
-    if (shared->server_settings.max_local_write_bandwidth_for_server)
-    {
-        auto lock = getLock();
-        if (!shared->local_write_throttler)
-            shared->local_write_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_write_bandwidth_for_server);
-        throttler = shared->local_write_throttler;
-    }
-
-    const auto & query_settings = getSettingsRef();
-    if (query_settings.max_local_write_bandwidth)
+    ThrottlerPtr throttler = shared->local_write_throttler;
+    if (auto bandwidth = getSettingsRef().max_local_write_bandwidth)
     {
         auto lock = getLock();
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(query_settings.max_local_write_bandwidth, throttler);
+            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = local_write_query_throttler;
     }
-
     return throttler;
 }
 
 ThrottlerPtr Context::getBackupsThrottler() const
 {
-    ThrottlerPtr throttler;
-
-    if (shared->server_settings.max_backup_bandwidth_for_server)
-    {
-        auto lock = getLock();
-        if (!shared->backups_server_throttler)
-            shared->backups_server_throttler = std::make_shared<Throttler>(shared->server_settings.max_backup_bandwidth_for_server);
-        throttler = shared->backups_server_throttler;
-    }
-
-    const auto & query_settings = getSettingsRef();
-    if (query_settings.max_backup_bandwidth)
+    ThrottlerPtr throttler = shared->backups_server_throttler;
+    if (auto bandwidth = getSettingsRef().max_backup_bandwidth)
     {
         auto lock = getLock();
         if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>(query_settings.max_backup_bandwidth, throttler);
+            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = backups_query_throttler;
     }
-
     return throttler;
 }
 
@@ -2813,6 +2828,13 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
         zookeeper->second = zookeeper->second->startNewSession();
 
     return zookeeper->second;
+}
+
+
+std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+    return shared->auxiliary_zookeepers;
 }
 
 #if USE_ROCKSDB
@@ -3557,9 +3579,9 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
@@ -3633,7 +3655,10 @@ void Context::setApplicationType(ApplicationType type)
     shared->application_type = type;
 
     if (type == ApplicationType::SERVER)
+    {
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+        shared->configureServerWideThrottling();
+    }
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -4268,7 +4293,7 @@ ReadSettings Context::getReadSettings() const
     res.prefetch_buffer_size = settings.prefetch_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
-    res.priority = settings.read_priority;
+    res.priority = Priority{settings.read_priority};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
@@ -4323,7 +4348,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas
+    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
         && !settings_.use_hedged_requests)
         return READ_TASKS;
 

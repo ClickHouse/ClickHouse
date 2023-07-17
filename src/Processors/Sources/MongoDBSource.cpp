@@ -3,10 +3,12 @@
 #include <string>
 #include <vector>
 
+#include <Poco/MongoDB/Array.h>
+#include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/OpMsgCursor.h>
 #include <Poco/MongoDB/ObjectId.h>
-#include <Poco/MongoDB/Array.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -365,27 +367,79 @@ namespace
 }
 
 
-std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
+bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_)
 {
-    auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
+    Poco::MongoDB::Database db("config");
+    Poco::MongoDB::Document::Ptr doc = db.queryServerHello(connection_);
+    auto wire_version = doc->getInteger("maxWireVersion");
+    return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
+}
+
+
+MongoDBCursor::MongoDBCursor(
+    const std::string & database,
+    const std::string & collection,
+    const Block & sample_block_to_select,
+    const Poco::MongoDB::Document & query,
+    Poco::MongoDB::Connection & connection)
+    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection))
+{
+    Poco::MongoDB::Document projection;
 
     /// Looks like selecting _id column is implicit by default.
     if (!sample_block_to_select.has("_id"))
-        cursor->query().returnFieldSelector().add("_id", 0);
+        projection.add("_id", 0);
 
     for (const auto & column : sample_block_to_select)
-        cursor->query().returnFieldSelector().add(column.name, 1);
-    return cursor;
+        projection.add(column.name, 1);
+
+    if (is_wire_protocol_old)
+    {
+        old_cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
+        old_cursor->query().selector() = query;
+        old_cursor->query().returnFieldSelector() = projection;
+    }
+    else
+    {
+        new_cursor = std::make_unique<Poco::MongoDB::OpMsgCursor>(database, collection);
+        new_cursor->query().setCommandName(Poco::MongoDB::OpMsgMessage::CMD_FIND);
+        new_cursor->query().body().addNewDocument("filter") = query;
+        new_cursor->query().body().addNewDocument("projection") = projection;
+    }
 }
+
+Poco::MongoDB::Document::Vector MongoDBCursor::nextDocuments(Poco::MongoDB::Connection & connection)
+{
+    if (is_wire_protocol_old)
+    {
+        auto response = old_cursor->next(connection);
+        cursor_id = response.cursorID();
+        return std::move(response.documents());
+    }
+    else
+    {
+        auto response = new_cursor->next(connection);
+        cursor_id = new_cursor->cursorID();
+        return std::move(response.documents());
+    }
+}
+
+Int64 MongoDBCursor::cursorID() const
+{
+    return cursor_id;
+}
+
 
 MongoDBSource::MongoDBSource(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
-    std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
+    const String & database_name_,
+    const String & collection_name_,
+    const Poco::MongoDB::Document & query_,
     const Block & sample_block,
     UInt64 max_block_size_)
     : ISource(sample_block.cloneEmpty())
     , connection(connection_)
-    , cursor{std::move(cursor_)}
+    , cursor(database_name_, collection_name_, sample_block, query_, *connection_)
     , max_block_size{max_block_size_}
 {
     description.init(sample_block);
@@ -412,9 +466,9 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     while (num_rows < max_block_size)
     {
-        Poco::MongoDB::ResponseMessage & response = cursor->next(*connection);
+        auto documents = cursor.nextDocuments(*connection);
 
-        for (auto & document : response.documents())
+        for (auto & document : documents)
         {
             if (document->exists("ok") && document->exists("$err")
                 && document->exists("code") && document->getInteger("ok") == 0)
@@ -458,7 +512,7 @@ Chunk MongoDBSource::generate()
             }
         }
 
-        if (response.cursorID() == 0)
+        if (cursor.cursorID() == 0)
         {
             all_read = true;
             break;

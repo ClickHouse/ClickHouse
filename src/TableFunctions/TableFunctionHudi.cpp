@@ -21,9 +21,9 @@ void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHudi>(
         {.documentation
-         = {R"(The table function can be used to read the Hudi table stored on object store.)",
-            Documentation::Examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)"}},
-            Documentation::Categories{"DataLake"}},
+         = {.description=R"(The table function can be used to read the Hudi table stored on object store.)",
+            .examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)", ""}},
+            .categories{"DataLake"}},
          .allow_readonly = false});
 }
 }

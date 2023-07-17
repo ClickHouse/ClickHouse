@@ -20,10 +20,10 @@ namespace MongoDB {
 
 
 QueryRequest::QueryRequest(const std::string& collectionName, QueryRequest::Flags flags):
-	RequestMessage(MessageHeader::OP_QUERY), 
-	_flags(flags), 
+	RequestMessage(MessageHeader::OP_QUERY),
+	_flags(flags),
 	_fullCollectionName(collectionName),
-	_numberToSkip(0), 
+	_numberToSkip(0),
 	_numberToReturn(100),
 	_selector(),
 	_returnFieldSelector()
