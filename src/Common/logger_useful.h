@@ -15,12 +15,15 @@ namespace Poco { class Logger; }
 #define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
 #define LogFrequencyLimiter(x, y) std::make_unique<LogFrequencyLimiterIml>(x, y)
 
+using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
+
 namespace
 {
     [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; }
     [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); }
     [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLogger(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
     [[maybe_unused]] std::unique_ptr<LogFrequencyLimiterIml> getLogger(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
+    [[maybe_unused]] LogSeriesLimiterPtr getLogger(LogSeriesLimiterPtr & logger) { return logger; }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
