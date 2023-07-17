@@ -25,8 +25,6 @@ void Pool::Entry::incrementRefCount()
     /// First reference, initialize thread
     if (data->ref_count.fetch_add(1) == 0)
         mysql_thread_init();
-
-    chassert(!data->removed_from_pool);
 }
 
 
@@ -43,7 +41,10 @@ void Pool::Entry::decrementRefCount()
         /// In Pool::Entry::disconnect() we remove connection from the list of pool's connections.
         /// So now we must deallocate the memory.
         if (data->removed_from_pool)
+        {
+            data->conn.disconnect();
             ::delete data;
+        }
     }
 }
 
@@ -230,8 +231,6 @@ void Pool::removeConnection(Connection* connection)
     std::lock_guard lock(mutex);
     if (connection)
     {
-        if (!connection->removed_from_pool)
-            connection->conn.disconnect();
         connections.remove(connection);
         connection->removed_from_pool = true;
     }
@@ -240,6 +239,7 @@ void Pool::removeConnection(Connection* connection)
 
 void Pool::Entry::disconnect()
 {
+    // Remove the Entry from the Pool. Actual disconnection is delayed until refcount == 0.
     pool->removeConnection(data);
 }
 
