@@ -100,7 +100,7 @@ Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
         auto full_path = bucket + '/' + val.key;
         if (exclude_keys.find(full_path) != exclude_keys.end())
         {
-            LOG_INFO(log, "Found in exclude keys {}", val.key);
+            LOG_TRACE(log, "Found in exclude keys {}", val.key);
             continue;
         }
         if ((engine_mode == S3QueueMode::ORDERED) && (full_path.compare(max_file) <= 0))
@@ -130,9 +130,9 @@ Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
     }
 
     Strings keys;
-    for (const auto & v : processing_keys)
+    for (const auto & key_info : processing_keys)
     {
-        keys.push_back(bucket + '/' + v.key);
+        keys.push_back(bucket + '/' + key_info.key);
     }
     processing_keys.push_back(KeyWithInfo());
 
@@ -253,8 +253,10 @@ Chunk StorageS3QueueSource::generate()
                 size_t total_size = file_iterator->getTotalSize();
                 if (num_rows && total_size)
                 {
-                    updateRowsProgressApprox(
-                        *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+                    size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
+                    if (!chunk_size)
+                        chunk_size = chunk.bytes();
+                    updateRowsProgressApprox(*this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
                 }
 
                 for (const auto & virtual_column : requested_virtual_columns)
