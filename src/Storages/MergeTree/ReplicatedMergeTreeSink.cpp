@@ -788,7 +788,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             part->info.level = 0;
             part->info.mutation = 0;
 
-            part->name = part->getNewName(part->info);
+            part->setName(part->getNewName(part->info));
 
             StorageReplicatedMergeTree::LogEntry log_entry;
 
@@ -914,7 +914,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// Note that it may also appear on filesystem right now in PreActive state due to concurrent inserts of the same data.
             /// It will be checked when we will try to rename directory.
 
-            part->name = existing_part_name;
+            part->setName(existing_part_name);
             part->info = MergeTreePartInfo::fromPartName(existing_part_name, storage.format_version);
             /// Used only for exception messages.
             block_number = part->info.min_block;
