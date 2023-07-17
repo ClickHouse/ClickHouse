@@ -21,8 +21,10 @@ class WriteBufferFromFileBase;
 class DiskEncrypted : public IDisk
 {
 public:
-    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_);
-    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_);
+    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
+    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_,
+                  const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_);
+    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
 
     const String & getName() const override { return encrypted_name; }
     const String & getPath() const override { return disk_absolute_path; }
@@ -109,8 +111,6 @@ public:
         auto wrapped_path = wrappedPath(path);
         delegate->listFiles(wrapped_path, file_names);
     }
-
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
@@ -312,17 +312,17 @@ public:
         }
     }
 
-    UInt64 getTotalSpace() const override
+    std::optional<UInt64> getTotalSpace() const override
     {
         return delegate->getTotalSpace();
     }
 
-    UInt64 getAvailableSpace() const override
+    std::optional<UInt64> getAvailableSpace() const override
     {
         return delegate->getAvailableSpace();
     }
 
-    UInt64 getUnreservedSpace() const override
+    std::optional<UInt64> getUnreservedSpace() const override
     {
         return delegate->getUnreservedSpace();
     }
