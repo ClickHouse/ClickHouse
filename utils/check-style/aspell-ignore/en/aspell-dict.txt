@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWST
 Actian
 ActionsMenu
 ActiveRecord
