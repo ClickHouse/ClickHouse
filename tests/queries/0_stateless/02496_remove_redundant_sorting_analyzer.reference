@@ -81,10 +81,9 @@ Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
       LimitBy
-        Expression (Before LIMIT BY)
-          Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-              ReadFromStorage (SystemNumbers)
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+            ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -162,12 +161,11 @@ ORDER BY t1.number, t2.number
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + DROP unused columns after JOIN)))
-      Join (JOIN FillRightFirst)
-        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-          ReadFromStorage (SystemNumbers)
-        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-          ReadFromStorage (SystemNumbers)
+    Join (JOIN FillRightFirst)
+      Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+        ReadFromStorage (SystemNumbers)
+      Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+        ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 0	1

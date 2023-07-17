@@ -2,12 +2,9 @@
 -- ORDER BY clauses in subqueries are untouched
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
+    Sorting (Sorting for ORDER BY)
       Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + Projection))
-          Sorting (Sorting for ORDER BY)
-            Expression (Before ORDER BY)
-              ReadFromStorage (SystemNumbers)
+        ReadFromStorage (SystemNumbers)
 -- Enabled query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
 -- query
@@ -27,8 +24,7 @@ ORDER BY number ASC
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromStorage (SystemNumbers)
+    ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -51,11 +47,9 @@ ORDER BY number ASC
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      Filling
-        Sorting (Sorting for ORDER BY)
-          Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-            ReadFromStorage (SystemNumbers)
+    Filling
+      Sorting (Sorting for ORDER BY)
+        ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -79,12 +73,9 @@ ORDER BY number ASC
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      LimitBy
-        Expression (Before LIMIT BY)
-          Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-              ReadFromStorage (SystemNumbers)
+    LimitBy
+      Sorting (Sorting for ORDER BY)
+        ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -118,12 +109,10 @@ Expression ((Projection + Before ORDER BY))
   Join (JOIN FillRightFirst)
     Expression ((Before JOIN + Projection))
       Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+        ReadFromStorage (SystemNumbers)
     Expression ((Joined actions + (Rename joined columns + Projection)))
       Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+        ReadFromStorage (SystemNumbers)
 -- execute
 0	2
 0	1
@@ -162,12 +151,11 @@ ORDER BY t1.number, t2.number
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression (Before ORDER BY)
-      Join (JOIN FillRightFirst)
-        Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromStorage (SystemNumbers)
-        Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-          ReadFromStorage (SystemNumbers)
+    Join (JOIN FillRightFirst)
+      Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+        ReadFromStorage (SystemNumbers)
+      Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
+        ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 0	1
@@ -196,8 +184,7 @@ GROUP BY number
 -- explain
 Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromStorage (SystemNumbers)
+    ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -220,8 +207,7 @@ GROUP BY number
 -- explain
 Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromStorage (SystemNumbers)
+    ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -238,8 +224,7 @@ FROM
 -- explain
 Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-      ReadFromStorage (SystemNumbers)
+    ReadFromStorage (SystemNumbers)
 -- execute
 45
 -- check that optimization is applied recursively to subqueries as well
@@ -263,8 +248,7 @@ Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
-        Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+        ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -289,8 +273,7 @@ Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
-        Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromStorage (SystemNumbers)
+        ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -319,7 +302,7 @@ WHERE a > 0
 Expression ((Projection + (Before ORDER BY + )))
   Aggregating
     Filter
-      Filter (( + (Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
+      Filter
         ReadFromStorage (SystemNumbers)
 -- execute
 2
@@ -343,10 +326,8 @@ ORDER BY number ASC
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      Aggregating
-        Expression (Before GROUP BY)
-          ReadFromStorage (SystemNumbers)
+    Aggregating
+      ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -372,15 +353,14 @@ FROM
 -- explain
 Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + Projection))
-      Sorting (Sorting for ORDER BY)
-        Union
-          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+    Sorting (Sorting for ORDER BY)
+      Union
+        Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          ReadFromStorage (SystemOne)
+        Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          ReadFromStorage (SystemOne)
+        Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -404,15 +384,14 @@ FROM
 -- explain
 Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + Projection))
-      Sorting (Sorting for ORDER BY)
-        Union
-          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+    Sorting (Sorting for ORDER BY)
+      Union
+        Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          ReadFromStorage (SystemOne)
+        Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          ReadFromStorage (SystemOne)
+        Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          ReadFromStorage (SystemOne)
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
