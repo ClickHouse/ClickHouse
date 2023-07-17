@@ -1,20 +1,17 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -60,11 +57,6 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
           */
         ast->setAlias("constant_expression");
     }
-
-    if (ast->as<ASTSetQuery>() != nullptr)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
-            "is not a constant expression (unexpected AST node type): {}", ast->getID());
 
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
