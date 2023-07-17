@@ -81,6 +81,10 @@ public:
     //void push_back(const LogElement & element) { queue.push_back(element); }
     void shutdown() { is_shutdown = true; }
 
+    uint64_t notifyFlush(bool force);
+    void waitFlush(uint64_t this_thread_requested_offset_);
+    void pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread)
+
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
     // An always-incrementing index of the first message currently in the queue.
@@ -96,12 +100,16 @@ public:
     // Requested to flush logs up to this index, exclusive
     uint64_t requested_flush_up_to = 0;
 
-    // Logged overflow message at this queue front index
-    uint64_t logged_queue_full_at_index = -1;
-
+    // A flag that says we must create the tables even if the queue is empty.
+    bool is_force_prepare_tables = false;
+    
+    // Flushed log up to this index, exclusive
+    uint64_t flushed_up_to = 0;
 private:
     Poco::Logger * log;
     bool is_shutdown = false;
+    // Logged overflow message at this queue front index
+    uint64_t logged_queue_full_at_index = -1;
 };
 
 template <typename LogElement>
@@ -138,21 +146,7 @@ protected:
 
     std::shared_ptr<SystemLogQueue<LogElement>> queue;
 
-    // A flag that says we must create the tables even if the queue is empty.
-    bool is_force_prepare_tables = false;
-
-    // Flushed log up to this index, exclusive
-    uint64_t flushed_up_to = 0;
-
     bool is_shutdown = false;
-
-    // Logged overflow message at this queue front index
-    uint64_t logged_queue_full_at_index = -1;
-
-private:
-    uint64_t notifyFlushImpl(bool force);
-
-
 };
 
 }

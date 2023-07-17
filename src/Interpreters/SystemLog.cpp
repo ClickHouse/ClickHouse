@@ -372,27 +372,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             // Should we prepare table even if there are no new messages.
             bool should_prepare_tables_anyway = false;
 
-            {
-                std::unique_lock lock(queue->mutex);
-                queue->flush_event.wait_for(lock,
-                    std::chrono::milliseconds(flush_interval_milliseconds),
-                    [&] ()
-                    {
-                        return queue->requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
-                    }
-                );
-
-                queue->queue_front_index += queue->size();
-                to_flush_end = queue->queue_front_index;
-                // Swap with existing array from previous flush, to save memory
-                // allocations.
-                to_flush.resize(0);
-                queue->queue.swap(to_flush);
-
-                should_prepare_tables_anyway = is_force_prepare_tables;
-
-                exit_this_thread = is_shutdown;
-            }
+            queue->pop(to_flush, to_flush_end, should_prepare_tables_anyway, exit_this_thread);
 
             if (to_flush.empty())
             {
@@ -402,7 +382,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     LOG_TRACE(log, "Table created (force)");
 
                     std::lock_guard lock(queue->mutex);
-                    is_force_prepare_tables = false;
+                     queue->is_force_prepare_tables = false;
                     queue->flush_event.notify_all();
                 }
             }
@@ -477,8 +457,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
     {
         std::lock_guard lock(queue->mutex);
-        flushed_up_to = to_flush_end;
-        is_force_prepare_tables = false;
+        queue->flushed_up_to = to_flush_end;
+        queue->is_force_prepare_tables = false;
         queue->flush_event.notify_all();
     }
 
