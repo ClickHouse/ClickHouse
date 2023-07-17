@@ -121,9 +121,9 @@ protected:
     using Base::log;
     using Base::queue;
    // using Base::queue_front_index;
-    using Base::is_force_prepare_tables;
+ //   using Base::is_force_prepare_tables;
     //using Base::requested_flush_up_to;
-    using Base::flushed_up_to;
+  //  using Base::flushed_up_to;
  //   using Base::logged_queue_full_at_index;
 
 private:

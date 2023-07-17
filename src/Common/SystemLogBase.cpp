@@ -42,11 +42,8 @@ template <typename LogElement>
 SystemLogBase<LogElement>::SystemLogBase(
     const String & name_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
+    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(name_))
 {
-    if (queue_)
-        queue = queue_;
-    else
-        queue = std::make_shared<SystemLogQueue<LogElement>>(name_);
 }
 
 template <typename LogElement>
@@ -153,27 +150,40 @@ void SystemLogQueue<LogElement>::add(const LogElement & element)
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::add(const LogElement & element)
+uint64_t SystemLogQueue<LogElement>::notifyFlush(bool force)
 {
-    queue->add(element);
+    uint64_t this_thread_requested_offset;
+
+    {
+        std::lock_guard lock(mutex);
+        if (is_shutdown)
+            return uint64_t(-1);
+
+        this_thread_requested_offset = queue_front_index + queue.size();
+
+        // Publish our flush request, taking care not to overwrite the requests
+        // made by other threads.
+        is_force_prepare_tables |= force;
+        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
+
+        flush_event.notify_all();
+    }
+
+    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
+    return this_thread_requested_offset;
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::flush(bool force)
+void SystemLogQueue<LogElement>::waitFlush(uint64_t this_thread_requested_offset_)
 {
-    uint64_t this_thread_requested_offset = notifyFlushImpl(force);
-    if (this_thread_requested_offset == uint64_t(-1))
-        return;
-
-
     // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
     // too fast for our parallel functional tests, probably because they
     // heavily load the disk.
     const int timeout_seconds = 180;
-    std::unique_lock lock(queue->mutex);
-    bool result = queue->flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
+    std::unique_lock lock(mutex);
+    bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
-        return flushed_up_to >= this_thread_requested_offset && !is_force_prepare_tables;
+        return flushed_up_to >= this_thread_requested_offset_ && !is_force_prepare_tables;
     });
 
     if (!result)
@@ -183,32 +193,56 @@ void SystemLogBase<LogElement>::flush(bool force)
     }
 }
 
-template <typename LogElement>
-void SystemLogBase<LogElement>::notifyFlush(bool force) { notifyFlushImpl(force); }
+constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 
 template <typename LogElement>
-uint64_t SystemLogBase<LogElement>::notifyFlushImpl(bool force)
+void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread)
 {
-    uint64_t this_thread_requested_offset;
+    std::unique_lock lock(queue->mutex);
+    flush_event.wait_for(lock,
+        std::chrono::milliseconds(flush_interval_milliseconds),
+        [&] ()
+        {
+            return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
+        }
+    );
 
-    {
-        std::lock_guard lock(queue->mutex);
-        if (is_shutdown)
-            return uint64_t(-1);
+    queue_front_index += queue->size();
+    to_flush_end = queue->queue_front_index;
+    // Swap with existing array from previous flush, to save memory
+    // allocations.
+    output.resize(0);
+    queue.swap(to_flush);
 
-        this_thread_requested_offset = queue->queue_front_index + queue->queue.size();
+    should_prepare_tables_anyway = is_force_prepare_tables;
 
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= force;
-        queue->requested_flush_up_to = std::max(queue->requested_flush_up_to, this_thread_requested_offset);
-
-        queue->flush_event.notify_all();
-    }
-
-    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
-    return this_thread_requested_offset;
+    exit_this_thread = is_shutdown;
 }
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::add(const LogElement & element)
+{
+    queue->add(element);
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::flush(bool force)
+{
+    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
+    if (this_thread_requested_offset == uint64_t(-1))
+        return;
+
+    queue->waitFlush(this_thread_requested_offset);
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
+
+// template <typename LogElement>
+// uint64_t SystemLogBase<LogElement>::notifyFlushImpl(bool force)
+// {
+//     return queue->notifyFlush(force);
+// }
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
