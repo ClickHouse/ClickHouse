@@ -66,6 +66,8 @@ public:
 
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
+    virtual String getTableName() const = 0;
+
     virtual void reportBroken() = 0;
 };
 

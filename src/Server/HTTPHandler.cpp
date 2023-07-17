@@ -44,6 +44,8 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <re2/re2.h>
+
 #include <chrono>
 #include <sstream>
 
@@ -289,14 +291,15 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        IReadableWriteBuffer * write_buf_concrete;
-        ReadBufferPtr reread_buf;
+        if (!write_buf)
+            continue;
 
-        if (write_buf
-            && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
-            && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
+        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
+        if (write_buf_concrete)
         {
-            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
+            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
+            if (reread_buf)
+                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
@@ -900,7 +903,12 @@ try
     {
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
+        {
+            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
+            /// exception is written into used_output.out_maybe_compressed later
+            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
             used_output.out_maybe_delayed_and_compressed.reset();
+        }
 
         /// Send the error message into already used (and possibly compressed) stream.
         /// Note that the error message will possibly be sent after some data.
@@ -1156,8 +1164,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        re2::StringPiece matches[num_captures];
-        re2::StringPiece input(begin, end - begin);
+        std::string_view matches[num_captures];
+        std::string_view input(begin, end - begin);
         if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())

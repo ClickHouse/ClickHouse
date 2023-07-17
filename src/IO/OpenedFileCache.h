@@ -72,6 +72,13 @@ public:
         return res;
     }
 
+    void remove(const std::string & path, int flags)
+    {
+        Key key(path, flags);
+        std::lock_guard lock(mutex);
+        files.erase(key);
+    }
+
     static OpenedFileCache & instance()
     {
         static OpenedFileCache res;
@@ -82,5 +89,3 @@ public:
 using OpenedFileCachePtr = std::shared_ptr<OpenedFileCache>;
 
 }
-
-

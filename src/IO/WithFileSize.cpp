@@ -3,6 +3,7 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/PeekableReadBuffer.h>
 
 namespace DB
 {
@@ -37,6 +38,18 @@ size_t getFileSizeFromReadBuffer(ReadBuffer & in)
     return getFileSize(in);
 }
 
+std::optional<size_t> tryGetFileSizeFromReadBuffer(ReadBuffer & in)
+{
+    try
+    {
+        return getFileSizeFromReadBuffer(in);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
 bool isBufferWithFileSize(const ReadBuffer & in)
 {
     if (const auto * delegate = dynamic_cast<const ReadBufferFromFileDecorator *>(&in))
@@ -50,5 +63,24 @@ bool isBufferWithFileSize(const ReadBuffer & in)
 
     return dynamic_cast<const WithFileSize *>(&in) != nullptr;
 }
+
+size_t getDataOffsetMaybeCompressed(const ReadBuffer & in)
+{
+    if (const auto * delegate = dynamic_cast<const ReadBufferFromFileDecorator *>(&in))
+    {
+        return getDataOffsetMaybeCompressed(delegate->getWrappedReadBuffer());
+    }
+    else if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    {
+        return getDataOffsetMaybeCompressed(compressed->getWrappedReadBuffer());
+    }
+    else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
+    {
+        return getDataOffsetMaybeCompressed(peekable->getSubBuffer());
+    }
+
+    return in.count();
+}
+
 
 }

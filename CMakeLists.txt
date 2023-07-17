@@ -87,13 +87,13 @@ if (ENABLE_FUZZING)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
     set (ENABLE_BENCHMARKS OFF)
     set (ENABLE_CHECK_HEAVY_BUILDS ON)
+    set (ENABLE_CHECK_HEAVY_BUILDS ON)
     set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
     set (ENABLE_EMBEDDED_COMPILER OFF)
     set (ENABLE_EXAMPLES OFF)
     set (ENABLE_JEMALLOC OFF)
     set (ENABLE_LIBRARIES OFF)
     set (ENABLE_SSL ON)
-    set (ENABLE_TCMALLOC OFF)
     set (ENABLE_THINLTO OFF)
     set (ENABLE_UTILS OFF)
     set (GLIBC_COMPATIBILITY OFF)
@@ -354,7 +354,7 @@ if (COMPILER_CLANG)
     # https://clang.llvm.org/docs/ThinLTO.html
     # Applies to clang only.
     # Disabled when building with tests or sanitizers.
-    if (ENABLE_THINLTO AND NOT SANITIZE)
+    if (ENABLE_THINLTO AND NOT SANITIZE AND OS_LINUX)
         # Link time optimization
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")

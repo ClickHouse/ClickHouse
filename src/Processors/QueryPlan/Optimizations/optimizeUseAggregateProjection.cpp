@@ -69,7 +69,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
         projection.query_ast,
         context,
         Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
     const auto & query_analyzer = interpreter.getQueryAnalyzer();
