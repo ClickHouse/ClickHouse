@@ -141,8 +141,8 @@ struct FormatSettings
         bool trim_whitespaces = true;
         bool allow_whitespace_or_tab_as_delimiter = false;
         bool allow_variable_number_of_columns = false;
-        bool allow_check_deserialize=false;
-        bool set_default_if_deserialize_failed=false;
+        bool allow_check_field_deserialization=false;
+        bool set_default_if_deserialization_failed=false;
     } csv;
 
     struct HiveText

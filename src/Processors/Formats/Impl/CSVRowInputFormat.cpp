@@ -320,7 +320,7 @@ bool CSVFormatReader::readField(
     size_t col_size = column.size();
     try
     {
-        if (format_settings.csv.allow_check_deserialize)
+        if (format_settings.csv.allow_check_field_deserialization)
         {
             std::string field;
             readCSVField(field, *buf, format_settings.csv);
@@ -346,7 +346,7 @@ bool CSVFormatReader::readField(
     catch (Exception & e)
     {
         LOG_DEBUG(&Poco::Logger::get("CSVRowInputFormat"), "Failed to deserialize CSV column, exception message:{}", e.what());
-        if (format_settings.csv.set_default_if_deserialize_failed)
+        if (format_settings.csv.set_default_if_deserialization_failed)
         {
             // Reset the column and buffer position, then skip the field and set column default value.
             if (column.size() == col_size + 1)
