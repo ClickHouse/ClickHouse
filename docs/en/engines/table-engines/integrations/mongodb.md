@@ -33,6 +33,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 - `options` — MongoDB connection string options (optional parameter).
 
+:::tip
+If you are using the MongoDB Atlas cloud offering please add these options:
+
+```
+'connectTimeoutMS=10000&ssl=true&authSource=admin'
+```
+
+:::
+
 ## Usage Example {#usage-example}
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
