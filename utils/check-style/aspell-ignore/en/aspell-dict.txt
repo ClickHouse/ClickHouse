@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWST
 Actian
 ActionsMenu
 ActiveRecord
@@ -1035,6 +1036,7 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1581,6 +1583,8 @@ indexOf
 infi
 initialQueryID
 initializeAggregation
+initcap
+initcapUTF
 injective
 innogames
 inodes
@@ -1608,6 +1612,7 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
+jaccard
 javaHash
 javaHashUTF
 jbod
@@ -2266,6 +2271,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2460,6 +2466,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime

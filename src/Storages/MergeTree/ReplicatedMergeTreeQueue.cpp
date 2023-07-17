@@ -218,6 +218,9 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
     for (const auto & broken_part_name : broken_parts)
         storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
+    Strings parts_in_zk = storage.getZooKeeper()->getChildren(replica_path + "/parts");
+    storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, {});
+
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
     /// so actually no race conditions are possible
@@ -1446,6 +1449,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
             constexpr auto fmt_string = "Cannot execute alter metadata {} with version {} because another alter {} must be executed before";
             LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.alter_version, head_alter);
+            return false;
+        }
+
+        auto database_name = storage.getStorageID().database_name;
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        if (!database->canExecuteReplicatedMetadataAlter())
+        {
+            LOG_TRACE(LogToStr(out_postpone_reason, log), "Cannot execute alter metadata {} with version {} "
+                      "because database {} cannot process metadata alters now", entry.znode_name, entry.alter_version, database_name);
             return false;
         }
     }

@@ -100,7 +100,7 @@ std::unique_ptr<Client> Client::create(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-    const Aws::Client::ClientConfiguration & client_configuration,
+    const PocoHTTPClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
     bool use_virtual_addressing)
 {
@@ -109,9 +109,16 @@ std::unique_ptr<Client> Client::create(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
-std::unique_ptr<Client> Client::create(const Client & other)
+std::unique_ptr<Client> Client::clone(
+    std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy,
+    std::optional<Int64> override_request_timeout_ms) const
 {
-    return std::unique_ptr<Client>(new Client(other));
+    PocoHTTPClientConfiguration new_configuration = client_configuration;
+    if (override_retry_strategy.has_value())
+        new_configuration.retryStrategy = *override_retry_strategy;
+    if (override_request_timeout_ms.has_value())
+        new_configuration.requestTimeoutMs = *override_request_timeout_ms;
+    return std::unique_ptr<Client>(new Client(*this, new_configuration));
 }
 
 namespace
@@ -134,11 +141,14 @@ Client::Client(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
-    const Aws::Client::ClientConfiguration & client_configuration,
-    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    bool use_virtual_addressing)
-    : Aws::S3::S3Client(credentials_provider_, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    const PocoHTTPClientConfiguration & client_configuration_,
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
+    bool use_virtual_addressing_)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, use_virtual_addressing_)
     , credentials_provider(credentials_provider_)
+    , client_configuration(client_configuration_)
+    , sign_payloads(sign_payloads_)
+    , use_virtual_addressing(use_virtual_addressing_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -175,10 +185,15 @@ Client::Client(
     ClientCacheRegistry::instance().registerClient(cache);
 }
 
-Client::Client(const Client & other)
-    : Aws::S3::S3Client(other)
+Client::Client(
+    const Client & other, const PocoHTTPClientConfiguration & client_configuration_)
+    : Aws::S3::S3Client(other.credentials_provider, client_configuration_, other.sign_payloads,
+                        other.use_virtual_addressing)
     , initial_endpoint(other.initial_endpoint)
     , credentials_provider(other.credentials_provider)
+    , client_configuration(client_configuration_)
+    , sign_payloads(other.sign_payloads)
+    , use_virtual_addressing(other.use_virtual_addressing)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
