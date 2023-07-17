@@ -50,7 +50,7 @@ public:
     void setProgressCallback(ProgressCallback callback, QueryStatusPtr process_list_element)
     {
         read_progress_callback = std::make_unique<ReadProgressCallback>();
-        read_progress_callback->setProgressCallback(std::move(callback));
+        read_progress_callback->setProgressCallback(callback);
         read_progress_callback->setProcessListElement(process_list_element);
     }
 

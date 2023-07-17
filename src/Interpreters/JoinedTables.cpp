@@ -341,7 +341,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
                 table_join->setStorageJoin(dictionary_kv);
             }
-e
+
             if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
                 storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
             {

@@ -1,4 +1,4 @@
-#include <QueryCoordination/ExchangeDataSource.h>
+#include <QueryCoordination/Exchange/ExchangeDataSource.h>
 
 namespace DB
 {

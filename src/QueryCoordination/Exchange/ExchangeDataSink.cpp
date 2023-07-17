@@ -1,5 +1,5 @@
-#include <QueryCoordination/ExchangeDataSink.h>
-#include <QueryCoordination/FragmentMgr.h>
+#include <QueryCoordination/Exchange/ExchangeDataSink.h>
+#include <QueryCoordination/Exchange/ExchangeManager.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -10,7 +10,7 @@ void ExchangeDataSink::Channel::prepareSendData(const ExchangeDataRequest & prep
     if (!is_local)
         connection->sendExchangeData(prepare_request);
     else if (is_local && !local_receiver)
-        local_receiver = ExchangeManager::getInstance().findExchangeDataSource(
+        local_receiver = ExchangeManager::getInstance().findExchangeDataSource(prepare_request);
 }
 
 void ExchangeDataSink::Channel::sendData(const Block & block)

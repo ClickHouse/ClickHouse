@@ -1,4 +1,4 @@
-#include <QueryCoordination/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>

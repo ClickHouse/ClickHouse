@@ -1,7 +1,7 @@
-#include <QueryCoordination/ExchangeDataStep.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryCoordination/ExchangeDataSource.h>
+#include <QueryCoordination/Exchange/ExchangeDataSource.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Core/SortCursor.h>
