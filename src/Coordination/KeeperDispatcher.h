@@ -135,7 +135,7 @@ public:
     bool isServerActive() const;
 
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
-    void pushClusterUpdates(ClusterUpdateActions&& actions);
+    void pushClusterUpdates(ClusterUpdateActions && actions);
     bool reconfigEnabled() const;
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)

@@ -69,11 +69,12 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
 RaftServers parseRaftServers(std::string_view servers)
 {
     std::vector<std::string_view> server_arr;
-    std::unordered_set<int> ids;
+    std::unordered_set<int32_t> ids;
     std::unordered_set<String> endpoints;
     RaftServers out;
 
     for (auto & server : splitInto<','>(server_arr, servers))
+    {
         if (auto maybe_server = RaftServerConfig::parse(server))
         {
             String endpoint = maybe_server->endpoint;
@@ -89,6 +90,7 @@ RaftServers parseRaftServers(std::string_view servers)
         }
         else
             return {};
+    }
 
     return out;
 }

@@ -789,7 +789,7 @@ std::vector<int64_t> KeeperServer::getDeadSessions()
     return state_machine->getDeadSessions();
 }
 
-bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction& action)
+bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
 {
     std::lock_guard _{server_write_mutex};
 

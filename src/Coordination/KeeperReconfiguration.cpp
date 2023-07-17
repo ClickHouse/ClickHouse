@@ -39,7 +39,7 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
     if (leaving_arr.size() >= cfg->get_servers().size())
         return {};
 
-    std::unordered_set<int> remove_ids;
+    std::unordered_set<int32_t> remove_ids;
     ClusterUpdateActions out;
 
     for (std::string_view leaving_server : leaving_arr)
@@ -65,7 +65,7 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)
 {
     RaftServers new_config;
-    std::unordered_set<int> remove_update_ids;
+    std::unordered_set<int32_t> remove_update_ids;
 
     for (const auto & update : updates)
     {
