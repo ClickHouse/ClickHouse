@@ -154,7 +154,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::thread_frame_pointers, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::thread_frame_pointers : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
@@ -173,6 +173,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             /// This coarse method of synchronization is perfectly ok for fatal signals.
             sleepForSeconds(1);
         }
+
+        /// Wait for all logs flush operations
+        sleepForSeconds(3);
         call_default_signal_handler(sig);
     }
 
@@ -310,6 +313,57 @@ private:
     {
         ThreadStatus thread_status;
 
+        /// First log those fields that are safe to access and that should not cause new fault.
+        /// That way we will have some duplicated info in the log but we don't loose important info
+        /// in case of double fault.
+
+        LOG_FATAL(log, "########## Short fault info ############");
+        LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {}",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash,
+                thread_num, sig);
+
+        std::string signal_description = "Unknown signal";
+
+        /// Some of these are not really signals, but our own indications on failure reason.
+        if (sig == StdTerminate)
+            signal_description = "std::terminate";
+        else if (sig == SanitizerTrap)
+            signal_description = "sanitizer trap";
+        else if (sig >= 0)
+            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
+        LOG_FATAL(log, "Signal description: {}", signal_description);
+
+        String error_message;
+
+        if (sig != SanitizerTrap)
+            error_message = signalToErrorMessage(sig, info, *context);
+        else
+            error_message = "Sanitizer trap.";
+
+        LOG_FATAL(log, fmt::runtime(error_message));
+
+        String bare_stacktrace_str;
+        if (stack_trace.getSize())
+        {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
+
+            WriteBufferFromOwnString bare_stacktrace;
+            writeString("Stack trace:", bare_stacktrace);
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+            {
+                writeChar(' ', bare_stacktrace);
+                writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            }
+
+            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+            bare_stacktrace_str = bare_stacktrace.str();
+        }
+
+        /// Now try to access potentially unsafe data in thread_ptr.
+
         String query_id;
         String query;
 
@@ -326,16 +380,6 @@ private:
             }
         }
 
-        std::string signal_description = "Unknown signal";
-
-        /// Some of these are not really signals, but our own indications on failure reason.
-        if (sig == StdTerminate)
-            signal_description = "std::terminate";
-        else if (sig == SanitizerTrap)
-            signal_description = "sanitizer trap";
-        else if (sig >= 0)
-            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
@@ -351,30 +395,11 @@ private:
                 thread_num, query_id, query, signal_description, sig);
         }
 
-        String error_message;
-
-        if (sig != SanitizerTrap)
-            error_message = signalToErrorMessage(sig, info, *context);
-        else
-            error_message = "Sanitizer trap.";
-
         LOG_FATAL(log, fmt::runtime(error_message));
 
-        if (stack_trace.getSize())
+        if (!bare_stacktrace_str.empty())
         {
-            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE: This still require memory allocations and mutex lock inside logger.
-            ///       BTW we can also print it to stderr using write syscalls.
-
-            WriteBufferFromOwnString bare_stacktrace;
-            writeString("Stack trace:", bare_stacktrace);
-            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            {
-                writeChar(' ', bare_stacktrace);
-                writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
-            }
-
-            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+            LOG_FATAL(log, fmt::runtime(bare_stacktrace_str));
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
@@ -964,7 +989,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    String build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    String build_id_hex = SymbolIndex::instance().getBuildIDHex();
     if (build_id_hex.empty())
         build_id = "";
     else
@@ -1101,6 +1126,7 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            updateCurrentThreadIdAfterFork();
             logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
