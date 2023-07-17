@@ -24,10 +24,11 @@ BlockIO InterpreterSetQuery::execute()
 }
 
 
-void InterpreterSetQuery::executeForCurrentContext()
+void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constraints)
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    getContext()->checkSettingsConstraints(ast.changes);
+    if (!ignore_setting_constraints)
+        getContext()->checkSettingsConstraints(ast.changes);
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
