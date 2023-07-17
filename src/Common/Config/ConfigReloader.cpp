@@ -15,7 +15,7 @@ namespace DB
 
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
-        const std::vector<std::string>& extra_paths_,
+        const ConfigReloader::Paths& extra_paths_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
@@ -198,7 +198,7 @@ ConfigReloader::FilesChangesTracker ConfigReloader::getNewFileList() const
     FilesChangesTracker file_list;
 
     file_list.addIfExists(config_path);
-    for (const std::string& path : extra_paths)
+    for (const auto& [_, path] : extra_paths)
         file_list.addIfExists(path);
 
     for (const auto & merge_path : ConfigProcessor::getConfigMergeFiles(config_path))

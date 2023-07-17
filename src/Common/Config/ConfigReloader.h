@@ -4,7 +4,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <time.h>
+#include <time.h> // NOLINT
 #include <string>
 #include <thread>
 #include <mutex>
@@ -27,7 +27,11 @@ class Context;
 class ConfigReloader
 {
 public:
-    using Paths = std::vector<std::string>;
+    using Paths = std::unordered_map<
+        String, // extra path id (so that one could modify it from inside the callback
+        String // extra path
+        >;
+
     using Updater = std::function<void(
         ConfigurationPtr,
         bool, // is initial loading

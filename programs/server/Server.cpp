@@ -1102,7 +1102,7 @@ try
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        std::vector{{include_from_path}}, // extra paths
+        ConfigReloader::Paths{{"include_from_path", include_from_path}}, // extra paths
         config().getString("path", ""), // preprocessed dir
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
@@ -1302,17 +1302,20 @@ try
             global_context->updateInterserverCredentials(*config);
             global_context->updateQueryCacheConfiguration(*config);
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
+
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
             // Now we have possibly updated the certificates paths, need to reflect that in extra paths
             // so ConfigReloader would track them.
-            extra.resize(1); // Save only include_from_path in extra list.
+            if (auto it = extra.find("cert_path"); it != extra.end()) extra.erase(it);
+            if (auto it = extra.find("key_path"); it != extra.end()) extra.erase(it);
+
             std::string cert_path = config->getString("openSSL.server.certificateFile", "");
             std::string key_path = config->getString("openSSL.server.privateKeyFile", "");
-            if (!cert_path.empty()) extra.emplace_back(std::move(cert_path));
-            if (!key_path.empty()) extra.emplace_back(std::move(key_path));
 
+            if (!cert_path.empty()) extra.emplace("cert_path", std::move(cert_path));
+            if (!key_path.empty()) extra.emplace("key_path", std::move(key_path));
 #endif
+
             NamedCollectionUtils::reloadFromConfig(*config);
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);

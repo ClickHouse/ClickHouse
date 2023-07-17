@@ -456,7 +456,7 @@ try
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        std::vector{{include_from_path}},
+        ConfigReloader::Paths{{"include_from_path", include_from_path}},
         config().getString("path", ""), // preprocessed dir
         std::move(unused_cache),
         unused_event,
@@ -469,11 +469,14 @@ try
             CertificateReloader::instance().tryLoad(*config);
             // Now we have possibly updated the certificates paths, need to reflect that in extra paths
             // so ConfigReloader would track them.
-            extra.resize(1); // Save only include_from_path in extra list.
+            if (auto it = extra.find("cert_path"); it != extra.end()) extra.erase(it);
+            if (auto it = extra.find("key_path"); it != extra.end()) extra.erase(it);
+
             std::string cert_path = config->getString("openSSL.server.certificateFile", "");
             std::string key_path = config->getString("openSSL.server.privateKeyFile", "");
-            if (!cert_path.empty()) extra.emplace_back(std::move(cert_path));
-            if (!key_path.empty()) extra.emplace_back(std::move(key_path));
+
+            if (!cert_path.empty()) extra.emplace("cert_path", std::move(cert_path));
+            if (!key_path.empty()) extra.emplace("key_path", std::move(key_path));
 #endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
