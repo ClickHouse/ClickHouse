@@ -40,9 +40,9 @@ namespace MySQLReplication
 
     void EventHeader::dump(WriteBuffer & out) const
     {
-        out << "\n=== " << to_string(this->type) << " ===" << '\n';
+        out << "\n=== " << magic_enum::enum_name(this->type) << " ===" << '\n';
         out << "Timestamp: " << this->timestamp << '\n';
-        out << "Event Type: " << to_string(this->type) << '\n';
+        out << "Event Type: " << magic_enum::enum_name(this->type) << '\n';
         out << "Server ID: " << this->server_id << '\n';
         out << "Event Size: " << this->event_size << '\n';
         out << "Log Pos: " << this->log_pos << '\n';
