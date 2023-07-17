@@ -17,7 +17,7 @@ if (NOT PARALLEL_COMPILE_JOBS AND MAX_COMPILER_MEMORY)
         set (PARALLEL_COMPILE_JOBS 1)
     endif ()
     if (PARALLEL_COMPILE_JOBS LESS NUMBER_OF_LOGICAL_CORES)
-        set (PARALLEL_COMPILE_JOBS_UNDERUTILIZING TRUE)
+        message(WARNING "The autocalculated compile jobs limit (${PARALLEL_COMPILE_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_COMPILE_JOBS to override.")
     endif()
 endif ()
 
@@ -28,7 +28,7 @@ if (NOT PARALLEL_LINK_JOBS AND MAX_LINKER_MEMORY)
         set (PARALLEL_LINK_JOBS 1)
     endif ()
     if (PARALLEL_LINK_JOBS LESS NUMBER_OF_LOGICAL_CORES)
-        set (PARALLEL_LINK_JOBS_UNDERUTILIZING TRUE)
+        message(WARNING "The autocalculated link jobs limit (${PARALLEL_LINK_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_LINK_JOBS to override.")
     endif()
 endif ()
 
@@ -44,15 +44,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLE
 endif()
 
 message(STATUS "System has ${NUMBER_OF_LOGICAL_CORES} logical cores and ${TOTAL_PHYSICAL_MEMORY} megabytes of memory. Building with ${PARALLEL_COMPILE_JOBS} compile jobs and ${PARALLEL_COMPILE_JOBS} linker jobs.")
-
-if (PARALLEL_COMPILE_JOBS OR PARALLEL_LINK_JOBS)
-    if (PARALLEL_COMPILE_JOBS_UNDERUTILIZING)
-        message(WARNING "The autocalculated compile jobs limit (${PARALLEL_COMPILE_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_COMPILE_JOBS to override.")
-    endif()
-    if (PARALLEL_LINK_JOBS_UNDERUTILIZING)
-        message(WARNING "The autocalculated link jobs limit (${PARALLEL_LINK_JOBS}) underutilizes CPU cores (${NUMBER_OF_LOGICAL_CORES}). Set PARALLEL_LINK_JOBS to override.")
-    endif()
-endif ()
 
 if (PARALLEL_COMPILE_JOBS AND (PARALLEL_COMPILE_JOBS LESS NUMBER_OF_LOGICAL_CORES))
     set(CMAKE_JOB_POOL_COMPILE compile_job_pool${CMAKE_CURRENT_SOURCE_DIR})
