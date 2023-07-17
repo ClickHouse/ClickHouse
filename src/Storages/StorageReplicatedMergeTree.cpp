@@ -1385,7 +1385,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     }
 
     const UInt64 parts_to_fetch_blocks = std::accumulate(parts_to_fetch.cbegin(), parts_to_fetch.cend(), 0,
-        [&](UInt64 acc, const String& part_name)
+        [&](UInt64 acc, const String & part_name)
         {
             if (const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version))
                 return acc + part_info->getBlocksCount();
