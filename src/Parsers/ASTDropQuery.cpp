@@ -62,10 +62,32 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!table && database)
-        settings.ostr << backQuoteIfNeed(getDatabase());
-    else
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    for (auto it=databases_tables.begin();it !=databases_tables.end();++it)
+    {
+        ASTPtr elem_database = std::get<0>(*it);
+        ASTPtr elem_table = std::get<1>(*it);
+
+      if(it!=databases_tables.begin())
+          settings.ostr<<",";
+
+      if(!elem_table && elem_database){
+
+        String database_name;
+        tryGetIdentifierNameInfo(elem_database,database_name);
+        settings.ostr << backQuoteIfNeed(database_name);
+      }else{
+
+        String database_name;
+        tryGetIdentifierNameInfo(elem_database,database_name);
+        database_name = (elem_database ? backQuoteIfNeed(database_name)+".":"");
+        String table_name;
+        tryGetIdentifierNameInfo(elem_table,table_name);
+        settings.ostr << database_name << backQuoteIfNeed(table_name);
+
+      }
+        
+    }
+
 
     formatOnCluster(settings);
 
