@@ -26,7 +26,8 @@ SELECT
 
 ## timeZone {#timezone}
 
-Возвращает часовой пояс сервера.
+Возвращает часовой пояс сервера, считающийся умолчанием для текущей сессии: значение параметра [session_timezone](../../operations/settings/settings.md#session_timezone), если установлено.
+
 Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
@@ -42,6 +43,33 @@ timeZone()
 -   Часовой пояс.
 
 Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [serverTimeZone](#servertimezone)
+
+## serverTimeZone {#servertimezone}
+
+Возвращает часовой пояс сервера по умолчанию, в т.ч. установленный [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
+
+**Синтаксис**
+
+``` sql
+serverTimeZone()
+```
+
+Синонимы: `serverTimezone`.
+
+**Возвращаемое значение**
+
+-   Часовой пояс.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [timeZone](#timezone)
 
 ## toTimeZone {#totimezone}
 
@@ -571,24 +599,28 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 ## toYearWeek(date[,mode]) {#toyearweek}
 Возвращает год и неделю для даты. Год в результате может отличаться от года в аргументе даты для первой и последней недели года.
 
-Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если mode не задан, используется режим 0.
+Аргумент mode работает так же, как аргумент mode [toWeek()](#toweek), значение mode по умолчанию -- `0`.
 
-`toISOYear() ` эквивалентно `intDiv(toYearWeek(date,3),100)`.
+`toISOYear() ` эквивалентно `intDiv(toYearWeek(date,3),100)`
+
+:::warning
+Однако, есть отличие в работе функций `toWeek()` и `toYearWeek()`. `toWeek()` возвращает номер недели в контексте заданного года, и в случае, когда `toWeek()` вернёт `0`, `toYearWeek()` вернёт значение, соответствующее последней неделе предыдущего года (см. `prev_yearWeek` в примере).
+:::
 
 **Пример**
 
 Запрос:
 
 ```sql
-SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9, toYearWeek(toDate('2022-01-01')) AS prev_yearWeek;
 ```
 
 Результат:
 
 ```text
-┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
-│ 2016-12-27 │    201652 │    201652 │    201701 │
-└────────────┴───────────┴───────────┴───────────┘
+┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┬─prev_yearWeek─┐
+│ 2016-12-27 │    201652 │    201652 │    201701 │        202152 │
+└────────────┴───────────┴───────────┴───────────┴───────────────┘
 ```
 
 ## age

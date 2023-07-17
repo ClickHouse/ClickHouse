@@ -732,7 +732,7 @@ struct ToYearImpl
         auto year = point.get<UInt64>();
         if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
 
-        const DateLUTImpl & date_lut = DateLUT::instance();
+        const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
         auto start_time = date_lut.makeDateTime(year, 1, 1, 0, 0, 0);
         auto end_time = date_lut.addYears(start_time, 1);
@@ -1410,7 +1410,7 @@ struct ToYYYYMMImpl
         if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
             return std::nullopt;
 
-        const DateLUTImpl & date_lut = DateLUT::instance();
+        const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
         auto start_time = date_lut.makeDateTime(year, month, 1, 0, 0, 0);
         auto end_time = date_lut.addMonths(start_time, 1);

@@ -16,6 +16,8 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -623,33 +625,67 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::makeSetForInFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+    auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
-    auto set_key = planner_context->createSetKey(in_second_argument);
-    const auto & planner_set = planner_context->getSetOrThrow(set_key);
+    //auto set_key = planner_context->createSetKey(in_second_argument);
+
+    DataTypes set_element_types;
+
+    auto in_second_argument_node_type = in_second_argument->getNodeType();
+
+    bool subquery_or_table =
+        in_second_argument_node_type == QueryTreeNodeType::QUERY ||
+        in_second_argument_node_type == QueryTreeNodeType::UNION ||
+        in_second_argument_node_type == QueryTreeNodeType::TABLE;
+
+    FutureSetPtr set;
+    auto set_key = in_second_argument->getTreeHash();
+
+    if (!subquery_or_table)
+    {
+        set_element_types = {in_first_argument->getResultType()};
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
+        if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+            set_element_types = left_tuple_type->getElements();
+
+        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
+        set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
+    }
+    else
+    {
+        set = planner_context->getPreparedSets().findSubquery(set_key);
+        if (!set)
+            set = planner_context->getPreparedSets().findStorage(set_key);
+    }
+
+    if (!set)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "No set is registered for key {}",
+            PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
-    column.name = set_key;
+    column.name = planner_context->createSetKey(in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
-    bool set_is_created = planner_set.getSet().isCreated();
-    auto column_set = ColumnSet::create(1, planner_set.getSet());
+    bool set_is_created = set->get() != nullptr;
+    auto column_set = ColumnSet::create(1, std::move(set));
 
     if (set_is_created)
         column.column = ColumnConst::create(std::move(column_set), 1);
     else
         column.column = std::move(column_set);
 
-    actions_stack[0].addConstantIfNecessary(set_key, column);
+    actions_stack[0].addConstantIfNecessary(column.name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(set_key, column);
+        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
     }
 
-    return {set_key, 0};
+    return {column.name, 0};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)
