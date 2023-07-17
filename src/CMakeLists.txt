@@ -206,11 +206,11 @@ add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
-if (TARGET ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
-endif()
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -345,6 +345,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
+            boost::context
             ch_contrib::cityhash
             ch_contrib::re2
             ch_contrib::re2_st
@@ -411,6 +412,7 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
         Poco::MongoDB
+        Poco::Redis
 )
 
 if (TARGET ch::mysqlxx)
@@ -463,7 +465,7 @@ endif ()
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
 endif ()
-dbms_target_link_libraries (PRIVATE ch_contrib::sparsehash)
+dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
 if (TARGET ch_contrib::protobuf)
     dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
@@ -527,7 +529,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
 if (TARGET ch_contrib::rocksdb)
@@ -612,6 +614,7 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gtest_all
+        ch_contrib::gmock_all
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

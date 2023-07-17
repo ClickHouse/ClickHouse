@@ -14,6 +14,11 @@ tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
 tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
 tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
 tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
+tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
+tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d
+tbl	0	mm2_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	c, d, e
+tbl	0	PRIMARY	\N	\N	A	\N	\N	\N	\N	primary	\N	\N	YES	c, a
+tbl	0	set_idx	\N	\N	\N	\N	\N	\N	\N	set	\N	\N	YES	e
 --- EXTENDED
 tbl	0	blf_idx	\N	\N	\N	\N	\N	\N	\N	bloom_filter	\N	\N	YES	d, b
 tbl	0	mm1_idx	\N	\N	\N	\N	\N	\N	\N	minmax	\N	\N	YES	a, c, d

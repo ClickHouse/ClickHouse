@@ -21,7 +21,7 @@ detach table 02681_undrop_detach;
 undrop table 02681_undrop_detach; -- { serverError 57 }
 attach table 02681_undrop_detach;
 alter table 02681_undrop_detach update num = 2 where id = 1;
-select command from system.mutations where table='02681_undrop_detach' limit 1;
+select command from system.mutations where table='02681_undrop_detach' and database=currentDatabase() limit 1;
 drop table 02681_undrop_detach sync;
 
 select 'test MergeTree with cluster';

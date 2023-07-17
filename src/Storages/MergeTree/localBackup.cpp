@@ -17,9 +17,10 @@ namespace
 {
 
 void localBackupImpl(
-    const DiskPtr & disk, const String & source_path,
+    const DiskPtr & disk, IDiskTransaction * transaction, const String & source_path,
     const String & destination_path, bool make_source_readonly, size_t level,
-    std::optional<size_t> max_level, const NameSet & files_to_copy_instead_of_hardlinks)
+    std::optional<size_t> max_level, bool copy_instead_of_hardlinks,
+    const NameSet & files_to_copy_instead_of_hardlinks)
 {
     if (max_level && level > *max_level)
         return;
@@ -27,7 +28,10 @@ void localBackupImpl(
     if (level >= 1000)
         throw DB::Exception(DB::ErrorCodes::TOO_DEEP_RECURSION, "Too deep recursion");
 
-    disk->createDirectories(destination_path);
+    if (transaction)
+        transaction->createDirectories(destination_path);
+    else
+        disk->createDirectories(destination_path);
 
     for (auto it = disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
@@ -37,15 +41,36 @@ void localBackupImpl(
         if (!disk->isDirectory(source))
         {
             if (make_source_readonly)
-                disk->setReadOnly(source);
-            if (files_to_copy_instead_of_hardlinks.contains(it->name()))
-                disk->copyFile(source, *disk, destination);
+            {
+                if (transaction)
+                    transaction->setReadOnly(source);
+                else
+                    disk->setReadOnly(source);
+            }
+            if (copy_instead_of_hardlinks || files_to_copy_instead_of_hardlinks.contains(it->name()))
+            {
+                if (transaction)
+                {
+                    transaction->copyFile(source, destination);
+                }
+                else
+                {
+                    disk->copyFile(source, *disk, destination);
+                }
+            }
             else
-                disk->createHardLink(source, destination);
+            {
+                if (transaction)
+                    transaction->createHardLink(source, destination);
+                else
+                    disk->createHardLink(source, destination);
+            }
         }
         else
         {
-            localBackupImpl(disk, source, destination, make_source_readonly, level + 1, max_level, files_to_copy_instead_of_hardlinks);
+            localBackupImpl(
+                disk, transaction, source, destination, make_source_readonly, level + 1, max_level,
+                copy_instead_of_hardlinks, files_to_copy_instead_of_hardlinks);
         }
     }
 }
@@ -89,7 +114,7 @@ private:
 void localBackup(
     const DiskPtr & disk, const String & source_path,
     const String & destination_path, bool make_source_readonly,
-    std::optional<size_t> max_level, bool copy_instead_of_hardlinks, const NameSet & files_to_copy_intead_of_hardlinks)
+    std::optional<size_t> max_level, bool copy_instead_of_hardlinks, const NameSet & files_to_copy_intead_of_hardlinks, DiskTransactionPtr disk_transaction)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
@@ -100,7 +125,8 @@ void localBackup(
     size_t try_no = 0;
     const size_t max_tries = 10;
 
-    CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
+    CleanupOnFail cleanup(disk_transaction ? std::function<void()>([]{}) :
+                          [disk, destination_path]() { disk->removeRecursive(destination_path); });
 
     /** Files in the directory can be permanently added and deleted.
       * If some file is deleted during an attempt to make a backup, then try again,
@@ -110,10 +136,10 @@ void localBackup(
     {
         try
         {
-            if (copy_instead_of_hardlinks)
+            if (copy_instead_of_hardlinks && !disk_transaction)
                 disk->copyDirectoryContent(source_path, disk, destination_path);
             else
-                localBackupImpl(disk, source_path, destination_path, make_source_readonly, 0, max_level, files_to_copy_intead_of_hardlinks);
+                localBackupImpl(disk, disk_transaction.get(), source_path, destination_path, make_source_readonly, 0, max_level, copy_instead_of_hardlinks, files_to_copy_intead_of_hardlinks);
         }
         catch (const DB::ErrnoException & e)
         {

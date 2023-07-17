@@ -28,23 +28,25 @@ The quickest and easiest way to get up and running with ClickHouse is to create 
 For production installs of a specific release version see the [installation options](#available-installation-options) down below.
 :::
 
-On Linux and macOS:
+On Linux, macOS and FreeBSD:
 
-1. If you are just getting started and want to see what ClickHouse can do, the simplest way to download ClickHouse locally is to run the following command. It downloads a single binary for your operating system that can be used to run the ClickHouse server, clickhouse-client, clickhouse-local,
-ClickHouse Keeper, and other tools:
+1. If you are just getting started and want to see what ClickHouse can do, the simplest way to download ClickHouse locally is to run the
+   following command. It downloads a single binary for your operating system that can be used to run the ClickHouse server,
+   clickhouse-client, clickhouse-local, ClickHouse Keeper, and other tools:
 
   ```bash
   curl https://clickhouse.com/ | sh
   ```
 
 1. Run the following command to start the ClickHouse server:
+
     ```bash
     ./clickhouse server
     ```
 
-    The first time you run this script, the necessary files and folders are created in the current directory, then the server starts.
+   The first time you run this script, the necessary files and folders are created in the current directory, then the server starts.
 
-1. Open a new terminal and use the **clickhouse-client** to connect to your service:
+1. Open a new terminal and use the **./clickhouse client** to connect to your service:
 
   ```bash
   ./clickhouse client
@@ -143,8 +145,9 @@ You can also download and install packages manually from [here](https://packages
 #### Install standalone ClickHouse Keeper
 
 :::tip
-If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
-do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
+This command is only needed on standalone ClickHouse Keeper servers.
 :::
 
 ```bash
@@ -211,8 +214,9 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 #### Install standalone ClickHouse Keeper
 
 :::tip
-If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
-do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
+This command is only needed on standalone ClickHouse Keeper servers.
 :::
 
 ```bash
@@ -328,7 +332,9 @@ For production environments, it’s recommended to use the latest `stable`-versi
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
-### From Sources {#from-sources}
+## Non-Production Deployments (Advanced)
+
+### Compile From Source {#from-sources}
 
 To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [macOS](/docs/en/development/build-osx.md).
 
@@ -344,8 +350,37 @@ You’ll need to create data and metadata folders manually and `chown` them for 
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
-### From CI checks pre-built binaries
-ClickHouse binaries are built for each [commit](/docs/en/development/build.md#you-dont-have-to-build-clickhouse).
+### Install a CI-generated Binary
+
+ClickHouse's continuous integration (CI) infrastructure produces specialized builds for each commit in the [ClickHouse
+repository](https://github.com/clickhouse/clickhouse/), e.g. [sanitized](https://github.com/google/sanitizers) builds, unoptimized (Debug)
+builds, cross-compiled builds etc. While such builds are normally only useful during development, they can in certain situations also be
+interesting for users.
+
+:::note
+Since ClickHouse's CI is evolving over time, the exact steps to download CI-generated builds may vary.
+Also, CI may delete too old build artifacts, making them unavailable for download.
+:::
+
+For example, to download a aarch64 binary for ClickHouse v23.4, follow these steps:
+
+- Find the GitHub pull request for release v23.4: [Release pull request for branch 23.4](https://github.com/ClickHouse/ClickHouse/pull/49238)
+- Click "Commits", then click a commit similar to "Update autogenerated version to 23.4.2.1 and contributors" for the particular version you like to install.
+- Click the green check / yellow dot / red cross to open the list of CI checks.
+- Click "Details" next to "ClickHouse Build Check" in the list, it will open a page similar to [this page](https://s3.amazonaws.com/clickhouse-test-reports/46793/b460eb70bf29b19eadd19a1f959b15d186705394/clickhouse_build_check/report.html)
+- Find the rows with compiler = "clang-*-aarch64" - there are multiple rows.
+- Download the artifacts for these builds.
+
+To download binaries for very old x86-64 systems without [SSE3](https://en.wikipedia.org/wiki/SSE3) support or old ARM systems without
+[ARMv8.1-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.1-A) support, open a [pull
+request](https://github.com/ClickHouse/ClickHouse/commits/master) and find CI check "BuilderBinAmd64Compat", respectively
+"BuilderBinAarch64V80Compat". Then click "Details", open the "Build" fold, scroll to the end, find message "Notice: Build URLs
+https://s3.amazonaws.com/clickhouse/builds/PRs/.../.../binary_aarch64_v80compat/clickhouse". You can then click the link to download the
+build.
+
+### macOS-only: Install with Homebrew
+
+To install ClickHouse using the popular `brew` package manager, follow the instructions listed in the [ClickHouse Homebrew tap](https://github.com/ClickHouse/homebrew-clickhouse).
 
 ## Launch {#launch}
 

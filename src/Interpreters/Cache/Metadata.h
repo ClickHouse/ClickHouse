@@ -8,8 +8,12 @@
 
 namespace DB
 {
+
 class CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
+class DownloadQueue;
+using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
@@ -22,9 +26,9 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool valid() const { return !removal_candidate.load(); }
+    bool evicting() const { return removal_candidate.load(); }
 
-    Priority::Iterator getQueueIterator() { return file_segment->getQueueIterator(); }
+    Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
     std::atomic<bool> removal_candidate{false};
@@ -44,6 +48,8 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         const Key & key_,
         const std::string & key_path_,
         CleanupQueue & cleanup_queue_,
+        DownloadQueue & download_queue_,
+        Poco::Logger * log_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -69,7 +75,9 @@ private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
+    DownloadQueue & download_queue;
     std::atomic<bool> created_base_directory = false;
+    Poco::Logger * log;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
@@ -85,12 +93,12 @@ public:
 
     const String & getBaseDirectory() const { return path; }
 
-    String getPathInLocalCache(
+    String getPathForFileSegment(
         const Key & key,
         size_t offset,
         FileSegmentKind segment_kind) const;
 
-    String getPathInLocalCache(const Key & key) const;
+    String getPathForKey(const Key & key) const;
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateCacheMetadataFunc && func);
@@ -109,11 +117,19 @@ public:
 
     void doCleanup();
 
+    void downloadThreadFunc();
+
+    void cancelDownload();
+
 private:
+    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    CacheMetadataGuard guard;
+    mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
+    const DownloadQueuePtr download_queue;
     Poco::Logger * log;
+
+    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
 };
 
 
@@ -159,7 +175,11 @@ struct LockedKey : private boost::noncopyable
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
+    void addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
+
     bool isLastOwnerOfFileSegment(size_t offset) const;
+
+    std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
 
     void removeFromCleanupQueue();
 
@@ -170,7 +190,6 @@ struct LockedKey : private boost::noncopyable
 private:
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
-    Poco::Logger * log;
 };
 
 }

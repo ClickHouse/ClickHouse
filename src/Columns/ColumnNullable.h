@@ -130,13 +130,13 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(nested_column);
         callback(null_map);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*nested_column);
         nested_column->forEachSubcolumnRecursively(callback);

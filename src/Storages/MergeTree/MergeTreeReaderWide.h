@@ -33,14 +33,14 @@ public:
 
     bool canReadIncompleteGranules() const override { return true; }
 
-    void prefetchBeginOfRange(int64_t priority) override;
+    void prefetchBeginOfRange(Priority priority) override;
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
 private:
     FileStreams streams;
 
-    void prefetchForAllColumns(int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading);
+    void prefetchForAllColumns(Priority priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
@@ -55,7 +55,7 @@ private:
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(
-        int64_t priority,
+        Priority priority,
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         size_t from_mark,

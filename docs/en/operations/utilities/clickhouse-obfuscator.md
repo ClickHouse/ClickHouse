@@ -24,7 +24,7 @@ It is designed to retain the following properties of data:
 
 Most of the properties above are viable for performance testing:
 
-reading data, filtering, aggregatio, and sorting will work at almost the same speed
+reading data, filtering, aggregation, and sorting will work at almost the same speed
 as on original data due to saved cardinalities, magnitudes, compression ratios, etc.
 
 It works in a deterministic fashion: you define a seed value and the transformation is determined by input data and by seed.
