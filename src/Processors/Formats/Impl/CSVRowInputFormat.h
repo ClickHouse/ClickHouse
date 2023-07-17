@@ -69,6 +69,9 @@ public:
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
 
+    bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() override;
+
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
