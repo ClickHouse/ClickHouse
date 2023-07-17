@@ -235,20 +235,7 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
-ContextAccess::~ContextAccess()
-{
-    enabled_settings.reset();
-    enabled_quota.reset();
-    enabled_row_policies.reset();
-    row_policies_of_initial_user.reset();
-    access_with_implicit.reset();
-    access.reset();
-    roles_info.reset();
-    subscription_for_roles_changes.reset();
-    enabled_roles.reset();
-    subscription_for_user_change.reset();
-    user.reset();
-}
+ContextAccess::~ContextAccess() = default;
 
 
 void ContextAccess::initialize()
@@ -264,12 +251,6 @@ void ContextAccess::initialize()
 
     if (!params.user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in current context, it's a bug");
-
-    if (!params.initial_user.empty())
-    {
-        if (auto initial_user_id = access_control->find<User>(params.initial_user))
-            row_policies_of_initial_user = access_control->tryGetDefaultRowPolicies(*initial_user_id);
-    }
 
     subscription_for_user_change = access_control->subscribeForChanges(
         *params.user_id,
@@ -290,7 +271,8 @@ void ContextAccess::initialize()
 void ContextAccess::setUser(const UserPtr & user_) const
 {
     user = user_;
-    if (!user)
+
+    if (!user_)
     {
         /// User has been dropped.
         user_was_dropped = true;
@@ -301,6 +283,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         enabled_roles = nullptr;
         roles_info = nullptr;
         enabled_row_policies = nullptr;
+        row_policies_of_initial_user = nullptr;
         enabled_quota = nullptr;
         enabled_settings = nullptr;
         return;
@@ -330,6 +313,11 @@ void ContextAccess::setUser(const UserPtr & user_) const
     });
 
     setRolesInfo(enabled_roles->getRolesInfo());
+
+    std::optional<UUID> initial_user_id;
+    if (!params.initial_user.empty())
+        initial_user_id = access_control->find<User>(params.initial_user);
+    row_policies_of_initial_user = initial_user_id ? access_control->tryGetDefaultRowPolicies(*initial_user_id) : nullptr;
 }
 
 
