@@ -68,13 +68,16 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 {
     if (auto context = Context::getGlobalContextInstance())
     {
-        return get("", context->getConfigRef());
+        if (auto resolver = getFromSettings("", context->getConfigRef()))
+        {
+            return resolver;
+        }
     }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>();
 }
 
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getFromSettings(
     const String & config_prefix,
     const Poco::Util::AbstractConfiguration & configuration
 )
@@ -100,7 +103,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
         }
     }
 
-    return std::make_shared<EnvironmentProxyConfigurationResolver>();
+    return nullptr;
 }
 
 }

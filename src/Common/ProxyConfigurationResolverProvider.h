@@ -7,19 +7,24 @@
 namespace DB
 {
 
-/*
- * Returns appropriate ProxyConfigurationResolver based on current CH settings (Remote resolver or List resolver).
- * If no configuration is found, returns Environment Resolver.
- * */
+
 class ProxyConfigurationResolverProvider
 {
 public:
+    /*
+     * Returns appropriate ProxyConfigurationResolver based on current CH settings (Remote resolver or List resolver).
+     * If no configuration is found, returns Environment Resolver.
+     * */
     static std::shared_ptr<ProxyConfigurationResolver> get();
 
     /*
      * This API exists exclusively for backward compatibility with old S3 storage specific proxy configuration.
+     * If no configuration is found, returns nullptr.
      * */
-    static std::shared_ptr<ProxyConfigurationResolver> get(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration);
+    static std::shared_ptr<ProxyConfigurationResolver> getFromSettings(
+        const String & config_prefix,
+        const Poco::Util::AbstractConfiguration & configuration
+    );
 };
 
 }
