@@ -352,7 +352,7 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 
 void ZooKeeper::createAncestors(const std::string & path)
 {
-    std::string data = "";
+    std::string data;
     std::string path_created; // Ignored
     std::vector<std::string> pending_nodes;
 
