@@ -608,7 +608,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                             "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
                             "You can change this timeout with `lock_acquire_timeout` setting",
-                            query_context->getSettings().lock_acquire_timeout)
+                            query_context->getSettings().lock_acquire_timeout.totalMilliseconds());
         }
         version = startMutation(commands, query_context);
     }
