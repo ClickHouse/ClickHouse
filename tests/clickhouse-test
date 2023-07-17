@@ -529,6 +529,12 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
+# To keep dependency list as short as possible, tzdata is not used here (to
+# avoid try/except block for import)
+def get_localzone():
+    return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
+
+
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: 0
@@ -601,6 +607,19 @@ class SettingsRandomizer:
         "http_wait_end_of_query": lambda: random.random() > 0.5,
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
+        ),
+        "session_timezone": lambda: random.choice(
+            [
+                # special non-deterministic around 1970 timezone, see [1].
+                #
+                #   [1]: https://github.com/ClickHouse/ClickHouse/issues/42653
+                "America/Mazatlan",
+                "America/Hermosillo",
+                "Mexico/BajaSur",
+                # server default that is randomized across all timezones
+                # NOTE: due to lots of trickery we cannot use empty timezone here, but this should be the same.
+                get_localzone(),
+            ]
         ),
     }
 
