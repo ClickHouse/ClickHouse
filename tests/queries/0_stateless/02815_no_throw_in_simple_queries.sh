@@ -19,12 +19,12 @@ bash -c "
 # No exceptions are thrown in simple cases:
 $CLICKHOUSE_LOCAL --query "SELECT 1"
 $CLICKHOUSE_LOCAL --query "SHOW TABLES"
-$CLICKHOUSE_LOCAL --query "SELECT * FROM system.tables FORMAT Null"
+$CLICKHOUSE_LOCAL --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null"
 
 # The same for the client app:
 $CLICKHOUSE_CLIENT --query "SELECT 1"
 $CLICKHOUSE_CLIENT --query "SHOW TABLES"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null"
 
 # Multi queries are ok:
 $CLICKHOUSE_LOCAL --multiquery "SELECT 1; SELECT 2;"
