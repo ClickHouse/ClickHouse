@@ -790,7 +790,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
                 WriteBufferFromOStream cerr_buf(std::cerr, 4096);
                 fuzz_base->dumpTree(cerr_buf);
-                cerr_buf.next();
+                cerr_buf.finalize();
 
                 fmt::print(
                     stderr,
@@ -928,7 +928,7 @@ bool Client::processWithFuzzing(const String & full_query)
         std::cout << std::endl;
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
-        ast_buf.next();
+        ast_buf.finalize();
         if (const auto * insert = query->as<ASTInsertQuery>())
         {
             /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
@@ -1404,10 +1404,9 @@ void Client::readArguments(
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);
-                /// No password was provided by user. Add '\n' as implicit password,
-                /// which encodes that client should ask user for the password.
-                /// '\n' is used because there is hardly a chance that a user would use '\n' as a password.
-                common_arguments.emplace_back("\n");
+                /// if the value of --password is omitted, the password will be asked before
+                /// connection start
+                common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
                 common_arguments.emplace_back(arg);
