@@ -149,6 +149,9 @@ Block NativeReader::read()
         rows = index_block_it->num_rows;
     }
 
+    if (columns == 0 && !header && rows != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+
     for (size_t i = 0; i < columns; ++i)
     {
         if (use_index)
@@ -289,6 +292,9 @@ Block NativeReader::read()
 
         res.swap(tmp_res);
     }
+
+    if (res.rows() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after desirialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
 }

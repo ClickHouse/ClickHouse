@@ -1905,17 +1905,18 @@ void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
 
-    auto prev_bytes_written_out = out->count();
-    auto prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
 
     try
     {
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
+            constexpr UInt64 marker = (1ULL<<63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(VAR_UINT_MAX, *out);
+                writeVarUInt(marker, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
