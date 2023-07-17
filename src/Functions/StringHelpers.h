@@ -7,8 +7,8 @@
 namespace DB
 {
 
-/** URL processing functions. See implementation in separate .cpp files.
-  * All functions are not strictly follow RFC, instead they are maximally simplified for performance reasons.
+/** These helpers are used by URL processing functions. See implementation in separate .cpp files.
+  * All functions do not strictly follow RFC, instead they are maximally simplified for performance reasons.
   *
   * Functions for extraction parts of URL.
   * If URL has nothing like, then empty string is returned.
@@ -101,7 +101,7 @@ struct ExtractSubstringImpl
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by URL functions");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by this function");
     }
 };
 
@@ -156,7 +156,7 @@ struct CutSubstringImpl
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by URL functions");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported this function");
     }
 };
 
