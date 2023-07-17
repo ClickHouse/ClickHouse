@@ -1,11 +1,11 @@
 ---
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
-sidebar_label: Server Settings
+sidebar_label: Global Server Settings
 description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
-# Server Settings
+# Global Server Settings
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 
@@ -1201,13 +1201,58 @@ Keys:
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 
+Both log and error log file names (only file names, not directories) support date and time format specifiers.
+
+**Format specifiers**
+Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
+
+| Specifier   | Description                                                                                                         | Example                  |
+|-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
+| %%          | Literal %                                                                                                           | %                        |
+| %n          | New-line character                                                                                                  |                          |
+| %t          | Horizontal tab character                                                                                            |                          |
+| %Y          | Year as a decimal number, e.g. 2017                                                                                 | 2023                     |
+| %y          | Last 2 digits of year as a decimal number (range [00,99])                                                           | 23                       |
+| %C          | First 2 digits of year as a decimal number (range [00,99])                                                          | 20                       |
+| %G          | Four-digit [ISO 8601 week-based year](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), i.e. the year that contains the specified week. Normally useful only with %V  | 2023       |
+| %g          | Last 2 digits of [ISO 8601 week-based year](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), i.e. the year that contains the specified week.                         | 23         |
+| %b          | Abbreviated month name, e.g. Oct (locale dependent)                                                                 | Jul                      |
+| %h          | Synonym of %b                                                                                                       | Jul                      |
+| %B          | Full month name, e.g. October (locale dependent)                                                                    | July                     |
+| %m          | Month as a decimal number (range [01,12])                                                                           | 07                       |
+| %U          | Week of the year as a decimal number (Sunday is the first day of the week) (range [00,53])                          | 27                       |
+| %W          | Week of the year as a decimal number (Monday is the first day of the week) (range [00,53])                          | 27                       |
+| %V          | ISO 8601 week number (range [01,53])                                                                                | 27                       |
+| %j          | Day of the year as a decimal number (range [001,366])                                                               | 187                      |
+| %d          | Day of the month as a zero-padded decimal number (range [01,31]). Single digit is preceded by zero.                 | 06                       |
+| %e          | Day of the month as a space-padded decimal number (range [1,31]). Single digit is preceded by a space.              | &nbsp; 6                 |
+| %a          | Abbreviated weekday name, e.g. Fri (locale dependent)                                                               | Thu                      |
+| %A          | Full weekday name, e.g. Friday (locale dependent)                                                                   | Thursday                 |
+| %w          | Weekday as a integer number with Sunday as 0 (range [0-6])                                                          | 4                        |
+| %u          | Weekday as a decimal number, where Monday is 1 (ISO 8601 format) (range [1-7])                                      | 4                        |
+| %H          | Hour as a decimal number, 24 hour clock (range [00-23])                                                             | 18                       |
+| %I          | Hour as a decimal number, 12 hour clock (range [01,12])                                                             | 06                       |
+| %M          | Minute as a decimal number (range [00,59])                                                                          | 32                       |
+| %S          | Second as a decimal number (range [00,60])                                                                          | 07                       |
+| %c          | Standard date and time string, e.g. Sun Oct 17 04:41:13 2010 (locale dependent)                                     | Thu Jul  6 18:32:07 2023 |
+| %x          | Localized date representation (locale dependent)                                                                    | 07/06/23                 |
+| %X          | Localized time representation, e.g. 18:40:20 or 6:40:20 PM (locale dependent)                                       | 18:32:07                 |
+| %D          | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                         | 07/06/23                 |
+| %F          | Short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                       | 2023-07-06               |
+| %r          | Localized 12-hour clock time (locale dependent)                                                                     | 06:32:07 PM              |
+| %R          | Equivalent to "%H:%M"                                                                                               | 18:32                    |
+| %T          | Equivalent to "%H:%M:%S" (the ISO 8601 time format)                                                                 | 18:32:07                 |
+| %p          | Localized a.m. or p.m. designation (locale dependent)                                                               | PM                       |
+| %z          | Offset from UTC in the ISO 8601 format (e.g. -0430), or no characters if the time zone information is not available | +0800                    |
+| %Z          | Locale-dependent time zone name or abbreviation, or no characters if the time zone information is not available     | Z AWST                   |
+
 **Example**
 
 ``` xml
 <logger>
     <level>trace</level>
-    <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-    <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+    <log>/var/log/clickhouse-server/clickhouse-server-%F-%T.log</log>
+    <errorlog>/var/log/clickhouse-server/clickhouse-server-%F-%T.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
     <stream_compress>true</stream_compress>
@@ -2120,7 +2165,13 @@ This section contains the following parameters:
 - `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
 - `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
 - `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
-
+- zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
+  * random - randomly selects one of ZooKeeper nodes.
+  * in_order - selects the first ZooKeeper node, if it's not available then the second, and so on.
+  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
+  * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
+  * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+    
 **Example configuration**
 
 ``` xml
@@ -2139,6 +2190,8 @@ This section contains the following parameters:
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <zookeeper_load_balancing>random</zookeeper_load_balancing>
 </zookeeper>
 ```
 
