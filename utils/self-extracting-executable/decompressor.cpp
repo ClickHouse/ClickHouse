@@ -435,7 +435,7 @@ int main(int/* argc*/, char* argv[])
     uint64_t inode = getInode(self);
     if (inode == 0)
     {
-        std::cerr << "Unable to obtain inode." << std::endl;
+        std::cerr << "Unable to obtain inode for exe '" << self << "'." << std::endl;
         return 1;
     }
 
