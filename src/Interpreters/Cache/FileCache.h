@@ -83,19 +83,13 @@ public:
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
-    /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
-    void removeFileSegment(const Key & key, size_t offset);
-
-    /// Remove files by `key`. Throws if key does not exist.
-    void removeKey(const Key & key);
-
-    /// Remove files by `key`.
+    /// Remove files by `key`. Removes files which might be used at the moment.
     void removeKeyIfExists(const Key & key);
 
-    /// Removes files by `path`.
+    /// Removes files by `path`. Removes files which might be used at the moment.
     void removePathIfExists(const String & path);
 
-    /// Remove files by `key`.
+    /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
 
     std::vector<String> tryGetCachePaths(const Key & key);

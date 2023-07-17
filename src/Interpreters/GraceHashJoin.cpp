@@ -307,13 +307,13 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
+bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
-    addJoinedBlockImpl(std::move(materialized));
+    addBlockToJoinImpl(std::move(materialized));
     return true;
 }
 
@@ -578,17 +578,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
-    if (hash_join)
+    size_t prev_keys_num = 0;
+    if (hash_join && buckets.size() > 1)
     {
-        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
-        for (auto & block : right_blocks)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets, bucket_idx);
-        }
+        prev_keys_num = hash_join->getTotalRowCount();
     }
-
-    hash_join = makeInMemoryJoin();
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
     {
@@ -602,12 +596,13 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
+        hash_join = makeInMemoryJoin(prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
         {
             num_rows += block.rows();
-            addJoinedBlockImpl(std::move(block));
+            addBlockToJoinImpl(std::move(block));
         }
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
@@ -622,9 +617,10 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
-GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin()
+GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(size_t reserve_num)
 {
-    return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row);
+    auto ret = std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row, reserve_num);
+    return std::move(ret);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -632,7 +628,7 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
-void GraceHashJoin::addJoinedBlockImpl(Block block)
+void GraceHashJoin::addBlockToJoinImpl(Block block)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -652,7 +648,21 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         if (!hash_join)
             hash_join = makeInMemoryJoin();
 
-        hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
+        // buckets size has been changed in other threads. Need to scatter current_block again.
+        // rehash could only happen under hash_join_mutex's scope.
+        auto current_buckets = getCurrentBuckets();
+        if (buckets_snapshot.size() != current_buckets.size())
+        {
+            LOG_TRACE(log, "mismatch buckets size. previous:{}, current:{}", buckets_snapshot.size(), getCurrentBuckets().size());
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, current_buckets.size());
+            flushBlocksToBuckets<JoinTableSide::Right>(blocks, current_buckets, bucket_index);
+            current_block = std::move(blocks[bucket_index]);
+            if (!current_block.rows())
+                return;
+        }
+
+        auto prev_keys_num = hash_join->getTotalRowCount();
+        hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
 
         if (!hasMemoryOverflow(hash_join))
             return;
@@ -680,10 +690,10 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join = makeInMemoryJoin();
+        hash_join = makeInMemoryJoin(prev_keys_num);
 
         if (current_block.rows() > 0)
-            hash_join->addJoinedBlock(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
     }
 }
 

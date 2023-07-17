@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
+    extern const int UNFINISHED;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -196,6 +197,9 @@ void DatabaseCatalog::startupBackgroundCleanup()
 
 void DatabaseCatalog::shutdownImpl()
 {
+    is_shutting_down = true;
+    wait_table_finally_dropped.notify_all();
+
     if (cleanup_task)
         (*cleanup_task)->deactivate();
 
@@ -227,9 +231,11 @@ void DatabaseCatalog::shutdownImpl()
             databases_with_delayed_shutdown.push_back(database.second);
             continue;
         }
+        LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
     }
 
+    LOG_TRACE(log, "Shutting down system databases");
     for (auto & database : databases_with_delayed_shutdown)
     {
         database->shutdown();
@@ -1161,8 +1167,13 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
-        return !tables_marked_dropped_ids.contains(uuid);
+        return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
+
+    /// TSA doesn't support unique_lock
+    if (TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid))
+        throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
+                                                "will finish after restart", uuid);
 }
 
 void DatabaseCatalog::addDependencies(
