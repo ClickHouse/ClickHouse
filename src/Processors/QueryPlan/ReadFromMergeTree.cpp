@@ -141,23 +141,32 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 static void updateSortDescriptionForOutputStream(
     DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info)
 {
+    /// Updating sort description can be done after PREWHERE actions are applied to the header.
+    /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
+    /// To mitigate it, we're trying to build original header and use it to deduce sorting description
+    /// TODO: this approach is fragile, it'd be more robust to update sorting description for the whole plan during plan optimization
     Block original_header = output_stream.header.cloneEmpty();
-    /// build original header
-    if (prewhere_info && prewhere_info->prewhere_actions)
+    if (prewhere_info)
     {
-        FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
-
-        for (auto & column : original_header)
+        if (prewhere_info->prewhere_actions)
         {
-            const auto * original_node = original_column_finder.find(column.name);
-            if (original_node)
+            FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
+            for (auto & column : original_header)
             {
-                LOG_DEBUG(
-                    &Poco::Logger::get(__PRETTY_FUNCTION__),
-                    "Found original column '{}' for '{}'",
-                    original_node->result_name,
-                    column.name);
-                column.name = original_node->result_name;
+                const auto * original_node = original_column_finder.find(column.name);
+                if (original_node)
+                    column.name = original_node->result_name;
+            }
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            FindOriginalNodeForOutputName original_column_finder(prewhere_info->row_level_filter);
+            for (auto & column : original_header)
+            {
+                const auto * original_node = original_column_finder.find(column.name);
+                if (original_node)
+                    column.name = original_node->result_name;
             }
         }
     }
