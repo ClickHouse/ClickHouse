@@ -99,8 +99,11 @@ void ProgressIndication::writeFinalProgress()
     if (elapsed_ns)
         std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
+    else
+        std::cout << ". ";
     auto peak_memory_usage = getMemoryUsage().peak;
-    std::cout << ".\nPeak memory usage (for query) " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
+    if (peak_memory_usage >= 0)
+        std::cout << "\nPeak memory usage (for query) " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)

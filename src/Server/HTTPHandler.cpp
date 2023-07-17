@@ -820,10 +820,8 @@ void HTTPHandler::processQuery(
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
     append_callback([&used_output](const Progress & progress)
     {
-        used_output.out->onProgress(progress);
-        auto thread_group = CurrentThread::getGroup();
-        auto peak_memory_usage = thread_group->memory_tracker.getPeak();
-        used_output.out->onMemoryUsage(peak_memory_usage);
+        const auto& thread_group = CurrentThread::getGroup();
+        used_output.out->onProgress(progress, thread_group->memory_tracker.getPeak());
     });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
