@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
 {
     for (const auto & change : changes)
@@ -62,6 +67,14 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
         formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
         format.ostr << " = " << value;
     }
+}
+
+void ASTSetQuery::appendColumnName(WriteBuffer &) const
+{
+    /// Exception code is changed LOGICAL_ERROR -> BAD_ARGUMENTS because we can specify SETTINGS in table function arguments.
+    /// If function tries to evaluate this argument as constant (e.g. select * from numbers(SETTINGS max_threads = 1)),
+    /// it will eventually call IAST::getColumnName, and we don't want to have LOGICAL_ERROR there.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Trying to get name of not a column: {}", getID('_'));
 }
 
 }

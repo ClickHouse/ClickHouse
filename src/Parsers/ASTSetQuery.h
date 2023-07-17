@@ -37,6 +37,8 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
+
+    void appendColumnName(WriteBuffer &) const override;
 };
 
 }
