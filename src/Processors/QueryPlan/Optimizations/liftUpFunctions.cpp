@@ -31,7 +31,7 @@ namespace DB::QueryPlanOptimizations
 
 /// This is a check that output columns does not have the same name
 /// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
-static bool areOutputsAreConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
+static bool areOutputsConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
 {
     std::unordered_set<std::string_view> names;
     for (const auto & output : outputs)
@@ -72,7 +72,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     if (unneeded_for_sorting->trivial())
         return 0;
 
-    if (!areOutputsAreConvertableToBlock(needed_for_sorting->getOutputs()))
+    if (!areOutputsConvertableToBlock(needed_for_sorting->getOutputs()))
         return 0;
 
     // Sorting (parent_node) -> Expression (child_node)
