@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT --query="ALTER TABLE table_to_rename UPDATE v2 = 77 WHERE 1 =
 
 # we cannot wait in the same way like we do for previous alter
 # because it's metadata alter and this one will wait for it
-sleep 1
+sleep 3
 
 $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES table_to_rename"
 
