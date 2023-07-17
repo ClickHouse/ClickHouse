@@ -18,9 +18,6 @@ SETTINGS min_bytes_for_wide_part = 10485760,
             path = '/var/lib/clickhouse/${CLICKHOUSE_TEST_UNIQUE_NAME}_cache',
             enable_bypass_cache_with_threashold = 1,
             bypass_cache_threashold = 100,
-            cache_on_write_operations = 1,
-            enable_filesystem_query_cache_limit = 1,
-            do_not_evict_index_and_mark_files = 0,
             delayed_cleanup_interval_ms = 100,
             disk = 's3_disk');
 
