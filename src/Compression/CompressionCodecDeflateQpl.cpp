@@ -405,6 +405,13 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
 #if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, uncompressed_size);
 #endif
+/// Device IOTLB miss has big perf. impact for IAA accelerators.
+/// To avoid page fault, we need touch buffers related to accelerator in advance.
+    for (char * p = dest; p < dest + uncompressed_size; p += ::getPageSize()/(sizeof(*p)))
+    {
+        *p = 0;
+    }
+
     switch (getDecompressMode())
     {
         case CodecMode::Synchronous:
