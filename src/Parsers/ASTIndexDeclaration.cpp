@@ -29,9 +29,14 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
     {
         if (part_of_create_index_query)
         {
-            s.ostr << "(";
+            if (expr->as<ASTExpressionList>())
+            {
+                s.ostr << "(";
+                expr->formatImpl(s, state, frame);
+                s.ostr << ")";
+            }
+            else
             expr->formatImpl(s, state, frame);
-            s.ostr << ")";
         }
         else
         {
