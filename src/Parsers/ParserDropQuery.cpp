@@ -18,6 +18,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_view("VIEW");
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p(true);
     ParserKeyword s_permanently("PERMANENTLY");
@@ -33,6 +34,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool is_view = false;
     bool sync = false;
     bool permanently = false;
+    auto query = std::make_shared<ASTDropQuery>();
+    node = query;
 
     if (s_database.ignore(pos, expected))
     {
@@ -69,6 +72,27 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
             if (!name_p.parse(pos, table, expected))
                 return false;
         }
+
+        query->databases_tables.emplace_back(std::make_tuple(database,table));
+        while(s_comma.ignore(pos, expected)){
+
+            ASTPtr tmp_database;
+            ASTPtr tmp_table;
+
+
+            if (!name_p.parse(pos, tmp_table, expected))
+                return false;
+
+            if(s_dot.ignore(pos,expected)){
+
+                tmp_database = tmp_table;
+                if (!name_p.parse(pos, tmp_table, expected))
+                    return false;
+            }
+            query->databases_tables.emplace_back(std::make_tuple(tmp_database,tmp_table));
+
+        }
+
     }
 
     /// common for tables / dictionaries / databases
@@ -85,8 +109,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
-    auto query = std::make_shared<ASTDropQuery>();
-    node = query;
+
 
     query->kind = kind;
     query->if_exists = if_exists;
