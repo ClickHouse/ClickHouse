@@ -17,7 +17,8 @@ Default value: 0.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SELECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -30,7 +31,7 @@ insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```sql
 SELECT *
 FROM table_1
-SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 ```
 ```response
 ┌─x─┬─y────┐
@@ -50,7 +51,8 @@ Default value: `''`.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SElECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -3535,7 +3537,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -3546,7 +3548,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
