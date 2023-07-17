@@ -16,7 +16,7 @@ std::string_view getResource(std::string_view name)
 
 #if defined USE_MUSL
     /// If static linking is used, we cannot use dlsym and have to parse ELF symbol table by ourself.
-    return DB::SymbolIndex::instance()->getResource(name_replaced);
+    return DB::SymbolIndex::instance().getResource(name_replaced);
 
 #else
     // In most `dlsym(3)` APIs, one passes the symbol name as it appears via
