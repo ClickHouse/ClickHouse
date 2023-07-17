@@ -72,26 +72,20 @@ public:
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params)
     {
+        std::lock_guard lock{mutex};
+        auto x = cache.get(params);
+        if (x)
         {
-            std::lock_guard lock{mutex};
-            auto x = cache.get(params);
-            if (x)
-            {
-                if ((*x)->getUserID() && !(*x)->tryGetUser())
-                    cache.remove(params); /// The user has been dropped while it was in the cache.
-                else
-                    return *x;
-            }
+            if ((*x)->getUserID() && !(*x)->tryGetUser())
+                cache.remove(params); /// The user has been dropped while it was in the cache.
+            else
+                return *x;
         }
 
+        /// TODO: There is no need to keep the `ContextAccessCache::mutex` locked while we're calculating access rights.
         auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
-
-        {
-            std::lock_guard lock{mutex};
-            cache.add(params, res);
-        }
-
+        cache.add(params, res);
         return res;
     }
 
