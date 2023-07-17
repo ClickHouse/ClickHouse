@@ -19,7 +19,7 @@ class TableFunctionAzureBlobStorage : public ITableFunction
 {
 public:
     static constexpr auto name = "azureBlobStorage";
-    
+
     static constexpr auto signature = " - connection_string, container_name, blobpath\n"
                                       " - connection_string, container_name, blobpath, structure \n"
                                       " - connection_string, container_name, blobpath, format \n"
