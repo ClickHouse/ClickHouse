@@ -34,7 +34,7 @@ namespace ErrorCodes
  */
 ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const std::pair<Field, Field>& range)
 {
-    const DateLUTImpl & date_lut = DateLUT::instance();
+    const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
     const String & column_name = column.name;
     String start_date_or_date_time;
