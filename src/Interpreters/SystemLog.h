@@ -109,7 +109,7 @@ public:
         const String & table_name_,
         const String & storage_def_,
         size_t flush_interval_milliseconds_,
-        std::shared_ptr<SystemLogQueue<LogElement>> ex_queue = nullptr);
+        std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
     void shutdown() override;
 
