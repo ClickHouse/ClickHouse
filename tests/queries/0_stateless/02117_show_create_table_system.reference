@@ -466,6 +466,7 @@ CREATE TABLE system.parts
     `bytes_on_disk` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
+    `primary_key_size` UInt64,
     `marks_bytes` UInt64,
     `secondary_indices_compressed_bytes` UInt64,
     `secondary_indices_uncompressed_bytes` UInt64,
