@@ -380,9 +380,9 @@ def test_table_schema_changes(started_cluster):
         instance.query(f"SELECT count() FROM test_database.{altered_table}")
     )
 
-    cursor.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
+    pg_manager.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
     for i in range(NUM_TABLES):
-        cursor.execute(f"INSERT INTO postgresql_replica_{i} VALUES (50, {i}, {i})")
+        pg_manager.execute(f"INSERT INTO postgresql_replica_{i} VALUES (50, {i}, {i})")
 
     assert instance.wait_for_log_line(
         f"Table postgresql_replica_{altered_idx} is skipped from replication stream"
@@ -556,9 +556,8 @@ def test_multiple_databases(started_cluster):
         port=started_cluster.postgres_port,
         database=False,
     )
-    cursor = conn.cursor()
-    pg_manager.create_postgres_db(cursor, "postgres_database_1")
-    pg_manager.create_postgres_db(cursor, "postgres_database_2")
+    pg_manager.create_postgres_db("postgres_database_1")
+    pg_manager.create_postgres_db("postgres_database_2")
 
     conn1 = get_postgres_conn(
         ip=started_cluster.postgres_ip,
@@ -577,15 +576,13 @@ def test_multiple_databases(started_cluster):
     cursor2 = conn2.cursor()
 
     pg_manager.create_clickhouse_postgres_db(
-        cluster.postgres_ip,
-        cluster.postgres_port,
         "postgres_database_1",
+        "",
         "postgres_database_1",
     )
     pg_manager.create_clickhouse_postgres_db(
-        cluster.postgres_ip,
-        cluster.postgres_port,
         "postgres_database_2",
+        "",
         "postgres_database_2",
     )
 
