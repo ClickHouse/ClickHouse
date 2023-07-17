@@ -15,7 +15,7 @@ public:
     struct TrackedCollectionItem
     {
         String file_path;
-        Int64 timestamp = 0;
+        UInt64 timestamp = 0;
         UInt64 retries_count = 0;
     };
 
@@ -27,7 +27,7 @@ public:
         const S3QueueMode & mode_,
         ContextPtr context_,
         UInt64 & max_set_size_,
-        UInt64 & max_set_age_s_,
+        UInt64 & max_set_age_sec_,
         UInt64 & max_loading_retries_);
 
     void setFileProcessed(const String & file_path);
@@ -84,7 +84,7 @@ public:
 
 private:
     const UInt64 max_set_size;
-    const UInt64 max_set_age_s;
+    const UInt64 max_set_age_sec;
     const UInt64 max_loading_retries;
 
     zkutil::ZooKeeperPtr current_zookeeper;

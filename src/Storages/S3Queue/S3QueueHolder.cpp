@@ -29,7 +29,7 @@ void S3QueueHolder::S3QueueCollection::read(ReadBuffer & in)
     while (!in.eof())
     {
         String file_name;
-        Int64 timestamp;
+        UInt64 timestamp;
         UInt64 retries_count;
         in >> file_name >> "\n";
         in >> timestamp >> "\n";
@@ -81,11 +81,10 @@ void S3QueueHolder::S3QueueProcessedCollection::parse(const String & s)
     // Remove old items
     if (max_age > 0)
     {
-        Int64 timestamp = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        Int64 max_seconds_diff = max_age;
+        UInt64 timestamp = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        UInt64 max_seconds_diff = max_age;
         auto new_end = std::remove_if(
-            files.begin(),
-            files.end(),
+            files.begin(), files.end(),
             [&timestamp, &max_seconds_diff](TrackedCollectionItem processed_file)
             { return (timestamp - processed_file.timestamp) > max_seconds_diff; });
         files.erase(new_end, files.end());
@@ -95,7 +94,7 @@ void S3QueueHolder::S3QueueProcessedCollection::parse(const String & s)
 
 void S3QueueHolder::S3QueueProcessedCollection::add(const String & file_name)
 {
-    Int64 timestamp = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    UInt64 timestamp = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     TrackedCollectionItem processed_file = {.file_path=file_name, .timestamp=timestamp};
     files.push_back(processed_file);
@@ -157,11 +156,11 @@ S3QueueHolder::S3QueueHolder(
     const S3QueueMode & mode_,
     ContextPtr context_,
     UInt64 & max_set_size_,
-    UInt64 & max_set_age_s_,
+    UInt64 & max_set_age_sec_,
     UInt64 & max_loading_retries_)
     : WithContext(context_)
     , max_set_size(max_set_size_)
-    , max_set_age_s(max_set_age_s_)
+    , max_set_age_sec(max_set_age_sec_)
     , max_loading_retries(max_loading_retries_)
     , zookeeper_path(zookeeper_path_)
     , zookeeper_failed_path(fs::path(zookeeper_path_) / "failed")
@@ -191,7 +190,7 @@ void S3QueueHolder::setFileProcessed(const String & file_path)
     if (mode == S3QueueMode::UNORDERED)
     {
         String processed_files = zookeeper->get(zookeeper_processed_path);
-        auto processed = S3QueueProcessedCollection(max_set_size, max_set_age_s);
+        auto processed = S3QueueProcessedCollection(max_set_size, max_set_age_sec);
         processed.parse(processed_files);
         processed.add(file_path);
         zookeeper->set(zookeeper_processed_path, processed.toString());
@@ -266,7 +265,7 @@ S3QueueHolder::S3FilesCollection S3QueueHolder::getUnorderedProcessedFiles()
     auto zookeeper = getZooKeeper();
 
     String processed = zookeeper->get(zookeeper_processed_path);
-    auto collection = S3QueueProcessedCollection(max_set_size, max_set_age_s);
+    auto collection = S3QueueProcessedCollection(max_set_size, max_set_age_sec);
     collection.parse(processed);
 
     return collection.getFileNames();
