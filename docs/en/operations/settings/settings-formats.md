@@ -242,6 +242,26 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
+## interval_output_format {#interval_output_format}
+
+Allows choosing different output formats of the text representation of interval types.
+
+Possible values:
+
+-   `kusto` - KQL-style output format.
+
+    ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
+
+-   `numeric` - Numeric output format.
+
+    ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.
+
+Default value: `numeric`.
+
+See also:
+
+-   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+
 ## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
@@ -931,6 +951,11 @@ Result
 ```text
 "  string  "
 ```
+### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+
+Disabled by default.
 
 ### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
 

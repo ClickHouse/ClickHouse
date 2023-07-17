@@ -373,7 +373,7 @@ void StorageMergeTree::alter(
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
-            waitForMutation(mutation_version);
+            waitForMutation(mutation_version, false);
     }
 
     {
@@ -601,7 +601,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     Int64 version = startMutation(commands, query_context);
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
-        waitForMutation(version);
+        waitForMutation(version, false);
 }
 
 bool StorageMergeTree::hasLightweightDeletedMask() const
@@ -1300,7 +1300,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     {
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
         txn = TransactionLog::instance().beginTransaction();
-        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ true};
+        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
     bool has_mutations = false;
@@ -2291,7 +2291,7 @@ void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock 
 {
     part->info.min_block = part->info.max_block = increment.get();
     part->info.mutation = 0;
-    part->name = part->getNewName(part->info);
+    part->setName(part->getNewName(part->info));
 }
 
 }
