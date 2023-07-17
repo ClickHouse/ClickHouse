@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWST
 Actian
 ActionsMenu
 ActiveRecord
@@ -469,6 +470,7 @@ MSan
 MVCC
 MacBook
 MacOS
+MapState
 MarkCacheBytes
 MarkCacheFiles
 MarksLoaderThreads
@@ -1033,6 +1035,7 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1606,6 +1609,7 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
+jaccard
 javaHash
 javaHashUTF
 jbod
@@ -2263,6 +2267,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2457,6 +2462,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime
