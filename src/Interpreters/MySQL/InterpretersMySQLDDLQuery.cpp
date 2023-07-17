@@ -132,6 +132,11 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
                 }
             }
 
+            if (type_name_upper == "JSON")
+            {
+                data_type = makeASTFunction("String");
+            }
+
             if (type_name_upper == "DATE")
                 data_type_function->name = "Date32";
         }

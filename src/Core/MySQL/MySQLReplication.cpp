@@ -1,4 +1,5 @@
 #include "MySQLReplication.h"
+#include "MySQLJsonConv.h"
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
@@ -231,6 +232,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATETIME2:
                 case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_BLOB:
+                case MYSQL_TYPE_JSON:
                 case MYSQL_TYPE_GEOMETRY:
                 {
                     column_meta.emplace_back(static_cast<UInt16>(meta[pos]));
@@ -909,6 +911,41 @@ namespace MySQLReplication
                             field_type == MYSQL_TYPE_BLOB
                             ? convertCharsetIfNeeded(table_map, i, val)
                             : val});
+                        break;
+                    }
+                    case MYSQL_TYPE_JSON:
+                    {
+                        UInt32 size = 0;
+                        switch (meta)
+                        {
+                            case 1: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 1);
+                                break;
+                            }
+                            case 2: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 2);
+                                break;
+                            }
+                            case 3: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 3);
+                                break;
+                            }
+                            case 4: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 4);
+                                break;
+                            }
+                            default:
+                                break;
+                        }
+
+                        String json_bin;
+                        String json_str;
+                        json_bin.resize(size);
+                        payload.readStrict(reinterpret_cast<char *>(json_bin.data()), size);
+
+                        JsonValue json_value = parseBinary(json_bin);
+                        json_value.toJsonString(json_str);
+                        row.emplace_back(Field{json_str});
                         break;
                     }
                     default:

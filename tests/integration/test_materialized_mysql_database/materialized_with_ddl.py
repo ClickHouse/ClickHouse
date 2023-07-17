@@ -2142,6 +2142,247 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
 
 
+def json_type_support(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS json_db")
+    clickhouse_node.query("DROP DATABASE IF EXISTS json_db")
+    mysql_node.query("CREATE DATABASE json_db")
+
+    # for full replication.
+    mysql_node.query("CREATE TABLE json_db.t (id INT NOT NULL PRIMARY KEY, tag json)")
+    mysql_node.query('INSERT INTO json_db.t VALUES(1, \'{"hello":"world"}\')')
+
+    mysql_node.query(
+        'INSERT INTO json_db.t VALUES(2, \'{"hello":"world", "age":25, "array":[1,2,3,130,65534,4294967280,4503599627370495]}\')'
+    )
+
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE json_db ENGINE=MaterializeMySQL('{service_name}:3306', 'json_db', 'root', 'clickhouse')
+    """
+    )
+
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 1",
+        '{"hello": "world"}\n',
+    )
+    # the order can not be guaranteed, we my get the result {"hello":"world", "age":25} or {"age":25, "hello":"world"}
+    result = clickhouse_node.query("SELECT tag FROM  json_db.t WHERE id = 2")
+    assert '"age": 25' in result
+    assert '"array": [1, 2, 3, 130, 65534, 4294967280, 4503599627370495]' in result
+    # for incremental replication
+    mysql_node.query(
+        'INSERT INTO json_db.t VALUES(3, \'{"name":"Safari", "os":"Linux", "resolution":{"x":1920, "y":1080 }}\')'
+    )
+    mysql_node.query("INSERT INTO json_db.t VALUES(4, '[1,2,3,4, 5, \"你好，世界！\"]')")
+    mysql_node.query('INSERT INTO json_db.t VALUES(5, \'[1,2,3,{"name":"Tom"}]\')')
+
+    check_query(clickhouse_node, "SELECT COUNT() FROM json_db.t", "5\n")
+    result = clickhouse_node.query("SELECT tag FROM  json_db.t WHERE id = 3")
+    assert '"os": "Linux"' in result
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 4",
+        '[1, 2, 3, 4, 5, "你好，世界！"]\n',
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 5",
+        '[1, 2, 3, {"name": "Tom"}]\n',
+    )
+
+    # There are too many escapes
+    # MySQL can not support such test cases,
+    # mysql> INSERT INTO json_db.t VALUES(9, '{"name":"\""}');
+    # ERROR 3140 (22032): Invalid JSON text: "Missing a comma or '}' after an object member."
+    # at position 10 in value for column 't.tag'.
+
+    # INSERT INTO json_db.t VALUES(9, '{"name":"\\"}');
+    # ERROR 3140 (22032): Invalid JSON text: "Missing a closing quotation mark in string." at position 12 in value for column 't.tag'.
+
+    # the following results are tested from MySQL client and Orion client. And they are the same.
+    # mysql> INSERT INTO json_db.t VALUES(6, '{"name":"\\\\"}');
+    # Query OK, 1 row affected (0.00 sec)
+
+    # mysql> INSERT INTO json_db.t VALUES(7, '{"name":"\\\""}')
+
+    # mysql> select * from t;
+    # +----+----------------+
+    # | id | tag            |
+    # +----+----------------+
+    # |  6 | {"name": "\\"} |
+    # |  7 | {"name": "\""} |
+    # +----+----------------+
+
+    # Orion result:
+    # localhost :) select * from t;
+
+    # SELECT *
+    # FROM t
+
+    # Query id: 431ac4da-22a2-41b4-8f79-3b7e47400c82
+
+    # ┌─id─┬─tag────────────┐
+    # │  6 │ {"name": "\\"} │
+    # └────┴────────────────┘
+    # ┌─id─┬─tag────────────┐
+    # │  7 │ {"name": "\""} │
+    # └────┴────────────────┘
+
+    mysql_node.query(r"""INSERT INTO json_db.t VALUES(6, '{"name":"\\\\"}')""")
+    mysql_node.query(r"""INSERT INTO json_db.t VALUES(7, '{"name":"\\\""}')""")
+
+    mysql_node.query(r"""INSERT INTO json_db.t VALUES(8, '[10, null, true, false]')""")
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(9, '["12:18:29.000000", "2015-07-29", "2015-07-29 12:18:29.000000"]')"""
+    )
+    # test double
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(10, JSON_ARRAY(CAST(3.1415926535 AS DOUBLE)))"""
+    )
+    # test datetime
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(11, JSON_ARRAY(CAST("2022-09-21 09:39:55" AS DATETIME)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(12, JSON_ARRAY(TIMESTAMP("2022-09-21 09:39:55")))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(13, JSON_ARRAY(CAST("2022-09-21" AS DATE)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(14, JSON_ARRAY(CAST("10:01:32.000000" AS TIME)))"""
+    )
+    # test decimal
+    mysql_node.query(r"""INSERT INTO json_db.t VALUES(15, JSON_ARRAY(3.14))""")
+    mysql_node.query(r"""INSERT INTO json_db.t VALUES(16, JSON_ARRAY(3.1415926535))""")
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(17, JSON_ARRAY(3333333333.1415926535))"""
+    )
+
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 6",
+        '{"name": "\\\\\\\\"}\n',
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 7",
+        '{"name": "\\\\""}\n',
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 8",
+        "[10, null, true, false]\n",
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 9",
+        '["12:18:29.000000", "2015-07-29", "2015-07-29 12:18:29.000000"]\n',
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 10", "[3.1415926535]\n"
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 11",
+        '["2022-09-21 09:39:55.000000"]\n',
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 12",
+        '["2022-09-21 09:39:55.000000"]\n',
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 13", '["2022-09-21"]\n'
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 14",
+        '["10:01:32.000000"]\n',
+    )
+    check_query(clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 15", "[3.14]\n")
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 16", "[3.1415926535]\n"
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 17",
+        "[3333333333.1415926535]\n",
+    )
+
+    # for coverage test
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(18, JSON_ARRAY(CAST(3333333333333333.1415926535 AS DOUBLE)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(19, JSON_ARRAY(CAST(-3.1415926535 AS DOUBLE)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(20, JSON_ARRAY(CAST(0xFFFF AS UNSIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(21, JSON_ARRAY(CAST(0xFFFF AS SIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(22, JSON_ARRAY(CAST(0xFFFFFF AS UNSIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(23, JSON_ARRAY(CAST(0xFFFFFF AS SIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(24, JSON_ARRAY(CAST(0xFFFFFFFF AS UNSIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(25, JSON_ARRAY(CAST(0xFFFFFFFF AS SIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(26, JSON_ARRAY(CAST(0xFFFFFFFFFFFFFFFF AS UNSIGNED)))"""
+    )
+    mysql_node.query(
+        r"""INSERT INTO json_db.t VALUES(27, JSON_ARRAY(CAST(0xFFFFFFFFFFFFFFFF AS SIGNED)))"""
+    )
+
+    # It's a little different from MySQL. MySQL will get [3.333333333333333e15].
+    # I don't know how to remove '+'. I have tried std::noshowpos, but it has no effect to scientific output.
+    # If I remove '+' from string, it will one digit less than that of MySQL.
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 18",
+        "[3.33333333333333e+15]\n",
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 19", "[-3.1415926535]\n"
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 20", "[65535]\n"
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 21", "[65535]\n"
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 22", "[16777215]\n"
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 23", "[16777215]\n"
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 24", "[4294967295]\n"
+    )
+    check_query(
+        clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 25", "[4294967295]\n"
+    )
+    check_query(
+        clickhouse_node,
+        "SELECT tag FROM  json_db.t WHERE id = 26",
+        "[18446744073709551615]\n",
+    )
+    check_query(clickhouse_node, "SELECT tag FROM  json_db.t WHERE id = 27", "[-1]\n")
+
+    clickhouse_node.query("DROP DATABASE IF EXISTS json_db")
+    mysql_node.query("DROP DATABASE IF EXISTS json_db")
+
+
 def materialized_database_support_all_kinds_of_mysql_datatype(
     clickhouse_node, mysql_node, service_name
 ):
