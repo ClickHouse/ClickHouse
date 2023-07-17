@@ -76,7 +76,7 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
     if (!lock.try_lock_for(acquire_timeout))
-        return {}
+        return {};
 
     if (is_dropped || is_detached)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
@@ -93,7 +93,7 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.count());
     else
-        return *lock;
+        return std::move(*lock);
 }
 
 
