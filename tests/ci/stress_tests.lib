@@ -243,7 +243,7 @@ function check_logs_for_critical_errors()
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-    rg -Fa "########################################" /test_output/* > /dev/null \
+    rg -Faz "########################################" /test_output/* > /dev/null \
       && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
 
     function get_gdb_log_context()
