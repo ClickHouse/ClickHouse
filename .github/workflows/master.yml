@@ -4173,6 +4173,12 @@ jobs:
       - IntegrationTestsAsan3
       - IntegrationTestsAsan4
       - IntegrationTestsAsan5
+      - IntegrationTestsAnalyzerAsan0
+      - IntegrationTestsAnalyzerAsan1
+      - IntegrationTestsAnalyzerAsan2
+      - IntegrationTestsAnalyzerAsan3
+      - IntegrationTestsAnalyzerAsan4
+      - IntegrationTestsAnalyzerAsan5
       - IntegrationTestsRelease0
       - IntegrationTestsRelease1
       - IntegrationTestsRelease2
