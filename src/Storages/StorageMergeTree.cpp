@@ -373,7 +373,7 @@ void StorageMergeTree::alter(
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
-            waitForMutation(mutation_version);
+            waitForMutation(mutation_version, false);
     }
 
     {
@@ -601,7 +601,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     Int64 version = startMutation(commands, query_context);
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
-        waitForMutation(version);
+        waitForMutation(version, false);
 }
 
 bool StorageMergeTree::hasLightweightDeletedMask() const
