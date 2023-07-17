@@ -145,6 +145,7 @@ void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & 
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
     {
+        ++istr.position();
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar(maybe_quote, istr);
     }
