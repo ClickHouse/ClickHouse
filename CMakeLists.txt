@@ -76,6 +76,7 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
+option (ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process
@@ -345,19 +346,15 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    if (NOT ENABLE_TESTS AND NOT SANITIZE)
-        # https://clang.llvm.org/docs/ThinLTO.html
-        # Applies to clang only.
-        # Disabled when building with tests or sanitizers.
-        option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
-    endif()
-
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
-    if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
+    # https://clang.llvm.org/docs/ThinLTO.html
+    # Applies to clang only.
+    # Disabled when building with tests or sanitizers.
+    if (ENABLE_THINLTO AND NOT SANITIZE)
         # Link time optimization
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
