@@ -51,7 +51,8 @@ private:
     T value = T{};
 
 public:
-    static constexpr bool is_nullable = false;
+    static constexpr bool result_is_nullable = false;
+    static constexpr bool should_skip_null_arguments = true;
     static constexpr bool is_any = false;
 
     bool has() const
@@ -501,7 +502,8 @@ private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
 public:
-    static constexpr bool is_nullable = false;
+    static constexpr bool result_is_nullable = false;
+    static constexpr bool should_skip_null_arguments = true;
     static constexpr bool is_any = false;
 
     bool has() const
@@ -769,7 +771,7 @@ static_assert(
 
 
 /// For any other value types.
-template <bool IS_NULLABLE = false>
+template <bool RESULT_IS_NULLABLE = false>
 struct SingleValueDataGeneric
 {
 private:
@@ -779,12 +781,13 @@ private:
     bool has_value = false;
 
 public:
-    static constexpr bool is_nullable = IS_NULLABLE;
+    static constexpr bool result_is_nullable = RESULT_IS_NULLABLE;
+    static constexpr bool should_skip_null_arguments = !RESULT_IS_NULLABLE;
     static constexpr bool is_any = false;
 
     bool has() const
     {
-        if constexpr (is_nullable)
+        if constexpr (result_is_nullable)
             return has_value;
         return !value.isNull();
     }
@@ -820,14 +823,14 @@ public:
     void change(const IColumn & column, size_t row_num, Arena *)
     {
         column.get(row_num, value);
-        if constexpr (is_nullable)
+        if constexpr (result_is_nullable)
             has_value = true;
     }
 
     void change(const Self & to, Arena *)
     {
         value = to.value;
-        if constexpr (is_nullable)
+        if constexpr (result_is_nullable)
             has_value = true;
     }
 
@@ -844,7 +847,7 @@ public:
 
     bool changeFirstTime(const Self & to, Arena * arena)
     {
-        if (!has() && (is_nullable || to.has()))
+        if (!has() && (result_is_nullable || to.has()))
         {
             change(to, arena);
             return true;
@@ -879,7 +882,7 @@ public:
         }
         else
         {
-            if constexpr (is_nullable)
+            if constexpr (result_is_nullable)
             {
                 Field new_value;
                 column.get(row_num, new_value);
@@ -910,7 +913,7 @@ public:
     {
         if (!to.has())
             return false;
-        if constexpr (is_nullable)
+        if constexpr (result_is_nullable)
         {
             if (!has())
             {
@@ -945,7 +948,7 @@ public:
         }
         else
         {
-            if constexpr (is_nullable)
+            if constexpr (result_is_nullable)
             {
                 Field new_value;
                 column.get(row_num, new_value);
@@ -975,7 +978,7 @@ public:
     {
         if (!to.has())
             return false;
-        if constexpr (is_nullable)
+        if constexpr (result_is_nullable)
         {
             if (!value.isNull() && (to.value.isNull() || value < to.value))
             {
@@ -1138,12 +1141,19 @@ struct AggregateFunctionAnyLastData : Data
 #endif
 };
 
+
+/** The aggregate function 'singleValueOrNull' is used to implement subquery operators,
+  * such as x = ALL (SELECT ...)
+  * It checks if there is only one unique non-NULL value in the data.
+  * If there is only one unique value - returns it.
+  * If there are zero or at least two distinct values - returns NULL.
+  */
 template <typename Data>
 struct AggregateFunctionSingleValueOrNullData : Data
 {
-    static constexpr bool is_nullable = true;
-
     using Self = AggregateFunctionSingleValueOrNullData;
+
+    static constexpr bool result_is_nullable = true;
 
     bool first_value = true;
     bool is_null = false;
@@ -1166,7 +1176,7 @@ struct AggregateFunctionSingleValueOrNullData : Data
         if (!to.has())
             return;
 
-        if (first_value)
+        if (first_value && !to.first_value)
         {
             first_value = false;
             this->change(to, arena);
@@ -1311,7 +1321,7 @@ public:
 
     static DataTypePtr createResultType(const DataTypePtr & type_)
     {
-        if constexpr (Data::is_nullable)
+        if constexpr (Data::result_is_nullable)
             return makeNullable(type_);
         return type_;
     }
@@ -1431,13 +1441,13 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function,
+        const AggregateFunctionPtr & original_function,
         const DataTypes & /*arguments*/,
         const Array & /*params*/,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        if (Data::is_nullable)
-            return nested_function;
+        if (Data::result_is_nullable && !Data::should_skip_null_arguments)
+            return original_function;
         return nullptr;
     }
 
