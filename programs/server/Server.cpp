@@ -1304,6 +1304,8 @@ try
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 
 #if USE_SSL
+            CertificateReloader::instance().tryLoad(*config);
+
             // Now we have possibly updated the certificates paths, need to reflect that in extra paths
             // so ConfigReloader would track them.
             if (auto it = extra.find("cert_path"); it != extra.end()) extra.erase(it);
