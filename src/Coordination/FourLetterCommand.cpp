@@ -9,12 +9,28 @@
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include <unistd.h>
 #include <bit>
+
+namespace
+{
+
+String formatZxid(int64_t zxid)
+{
+    /// ZooKeeper print zxid in hex and
+    String hex = getHexUIntLowercase(zxid);
+    /// without leading zeros
+    trimLeft(hex, '0');
+    return "0x" + hex;
+}
+
+}
 
 
 namespace DB
@@ -152,6 +168,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
         factory.registerCommand(clean_resources_command);
+
+        FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
+        factory.registerCommand(feature_flags_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -292,6 +311,7 @@ String ConfCommand::run()
 
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
 
@@ -342,7 +362,7 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -375,7 +395,7 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -486,7 +506,7 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+    return toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
 String CreateSnapshotCommand::run()
@@ -533,6 +553,31 @@ String CleanResourcesCommand::run()
 {
     keeper_dispatcher.cleanResources();
     return "ok";
+}
+
+String FeatureFlagsCommand::run()
+{
+    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->getFeatureFlags();
+
+    StringBuffer ret;
+
+    auto append = [&ret] (const String & key, uint8_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+
+    for (const auto & [feature_flag, name] : magic_enum::enum_entries<KeeperFeatureFlag>())
+    {
+        std::string feature_flag_string(name);
+        boost::to_lower(feature_flag_string);
+        append(feature_flag_string, feature_flags.isEnabled(feature_flag));
+    }
+
+    return ret.str();
+
 }
 
 }
