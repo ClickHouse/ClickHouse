@@ -1,6 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <QueryCoordination/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -55,18 +55,24 @@ void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
                     case Protocol::Server::Progress:
                     {
                         /// update progress
-                        if (progress_callback)
+                        if (read_progress_callback)
                         {
-                            LOG_DEBUG(log, "Update progress read_rows {}", packet.progress.read_rows);
-                            LOG_DEBUG(log, "Update progress read_bytes {}", packet.progress.read_bytes);
-                            LOG_DEBUG(log, "Update progress total_rows_to_read {}", packet.progress.total_rows_to_read);
-                            LOG_DEBUG(log, "Update progress total_bytes_to_read {}", packet.progress.total_bytes_to_read);
-                            LOG_DEBUG(log, "Update progress written_rows {}", packet.progress.written_rows);
-                            LOG_DEBUG(log, "Update progress written_bytes {}", packet.progress.written_bytes);
-                            LOG_DEBUG(log, "Update progress result_rows {}", packet.progress.result_rows);
-                            LOG_DEBUG(log, "Update progress result_bytes {}", packet.progress.result_bytes);
-                            LOG_DEBUG(log, "Update progress elapsed_ns {}", packet.progress.elapsed_ns);
-                            progress_callback(packet.progress);
+                            LOG_DEBUG(log, "{} update progress read_rows {}", node.host_port, packet.progress.read_rows);
+                            LOG_DEBUG(log, "{} update progress read_bytes {}", node.host_port, packet.progress.read_bytes);
+                            LOG_DEBUG(log, "{} update progress total_rows_to_read {}", node.host_port, packet.progress.total_rows_to_read);
+                            LOG_DEBUG(log, "{} update progress total_bytes_to_read {}", node.host_port, packet.progress.total_bytes_to_read);
+                            LOG_DEBUG(log, "{} update progress written_rows {}", node.host_port, packet.progress.written_rows);
+                            LOG_DEBUG(log, "{} update progress written_bytes {}", node.host_port, packet.progress.written_bytes);
+                            LOG_DEBUG(log, "{} update progress result_rows {}", node.host_port, packet.progress.result_rows);
+                            LOG_DEBUG(log, "{} update progress result_bytes {}", node.host_port, packet.progress.result_bytes);
+                            LOG_DEBUG(log, "{} update progress elapsed_ns {}", node.host_port, packet.progress.elapsed_ns);
+
+                            if (packet.progress.total_rows_to_read)
+                                read_progress_callback->addTotalRowsApprox(packet.progress.total_rows_to_read);
+
+                            if (!read_progress_callback->onProgress(packet.progress.read_rows, packet.progress.read_bytes, storage_limits))
+                                LOG_WARNING(log, "Check Limit failed");
+
                             LOG_DEBUG(log, "Updated progress from {}", node.host_port);
                         }
                         break;

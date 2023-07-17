@@ -1,0 +1,4 @@
+1. quota only set to inital query
+
+2. process_list_element used in BuildQueryPipelineSettings::fromContext, so all pipeline has same process_list_element,
+   so pipeline's ReadProgressCallback  call to same process_list_element. RemotePipelinesManager need ReadProgressCallback

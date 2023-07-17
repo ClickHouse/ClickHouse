@@ -102,6 +102,8 @@ Pipelines PipelinesBuilder::build()
         }
     }
 
+    pipelines.assignThreadNum();
+
     return pipelines;
 }
 

@@ -543,9 +543,10 @@ QueryPipeline PlanFragment::buildQueryPipeline(std::vector<ExchangeDataSink::Cha
         pipeline.complete(sink);
     }
 
-    std::shared_ptr<const EnabledQuota> quota = context->getQuota();
-
-    pipeline.setQuota(quota);
+//    TODO
+//    std::shared_ptr<const EnabledQuota> quota = context->getQuota();
+//
+//    pipeline.setQuota(quota);
 
     return pipeline;
 }

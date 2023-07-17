@@ -2,13 +2,14 @@
 
 #include <Common/ThreadPool.h>
 #include <Client/ConnectionPool.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <memory>
 
 namespace DB
 {
 
 struct Progress;
-using ProgressCallback = std::function<void(const Progress & progress)>;
+using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
@@ -18,11 +19,17 @@ using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 class RemotePipelinesManager
 {
 public:
-    RemotePipelinesManager() : log(&Poco::Logger::get("RemotePipelinesManager")) {}
+    RemotePipelinesManager(const StorageLimitsList & storage_limits_)
+        : log(&Poco::Logger::get("RemotePipelinesManager"))
+    {
+        /// Remove leaf limits for remote pipelines manager.
+        for (const auto & value : storage_limits_)
+            storage_limits.emplace_back(StorageLimits{value.local_limits, {}});
+    }
 
     ~RemotePipelinesManager();
 
-    void setManagedNode(const std::unordered_map<String, IConnectionPool::Entry> & host_connection, const String & local_host)
+    void setManagedNode(const std::unordered_map<String, IConnectionPool::Entry> & host_connection)
     {
         for (auto & [host, connection] : host_connection)
         {
@@ -40,7 +47,12 @@ public:
     }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
+    void setProgressCallback(ProgressCallback callback, QueryStatusPtr process_list_element)
+    {
+        read_progress_callback = std::make_unique<ReadProgressCallback>();
+        read_progress_callback->setProgressCallback(std::move(callback));
+        read_progress_callback->setProcessListElement(process_list_element);
+    }
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
@@ -58,7 +70,9 @@ private:
 
     Poco::Logger * log;
 
-    ProgressCallback progress_callback;
+    StorageLimitsList storage_limits;
+
+    ReadProgressCallbackPtr read_progress_callback;
 
     ProfileInfoCallback profile_info_callback;
 

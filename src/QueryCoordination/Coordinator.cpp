@@ -42,8 +42,6 @@ void Coordinator::schedulePrepareDistributedPipelines()
     sendFragmentsToPreparePipelines();
 
     sendBeginExecutePipelines();
-
-    remote_pipelines_manager->setManagedNode(host_connection, local_host);
 }
 
 String Coordinator::assignFragmentToHost()
@@ -274,6 +272,7 @@ void Coordinator::sendFragmentsToPreparePipelines()
 
         if (host == local_host)
         {
+            /// local direct to pipelines
             pipelines = fragmentsToPipelines(fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef());
         }
         else
@@ -337,6 +336,7 @@ std::unordered_map<String, IConnectionPool::Entry> Coordinator::getRemoteHostCon
             res.emplace(host, host_connection[host]);
         }
     }
+    return res;
 }
 
 }

@@ -21,7 +21,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
-#include <QueryCoordination/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"

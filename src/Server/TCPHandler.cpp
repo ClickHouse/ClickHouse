@@ -55,6 +55,7 @@
 #include <QueryCoordination/Coordinator.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <QueryCoordination/fragmentsToPipelines.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -882,7 +883,8 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
         {
-            std::shared_ptr<QueryCoordinationExecutor> executor = state.io.query_coord_state.pipelines.createPipelinesExecutor();
+            std::shared_ptr<QueryCoordinationExecutor> executor
+                = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits);
 
             auto completed_pipelines_executor = executor->getCompletedPipelinesExecutor();
 
@@ -898,8 +900,9 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
             completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
 
             auto remote_pipelines_manager = executor->getRemotePipelinesManager();
-            remote_pipelines_manager.setManagedNode(state.io.query_coord_state.remote_host_connection);
-            remote_pipelines_manager->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+            remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);
+            remote_pipelines_manager->setProgressCallback(
+                [this](const Progress & value) { return this->updateProgress(value); }, query_context->getProcessListElement());
 
             CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 

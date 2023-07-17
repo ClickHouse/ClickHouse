@@ -20,8 +20,7 @@ class Coordinator
 {
 public:
     Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
-        : remote_pipelines_manager(std::make_shared<RemotePipelinesManager>())
-        , log(&Poco::Logger::get("Coordinator"))
+        : log(&Poco::Logger::get("Coordinator"))
         , fragments(fragments_)
         , context(context_)
         , query(query_)
@@ -61,12 +60,6 @@ private:
     String query;
 
     String local_host;
-
-//    bool is_subquery;
-//
-//    /// for query: select * from aaa where id in (select id from bbb),
-//    /// two phases are scheduled separately, we need make them scheduled same hosts
-//    std::vector<String> prepare_hosts;
 };
 
 }

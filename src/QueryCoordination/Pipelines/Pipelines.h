@@ -17,12 +17,12 @@ public:
 
     void assignThreadNum();
 
-    QueryPipeline rootPipeline()
+    QueryPipeline detachRootPipeline()
     {
         return std::move(root_pipeline.pipeline);
     }
 
-    std::shared_ptr<QueryCoordinationExecutor> createPipelinesExecutor();
+    std::shared_ptr<QueryCoordinationExecutor> createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_);
 
     std::shared_ptr<CompletedPipelinesExecutor> createCompletedPipelinesExecutor();
 
@@ -38,7 +38,6 @@ public:
 
 private:
     FragmentIDPipeline root_pipeline;
-
     std::vector<FragmentIDPipeline> sources_pipelines;
     size_t max_threads;
 };

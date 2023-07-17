@@ -409,7 +409,7 @@ PlanFragmentPtrs InterpreterSelectWithUnionQueryFragments::buildFragments()
     const auto & resources = query_plan.getResources();
 
     PlanFragmentBuilder builder(storage_limits, context, query_plan);
-    const auto & res_fragments = builder.buildFragments();
+    const auto & res_fragments = builder.build();
 
     /// query_plan resources move to fragments
     /// Extend lifetime of context, table lock, storage.
@@ -458,11 +458,8 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
     fragments.back()->dump(buffer);
     LOG_INFO(&Poco::Logger::get("InterpreterSelectWithUnionQueryFragments"), "Fragment dump: {}", buffer.str());
 
-    for (const auto & fragment : fragments)
-    {
-        /// add fragment wait for be scheduled
-        res.query_coord_state.fragments = fragments;
-    }
+    /// save fragments wait for be scheduled
+    res.query_coord_state.fragments = fragments;
 
     /// schedule fragments
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -473,7 +470,7 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
         /// local already be scheduled
         res.query_coord_state.pipelines = std::move(coord.pipelines);
         res.query_coord_state.remote_host_connection = coord.getRemoteHostConnection();
-        res.pipeline = res.pipelines.rootPipeline();
+        res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
 
         /// TODO quota only use to root pipeline?
         setQuota(res.pipeline);

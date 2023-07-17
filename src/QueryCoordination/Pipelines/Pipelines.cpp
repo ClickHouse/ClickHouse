@@ -38,10 +38,11 @@ void Pipelines::assignThreadNum()
     }
 }
 
-std::shared_ptr<QueryCoordinationExecutor> Pipelines::createPipelinesExecutor()
+std::shared_ptr<QueryCoordinationExecutor> Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_)
 {
 //    LOG_DEBUG(log, "Create pipelines executor for query {}", query_id);
 
+    std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor;
     if (!sources_pipelines.empty())
     {
         std::vector<Int32> fragment_ids;
@@ -52,12 +53,12 @@ std::shared_ptr<QueryCoordinationExecutor> Pipelines::createPipelinesExecutor()
             fragment_ids.emplace_back(query_pipeline.fragment_id);
         }
 
-        auto completed_pipelines_executor = std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
+        completed_pipelines_executor = std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
     }
 
-    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(root_pipeline.pipeline);
+    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(pipeline);
 
-    auto remote_pipelines_manager = std::make_shared<RemotePipelinesManager>();
+    auto remote_pipelines_manager = std::make_shared<RemotePipelinesManager>(storage_limits_);
     /// TODO set nodes
 
     return std::make_shared<QueryCoordinationExecutor>(pulling_executor, completed_pipelines_executor, remote_pipelines_manager);

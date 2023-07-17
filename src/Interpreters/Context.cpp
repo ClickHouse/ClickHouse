@@ -1215,18 +1215,6 @@ std::vector<UUID> Context::getEnabledProfiles() const
 }
 
 
-void Context::setCoordinator(std::shared_ptr<Coordinator> coordinator_)
-{
-    auto lock = getLock();
-    coordinator = coordinator_;
-}
-
-std::shared_ptr<Coordinator> Context::getCoordinator() const
-{
-    auto lock = getLock();
-    return coordinator;
-}
-
 ResourceManagerPtr Context::getResourceManager() const
 {
     auto lock = getLock();
