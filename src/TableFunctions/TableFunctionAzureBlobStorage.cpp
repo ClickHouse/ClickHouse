@@ -121,48 +121,35 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
             {
                 configuration.account_name = fourth_arg;
                 configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-                if (!is_format_arg(sixth_arg))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-                configuration.format = sixth_arg;
+                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name/structure");
+                if (is_format_arg(sixth_arg))
+                    configuration.format = sixth_arg;
+                else
+                    configuration.structure = sixth_arg;
             }
         }
         else if (engine_args.size() == 7)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            if (is_format_arg(fourth_arg))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format, compression and structure must be last arguments");
-            }
-            else
-            {
-                configuration.account_name = fourth_arg;
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-                if (!is_format_arg(sixth_arg))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-                configuration.format = sixth_arg;
-                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-            }
+            configuration.account_name = fourth_arg;
+            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            configuration.format = sixth_arg;
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
         }
         else if (engine_args.size() == 8)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            if (is_format_arg(fourth_arg))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-            }
-            else
-            {
-                configuration.account_name = fourth_arg;
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-                if (!is_format_arg(sixth_arg))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-                configuration.format = sixth_arg;
-                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-                configuration.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
-            }
+            configuration.account_name = fourth_arg;
+            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            configuration.format = sixth_arg;
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            configuration.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
         }
 
         configuration.blobs_paths = {configuration.blob_path};
