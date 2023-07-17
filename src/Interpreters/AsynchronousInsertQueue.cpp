@@ -125,7 +125,7 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
         // Entries data must be destroyed in context of user who runs async insert.
         // Each entry in the list may correspond to a different user,
         // so we need to switch current thread's MemoryTracker.
-        UserMemoryTrackerSwitcher switcher(user_memory_tracker);
+        MemoryTrackerSwitcher switcher(user_memory_tracker);
         bytes = "";
     }
 
