@@ -387,9 +387,8 @@ public:
     {
         return static_cast<bool>(row_policy_filter_ptr);
     }
-    void init(RowPolicyFilterPtr,
-        const std::shared_ptr<DB::IStorage>,
-        ContextPtr);
+
+    void init(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
 
     /// Add columns that needed for row policies to data stream
     /// SELECT x from T  if  T has row policy  y=42
@@ -660,8 +659,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
 QueryPipelineBuilderPtr ReadFromMerge::createSources(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & modified_query_info,
-    const QueryProcessingStage::Enum & processed_stage,
-    const UInt64 max_block_size,
+    QueryProcessingStage::Enum processed_stage,
+    UInt64 max_block_size,
     const Block & header,
     const Aliases & aliases,
     const StorageWithLockAndName & storage_with_lock,
@@ -865,7 +864,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 }
 
 void ReadFromMerge::RowPolicyData::init(RowPolicyFilterPtr row_policy_filter_ptr_,
-    const std::shared_ptr<DB::IStorage> storage,
+    std::shared_ptr<DB::IStorage> storage,
     ContextPtr local_context)
 {
     if (row_policy_filter_ptr_)
@@ -1133,7 +1132,7 @@ void ReadFromMerge::convertingSourceStream(
     const Aliases & aliases,
     ContextPtr local_context,
     QueryPipelineBuilder & builder,
-    const QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     RowPolicyData & row_policy_data)
 {
     if (row_policy_data.needCare())

@@ -187,7 +187,7 @@ private:
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const Block & header,
         const Aliases & aliases,
@@ -203,7 +203,7 @@ private:
         const Aliases & aliases,
         ContextPtr context,
         QueryPipelineBuilder & builder,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         RowPolicyData & row_policy_data);
 };
 
