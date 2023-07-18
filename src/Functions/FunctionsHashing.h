@@ -95,7 +95,9 @@ namespace impl
         {
             if (is_const)
                 i = 0;
-            return {key0->get64(i), key1->get64(i)};
+            const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
+            const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
+            return {key0data[i], key1data[i]};
         }
     };
 
