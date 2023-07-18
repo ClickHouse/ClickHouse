@@ -3,7 +3,8 @@ import os
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/config.xml"])
+node1 = cluster.add_instance("node1", main_configs=["configs/config.xml"])
+node2 = cluster.add_instance("node2", main_configs=["configs/config.yaml"])
 
 
 @pytest.fixture(scope="module")
@@ -16,7 +17,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_successful_decryption(started_cluster):
+def check_node(started_cluster, node):
     assert (
         node.query(
             "select value from system.server_settings where name ='max_table_size_to_drop'"
@@ -29,3 +30,11 @@ def test_successful_decryption(started_cluster):
         )
         == "40000000000\n"
     )
+
+
+def test_successful_decryption_xml(started_cluster):
+    check_node(started_cluster, node1)
+
+
+def test_successful_decryption_yaml(started_cluster):
+    check_node(started_cluster, node2)

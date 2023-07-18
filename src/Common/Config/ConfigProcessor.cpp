@@ -28,6 +28,7 @@
 #include <IO/Operators.h>
 
 #if USE_SSL
+#include <format>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionCodecEncrypted.h>
@@ -845,7 +846,8 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
     }
 
 #if USE_SSL
-    if (fs::path(preprocessed_path).filename() == "config.xml")
+    std::string preprocessed_file_name = fs::path(preprocessed_path).filename();
+    if (preprocessed_file_name == "config.xml" || preprocessed_file_name == std::format("config{}.xml", PREPROCESSED_SUFFIX))
         decryptEncryptedElements(loaded_config);
 #endif
 }
