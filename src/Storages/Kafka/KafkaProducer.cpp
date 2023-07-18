@@ -52,8 +52,8 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
     if (key_column_index)
     {
         const auto & key_column = assert_cast<const ColumnString &>(*columns[key_column_index.value()]);
-        const auto key_data = key_column.getDataAt(last_row).toString();
-        builder.key(cppkafka::Buffer(key_data.data(), key_data.size()));
+        const auto key_data = key_column.getDataAt(last_row);
+        builder.key(cppkafka::Buffer(key_data.data, key_data.size));
     }
 
     if (timestamp_column_index)

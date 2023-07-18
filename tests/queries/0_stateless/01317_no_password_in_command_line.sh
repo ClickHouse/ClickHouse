@@ -45,3 +45,5 @@ ps u --no-header $bg_query | grep -F -- '--password' | grep -F hello ||:
 grep -F -- '--password' < "/proc/$bg_query/comm" | grep -F hello ||:
 $CLICKHOUSE_CLIENT --format Null --param_query_id "$query_id" -q "KILL QUERY WHERE query_id = {query_id:String} SYNC"
 wait
+
+$CLICKHOUSE_CLIENT --user "$user" --password=hello --password -q 'select currentUser()' 2>&1 | grep -o 'Bad arguments'

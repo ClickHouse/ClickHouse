@@ -11,7 +11,6 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
-#include "Common/Exception.h"
 #include <Common/SettingsChanges.h>
 
 

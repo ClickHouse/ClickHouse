@@ -86,7 +86,6 @@ def setup_teardown():
 
 
 def test_add_new_table_to_replication(started_cluster):
-    pg_manager.execute("DROP TABLE IF EXISTS test_table")
     NUM_TABLES = 5
 
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
@@ -696,6 +695,7 @@ def test_too_many_parts(started_cluster):
                 break
             time.sleep(1)
             print(f"wait sync try {i}")
+        instance2.query("SYSTEM FLUSH LOGS")
         if instance2.contains_in_log("DB::Exception: Too many parts"):
             break
         assert num == int(

@@ -16,4 +16,5 @@
             </shard>
         </test_cluster>
     </remote_servers>
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

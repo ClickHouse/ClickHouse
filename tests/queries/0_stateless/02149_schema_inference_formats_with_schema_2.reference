@@ -1,0 +1,238 @@
+TSVWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+TSVRawWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+CSVWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+JSONCompactEachRowWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+JSONCompactStringsEachRowWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+RowBinaryWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+CustomSeparatedWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)

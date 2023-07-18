@@ -74,7 +74,7 @@ def test_backward_compatability(start_cluster):
             from remote('node{1,2,3}', default, t)
             group by a
             limit 1 offset 12345
-            settings optimize_aggregation_in_order = 1
+            settings optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 0
         """
         )
         == "30\n"
