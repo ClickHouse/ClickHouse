@@ -774,7 +774,15 @@ namespace
                         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
                         StringRef ref = cache.from_column->getDataAt(i);
                         UInt64 key = 0;
-                        memcpy(&key, ref.data, ref.size);
+                        if constexpr (std::endian::native == std::endian::little)
+                        {
+                            memcpy(&key, ref.data, ref.size);
+                        }
+                        else
+                        {
+                            size_t offset_to = (sizeof(key) > ref.size) ? (sizeof(key) - ref.size) : 0;
+                            memcpy(reinterpret_cast<char *>(&key) + offset_to, ref.data, std::min(sizeof(key), ref.size));
+                        }
                         table[key] = i;
                     }
                 }
