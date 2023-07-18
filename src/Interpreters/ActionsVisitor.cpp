@@ -16,19 +16,15 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
@@ -47,7 +43,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -60,6 +55,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -715,7 +711,7 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
         node->as<ASTExpressionList>())
         return false;
 
-    /// Do not go to FROM, JOIN, UNION.
+    /// Do not go to FROM, JOIN, UNION
     if (child->as<ASTTableExpression>() ||
         child->as<ASTSelectQuery>())
         return false;

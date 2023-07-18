@@ -88,7 +88,6 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -109,6 +108,7 @@
 
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
+#    include <Server/CertificateReloader.h>
 #endif
 
 #if USE_GRPC
@@ -1100,9 +1100,16 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+
+    std::vector<std::string> extra_paths = {include_from_path};
+    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
+    if (!key_path.empty()) extra_paths.emplace_back(key_path);
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        include_from_path,
+        extra_paths,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
@@ -1627,7 +1634,7 @@ try
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+#if !WITH_COVERAGE
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1649,10 +1656,6 @@ try
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
-
-#if !USE_UNWIND
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
-#endif
 
 #if WITH_COVERAGE
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
