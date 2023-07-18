@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWST
 Actian
 ActionsMenu
 ActiveRecord
@@ -990,6 +991,7 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1034,6 +1036,7 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1580,6 +1583,8 @@ indexOf
 infi
 initialQueryID
 initializeAggregation
+initcap
+initcapUTF
 injective
 innogames
 inodes
@@ -1607,6 +1612,7 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
+jaccard
 javaHash
 javaHashUTF
 jbod

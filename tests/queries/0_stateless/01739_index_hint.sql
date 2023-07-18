@@ -30,6 +30,6 @@ create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings inde
 
 insert into XXXX select number*60, 0 from numbers(100000);
 
-SELECT count() FROM XXXX WHERE indexHint(t = toDateTime(0));
+SELECT count() FROM XXXX WHERE indexHint(t = toDateTime(0)) SETTINGS optimize_use_implicit_projections = 1;
 
 drop table XXXX;

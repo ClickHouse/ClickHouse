@@ -71,16 +71,16 @@ protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 
-    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path, 0)); }
+    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
     void setSnapshotDirectory(const std::string & path)
     {
-        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path, 0));
+        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path));
     }
 
     void setStateFileDirectory(const std::string & path)
     {
-        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path, 0));
+        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path));
     }
 };
 
@@ -1503,9 +1503,9 @@ void testLogAndStateMachine(
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots", 0));
+    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
     ChangelogDirTest logs("./logs");
-    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs", 0));
+    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
