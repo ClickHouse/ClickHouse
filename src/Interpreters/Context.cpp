@@ -1574,7 +1574,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
         if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            const auto & insert_structure = DatabaseCatalog::instance()
+                                                .getTable(getInsertionTable(), shared_from_this())
+                                                ->getInMemoryMetadataPtr()
+                                                ->getColumns()
+                                                .getInsertable();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
