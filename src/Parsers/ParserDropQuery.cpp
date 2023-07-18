@@ -74,13 +74,13 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         }
 
         query->databases_tables.emplace_back(std::make_tuple(database,table));
-        while(s_comma.ignore(pos, expected))
+        while (s_comma.ignore(pos, expected))
         {
             ASTPtr tmp_database;
             ASTPtr tmp_table;
             if (!name_p.parse(pos, tmp_table, expected))
                 return false;
-            if(s_dot.ignore(pos,expected))
+            if (s_dot.ignore(pos,expected))
             {
                 tmp_database = tmp_table;
                 if (!name_p.parse(pos, tmp_table, expected))
@@ -103,9 +103,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     /// actually for TRUNCATE NO DELAY / SYNC means nothing
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
-
-
-
     query->kind = kind;
     query->if_exists = if_exists;
     query->temporary = temporary;
