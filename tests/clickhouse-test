@@ -625,16 +625,16 @@ class SettingsRandomizer:
 
     @staticmethod
     def get_random_settings(args):
-        random_settings = []
+        random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
             if (
                 is_debug
                 and setting == "allow_prefetched_read_pool_for_remote_filesystem"
             ):
-                random_settings.append(f"{setting}=0")
+                random_settings[setting] = 0
             else:
-                random_settings.append(f"{setting}={generator()}")
+                random_settings[setting] = generator()
         return random_settings
 
 
@@ -670,10 +670,10 @@ class MergeTreeSettingsRandomizer:
 
     @staticmethod
     def get_random_settings(args):
-        random_settings = []
+        random_settings = {}
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting not in args.changed_merge_tree_settings:
-                random_settings.append(f"{setting}={generator()}")
+                random_settings[setting] = generator()
         return random_settings
 
 
@@ -785,7 +785,14 @@ class TestCase:
 
     @staticmethod
     def cli_format_settings(settings_list) -> str:
-        return " ".join([f"--{setting}" for setting in settings_list])
+        out = []
+        for k, v in settings_list.items():
+            out.extend([f"--{k}", str(v)])
+        return " ".join(out)
+
+    @staticmethod
+    def http_format_settings(settings_list) -> str:
+        return urllib.parse.urlencode(settings_list)
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
@@ -793,11 +800,12 @@ class TestCase:
     def add_random_settings(self, client_options):
         new_options = ""
         if self.randomize_settings:
+            http_params = self.http_format_settings(self.random_settings)
             if len(self.base_url_params) == 0:
-                os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
+                os.environ["CLICKHOUSE_URL_PARAMS"] = http_params
             else:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
-                    self.base_url_params + "&" + "&".join(self.random_settings)
+                    self.base_url_params + "&" + http_params
                 )
 
             new_options += f" {self.cli_format_settings(self.random_settings)}"
