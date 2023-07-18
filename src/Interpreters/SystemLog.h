@@ -128,10 +128,10 @@ public:
     void notifyFlush(bool force);
 
     void stopFlushThread() override;
-  
+
 protected:
     Poco::Logger * log;
-  
+
     using ISystemLog::is_shutdown;
     using ISystemLog::saving_thread;
 

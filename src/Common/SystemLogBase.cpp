@@ -196,8 +196,8 @@ SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<Lo
 
 template <typename LogElement>
 void SystemLogQueue<LogElement>::shutdown()
-{ 
-    is_shutdown = true;         
+{
+    is_shutdown = true;
     /// Tell thread to shutdown.
     flush_event.notify_all();
 }

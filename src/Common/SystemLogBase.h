@@ -114,7 +114,7 @@ private:
     Index flushed_up_to = 0;
     // Logged overflow message at this queue front index
     Index logged_queue_full_at_index = -1;
-    
+
     bool is_shutdown = false;
 
     std::condition_variable flush_event;
