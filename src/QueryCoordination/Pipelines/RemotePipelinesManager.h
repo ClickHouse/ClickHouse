@@ -57,6 +57,9 @@ public:
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
 
+    void waitFinish();
+
+    bool allFinished();
 
 private:
     void receiveReporter(ThreadGroupPtr thread_group);
@@ -67,6 +70,8 @@ private:
         String host_port;
         IConnectionPool::Entry connection;
     };
+
+    void processPacket(Packet & packet, ManagedNode & node);
 
     Poco::Logger * log;
 
@@ -84,6 +89,9 @@ private:
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_reading = false;
+
+    Poco::Event finish_event{false};
+    std::mutex finish_mutex;
 };
 
 }

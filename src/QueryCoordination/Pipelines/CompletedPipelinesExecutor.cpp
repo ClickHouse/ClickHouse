@@ -41,7 +41,7 @@ struct CompletedPipelinesExecutor::Datas
 {
     std::vector<std::shared_ptr<Data>> datas;
 
-    Poco::Event finish_event;
+    Poco::Event finish_event{false};
 
     std::mutex mutex;
 
@@ -101,7 +101,7 @@ static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupP
         if (thread_group)
             CurrentThread::detachFromGroupIfNotDetached();
     );
-    setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used test query cancel
+    setThreadName("QCompPipesExaaaa"); /// TODO bytes > 15 can be used test query cancel
 
     try
     {
@@ -222,16 +222,21 @@ void CompletedPipelinesExecutor::execute()
     datas->rethrowFirstExceptionIfHas();
 }
 
+void CompletedPipelinesExecutor::waitFinish()
+{
+    datas->finish_event.wait();
+}
+
 void CompletedPipelinesExecutor::cancel()
 {
-//    if (cancelled)
-//        return;
+    if (cancelled)
+        return;
 
     LOG_DEBUG(log, "cancel");
 
-//    cancelled = true;
+    cancelled = true;
 
-    if (datas)
+    if (datas && !datas->isFinished())
     {
         datas->cancel();
         /// Join thread here to wait for possible exception.

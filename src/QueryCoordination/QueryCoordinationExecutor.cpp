@@ -6,6 +6,9 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/setThreadName.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {
@@ -89,10 +92,10 @@ bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
     if (is_execution_finished)
     {
         if (completed_pipelines_executor)
-            completed_pipelines_executor->cancel();
+            completed_pipelines_executor->waitFinish();
 
         if (remote_pipelines_manager)
-            remote_pipelines_manager->cancel();
+            remote_pipelines_manager->waitFinish();
     }
 
     return !is_execution_finished;

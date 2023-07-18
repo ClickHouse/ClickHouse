@@ -1,10 +1,12 @@
 #pragma once
 
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryCoordination/QueryCoordinationExecutor.h>
 
 namespace DB
 {
+
+class QueryCoordinationExecutor;
+class CompletedPipelinesExecutor;
 
 class Pipelines
 {

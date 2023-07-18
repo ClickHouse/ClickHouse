@@ -3,7 +3,6 @@
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
 #include <QueryCoordination/Fragments/PlanFragment.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <Common/logger_useful.h>
 
 namespace DB

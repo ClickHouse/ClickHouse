@@ -1,5 +1,8 @@
 #include <QueryCoordination/Pipelines/Pipelines.h>
 #include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {

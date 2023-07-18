@@ -1,9 +1,7 @@
 #pragma once
 #include <functional>
 #include <memory>
-#include "QueryCoordination/Pipelines/CompletedPipelinesExecutor.h"
-#include "QueryCoordination/Pipelines/RemotePipelinesManager.h"
-#include "Processors/Executors/PullingAsyncPipelineExecutor.h"
+#include <Common/logger_useful.h>
 
 /// Includes 3 parts of logic
 /// main PullingAsyncPipelineExecutor::pull
@@ -18,6 +16,9 @@ class Block;
 class Chunk;
 class LazyOutputFormat;
 struct ProfileInfo;
+class RemotePipelinesManager;
+class CompletedPipelinesExecutor;
+class PullingAsyncPipelineExecutor;
 
 using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 

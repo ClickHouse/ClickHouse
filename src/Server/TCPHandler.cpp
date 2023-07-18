@@ -65,6 +65,7 @@
 #include "Core/Protocol.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 
 #include "config_version.h"
 
@@ -885,22 +886,6 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         {
             std::shared_ptr<QueryCoordinationExecutor> executor
                 = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits);
-
-            auto completed_pipelines_executor = executor->getCompletedPipelinesExecutor();
-
-            if (completed_pipelines_executor)
-            {
-                auto callback = [this]()
-                {
-                    std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
-
-                    if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
-                        return true;
-
-                    return false;
-                };
-                completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
-            }
 
             auto remote_pipelines_manager = executor->getRemotePipelinesManager();
             remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);
