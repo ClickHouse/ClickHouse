@@ -293,6 +293,9 @@ static int openPerfEventDisabled(Int32 perf_event_paranoid, bool has_cap_sys_adm
     pe.exclude_kernel = perf_event_paranoid >= 2 && !has_cap_sys_admin;
     pe.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING;
 
+    // we don't use sampling events, but it looks like sampling is still active (changing this setting significantly affects performance for some queries)
+    pe.sample_period = std::numeric_limits<decltype(pe.sample_period)>::max();
+
     return openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
 }
 
