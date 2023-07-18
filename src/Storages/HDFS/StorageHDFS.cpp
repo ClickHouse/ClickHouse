@@ -314,7 +314,7 @@ public:
             hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
         }
         /// Skip non-existed files.
-        while (String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
+        while (!hdfs_info && String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
 
         std::optional<StorageHDFS::PathInfo> info;
         if (hdfs_info)
