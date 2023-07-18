@@ -102,7 +102,8 @@ check_proceed_spot_termination() {
             runner_pid=$(pgrep Runner.Listener)
             if [ -n "$runner_pid" ]; then
                 # Kill the runner to not allow it cancelling the job
-                kill -9 "$runner_pid"
+                # shellcheck disable=SC2046
+                kill -9 $(list_children "$runner_pid")
             fi
             sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
             terminate_and_exit
@@ -234,6 +235,19 @@ is_job_assigned() {
         || return 1
 }
 
+list_children () {
+    local children
+    children=$(ps --ppid "$1" -o pid=)
+    if [ -z "$children" ]; then
+        return
+    fi
+
+    for pid in $children; do
+        list_children "$pid"
+    done
+    echo "$children"
+}
+
 while true; do
     runner_pid=$(pgrep Runner.Listener)
     echo "Got runner pid '$runner_pid'"
@@ -275,7 +289,8 @@ while true; do
                         echo "During the metadata check the job was assigned, continue"
                         continue
                     fi
-                    kill -9 "$runner_pid"
+                    # shellcheck disable=SC2046
+                    kill -9 $(list_children "$runner_pid")
                     sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
                     terminate_on_event
                 fi
