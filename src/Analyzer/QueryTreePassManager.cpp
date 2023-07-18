@@ -42,6 +42,7 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
 namespace DB
 {
@@ -250,6 +251,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+
+    /// should before AggregateFunctionsArithmericOperationsPass
+    manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
 
     manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
