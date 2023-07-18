@@ -4,7 +4,6 @@ Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
 Sorting (Global): a ASC
 Sorting (None)
-Sorting (None)
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
 Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
@@ -31,7 +30,6 @@ PartialSortingTransform × 3
 Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
 Sorting (Global): a ASC
-Sorting (Stream): a ASC
 Sorting (Stream): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
 Sorting (Global): a ASC
@@ -115,7 +113,6 @@ Sorting (None)
 Sorting (Sorting for ORDER BY)
 Sorting (Global): a ASC
 Sorting (Stream): a ASC
-Sorting (Stream): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM (SELECT sipHash64(a) AS a FROM (SELECT a FROM optimize_sorting ORDER BY a)) ORDER BY a
 Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
@@ -162,7 +159,6 @@ Sorting (Chunk): a ASC
 Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
 Sorting (Global): a ASC
-Sorting (Stream): a ASC
 Sorting (Stream): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN sorting=1 SELECT a, b FROM optimize_sorting ORDER BY a
 Sorting (Global): a ASC
