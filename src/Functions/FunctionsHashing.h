@@ -423,7 +423,7 @@ struct SipHash128ReferenceImpl
 
     using ReturnType = UInt128;
 
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128ReferenceImpl>(h1, h2); }
 
     static UInt128 apply(const char * data, const size_t size) { return sipHash128Reference(data, size); }
 
@@ -1853,10 +1853,10 @@ using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
-using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key, SipHash64KeyedImpl::KeyColumns>;
+using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key, SipHash128KeyedImpl::KeyColumns>;
 using FunctionSipHash128Reference = FunctionAnyHash<SipHash128ReferenceImpl>;
 using FunctionSipHash128ReferenceKeyed
-    = FunctionAnyHash<SipHash128ReferenceKeyedImpl, true, SipHash128ReferenceKeyedImpl::Key, SipHash64KeyedImpl::KeyColumns>;
+    = FunctionAnyHash<SipHash128ReferenceKeyedImpl, true, SipHash128ReferenceKeyedImpl::Key, SipHash128ReferenceKeyedImpl::KeyColumns>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
