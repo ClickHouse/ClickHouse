@@ -49,7 +49,7 @@ public:
         /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
         /// policies on some table by running the same queries as user B for whom no row policies exist.
-        bool is_shared;
+        const bool is_shared;
 
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
@@ -58,11 +58,15 @@ public:
         /// (we could theoretically apply compression also to the totals and extremes but it's an obscure use case)
         const bool is_compressed;
 
+        /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             Block header_,
             const String & user_name_, bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
+
+        /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
+        Key(ASTPtr ast_, const String & user_name_);
 
         bool operator==(const Key & other) const;
         String queryStringFromAst() const;

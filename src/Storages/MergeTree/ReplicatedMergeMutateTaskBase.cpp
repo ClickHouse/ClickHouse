@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
-StorageID ReplicatedMergeMutateTaskBase::getStorageID()
+StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -119,8 +119,10 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 }
             }
         }
-
     }
+
+    if (saved_exception)
+        std::rethrow_exception(saved_exception);
 
     return false;
 }
