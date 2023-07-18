@@ -14,7 +14,7 @@ def start_clickhouse(config, err_msg):
 
 
 def test_wrong_method():
-    start_clickhouse("configs/config_wrong_method.xml", "Wrong encryption Method")
+    start_clickhouse("configs/config_wrong_method.xml", "Wrong encryption method. Got WRONG")
 
 
 def test_invalid_chars():
