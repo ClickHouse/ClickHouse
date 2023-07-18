@@ -290,65 +290,37 @@ SELECT sipHash64Keyed((toUInt64(9223372036854775806), 9223372036854775808::UInt6
 
 SELECT 'Check const columns';
 DROP TABLE IF EXISTS sipHashKeyed_test;
-
-CREATE TABLE sipHashKeyed_test
-ENGINE = Memory()
-AS
-SELECT
-1 a,
-'test' b;
-
-SELECT
-sipHash64Keyed((toUInt64(0), toUInt64(0)), 1, 'test');
-
-SELECT
-sipHash64(tuple(*))
-FROM
-sipHashKeyed_test;
-
-SELECT
-sipHash64Keyed((toUInt64(0), toUInt64(0)), tuple(*))
-FROM
-sipHashKeyed_test;
-
-SELECT
-sipHash64Keyed((toUInt64(0), toUInt64(0)), a, b)
-FROM
-sipHashKeyed_test;
-
-SELECT
-hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), tuple(*)))
-FROM
-sipHashKeyed_test;
-
-SELECT
-hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), a, b))
-FROM
-sipHashKeyed_test;
-
+CREATE TABLE sipHashKeyed_test ENGINE = Memory() AS SELECT 1 a, 'test' b;
+SELECT sipHash64Keyed((toUInt64(0), toUInt64(0)), 1, 'test');
+SELECT sipHash64(tuple(*)) FROM sipHashKeyed_test;
+SELECT sipHash64Keyed((toUInt64(0), toUInt64(0)), tuple(*)) FROM sipHashKeyed_test;
+SELECT sipHash64Keyed((toUInt64(0), toUInt64(0)), a, b) FROM sipHashKeyed_test;
+SELECT hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), tuple(*))) FROM sipHashKeyed_test;
+SELECT hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), a, b)) FROM sipHashKeyed_test;
 DROP TABLE sipHashKeyed_test;
 
-SELECT 'Check multiple keys';
+SELECT 'Check multiple keys as tuple from a table';
 DROP TABLE IF EXISTS sipHashKeyed_keys;
 CREATE TABLE sipHashKeyed_keys (key Tuple(UInt64, UInt64), val UInt64) ENGINE=Memory;
 INSERT INTO sipHashKeyed_keys VALUES ((2, 2), 4);
 INSERT INTO sipHashKeyed_keys VALUES ((4, 4), 4);
 SELECT sipHash64Keyed(key, val) FROM sipHashKeyed_keys ORDER by key;
 DROP TABLE sipHashKeyed_keys;
-SELECT 'Check multiple keys 2';
+
+SELECT 'Check multiple keys as separate ints from a table';
 DROP TABLE IF EXISTS sipHashKeyed_keys;
 CREATE TABLE sipHashKeyed_keys (key0 UInt64, key1 UInt64, val UInt64) ENGINE=Memory;
 INSERT INTO sipHashKeyed_keys VALUES (2, 2, 4);
 INSERT INTO sipHashKeyed_keys VALUES (4, 4, 4);
 SELECT sipHash64Keyed((key0, key1), val) FROM sipHashKeyed_keys ORDER by key0;
+SELECT 'Check constant key and data from a table';
 SELECT sipHash64Keyed((2::UInt64, 2::UInt64), val) FROM sipHashKeyed_keys ORDER by val;
 DROP TABLE sipHashKeyed_keys;
-SELECT 'Check multiple keys 3';
+
+SELECT 'Check multiple keys as separate ints from a table with constant data';
 DROP TABLE IF EXISTS sipHashKeyed_keys;
 CREATE TABLE sipHashKeyed_keys (key0 UInt64, key1 UInt64) ENGINE=Memory;
 INSERT INTO sipHashKeyed_keys VALUES (2, 2);
 INSERT INTO sipHashKeyed_keys VALUES (4, 4);
 SELECT sipHash64Keyed((key0, key1), 4::UInt64) FROM sipHashKeyed_keys ORDER by key0;
-SELECT '-';
-SELECT sipHash64Keyed((2::UInt64, 2::UInt64), 4::UInt64) FROM sipHashKeyed_keys ORDER by key0;
 DROP TABLE sipHashKeyed_keys;
