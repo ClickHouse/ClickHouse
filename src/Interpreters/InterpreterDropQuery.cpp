@@ -94,15 +94,12 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     UUID table_to_wait_on = UUIDHelpers::Nil;
     ASTPtr drop_table_ptr=query.clone();
     auto & drop_single_table=drop_table_ptr->as<ASTDropQuery &>();
-
     drop_single_table.database=std::get<0>(database_table);
     drop_single_table.table=std::get<1>(database_table);
-     
     res = executeToTableImpl(getContext(), drop_single_table, database, table_to_wait_on);
     if (drop_single_table.sync)
         waitForTableToBeActuallyDroppedOrDetached(drop_single_table, database, table_to_wait_on);
     }
-
     return res;
 }
 
