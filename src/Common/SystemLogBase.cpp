@@ -47,17 +47,17 @@ SystemLogQueue<LogElement>::SystemLogQueue(
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {}
 
-static thread_local bool recursive_add_call = false;
+static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::add(const LogElement & element)
+void SystemLogQueue<LogElement>::push(const LogElement & element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
-    if (recursive_add_call)
+    if (recursive_push_call)
         return;
-    recursive_add_call = true;
-    SCOPE_EXIT({ recursive_add_call = false; });
+    recursive_push_call = true;
+    SCOPE_EXIT({ recursive_push_call = false; });
 
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
@@ -118,15 +118,31 @@ void SystemLogQueue<LogElement>::add(const LogElement & element)
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::shutdown()
-{ 
-    is_shutdown = true;         
-    /// Tell thread to shutdown.
-    flush_event.notify_all();
+uint64_t SystemLogQueue<LogElement>::notifyFlush(bool should_prepare_tables_anyway)
+{
+    uint64_t this_thread_requested_offset;
+
+    {
+        std::lock_guard lock(mutex);
+        if (is_shutdown)
+            return uint64_t(-1);
+
+        this_thread_requested_offset = queue_front_index + queue.size();
+
+        // Publish our flush request, taking care not to overwrite the requests
+        // made by other threads.
+        is_force_prepare_tables |= should_prepare_tables_anyway;
+        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
+
+        flush_event.notify_all();
+    }
+
+    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
+    return this_thread_requested_offset;
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::waitFlush(uint64_t this_thread_requested_offset_)
+void SystemLogQueue<LogElement>::waitFlush(uint64_t expected_flushed_up_to)
 {
     // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
     // too fast for our parallel functional tests, probably because they
@@ -135,7 +151,7 @@ void SystemLogQueue<LogElement>::waitFlush(uint64_t this_thread_requested_offset
     std::unique_lock lock(mutex);
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
-        return flushed_up_to >= this_thread_requested_offset_ && !is_force_prepare_tables;
+        return flushed_up_to >= expected_flushed_up_to && !is_force_prepare_tables;
     });
 
     if (!result)
@@ -155,7 +171,7 @@ void SystemLogQueue<LogElement>::confirm(uint64_t to_flush_end)
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread)
+SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread)
 {
     std::unique_lock lock(mutex);
     flush_event.wait_for(lock,
@@ -167,7 +183,6 @@ void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& 
     );
 
     queue_front_index += queue.size();
-    to_flush_end = queue_front_index;
     // Swap with existing array from previous flush, to save memory
     // allocations.
     output.resize(0);
@@ -176,30 +191,15 @@ void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& 
     should_prepare_tables_anyway = is_force_prepare_tables;
 
     exit_this_thread = is_shutdown;
+    return queue_front_index;
 }
 
 template <typename LogElement>
-uint64_t SystemLogQueue<LogElement>::notifyFlush(bool force)
-{
-    uint64_t this_thread_requested_offset;
-
-    {
-        std::lock_guard lock(mutex);
-        if (is_shutdown)
-            return uint64_t(-1);
-
-        this_thread_requested_offset = queue_front_index + queue.size();
-
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
-
-        flush_event.notify_all();
-    }
-
-    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
-    return this_thread_requested_offset;
+void SystemLogQueue<LogElement>::shutdown()
+{ 
+    is_shutdown = true;         
+    /// Tell thread to shutdown.
+    flush_event.notify_all();
 }
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogQueue<ELEMENT>;

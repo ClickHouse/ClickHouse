@@ -75,20 +75,23 @@ protected:
 template <typename LogElement>
 class SystemLogQueue
 {
+    using Index = uint64_t;
+
 public:
     SystemLogQueue(
         const String & name_,
         size_t flush_interval_milliseconds_);
 
-    // producer methods
-    void add(const LogElement & element);
     void shutdown();
-    uint64_t notifyFlush(bool force);
-    void waitFlush(uint64_t this_thread_requested_offset_);
+
+    // producer methods
+    void push(const LogElement & element);
+    Index notifyFlush(bool should_prepare_tables_anyway);
+    void waitFlush(Index expected_flushed_up_to);
 
      // consumer methods
-    void pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread);
-    void confirm(uint64_t to_flush_end);
+    Index pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread);
+    void confirm(Index to_flush_end);
 
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
@@ -102,19 +105,19 @@ private:
     // We use it to give a global sequential index to every message, so that we
     // can wait until a particular message is flushed. This is used to implement
     // synchronous log flushing for SYSTEM FLUSH LOGS.
-    uint64_t queue_front_index = 0;
+    Index queue_front_index = 0;
     // A flag that says we must create the tables even if the queue is empty.
     bool is_force_prepare_tables = false;
     // Requested to flush logs up to this index, exclusive
-    uint64_t requested_flush_up_to = 0;
-    std::condition_variable flush_event;
+    Index requested_flush_up_to = 0;
     // Flushed log up to this index, exclusive
-    uint64_t flushed_up_to = 0;
+    Index flushed_up_to = 0;
     // Logged overflow message at this queue front index
-    uint64_t logged_queue_full_at_index = -1;
-
+    Index logged_queue_full_at_index = -1;
+    
     bool is_shutdown = false;
 
+    std::condition_variable flush_event;
     const size_t flush_interval_milliseconds;
 };
 
