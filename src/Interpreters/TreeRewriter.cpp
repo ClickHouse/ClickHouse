@@ -1287,6 +1287,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
         bool is_changed = replaceAliasColumnsInQuery(query, result.storage_snapshot->metadata->getColumns(),
                                                      result.array_join_result_to_source, getContext(), excluded_nodes);
+
         /// If query is changed, we need to redo some work to correct name resolution.
         if (is_changed)
         {
