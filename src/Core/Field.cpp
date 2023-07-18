@@ -304,6 +304,11 @@ void writeFieldText(const Field & x, WriteBuffer & buf)
 }
 
 
+void Field::validate()
+{
+    dispatch([this] (auto & value) { calculateAndCheckFieldDepth<NearestFieldType<std::decay_t<decltype(value)>>>(value); }, *this);
+}
+
 String Field::dump() const
 {
     return applyVisitor(FieldVisitorDump(), *this);

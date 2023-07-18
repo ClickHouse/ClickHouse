@@ -221,6 +221,10 @@ Field QueryFuzzer::fuzzField(Field field)
         }
     }
 
+    /// If we made the field too deep, throw exception here, before calling the noexcept move
+    /// constructor that would terminate the whole process if field is invalid.
+    field.validate();
+
     return field;
 }
 

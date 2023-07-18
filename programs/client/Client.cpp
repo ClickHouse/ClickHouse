@@ -812,6 +812,11 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
+            if (!ast_to_process)
+                fmt::print(stderr,
+                    "Error while forming new query: {}\n",
+                    getCurrentExceptionMessage(true));
+
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
             // uniformity.

@@ -659,6 +659,9 @@ public:
         UNREACHABLE();
     }
 
+    // Throws if anything's wrong, e.g. the field is too deep.
+    void validate();
+
     String dump() const;
     static Field restoreFromDump(std::string_view dump_);
 
