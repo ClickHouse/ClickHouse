@@ -34,7 +34,9 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
+#ifndef WITHOUT_TEXT_LOG
 constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
+#endif
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
