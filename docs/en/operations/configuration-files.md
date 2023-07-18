@@ -67,9 +67,9 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 ## Encrypting Configuration {#encryption}
 
-You can use symmetric encryption to encrypt a configuration element, for example, a password field. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encryption_codec`` with the name of the encryption codec as value to the element to encrypt.
+You can use symmetric encryption to encrypt a configuration element, for example, a password field. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encryption_codec` with the name of the encryption codec as value to the element to encrypt.
 
-Unlike attributes `from_zk`, `from_env` and `incl`` (or element `include``), no substitution, i.e. decryption of the encrypted value, is performed in the preprocessed file. Decryption happens only at runtime in the server process.
+Unlike attributes `from_zk`, `from_env` and `incl` (or element `include`), no substitution, i.e. decryption of the encrypted value, is performed in the preprocessed file. Decryption happens only at runtime in the server process.
 
 Example:
 
@@ -82,7 +82,7 @@ Example:
     </encryption_codecs>
     <interserver_http_credentials>
         <user>admin</user>
-        <password  encryption_codec="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+        <password encryption_codec="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
     </interserver_http_credentials>
 </clickhouse>
 ```
