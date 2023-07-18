@@ -739,11 +739,12 @@ try
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
-            metrics.reserve(servers_to_start_before_tables.size());
+            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+
+            std::lock_guard lock(servers_lock);
             for (const auto & server : servers_to_start_before_tables)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
 
-            std::lock_guard lock(servers_lock);
             for (const auto & server : servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
             return metrics;
