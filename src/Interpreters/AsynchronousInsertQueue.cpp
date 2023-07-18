@@ -200,10 +200,8 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
     });
 }
 
-AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushCheckOnly(ASTPtr query, ContextPtr query_context)
 {
-    query = query->clone();
     const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
@@ -240,6 +238,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
             /// query data and with the rest data from insert query.
             std::vector<std::unique_ptr<ReadBuffer>> buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
+            bytes.clear();
             buffers.emplace_back(std::move(read_buf));
 
             return PushResult
@@ -253,7 +252,16 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
+    return PushResult{.status = PushResult::OK, .bytes = std::move(bytes)};
+}
+
+std::future<void> AsynchronousInsertQueue::pushNoCheck(ASTPtr query, ContextPtr query_context, String && bytes)
+{
+    query = query->clone();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto entry
+        = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -306,12 +314,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         scheduleDataProcessingJob(key, std::move(data_to_process), getContext());
     else
         shard.are_tasks_available.notify_one();
-
-    return PushResult
-    {
-        .status = PushResult::OK,
-        .future = std::move(insert_future),
-    };
+    return insert_future;
 }
 
 void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)

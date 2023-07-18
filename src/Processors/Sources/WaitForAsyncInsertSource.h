@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <Processors/ISource.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
 
 namespace DB
 {
@@ -18,33 +19,31 @@ class WaitForAsyncInsertSource : public ISource, WithContext
 {
 public:
     WaitForAsyncInsertSource(
-        std::future<void> insert_future_, size_t timeout_ms_)
+        bool wait_, /// Whether the source should wait for query completion or not
+        size_t timeout_ms_, /// The timeout for the wait
+        ASTPtr query_, /// The query's AST
+        ContextPtr query_context_, /// The query's context
+        String && bytes_ /// Data extracted from the query as returned by pushCheckOnly
+        )
         : ISource(Block())
-        , insert_future(std::move(insert_future_))
+        , WithContext(query_context_)
+        , wait(wait_)
         , timeout_ms(timeout_ms_)
+        , query(std::move(query_))
+        , bytes(std::move(bytes_))
     {
-        assert(insert_future.valid());
     }
 
     String getName() const override { return "WaitForAsyncInsert"; }
 
 protected:
-    Chunk generate() override
-    {
-        auto status = insert_future.wait_for(std::chrono::milliseconds(timeout_ms));
-        if (status == std::future_status::deferred)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
-
-        if (status == std::future_status::timeout)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
-
-        insert_future.get();
-        return Chunk();
-    }
+    Chunk generate() override;
 
 private:
-    std::future<void> insert_future;
+    bool wait;
     size_t timeout_ms;
+    ASTPtr query;
+    String bytes;
 };
 
 }
