@@ -56,9 +56,6 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     }
 
-    /// Allow constant expression for structure argument, it can be generated using generateRandomStructure function.
-    args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
-
     // All the arguments must be literals.
     for (const auto & arg : args)
     {
