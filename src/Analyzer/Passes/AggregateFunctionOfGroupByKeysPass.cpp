@@ -15,120 +15,118 @@ namespace DB
 namespace
 {
 
-    /// Check whether we should keep aggregator.
-    class KeepEliminateFunctionVisitor : public ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>
+/// Check whether we should keep aggregator.
+class KeepEliminateFunctionVisitor : public ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>
+{
+public:
+    using Base = ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>;
+    using Base::Base;
+
+    KeepEliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_, bool & keep_aggregator_)
+        : group_by_keys(group_by_keys_), keep_aggregator(keep_aggregator_)
     {
-    public:
-        using Base = ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>;
-        using Base::Base;
+    }
 
-        KeepEliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_, bool & keep_aggregator_)
-            : group_by_keys(group_by_keys_), keep_aggregator(keep_aggregator_)
-        {
-        }
-
-        static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & child [[maybe_unused]])
-        {
-            return parent->as<ListNode>();
-        }
-
-        void visitFunction(const FunctionNode * function_node)
-        {
-            if (function_node->getArguments().getNodes().empty())
-            {
-                keep_aggregator = true;
-                return;
-            }
-            auto it = std::find_if(
-                group_by_keys.begin(),
-                group_by_keys.end(),
-                [function_node](const QueryTreeNodePtr & group_by_ele) { return function_node->isEqual(*group_by_ele); });
-
-            if (it == group_by_keys.end())
-            {
-                KeepEliminateFunctionVisitor visitor(group_by_keys, keep_aggregator);
-                visitor.visit(function_node->getArgumentsNode());
-            }
-        }
-
-        void visitColumn(const ColumnNode * column)
-        {
-            /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-            auto it = std::find_if(
-                group_by_keys.begin(),
-                group_by_keys.end(),
-                [column](const QueryTreeNodePtr & group_by_ele) { return column->isEqual(*group_by_ele); });
-
-            if (it == group_by_keys.end())
-                keep_aggregator = true;
-        }
-
-        void visitImpl(const QueryTreeNodePtr & node)
-        {
-            if (keep_aggregator)
-                return;
-
-            if (node->as<ListNode>())
-                return;
-
-            if (auto * function_node = node->as<FunctionNode>())
-            {
-                visitFunction(function_node);
-            }
-            else if (auto * column = node->as<ColumnNode>())
-            {
-                visitColumn(column);
-            }
-        }
-
-    private :
-        const QueryTreeNodes & group_by_keys;
-        bool & keep_aggregator;
-    };
-
-    /// Try to eliminate min/max/any/anyLast which will not decent into subqueries.
-    class EliminateFunctionVisitor : public InDepthQueryTreeVisitor<EliminateFunctionVisitor>
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & child [[maybe_unused]])
     {
-    public:
-        using Base = InDepthQueryTreeVisitor<EliminateFunctionVisitor>;
-        using Base::Base;
+        return parent->as<ListNode>();
+    }
 
-        EliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_) : group_by_keys(group_by_keys_) { }
-
-        void visitImpl(QueryTreeNodePtr & node)
+    void visitFunction(const FunctionNode * function_node)
+    {
+        if (function_node->getArguments().getNodes().empty())
         {
-
-            /// Check if function is min/max/any/anyLast
-            auto * function_node = node->as<FunctionNode>();
-            if (!function_node
-                || !(function_node->getFunctionName() == "min" || function_node->getFunctionName() == "max"
-                     || function_node->getFunctionName() == "any" || function_node->getFunctionName() == "anyLast"))
-                return;
-
-            if (!function_node->getArguments().getNodes().empty())
-            {
-                bool keep_aggregator = false;
-
-                KeepEliminateFunctionVisitor visitor(group_by_keys, keep_aggregator);
-                visitor.visit(function_node->getArgumentsNode());
-
-                /// Place argument of an aggregate function instead of function
-                if (!keep_aggregator)
-                    node = function_node->getArguments().getNodes()[0];
-            }
+            keep_aggregator = true;
+            return;
         }
+        auto it = std::find_if(
+            group_by_keys.begin(),
+            group_by_keys.end(),
+            [function_node](const QueryTreeNodePtr & group_by_ele) { return function_node->isEqual(*group_by_ele); });
 
-        static bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child)
+        if (it == group_by_keys.end())
         {
-            /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-            return !child->as<QueryNode>() && !child->as<TableNode>() && !child->as<ArrayJoinNode>();
+            KeepEliminateFunctionVisitor visitor(group_by_keys, keep_aggregator);
+            visitor.visit(function_node->getArgumentsNode());
         }
+    }
 
-    private:
-        const QueryTreeNodes & group_by_keys;
-    };
+    void visitColumn(const ColumnNode * column)
+    {
+        /// if variable of a function is not in GROUP BY keys, this function should not be deleted
+        auto it = std::find_if(
+            group_by_keys.begin(),
+            group_by_keys.end(),
+            [column](const QueryTreeNodePtr & group_by_ele) { return column->isEqual(*group_by_ele); });
 
-}
+        if (it == group_by_keys.end())
+            keep_aggregator = true;
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (keep_aggregator)
+            return;
+
+        if (node->as<ListNode>())
+            return;
+
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            visitFunction(function_node);
+        }
+        else if (auto * column = node->as<ColumnNode>())
+        {
+            visitColumn(column);
+        }
+    }
+
+private :
+    const QueryTreeNodes & group_by_keys;
+    bool & keep_aggregator;
+};
+
+/// Try to eliminate min/max/any/anyLast which will not decent into subqueries.
+class EliminateFunctionVisitor : public InDepthQueryTreeVisitor<EliminateFunctionVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitor<EliminateFunctionVisitor>;
+    using Base::Base;
+
+    EliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_) : group_by_keys(group_by_keys_) { }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+
+        /// Check if function is min/max/any/anyLast
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node
+            || !(function_node->getFunctionName() == "min" || function_node->getFunctionName() == "max"
+                 || function_node->getFunctionName() == "any" || function_node->getFunctionName() == "anyLast"))
+            return;
+
+        if (!function_node->getArguments().getNodes().empty())
+        {
+            bool keep_aggregator = false;
+
+            KeepEliminateFunctionVisitor visitor(group_by_keys, keep_aggregator);
+            visitor.visit(function_node->getArgumentsNode());
+
+            /// Place argument of an aggregate function instead of function
+            if (!keep_aggregator)
+                node = function_node->getArguments().getNodes()[0];
+        }
+    }
+
+    static bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child)
+    {
+        /// Don't descent into table functions and subqueries and special case for ArrayJoin.
+        return !child->as<QueryNode>() && !child->as<TableNode>() && !child->as<ArrayJoinNode>();
+    }
+
+private:
+    const QueryTreeNodes & group_by_keys;
+};
 
 /// Collect QueryNode and its group by keys.
 class CollectQueryAndGroupByKeysVisitor : public InDepthQueryTreeVisitor<CollectQueryAndGroupByKeysVisitor>
@@ -171,6 +169,8 @@ public:
         data.insert({node, std::move(group_by_keys)});
     }
 };
+
+}
 
 void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr /*context*/)
 {
