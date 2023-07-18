@@ -700,7 +700,9 @@ def test_too_many_parts(started_cluster):
             break
         assert num == int(
             instance2.query("SELECT count() FROM test_database.test_table")
-        ) or num - 1 == int(instance2.query("SELECT count() FROM test_database.test_table"))
+        ) or num - 1 == int(
+            instance2.query("SELECT count() FROM test_database.test_table")
+        )
 
     assert instance2.contains_in_log("DB::Exception: Too many parts")
     print(num)
