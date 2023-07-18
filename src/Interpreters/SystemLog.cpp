@@ -398,7 +398,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             // Should we prepare table even if there are no new messages.
             bool should_prepare_tables_anyway = false;
 
-            queue->pop(to_flush, to_flush_end, should_prepare_tables_anyway, exit_this_thread);
+            to_flush_end = queue->pop(to_flush, should_prepare_tables_anyway, exit_this_thread);
 
             if (to_flush.empty())
             {
@@ -621,7 +621,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 template <typename LogElement>
 void SystemLog<LogElement>::add(const LogElement & element)
 {
-    queue->add(element);
+    queue->push(element);
 }
 
 template <typename LogElement>
