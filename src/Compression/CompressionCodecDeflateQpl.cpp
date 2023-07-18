@@ -398,6 +398,14 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
     return res;
 }
 
+inline void touchBufferWithZeroFilling(char * buffer, UInt32 buffer_size)
+{
+    for (char * p = buffer; p < buffer + buffer_size; p += ::getPageSize()/(sizeof(*p)))
+    {
+        *p = 0;
+    }
+}
+
 void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
 /// QPL library is using AVX-512 with some shuffle operations.
@@ -407,10 +415,7 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
 #endif
 /// Device IOTLB miss has big perf. impact for IAA accelerators.
 /// To avoid page fault, we need touch buffers related to accelerator in advance.
-    for (char * p = dest; p < dest + uncompressed_size; p += ::getPageSize()/(sizeof(*p)))
-    {
-        *p = 0;
-    }
+    touchBufferWithZeroFilling(dest, uncompressed_size);
 
     switch (getDecompressMode())
     {
