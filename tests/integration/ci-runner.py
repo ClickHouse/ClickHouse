@@ -788,6 +788,7 @@ class ClickhouseIntegrationTestsRunner:
                     and test not in counters["ERROR"]
                     and test not in counters["SKIPPED"]
                     and test not in counters["FAILED"]
+                    and test not in counters["BROKEN"]
                     and "::" in test
                 ):
                     counters["ERROR"].append(test)
