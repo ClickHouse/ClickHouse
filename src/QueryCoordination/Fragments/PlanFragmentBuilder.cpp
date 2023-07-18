@@ -75,8 +75,18 @@ bool isExtremesOrTotalsOrCubeOrRollup(QueryPlanStepPtr step)
 
 std::shared_ptr<LimitStep> createPreLimit(const DataStream & input_stream, LimitStep * limit_step, const Settings & settings)
 {
-    auto limit = std::make_shared<LimitStep>(input_stream, limit_step->getLimit(), limit_step->getOffset(), settings.exact_rows_before_limit);
-    limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+    auto limit_length = limit_step->getLimit();
+    auto limit_offset = limit_step->getOffset();
+
+    if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+        return {};
+
+    limit_length += limit_offset;
+    limit_offset = 0;
+
+//    LOG_DEBUG(&Poco::Logger::get("PlanFragmentBuilder"), "limit_length {}, limit_offset {}", limit_length, limit_offset);
+    auto limit = std::make_shared<LimitStep>(input_stream, limit_length, limit_offset, settings.exact_rows_before_limit);
+    limit->setStepDescription("preliminary LIMIT (without OFFSET)");
     return limit;
 }
 
@@ -113,7 +123,9 @@ void PlanFragmentBuilder::pushDownLimitRelated(QueryPlanStepPtr step, PlanFragme
     }
     else if (auto * limit_step = dynamic_cast<LimitStep *>(step.get()))
     {
-        fragment->addStep(createPreLimit(fragment->getCurrentDataStream(), limit_step, context->getSettingsRef()));
+        auto limit = createPreLimit(fragment->getCurrentDataStream(), limit_step, context->getSettingsRef());
+        if (limit)
+            fragment->addStep(limit);
     }
     else
         throw;

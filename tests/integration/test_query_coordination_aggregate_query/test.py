@@ -150,6 +150,16 @@ def test_aggregate_query(started_cluster):
     assert r == rr
 
     print("local table select:")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val LIMIT 11,3 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val LIMIT 11,3 ")
+    print(rr)
+
+    assert r == rr
+
+    print("local table select:")
     r = node1.query("SELECT sum(id) ids,name,val FROM local_table GROUP BY name,val HAVING ids > 999900000 ORDER BY name,val LIMIT 10 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
@@ -221,11 +231,11 @@ def test_aggregate_query(started_cluster):
 
 
     print("local table select:")
-    r = node1.query("select uniq(id) ids,name from (select sum(id) as id,name,val from local_table group by name,val order by id limit 10) where val in (select val from local_table1 where str like '%d%' or val in (select val from local_table where name like '%s%')) and val in (select val from local_table1 where str like '%a%') group by name order by ids,name limit 23 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    r = node1.query("select uniq(id) ids,name from (select sum(id) as id,name,val from local_table group by name,val order by id limit 6) where val in (select val from local_table1 where str like '%d%' or val in (select val from local_table where name like '%s%')) and val in (select val from local_table1 where str like '%a%') group by name order by ids,name limit 4 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("select uniq(id) ids,name from (select sum(id) as id,name,val from distributed_table group by name,val order by id limit 10) where val GLOBAL in (select val from distributed_table1 where str like '%d%' or val GLOBAL in (select val from distributed_table where name like '%s%')) and val GLOBAL in (select val from distributed_table1 where str like '%a%') group by name order by ids,name limit 23")
+    rr = node1.query("select uniq(id) ids,name from (select sum(id) as id,name,val from distributed_table group by name,val order by id limit 6) where val GLOBAL in (select val from distributed_table1 where str like '%d%' or val GLOBAL in (select val from distributed_table where name like '%s%')) and val GLOBAL in (select val from distributed_table1 where str like '%a%') group by name order by ids,name limit 4")
     print(rr)
 
     assert r == rr
