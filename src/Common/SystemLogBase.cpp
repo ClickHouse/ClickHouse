@@ -58,7 +58,8 @@ void SystemLogQueue<LogElement>::add(const LogElement & element)
         return;
     recursive_add_call = true;
     SCOPE_EXIT({ recursive_add_call = false; });
-     /// Memory can be allocated while resizing on queue.push_back.
+
+    /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
@@ -125,30 +126,6 @@ void SystemLogQueue<LogElement>::shutdown()
 }
 
 template <typename LogElement>
-uint64_t SystemLogQueue<LogElement>::notifyFlush(bool force)
-{
-    uint64_t this_thread_requested_offset;
-
-    {
-        std::lock_guard lock(mutex);
-        if (is_shutdown)
-            return uint64_t(-1);
-
-        this_thread_requested_offset = queue_front_index + queue.size();
-
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
-
-        flush_event.notify_all();
-    }
-
-    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
-    return this_thread_requested_offset;
-}
-
-template <typename LogElement>
 void SystemLogQueue<LogElement>::waitFlush(uint64_t this_thread_requested_offset_)
 {
     // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
@@ -199,6 +176,30 @@ void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& 
     should_prepare_tables_anyway = is_force_prepare_tables;
 
     exit_this_thread = is_shutdown;
+}
+
+template <typename LogElement>
+uint64_t SystemLogQueue<LogElement>::notifyFlush(bool force)
+{
+    uint64_t this_thread_requested_offset;
+
+    {
+        std::lock_guard lock(mutex);
+        if (is_shutdown)
+            return uint64_t(-1);
+
+        this_thread_requested_offset = queue_front_index + queue.size();
+
+        // Publish our flush request, taking care not to overwrite the requests
+        // made by other threads.
+        is_force_prepare_tables |= force;
+        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
+
+        flush_event.notify_all();
+    }
+
+    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
+    return this_thread_requested_offset;
 }
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogQueue<ELEMENT>;
