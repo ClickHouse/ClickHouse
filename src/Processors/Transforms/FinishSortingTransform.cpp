@@ -35,9 +35,25 @@ FinishSortingTransform::FinishSortingTransform(
                         "Can't finish sorting. SortDescription "
                         "of already sorted stream is not prefix of SortDescription needed to sort");
 
+    /// Remove constants from description_sorted_.
+    SortDescription description_sorted_without_constants;
+    description_sorted_without_constants.reserve(description_sorted_.size());
+    size_t num_columns = header.columns();
+    ColumnNumbers map(num_columns, num_columns);
+    for (const auto & column_description : description_sorted_)
+    {
+        auto old_pos = header.getPositionByName(column_description.column_name);
+        auto new_pos = map[old_pos];
+
+        if (new_pos < num_columns)
+        {
+            description_sorted_without_constants.push_back(column_description);
+        }
+    }
+    
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
-    for (const auto & column_sort_desc : description_sorted_)
+    for (const auto & column_sort_desc : description_sorted_without_constants)
         description_with_positions.emplace_back(column_sort_desc, header_without_constants.getPositionByName(column_sort_desc.column_name));
 }
 
