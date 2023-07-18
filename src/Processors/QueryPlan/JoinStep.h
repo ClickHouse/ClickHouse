@@ -9,7 +9,10 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-/// Join two data streams.
+class FullSortingMergeJoin;
+class SortingStep;
+
+/// Step for JOIN.
 class JoinStep : public IQueryPlanStep
 {
 public:
@@ -31,6 +34,7 @@ public:
     bool allowPushDownToRight() const;
 
     void updateInputStream(const DataStream & new_input_stream_, size_t idx);
+    std::unique_ptr<SortingStep> createSorting(JoinTableSide join_side);
 
 private:
     JoinPtr join;

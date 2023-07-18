@@ -40,10 +40,17 @@ struct FillColumnDescription
 /// Description of the sorting rule by one column.
 struct SortColumnDescription
 {
-    std::string column_name; /// The name of the column.
-    int direction;           /// 1 - ascending, -1 - descending.
-    int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
-                             /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
+    /// Ascending: 1
+    /// Descending: -1
+    using Direction = int;
+
+    /// The name of the column by which the sorting is performed.
+    std::string column_name;
+    /// The direction of sorting.
+    Direction direction;
+    /// To achieve NULLS LAST, set nulls_direction equal to direction, to achieve NULLS FIRST, set it opposite.
+    Direction nulls_direction;
+
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
     bool with_fill;
     FillColumnDescription fill_description;
@@ -52,8 +59,8 @@ struct SortColumnDescription
 
     explicit SortColumnDescription(
         std::string column_name_,
-        int direction_ = 1,
-        int nulls_direction_ = 1,
+        Direction direction_ = 1,
+        Direction nulls_direction_ = 1,
         const std::shared_ptr<Collator> & collator_ = nullptr,
         bool with_fill_ = false,
         const FillColumnDescription & fill_description_ = {})
@@ -83,6 +90,11 @@ struct SortColumnDescription
     bool operator != (const SortColumnDescription & other) const
     {
         return !(*this == other);
+    }
+
+    bool isDefaultDirection() const
+    {
+        return direction == 1 && nulls_direction == 1;
     }
 
     std::string dump() const { return fmt::format("{}:dir {}nulls {}", column_name, direction, nulls_direction); }

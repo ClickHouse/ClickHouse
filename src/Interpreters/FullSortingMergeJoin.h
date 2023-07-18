@@ -4,8 +4,8 @@
 #include <Interpreters/TableJoin.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -21,9 +21,10 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, SortingStep::Settings sort_settings_)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
+        , sort_settings(sort_settings_)
     {
         LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
@@ -114,10 +115,22 @@ public:
     /// Left and right streams have the same priority and are processed simultaneously
     JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
+    void permuteKeys(const std::vector<size_t> & permutation);
+    const Names & getKeyNames(JoinTableSide side) const;
+
+    void setPrefixSortDesctiption(const SortDescription & prefix_sort_description_, JoinTableSide side);
+    SortDescription getPrefixSortDesctiption(JoinTableSide side) const;
+
+    const SortingStep::Settings & getSortSettings() const { return sort_settings; }
+
 private:
     std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
     Block totals;
+
+    SortingStep::Settings sort_settings;
+    SortDescription left_prefix_sort_description;
+    SortDescription right_prefix_sort_description;
 };
 
 }

@@ -38,7 +38,6 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -1172,62 +1171,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     }
     else
     {
-        auto add_sorting = [&] (QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
-        {
-            SortDescription sort_description;
-            sort_description.reserve(key_names.size());
-            for (const auto & key_name : key_names)
-                sort_description.emplace_back(key_name);
-
-            SortingStep::Settings sort_settings(*query_context);
-
-            auto sorting_step = std::make_unique<SortingStep>(
-                plan.getCurrentDataStream(),
-                std::move(sort_description),
-                0 /*limit*/,
-                sort_settings,
-                settings.optimize_sorting_by_input_stream_properties);
-            sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
-            plan.addStep(std::move(sorting_step));
-        };
-
-        auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
-        auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
-        {
-            auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-                plan.getCurrentDataStream(),
-                key_names,
-                settings.max_rows_in_set_to_optimize_join,
-                crosswise_connection,
-                join_table_side);
-            creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
-
-            auto * step_raw_ptr = creating_set_step.get();
-            plan.addStep(std::move(creating_set_step));
-            return step_raw_ptr;
-        };
-
-        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped)
-        {
-            const auto & join_clause = table_join->getOnlyClause();
-
-            bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
-            {
-                auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
-                auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
-
-                if (isInnerOrLeft(join_kind))
-                    right_set->setFiltering(left_set->getSet());
-
-                if (isInnerOrRight(join_kind))
-                    left_set->setFiltering(right_set->getSet());
-            }
-
-            add_sorting(left_plan, join_clause.key_names_left, JoinTableSide::Left);
-            add_sorting(right_plan, join_clause.key_names_right, JoinTableSide::Right);
-        }
-
         auto join_pipeline_type = join_algorithm->pipelineType();
         auto join_step = std::make_unique<JoinStep>(
             left_plan.getCurrentDataStream(),

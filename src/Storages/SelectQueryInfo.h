@@ -106,11 +106,11 @@ struct FilterDAGInfo
 struct InputOrderInfo
 {
     /// Sort description for merging of already sorted streams.
-    /// Always a prefix of ORDER BY or GROUP BY description specified in query.
+    /// Always a prefix of ORDER BY or GROUP BY description or JOIN keys specified in query.
     SortDescription sort_description_for_merging;
 
     /** Size of prefix of sorting key that is already
-     * sorted before execution of sorting or aggreagation.
+     * sorted before execution of sorting, aggreagation or join.
      *
      * Contains both columns that scpecified in
      * ORDER BY or GROUP BY clause of query
@@ -121,7 +121,7 @@ struct InputOrderInfo
      * sort_description_for_merging will be equal to (c, d) and
      * used_prefix_of_sorting_key_size will be equal to 4.
      */
-    const size_t used_prefix_of_sorting_key_size;
+    size_t used_prefix_of_sorting_key_size;
 
     const int direction;
     const UInt64 limit;

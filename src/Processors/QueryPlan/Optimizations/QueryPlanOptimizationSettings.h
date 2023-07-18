@@ -30,6 +30,9 @@ struct QueryPlanOptimizationSettings
     /// If aggregation-in-order optimisation is enabled
     bool aggregation_in_order = false;
 
+    /// Optimize full_sorting_merge if it is possible
+    bool join_in_order = true;
+
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
     bool remove_redundant_sorting = true;
 
@@ -41,6 +44,9 @@ struct QueryPlanOptimizationSettings
     /// If reading from projection can be applied
     bool optimize_projection = false;
     bool force_use_projection = false;
+
+    /// Insert filtering step before sorting for full_sorting_merge JOIN with specified set size.
+    size_t max_rows_in_set_to_optimize_join = 0;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);

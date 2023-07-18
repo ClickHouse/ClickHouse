@@ -35,6 +35,7 @@
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -57,7 +58,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
 #include <QueryPipeline/SizeLimits.h>
-
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -984,7 +984,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
-            return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
+            return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block, SortingStep::Settings(*context));
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))

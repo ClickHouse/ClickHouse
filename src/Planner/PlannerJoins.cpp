@@ -36,6 +36,8 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/GraceHashJoin.h>
 
+#include <Processors/QueryPlan/SortingStep.h>
+
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
@@ -690,10 +692,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE) && FullSortingMergeJoin::isSupported(table_join))
     {
-        if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+        return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header, SortingStep::Settings(*planner_context->getQueryContext()));
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))

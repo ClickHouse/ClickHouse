@@ -34,6 +34,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
@@ -44,7 +45,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -1620,77 +1620,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
-
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
-                    {
-                        SortDescription order_descr;
-                        order_descr.reserve(key_names.size());
-                        for (const auto & key_name : key_names)
-                            order_descr.emplace_back(key_name);
-
-                        SortingStep::Settings sort_settings(*context);
-
-                        auto sorting_step = std::make_unique<SortingStep>(
-                            plan.getCurrentDataStream(),
-                            std::move(order_descr),
-                            0 /* LIMIT */, sort_settings,
-                            settings.optimize_sorting_by_input_stream_properties);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
-                        plan.addStep(std::move(sorting_step));
-                    };
-
-                    auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
-                    auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
-                    {
-                        auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-                            plan.getCurrentDataStream(), key_names, settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_pos);
-                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
-
-                        auto * step_raw_ptr = creating_set_step.get();
-                        plan.addStep(std::move(creating_set_step));
-                        return step_raw_ptr;
-                    };
-
-                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
-                    {
-                        const auto & table_join = expressions.join->getTableJoin();
-                        const auto & join_clause = table_join.getOnlyClause();
-
-                        auto join_kind = table_join.kind();
-                        bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-
-                        auto has_non_const = [](const Block & block, const auto & keys)
-                        {
-                            for (const auto & key : keys)
-                            {
-                                const auto & column = block.getByName(key).column;
-                                if (column && !isColumnConst(*column))
-                                    return true;
-                            }
-                            return false;
-                        };
-                        /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
-                        /// It doesn't hold such a guarantee for streams with const keys.
-                        /// Note: it's also doesn't work with the read-in-order optimization.
-                        /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-                        bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
-                            && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
-
-                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
-                        {
-                            auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
-                            auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
-
-                            if (isInnerOrLeft(join_kind))
-                                right_set->setFiltering(left_set->getSet());
-
-                            if (isInnerOrRight(join_kind))
-                                left_set->setFiltering(right_set->getSet());
-                        }
-
-                        add_sorting(query_plan, join_clause.key_names_left, JoinTableSide::Left);
-                        add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
-                    }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentDataStream(),
