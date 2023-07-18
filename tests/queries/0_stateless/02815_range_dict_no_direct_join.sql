@@ -30,4 +30,4 @@ RANGE(MIN discount_start_date MAX discount_end_date);
 CREATE TABLE ids (id UInt64) ENGINE = Memory;
 INSERT INTO ids SELECT * FROM numbers(10);
 
-SELECT id, amount FROM ids INNER JOIN discounts_dict ON id = advertiser_id SETTINGS join_algorithm = 'direct';
+SELECT id, amount FROM ids INNER JOIN discounts_dict ON id = advertiser_id ORDER BY id, amount SETTINGS join_algorithm = 'direct';
