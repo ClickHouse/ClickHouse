@@ -66,9 +66,9 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     {
         ASTPtr elem_database = std::get<0>(*it);
         ASTPtr elem_table = std::get<1>(*it);
-      if(it!=databases_tables.begin())
+      if (it!=databases_tables.begin())
           settings.ostr << ",";
-      if(!elem_table && elem_database)
+      if (!elem_table && elem_database)
       {
         String database_name;
         tryGetIdentifierNameInfo(elem_database,database_name);
