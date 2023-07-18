@@ -7,25 +7,31 @@
 namespace DB
 {
 
-ProxyListConfigurationResolver::ProxyListConfigurationResolver(std::vector<Poco::URI> proxies_)
-: proxies(std::move(proxies_))
+ProxyListConfigurationResolver::ProxyListConfigurationResolver(std::vector<Poco::URI> http_proxies_, std::vector<Poco::URI> https_proxies_)
+    : http_proxies(http_proxies_), https_proxies(https_proxies_), any_proxies({})
 {
 }
 
-ProxyConfiguration ProxyListConfigurationResolver::resolve(Method)
+ProxyConfiguration ProxyListConfigurationResolver::resolve(Method method)
 {
-    if (proxies.empty())
+    const auto proxy_uri = getProxyURI(method);
+
+    LOG_DEBUG(&Poco::Logger::get("ProxyListConfigurationResolver"), "Use proxy: {}", proxy_uri.toString());
+
+    return ProxyConfiguration {proxy_uri.getHost(), proxy_uri.getScheme(), proxy_uri.getPort()};
+}
+
+Poco::URI ProxyListConfigurationResolver::getProxyURI(Method method)
+{
+    switch (method)
     {
-        return {};
+        case Method::HTTP:
+            return http_proxies.get();
+        case Method::HTTPS:
+            return https_proxies.get();
+        case Method::ANY:
+            return any_proxies.get();
     }
-
-    /// Avoid atomic increment if number of proxies is 1.
-    size_t index = proxies.size() > 1 ? (access_counter++) % proxies.size() : 0;
-
-    auto & proxy = proxies[index];
-
-    return ProxyConfiguration {proxy.getHost(), proxy.getScheme(), proxy.getPort()};
-    LOG_DEBUG(&Poco::Logger::get("ProxyListConfigurationResolver"), "Use proxy: {}", proxies[index].toString());
 }
 
 }

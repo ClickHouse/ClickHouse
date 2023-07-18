@@ -12,6 +12,7 @@ static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
 ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve(Method method)
 {
     bool https = method == Method::HTTPS;
+
     if (const auto * proxy_host = std::getenv(https ? PROXY_HTTPS_ENVIRONMENT_VARIABLE : PROXY_HTTP_ENVIRONMENT_VARIABLE)) // NOLINT(concurrency-mt-unsafe)
     {
         auto uri = Poco::URI(proxy_host);

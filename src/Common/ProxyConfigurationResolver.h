@@ -7,7 +7,7 @@ namespace DB
 
 struct ProxyConfigurationResolver
 {
-    enum Method
+    enum class Method
     {
         HTTP,
         HTTPS,

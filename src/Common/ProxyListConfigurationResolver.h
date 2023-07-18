@@ -3,6 +3,7 @@
 #include <base/types.h>
 
 #include <Common/ProxyConfigurationResolver.h>
+#include <Common/AtomicRoundRobin.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -14,17 +15,19 @@ namespace DB
 class ProxyListConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    explicit ProxyListConfigurationResolver(std::vector<Poco::URI> proxies_);
+    // I guess extra copy is happening here.
+    ProxyListConfigurationResolver(std::vector<Poco::URI> http_proxies_, std::vector<Poco::URI> https_proxies_);
 
     ProxyConfiguration resolve(Method method) override;
 
     void errorReport(const ProxyConfiguration &) override {}
 
 private:
-    std::vector<Poco::URI> proxies;
+    AtomicRoundRobin<Poco::URI> http_proxies;
+    AtomicRoundRobin<Poco::URI> https_proxies;
+    AtomicRoundRobin<Poco::URI> any_proxies;
 
-    /// Access counter to get proxy using round-robin strategy.
-    std::atomic<size_t> access_counter;
+    Poco::URI getProxyURI(Method method);
 };
 
 }

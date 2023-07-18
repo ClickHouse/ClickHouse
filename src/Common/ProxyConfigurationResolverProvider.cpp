@@ -35,14 +35,14 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(endpoint, proxy_scheme, proxy_port, cache_ttl);
     }
 
-    std::shared_ptr<ProxyConfigurationResolver> getListResolver(
-        const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
+    auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
     {
         std::vector<String> keys;
         configuration.keys(config_prefix, keys);
 
-        std::vector<Poco::URI> proxies;
+        std::vector<Poco::URI> uris;
         for (const auto & key : keys)
+        {
             if (startsWith(key, "uri"))
             {
                 Poco::URI proxy_uri(configuration.getString(config_prefix + "." + key));
@@ -52,15 +52,67 @@ namespace
                 if (proxy_uri.getHost().empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host in proxy uri: {}", proxy_uri.toString());
 
-                proxies.push_back(proxy_uri);
+                uris.push_back(proxy_uri);
 
                 LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured proxy: {}", proxy_uri.toString());
             }
+        }
 
-        if (!proxies.empty())
-            return std::make_shared<ProxyListConfigurationResolver>(proxies);
+        return uris;
+    }
 
-        return nullptr;
+    std::shared_ptr<ProxyConfigurationResolver> getListResolver(
+        const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
+    {
+        std::vector<String> keys;
+        configuration.keys(config_prefix, keys);
+
+        bool new_setting_syntax = std::find_if(
+                                        keys.begin(),
+                                        keys.end(),
+                                        [](const String & key) {
+                                            return startsWith(key, "http") || startsWith(key, "https");
+                                        }) != keys.end();
+
+        std::vector<Poco::URI> http_uris;
+        std::vector<Poco::URI> https_uris;
+
+        if (new_setting_syntax)
+        {
+            for (const auto & key : keys)
+            {
+                if (startsWith(key, "http"))
+                {
+                    for (const auto & uri : extractURIList(config_prefix + "." + key, configuration))
+                    {
+                        http_uris.push_back(uri);
+                    }
+                }
+                else if (startsWith(key, "https"))
+                {
+                    for (const auto & uri : extractURIList(config_prefix + "." + key, configuration))
+                    {
+                        https_uris.push_back(uri);
+                    }
+                }
+            }
+
+            return std::make_shared<ProxyListConfigurationResolver>(http_uris, https_uris);
+        }
+        else
+        {
+            http_uris = extractURIList(config_prefix, configuration);
+
+            // Old syntax does not make a distinction between HTTP and HTTPs proxies.
+            https_uris = http_uris;
+        }
+
+        if (http_uris.empty() && https_uris.empty())
+        {
+            return nullptr;
+        }
+
+        return std::make_shared<ProxyListConfigurationResolver>(http_uris, https_uris);
     }
 }
 
