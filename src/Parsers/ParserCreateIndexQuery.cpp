@@ -17,24 +17,36 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     ParserKeyword s_type("TYPE");
     ParserKeyword s_granularity("GRANULARITY");
-
+    ParserToken open(TokenType::OpeningRoundBracket);
+    ParserToken close(TokenType::ClosingRoundBracket);
+    ParserOrderByExpressionList order_list;
     ParserDataType data_type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
     ASTPtr expr;
+    ASTPtr order;
     ASTPtr type;
     ASTPtr granularity;
 
     /// Skip name parser for SQL-standard CREATE INDEX
-    if (!expression_p.parse(pos, expr, expected))
-        return false;
+    if (expression_p.parse(pos, expr, expected))
+    {
+    }
+    else if (open.ignore(pos, expected))
+    {
+        if (!order_list.parse(pos, order, expected))
+            return false;
 
-    if (!s_type.ignore(pos, expected))
-        return false;
+        if (!close.ignore(pos, expected))
+            return false;
+    }
 
-    if (!data_type_p.parse(pos, type, expected))
-        return false;
+    if (s_type.ignore(pos, expected))
+    {
+        if (!data_type_p.parse(pos, type, expected))
+            return false;
+    }
 
     if (s_granularity.ignore(pos, expected))
     {
@@ -45,13 +57,14 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->part_of_create_index_query = true;
     index->set(index->expr, expr);
-    index->set(index->type, type);
+    if (type)
+        index->set(index->type, type);
 
     if (granularity)
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     else
     {
-        if (index->type->name == "annoy")
+        if (index->type && index->type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
