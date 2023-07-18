@@ -38,7 +38,7 @@ EncryptionMethod getEncryptionMethod(const std::string & name)
     else if (name == "AES_256_GCM_SIV")
         return AES_256_GCM_SIV;
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", name);
 }
 
 namespace
@@ -74,7 +74,7 @@ uint8_t getMethodCode(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
     }
 }
 
@@ -114,7 +114,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
     }
 }
 
@@ -139,7 +139,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
     }
 }
 
@@ -215,7 +215,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
     }
 }
 
