@@ -49,6 +49,18 @@ def start_cluster():
         cluster.shutdown()
 
 
+def get_oldest_part(node, table_name):
+    return node.query(
+        f"SELECT name FROM system.parts WHERE table = '{table_name}' and active = 1 ORDER BY modification_time LIMIT 1"
+    ).strip()
+
+
+def get_disk_for_part(node, table_name, part):
+    return node.query(
+        f"SELECT disk_name FROM system.parts WHERE table == '{table_name}' and active = 1 and name = '{part}' ORDER BY modification_time"
+    ).strip()
+
+
 def test_system_tables(start_cluster):
     expected_disks_data = [
         {
@@ -694,22 +706,21 @@ def test_jbod_overflow(start_cluster, name, engine):
 def test_background_move(start_cluster, name, engine):
     try:
         node1.query_with_retry(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy='moving_jbod_with_external'
-        """.format(
-                name=name, engine=engine
-            )
+            SETTINGS storage_policy='moving_jbod_with_external', max_replicated_merges_in_queue=0
+        """
         )
 
         node1.query(f"SYSTEM STOP MERGES {name}")
 
+        first_part = None
         for i in range(5):
             data = []  # 5MB in total
-            for i in range(5):
+            for _ in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             # small jbod size is 40MB, so lets insert 5MB batch 5 times
             node1.query_with_retry(
@@ -718,25 +729,26 @@ def test_background_move(start_cluster, name, engine):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
+            # we are doing moves in parallel so we need to fetch the name of first part before we add new parts
+            if i == 0:
+                first_part = get_oldest_part(node1, name)
+
+        assert first_part is not None
 
         retry = 20
         i = 0
-        while not sum(1 for x in used_disks if x == "jbod1") <= 2 and i < retry:
+        # multiple moves can be assigned in parallel so we can move later parts before the oldest
+        # we need to wait explicitly until the oldest part is moved
+        while get_disk_for_part(node1, name, first_part) != "external" and i < retry:
             time.sleep(0.5)
-            used_disks = get_used_disks_for_table(node1, name)
             i += 1
 
-        assert sum(1 for x in used_disks if x == "jbod1") <= 2
-
         # first (oldest) part was moved to external
-        assert used_disks[0] == "external"
+        assert get_disk_for_part(node1, name, first_part) == "external"
 
         node1.query("SYSTEM FLUSH LOGS")
         path = node1.query(
-            "SELECT path_on_disk FROM system.part_log WHERE table = '{}' AND event_type='MovePart' AND part_name = 'all_1_1_0'".format(
-                name
-            )
+            f"SELECT path_on_disk FROM system.part_log WHERE table = '{name}' AND event_type='MovePart' AND part_name = '{first_part}'"
         )
 
         # first (oldest) part was moved to external
@@ -762,36 +774,28 @@ def test_background_move(start_cluster, name, engine):
 def test_start_stop_moves(start_cluster, name, engine):
     try:
         node1.query_with_retry(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy='moving_jbod_with_external'
-        """.format(
-                name=name, engine=engine
-            )
+            SETTINGS storage_policy='moving_jbod_with_external', max_replicated_merges_in_queue=0
+        """
         )
 
-        node1.query_with_retry("INSERT INTO {} VALUES ('HELLO')".format(name))
-        node1.query_with_retry("INSERT INTO {} VALUES ('WORLD')".format(name))
+        node1.query_with_retry(f"INSERT INTO {name} VALUES ('HELLO')")
+        node1.query_with_retry(f"INSERT INTO {name} VALUES ('WORLD')")
 
         used_disks = get_used_disks_for_table(node1, name)
         assert all(d == "jbod1" for d in used_disks), "All writes shoud go to jbods"
 
-        first_part = node1.query(
-            "SELECT name FROM system.parts WHERE table = '{}' and active = 1 ORDER BY modification_time LIMIT 1".format(
-                name
-            )
-        ).strip()
+        first_part = get_oldest_part(node1, name)
 
         node1.query("SYSTEM STOP MOVES")
 
         with pytest.raises(QueryRuntimeException):
             node1.query(
-                "ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(
-                    name, first_part
-                )
+                f"ALTER TABLE {name} MOVE PART '{first_part}' TO VOLUME 'external'"
             )
 
         used_disks = get_used_disks_for_table(node1, name)
@@ -801,28 +805,23 @@ def test_start_stop_moves(start_cluster, name, engine):
 
         node1.query("SYSTEM START MOVES")
 
-        node1.query(
-            "ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(
-                name, first_part
-            )
-        )
+        node1.query(f"ALTER TABLE {name} MOVE PART '{first_part}' TO VOLUME 'external'")
 
         disk = node1.query(
-            "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
-                name, first_part
-            )
+            f"SELECT disk_name FROM system.parts WHERE table = '{name}' and name = '{first_part}' and active = 1"
         ).strip()
 
         assert disk == "external"
 
-        node1.query_with_retry("TRUNCATE TABLE {}".format(name))
+        node1.query_with_retry(f"TRUNCATE TABLE {name}")
 
-        node1.query("SYSTEM STOP MOVES {}".format(name))
-        node1.query("SYSTEM STOP MERGES {}".format(name))
+        node1.query(f"SYSTEM STOP MOVES {name}")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
+        first_part = None
         for i in range(5):
             data = []  # 5MB in total
-            for i in range(5):
+            for _ in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             # jbod size is 40MB, so lets insert 5MB batch 7 times
             node1.query_with_retry(
@@ -830,6 +829,14 @@ def test_start_stop_moves(start_cluster, name, engine):
                     name, ",".join(["(" + x + ")" for x in data])
                 )
             )
+
+            # we cannot rely simply on modification time of part because it can be changed
+            # by different background operations so we explicitly check after the first
+            # part is inserted
+            if i == 0:
+                first_part = get_oldest_part(node1, name)
+
+        assert first_part is not None
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -843,23 +850,20 @@ def test_start_stop_moves(start_cluster, name, engine):
         # first (oldest) part doesn't move anywhere
         assert used_disks[0] == "jbod1"
 
-        node1.query("SYSTEM START MOVES {}".format(name))
+        node1.query(f"SYSTEM START MOVES {name}")
 
-        # wait sometime until background backoff finishes
+        # multiple moves can be assigned in parallel so we can move later parts before the oldest
+        # we need to wait explicitly until the oldest part is moved
         retry = 60
         i = 0
-        while not sum(1 for x in used_disks if x == "jbod1") <= 2 and i < retry:
+        while get_disk_for_part(node1, name, first_part) != "external" and i < retry:
             time.sleep(1)
-            used_disks = get_used_disks_for_table(node1, name)
             i += 1
 
-        node1.query("SYSTEM START MERGES {}".format(name))
-
-        assert sum(1 for x in used_disks if x == "jbod1") <= 2
-
         # first (oldest) part moved to external
-        assert used_disks[0] == "external"
+        assert get_disk_for_part(node1, name, first_part) == "external"
 
+        node1.query(f"SYSTEM START MERGES {name}")
     finally:
         node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 

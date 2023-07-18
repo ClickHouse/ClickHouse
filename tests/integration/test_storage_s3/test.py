@@ -55,6 +55,17 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
+            user_configs=["configs/access.xml", "configs/users.xml"],
+        )
+        cluster.add_instance(
+            "dummy_without_named_collections",
+            with_minio=True,
+            main_configs=[
+                "configs/defaultS3.xml",
+                "configs/named_collections.xml",
+                "configs/schema_cache.xml",
+            ],
+            user_configs=["configs/access.xml"],
         )
         cluster.add_instance(
             "s3_max_redirects",
@@ -918,25 +929,61 @@ def test_truncate_table(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    instance = started_cluster.instances[
+        "dummy_without_named_collections"
+    ]  # type: ClickHouseInstance
     name = "test_table"
 
-    instance.query("drop table if exists {}".format(name))
-    instance.query(
-        "CREATE TABLE {} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')".format(name)
+    instance.query("CREATE USER user")
+    instance.query("GRANT CREATE ON *.* TO user")
+    instance.query("GRANT SOURCES ON *.* TO user")
+    instance.query("GRANT SELECT ON *.* TO user")
+
+    instance.query(f"drop table if exists {name}", user="user")
+    error = instance.query_and_get_error(
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
+    )
+    assert (
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON s3_conf1"
+        in error
+    )
+    error = instance.query_and_get_error(
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
+        user="user",
+    )
+    assert (
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON s3_conf1"
+        in error
     )
 
-    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
-    result = instance.query("SELECT * FROM {}".format(name))
+    instance.query("GRANT NAMED COLLECTION ON s3_conf1 TO user", user="admin")
+    instance.query(
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
+        user="user",
+    )
+
+    instance.query(f"INSERT INTO {name} SELECT number FROM numbers(10)")
+    result = instance.query(f"SELECT * FROM {name}")
     assert result == instance.query("SELECT number FROM numbers(10)")
 
     result = instance.query(
-        "SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')"
+        "SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')", user="user"
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
-    result = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
-    assert "There is no named collection `no_collection`" in result
+    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    assert (
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON no_collection"
+        in error
+    )
+    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)", user="user")
+    assert (
+        "To execute this query it's necessary to have grant NAMED COLLECTION ON no_collection"
+        in error
+    )
+    instance = started_cluster.instances["dummy"]  # has named collection access
+    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    assert "There is no named collection `no_collection`" in error
 
 
 result = ""
