@@ -45,6 +45,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <fmt/core.h>
 
+
 namespace DB
 {
 
@@ -940,7 +941,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
-    auto is_background_memory_usage_ok = [](String * disable_reason) -> bool
+    auto is_background_memory_usage_ok = [](String & disable_reason) -> bool
     {
         if (canEnqueueBackgroundTask())
             return true;
