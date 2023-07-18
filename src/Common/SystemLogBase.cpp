@@ -38,46 +38,13 @@ namespace
 
 ISystemLog::~ISystemLog() = default;
 
+
 template <typename LogElement>
-SystemLogBase<LogElement>::SystemLogBase(
+SystemLogQueue<LogElement>::SystemLogQueue(
     const String & name_,
-    std::shared_ptr<SystemLogQueue<LogElement>> queue_)
-    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(name_))
-{
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::stopFlushThread()
-{
-    {
-        std::lock_guard lock(queue->mutex);
-
-        if (!saving_thread || !saving_thread->joinable())
-            return;
-
-        if (is_shutdown)
-            return;
-
-        is_shutdown = true;
-        queue->shutdown();
-
-        /// Tell thread to shutdown.
-        queue->flush_event.notify_all();
-    }
-
-    saving_thread->join();
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::startup()
-{
-    std::lock_guard lock(queue->mutex);
-    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
-}
-
-template <typename LogElement>
-SystemLogQueue<LogElement>::SystemLogQueue(const String & name_)
+    size_t flush_interval_milliseconds_)
     : log(&Poco::Logger::get(name_))
+    , flush_interval_milliseconds(flush_interval_milliseconds_)
 {}
 
 static thread_local bool recursive_add_call = false;
@@ -150,6 +117,14 @@ void SystemLogQueue<LogElement>::add(const LogElement & element)
 }
 
 template <typename LogElement>
+void SystemLogQueue<LogElement>::shutdown()
+{ 
+    is_shutdown = true;         
+    /// Tell thread to shutdown.
+    flush_event.notify_all();
+}
+
+template <typename LogElement>
 uint64_t SystemLogQueue<LogElement>::notifyFlush(bool force)
 {
     uint64_t this_thread_requested_offset;
@@ -193,12 +168,19 @@ void SystemLogQueue<LogElement>::waitFlush(uint64_t this_thread_requested_offset
     }
 }
 
-constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
+template <typename LogElement>
+void SystemLogQueue<LogElement>::confirm(uint64_t to_flush_end)
+{
+    std::lock_guard lock(mutex);
+    flushed_up_to = to_flush_end;
+    is_force_prepare_tables = false;
+    flush_event.notify_all();
+}
 
 template <typename LogElement>
 void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread)
 {
-    std::unique_lock lock(queue->mutex);
+    std::unique_lock lock(mutex);
     flush_event.wait_for(lock,
         std::chrono::milliseconds(flush_interval_milliseconds),
         [&] ()
@@ -207,47 +189,19 @@ void SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, uint64_t& 
         }
     );
 
-    queue_front_index += queue->size();
-    to_flush_end = queue->queue_front_index;
+    queue_front_index += queue.size();
+    to_flush_end = queue_front_index;
     // Swap with existing array from previous flush, to save memory
     // allocations.
     output.resize(0);
-    queue.swap(to_flush);
+    queue.swap(output);
 
     should_prepare_tables_anyway = is_force_prepare_tables;
 
     exit_this_thread = is_shutdown;
 }
 
-template <typename LogElement>
-void SystemLogBase<LogElement>::add(const LogElement & element)
-{
-    queue->add(element);
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::flush(bool force)
-{
-    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
-    if (this_thread_requested_offset == uint64_t(-1))
-        return;
-
-    queue->waitFlush(this_thread_requested_offset);
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
-
-// template <typename LogElement>
-// uint64_t SystemLogBase<LogElement>::notifyFlushImpl(bool force)
-// {
-//     return queue->notifyFlush(force);
-// }
-
-#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
+#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogQueue<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
-
-#define INSTANTIATE_SYSTEM_LOG_BASE2(ELEMENT) template class SystemLogQueue<ELEMENT>;
-SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE2)
 
 }

@@ -47,9 +47,9 @@ public:
         const String & storage_def_,
         size_t flush_interval_milliseconds_);
 
-    static std::shared_ptr<SystemLogQueue<TextLogElement>> getLogQueue()
+    static std::shared_ptr<SystemLogQueue<TextLogElement>> getLogQueue(size_t flush_interval_milliseconds)
     {
-        static std::shared_ptr<SystemLogQueue<TextLogElement>> queue = std::make_shared<SystemLogQueue<TextLogElement>>("text_log");
+        static std::shared_ptr<SystemLogQueue<TextLogElement>> queue = std::make_shared<SystemLogQueue<TextLogElement>>("text_log", flush_interval_milliseconds);
         return queue;
     }
 };

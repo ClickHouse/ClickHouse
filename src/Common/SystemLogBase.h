@@ -68,22 +68,33 @@ public:
 
 protected:
     std::unique_ptr<ThreadFromGlobalPool> saving_thread;
+
+    bool is_shutdown = false;
 };
 
 template <typename LogElement>
 class SystemLogQueue
 {
 public:
-    SystemLogQueue(const String & name_);
+    SystemLogQueue(
+        const String & name_,
+        size_t flush_interval_milliseconds_);
 
+    // producer methods
     void add(const LogElement & element);
-    size_t size() const { return queue.size(); }
-    //void push_back(const LogElement & element) { queue.push_back(element); }
-    void shutdown() { is_shutdown = true; }
-
+    void shutdown();
     uint64_t notifyFlush(bool force);
     void waitFlush(uint64_t this_thread_requested_offset_);
-    void pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread)
+
+     // consumer methods
+    void pop(std::vector<LogElement>& output, uint64_t& to_flush_end, bool& should_prepare_tables_anyway, bool& exit_this_thread);
+    void confirm(uint64_t to_flush_end);
+
+    /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
+    std::mutex mutex;
+
+private:
+    Poco::Logger * log;
 
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
@@ -92,61 +103,19 @@ public:
     // can wait until a particular message is flushed. This is used to implement
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
-
-    /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
-    std::mutex mutex;
-    std::condition_variable flush_event;
-
-    // Requested to flush logs up to this index, exclusive
-    uint64_t requested_flush_up_to = 0;
-
     // A flag that says we must create the tables even if the queue is empty.
     bool is_force_prepare_tables = false;
-    
+    // Requested to flush logs up to this index, exclusive
+    uint64_t requested_flush_up_to = 0;
+    std::condition_variable flush_event;
     // Flushed log up to this index, exclusive
     uint64_t flushed_up_to = 0;
-private:
-    Poco::Logger * log;
-    bool is_shutdown = false;
     // Logged overflow message at this queue front index
     uint64_t logged_queue_full_at_index = -1;
-};
-
-template <typename LogElement>
-class SystemLogBase : public ISystemLog
-{
-public:
-    using Self = SystemLogBase;
-
-    SystemLogBase(
-        const String & name_,
-        std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
-
-    /** Append a record into log.
-      * Writing to table will be done asynchronously and in case of failure, record could be lost.
-      */
-    void add(const LogElement & element);
-
-    /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
-    void flush(bool force) override;
-
-    void startup() override;
-
-     void stopFlushThread() override;
-
-    /// Non-blocking flush data in the buffer to disk.
-    void notifyFlush(bool force);
-
-    String getName() const override { return LogElement::name(); }
-
-    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
-
-protected:
-    Poco::Logger * log;
-
-    std::shared_ptr<SystemLogQueue<LogElement>> queue;
 
     bool is_shutdown = false;
+
+    const size_t flush_interval_milliseconds;
 };
 
 }
