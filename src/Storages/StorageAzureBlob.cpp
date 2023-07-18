@@ -345,7 +345,17 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                     "AzureBlobStorage container does not exist '{}'",
                     configuration.container);
 
-            result->CreateIfNotExists();
+            try
+            {
+                result->CreateIfNotExists();
+            } catch (const Azure::Storage::StorageException & e)
+            {
+                if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                    && e.ReasonPhrase == "The specified container already exists."))
+                {
+                    throw;
+                }
+            }
         }
     }
     else
@@ -369,20 +379,20 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
 
         bool container_exists = containerExists(blob_service_client,configuration.container);
 
+        std::string final_url;
+        size_t pos = configuration.connection_url.find('?');
+        if (pos != std::string::npos)
+        {
+            auto url_without_sas = configuration.connection_url.substr(0, pos);
+            final_url = url_without_sas + (url_without_sas.back() == '/' ? "" : "/") + configuration.container
+                + configuration.connection_url.substr(pos);
+        }
+        else
+            final_url
+                = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
+
         if (container_exists)
         {
-            std::string final_url;
-            size_t pos = configuration.connection_url.find('?');
-            if (pos != std::string::npos)
-            {
-                auto url_without_sas = configuration.connection_url.substr(0, pos);
-                final_url = url_without_sas + (url_without_sas.back() == '/' ? "" : "/") + configuration.container
-                    + configuration.connection_url.substr(pos);
-            }
-            else
-                final_url
-                    = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
-
             if (storage_shared_key_credential)
                 result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
             else
@@ -395,7 +405,24 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                     ErrorCodes::DATABASE_ACCESS_DENIED,
                     "AzureBlobStorage container does not exist '{}'",
                     configuration.container);
-            result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
+            try
+            {
+                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
+            } catch (const Azure::Storage::StorageException & e)
+            {
+                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                      && e.ReasonPhrase == "The specified container already exists.")
+                {
+                    if (storage_shared_key_credential)
+                        result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+                    else
+                        result = std::make_unique<BlobContainerClient>(final_url);
+                }
+                else
+                {
+                    throw;
+                }
+            }
         }
     }
 
