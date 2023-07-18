@@ -690,6 +690,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
     , log(&Poco::Logger::get("DatabaseCatalog"))
+    , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
 
@@ -952,9 +953,17 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
     std::lock_guard lock(tables_marked_dropped_mutex);
     if (ignore_delay)
-        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, drop_time});
+    {
+        /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
+        /// but the queue will remain fair for multiple sync drop queries.
+        tables_marked_dropped.emplace(first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, dropped_metadata_path, drop_time});
+    }
     else
+    {
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time + drop_delay_sec});
+        if (first_async_drop_in_queue == tables_marked_dropped.end())
+            --first_async_drop_in_queue;
+    }
     tables_marked_dropped_ids.insert(table_id.uuid);
     CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
 
@@ -1005,6 +1014,8 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         /// This maybe throw exception.
         renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
 
+        if (first_async_drop_in_queue == it_dropped_table)
+            ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
         [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
         assert(removed);
@@ -1067,6 +1078,8 @@ void DatabaseCatalog::dropTableDataTask()
             table = std::move(*it);
             LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {}",
                      tables_marked_dropped.size(), tables_in_use_count, table.table_id.getNameForLogs());
+            if (first_async_drop_in_queue == it)
+                ++first_async_drop_in_queue;
             tables_marked_dropped.erase(it);
             /// Schedule the task as soon as possible, while there are suitable tables to drop.
             schedule_after_ms = 0;
@@ -1103,6 +1116,8 @@ void DatabaseCatalog::dropTableDataTask()
                 table.drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
                 std::lock_guard lock(tables_marked_dropped_mutex);
                 tables_marked_dropped.emplace_back(std::move(table));
+                if (first_async_drop_in_queue == tables_marked_dropped.end())
+                    --first_async_drop_in_queue;
                 /// If list of dropped tables was empty, schedule a task to retry deletion.
                 if (tables_marked_dropped.size() == 1)
                 {
