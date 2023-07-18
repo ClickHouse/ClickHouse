@@ -334,15 +334,21 @@ SystemLog<LogElement>::SystemLog(
     const String & storage_def_,
     size_t flush_interval_milliseconds_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
-    : Base(database_name_ + "." + table_name_, queue_)
-    , WithContext(context_)
+    : WithContext(context_)
+    , log(&Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")"))
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , create_query(serializeAST(*getCreateTableQuery()))
-    , flush_interval_milliseconds(flush_interval_milliseconds_)
+    , queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(database_name_ + "." + table_name_, flush_interval_milliseconds_))
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::startup()
+{
+    std::lock_guard lock(queue->mutex);
+    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 
 template <typename LogElement>
@@ -354,6 +360,26 @@ void SystemLog<LogElement>::shutdown()
     if (table)
         table->flushAndShutdown();
 }
+
+template <typename LogElement>
+void SystemLog<LogElement>::stopFlushThread()
+{
+    {
+        std::lock_guard lock(queue->mutex);
+
+        if (!saving_thread || !saving_thread->joinable())
+            return;
+
+        if (is_shutdown)
+            return;
+
+        is_shutdown = true;
+        queue->shutdown();
+    }
+
+    saving_thread->join();
+}
+
 
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
@@ -381,9 +407,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
 
-                    std::lock_guard lock(queue->mutex);
-                     queue->is_force_prepare_tables = false;
-                    queue->flush_event.notify_all();
+                    queue->confirm(to_flush_end);
                 }
             }
             else
@@ -455,12 +479,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    {
-        std::lock_guard lock(queue->mutex);
-        queue->flushed_up_to = to_flush_end;
-        queue->is_force_prepare_tables = false;
-        queue->flush_event.notify_all();
-    }
+    queue->confirm(to_flush_end);
 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
@@ -599,7 +618,24 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     return create;
 }
+template <typename LogElement>
+void SystemLog<LogElement>::add(const LogElement & element)
+{
+    queue->add(element);
+}
 
+template <typename LogElement>
+void SystemLog<LogElement>::flush(bool force)
+{
+    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
+    if (this_thread_requested_offset == uint64_t(-1))
+        return;
+
+    queue->waitFlush(this_thread_requested_offset);
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
 
 #define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class SystemLog<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)

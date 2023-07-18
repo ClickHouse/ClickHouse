@@ -89,11 +89,10 @@ struct SystemLogs
 
 
 template <typename LogElement>
-class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
+class SystemLog : public ISystemLog, private boost::noncopyable, WithContext
 {
 public:
     using Self = SystemLog;
-    using Base = SystemLogBase<LogElement>;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -111,22 +110,33 @@ public:
         size_t flush_interval_milliseconds_,
         std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
+    void startup() override;
+    /** Append a record into log.
+      * Writing to table will be done asynchronously and in case of failure, record could be lost.
+      */
+    void add(const LogElement & element);
+
     void shutdown() override;
 
+    String getName() const override { return LogElement::name(); }
+    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
+
+    /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
+    void flush(bool force) override;
+
+    /// Non-blocking flush data in the buffer to disk.
+    void notifyFlush(bool force);
+
+    void stopFlushThread() override;
+  
 protected:
-    //using ISystemLog::mutex;
-    using Base::is_shutdown;
-   // using ISystemLog::flush_event;
-    using Base::stopFlushThread;
-    using Base::log;
-    using Base::queue;
-   // using Base::queue_front_index;
- //   using Base::is_force_prepare_tables;
-    //using Base::requested_flush_up_to;
-  //  using Base::flushed_up_to;
- //   using Base::logged_queue_full_at_index;
+    Poco::Logger * log;
+  
+    using ISystemLog::is_shutdown;
+    using ISystemLog::saving_thread;
 
 private:
+
 
     /* Saving thread data */
     const StorageID table_id;
@@ -134,7 +144,7 @@ private:
     String create_query;
     String old_create_query;
     bool is_prepared = false;
-    const size_t flush_interval_milliseconds;
+    std::shared_ptr<SystemLogQueue<LogElement>> queue;
 
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.

@@ -34,6 +34,7 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
+constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
@@ -254,7 +255,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         String text_log_level_str = config.getString("text_log.level", "");
         int text_log_level = text_log_level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(text_log_level_str);
-        split->addTextLog(DB::TextLog::getLogQueue(), text_log_level);
+        size_t flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
+                                                        DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+        split->addTextLog(DB::TextLog::getLogQueue(flush_interval_milliseconds), text_log_level);
     }
 #endif
 }
