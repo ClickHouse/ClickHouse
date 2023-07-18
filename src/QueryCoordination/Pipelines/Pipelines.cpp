@@ -4,6 +4,8 @@
 #include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -31,12 +33,14 @@ void Pipelines::assignThreadNum(size_t max_threads_)
     {
         if (root_pipeline.pipeline.initialized() && (i == threads_weight.size() - 1))
         {
-            size_t num_threads = static_cast<size_t>((threads_weight[i] / total_weight) * max_threads);
+            size_t num_threads = std::max(size_t(1), static_cast<size_t>((threads_weight[i] / total_weight) * max_threads));
+            LOG_DEBUG(&Poco::Logger::get("Pipelines"), "Fragment {} pipeline num_threads {}", root_pipeline.fragment_id, num_threads);
             root_pipeline.pipeline.setNumThreads(num_threads);
         }
         else
         {
-            size_t num_threads = static_cast<size_t>((threads_weight[i] / total_weight) * max_threads);
+            size_t num_threads = std::max(size_t(1), static_cast<size_t>((threads_weight[i] / total_weight) * max_threads));
+            LOG_DEBUG(&Poco::Logger::get("Pipelines"), "Fragment {} pipeline num_threads {}", sources_pipelines[i].fragment_id, num_threads);
             sources_pipelines[i].pipeline.setNumThreads(num_threads);
         }
     }

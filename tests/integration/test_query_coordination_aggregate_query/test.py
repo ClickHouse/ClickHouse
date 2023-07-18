@@ -231,7 +231,7 @@ def test_aggregate_query(started_cluster):
 
 
     print("local table select:")
-    r = node1.query("select uniq(id) ids,name from (select sum(id) as id,name,val from local_table group by name,val order by id limit 6) where val in (select val from local_table1 where str like '%d%' or val in (select val from local_table where name like '%s%')) and val in (select val from local_table1 where str like '%a%') group by name order by ids,name limit 4 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    r = node1.query("select uniq(id) ids,name from (select sum(id) as id,name,val from local_table group by name,val order by id limit 6) where val in (select val from local_table1 where str like '%d%' or val in (select val from local_table where name like '%s%')) and val in (select val from local_table1 where str like '%a%') group by name order by ids,name limit 4 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
@@ -242,7 +242,7 @@ def test_aggregate_query(started_cluster):
 
 
     print("local table select:")
-    r = node1.query("select uniq(id) ids,name from (select local_table.id as id,local_table.val as val,local_table.name as name from local_table join local_table1 on local_table.name=local_table1.str order by val,name limit 100000) where val in (select val from local_table1 where str not like '%d%' or val in (select val from local_table where name not like '%s%')) or val in (select val from local_table1 where str not like '%a%') group by name order by ids,name limit 21 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0, max_threads = 4")
+    r = node1.query("select uniq(id) ids,name from (select local_table.id as id,local_table.val as val,local_table.name as name from local_table join local_table1 on local_table.name=local_table1.str order by val,name limit 100000) where val in (select val from local_table1 where str not like '%d%' or val in (select val from local_table where name not like '%s%')) or val in (select val from local_table1 where str not like '%a%') group by name order by ids,name limit 21 settings use_index_for_in_with_subqueries=0,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
