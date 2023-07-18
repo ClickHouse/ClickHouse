@@ -210,7 +210,13 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
-                return;
+
+                /// Empty subquery result is equivalent to NULL
+                block = interpreter->getSampleBlock().cloneEmpty();
+                String column_name = block.columns() > 0 ?  block.safeGetByPosition(0).name :  "dummy";
+                block = Block({
+                    ColumnWithTypeAndName(type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), type, column_name)
+                });
             }
 
             if (block.rows() != 1)
