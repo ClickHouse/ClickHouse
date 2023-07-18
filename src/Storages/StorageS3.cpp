@@ -418,7 +418,7 @@ public:
         std::function<void(FileProgress)> file_progress_callback_)
         : WithContext(context_)
         , keys(keys_)
-        , client(S3::Client::create(client_))
+        , client(client_.clone())
         , version_id(version_id_)
         , bucket(bucket_)
         , request_settings(request_settings_)
