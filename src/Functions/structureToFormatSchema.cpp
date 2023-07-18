@@ -105,15 +105,15 @@ private:
 
 REGISTER_FUNCTION(StructureToCapnProtoSchema)
 {
-    factory.registerFunction<FunctionStructureToFormatSchema<StructureToCapnProtoSchema>>(
+    factory.registerFunction<FunctionStructureToFormatSchema<StructureToCapnProtoSchema>>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 
 )",
-            Documentation::Examples{
-                {"random", "SELECT structureToCapnProtoSchema()"},
+            .examples{
+                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName')", ""},
             },
-            Documentation::Categories{"Other"}
+            .categories{"Other"}
         },
         FunctionFactory::CaseSensitive);
 }
@@ -121,15 +121,15 @@ REGISTER_FUNCTION(StructureToCapnProtoSchema)
 
 REGISTER_FUNCTION(StructureToProtobufSchema)
 {
-    factory.registerFunction<FunctionStructureToFormatSchema<StructureToProtobufSchema>>(
+    factory.registerFunction<FunctionStructureToFormatSchema<StructureToProtobufSchema>>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 
 )",
-            Documentation::Examples{
-                {"random", "SELECT structureToCapnProtoSchema()"},
+            .examples{
+                {"random", "SELECT structureToCapnProtoSchema()", ""},
             },
-            Documentation::Categories{"Other"}
+            .categories{"Other"}
         },
         FunctionFactory::CaseSensitive);
 }

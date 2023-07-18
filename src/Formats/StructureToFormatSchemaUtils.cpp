@@ -1,4 +1,5 @@
 #include <Formats/StructureToFormatSchemaUtils.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
