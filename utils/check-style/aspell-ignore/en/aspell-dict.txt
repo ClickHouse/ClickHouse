@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWST
 Actian
 ActionsMenu
 ActiveRecord
@@ -469,6 +470,7 @@ MSan
 MVCC
 MacBook
 MacOS
+MapState
 MarkCacheBytes
 MarkCacheFiles
 MarksLoaderThreads
@@ -772,6 +774,7 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
+SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
@@ -988,6 +991,7 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1032,6 +1036,7 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1578,6 +1583,8 @@ indexOf
 infi
 initialQueryID
 initializeAggregation
+initcap
+initcapUTF
 injective
 innogames
 inodes
@@ -1605,6 +1612,7 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
+jaccard
 javaHash
 javaHashUTF
 jbod
@@ -1936,6 +1944,7 @@ prefertch
 prefetch
 prefetchsize
 preloaded
+prem
 prepend
 prepended
 prepends
@@ -2134,6 +2143,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+serverTimeZone
+serverTimezone
 serverUUID
 sessionCacheSize
 sessionIdContext
@@ -2165,6 +2176,7 @@ snowflakeToDateTime
 socketcache
 soundex
 sparkbar
+sparkBar
 sparsehash
 speedscope
 splitByChar
@@ -2258,6 +2270,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2452,6 +2465,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime

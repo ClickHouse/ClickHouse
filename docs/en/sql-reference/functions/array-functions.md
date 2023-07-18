@@ -102,6 +102,8 @@ The function also works for strings.
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
+Alias: `OCTET_LENGTH`
+
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
 
 ## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
@@ -142,6 +144,7 @@ range([start, ] end [, step])
 
 - All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
 - An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+- Returns Null if any argument has Nullable(Nothing) type. An exception is thrown if any argument has Null value (Nullable(T) type).
 
 **Examples**
 
@@ -230,12 +233,14 @@ hasAll(set, subset)
 **Arguments**
 
 - `set` – Array of any type with a set of elements.
-- `subset` – Array of any type with elements that should be tested to be a subset of `set`.
+- `subset` – Array of any type that shares a common supertype with `set` containing elements that should be tested to be a subset of `set`.
 
 **Return values**
 
 - `1`, if `set` contains all of the elements from `subset`.
 - `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share a common supertype.
 
 **Peculiar properties**
 
@@ -253,7 +258,7 @@ hasAll(set, subset)
 
 `SELECT hasAll(['a', 'b'], ['a'])` returns 1.
 
-`SELECT hasAll([1], ['a'])` returns 0.
+`SELECT hasAll([1], ['a'])` raises a `NO_COMMON_TYPE` exception.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
@@ -268,12 +273,14 @@ hasAny(array1, array2)
 **Arguments**
 
 - `array1` – Array of any type with a set of elements.
-- `array2` – Array of any type with a set of elements.
+- `array2` – Array of any type that shares a common supertype with `array1`.
 
 **Return values**
 
 - `1`, if `array1` and `array2` have one similar element at least.
 - `0`, otherwise.
+
+Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
 
 **Peculiar properties**
 
@@ -288,7 +295,7 @@ hasAny(array1, array2)
 
 `SELECT hasAny([-128, 1., 512], [1])` returns `1`.
 
-`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` raises a `NO_COMMON_TYPE` exception.
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
 
@@ -318,6 +325,8 @@ For Example:
 - `1`, if `array1` contains `array2`.
 - `0`, otherwise.
 
+Raises an exception `NO_COMMON_TYPE` if the array1 and array2 elements do not share a common supertype.
+
 **Peculiar properties**
 
 - The function will return `1` if `array2` is empty.
@@ -339,6 +348,9 @@ For Example:
 `SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
 
 `SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
+i
+`SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])` raises a `NO_COMMON_TYPE` exception.
+
 
 ## indexOf(arr, x)
 
@@ -869,7 +881,7 @@ A special function. See the section [“ArrayJoin function”](../../sql-referen
 
 ## arrayDifference
 
-Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
+Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
 **Syntax**
 
@@ -985,6 +997,24 @@ SELECT
 ┌─no_intersect─┬─intersect─┐
 │ []           │ [1]       │
 └──────────────┴───────────┘
+```
+
+## arrayJaccardIndex
+
+Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.
+
+**Example**
+
+Query:
+``` sql
+SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
+```
+
+Result:
+``` text
+┌─res────────────────┐
+│ 0.3333333333333333 │
+└────────────────────┘
 ```
 
 ## arrayReduce
