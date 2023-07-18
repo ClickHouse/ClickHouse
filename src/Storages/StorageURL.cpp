@@ -169,7 +169,9 @@ namespace
 
     auto getProxyConfiguration(const std::string & http_method)
     {
-        auto proxy_config = ProxyConfigurationResolverProvider::get()->resolve(http_method == "https");
+        auto method = http_method == "https" ? ProxyConfigurationResolver::Method::HTTPS
+                                             : ProxyConfigurationResolver::Method::HTTP;
+        auto proxy_config = ProxyConfigurationResolverProvider::get()->resolve(method);
 
         return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }

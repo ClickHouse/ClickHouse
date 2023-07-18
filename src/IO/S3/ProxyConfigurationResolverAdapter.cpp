@@ -7,7 +7,10 @@ namespace DB::S3
 
 ClientConfigurationPerRequest ProxyConfigurationResolverAdapter::getConfiguration(const Aws::Http::HttpRequest & request)
 {
-    auto proxy_configuration = resolver->resolve(request.GetUri().GetScheme() == Aws::Http::Scheme::HTTPS);
+    bool is_https = request.GetUri().GetScheme() == Aws::Http::Scheme::HTTPS;
+    auto method = is_https ? ProxyConfigurationResolver::Method::HTTPS : ProxyConfigurationResolver::Method::HTTP;
+
+    auto proxy_configuration = resolver->resolve(method);
 
     return ClientConfigurationPerRequest {
         Aws::Http::SchemeMapper::FromString(proxy_configuration.scheme.c_str()),

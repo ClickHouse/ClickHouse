@@ -12,7 +12,7 @@ ProxyListConfigurationResolver::ProxyListConfigurationResolver(std::vector<Poco:
 {
 }
 
-ProxyConfiguration ProxyListConfigurationResolver::resolve(bool)
+ProxyConfiguration ProxyListConfigurationResolver::resolve(Method)
 {
     if (proxies.empty())
     {

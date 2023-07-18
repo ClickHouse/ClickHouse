@@ -11,7 +11,7 @@ namespace DB
 class EnvironmentProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    ProxyConfiguration resolve(bool https) override;
+    ProxyConfiguration resolve(Method method) override;
     void errorReport(const ProxyConfiguration &) override {}
 };
 

@@ -7,8 +7,15 @@ namespace DB
 
 struct ProxyConfigurationResolver
 {
+    enum Method
+    {
+        HTTP,
+        HTTPS,
+        ANY
+    };
+
     virtual ~ProxyConfigurationResolver() = default;
-    virtual ProxyConfiguration resolve(bool https) = 0;
+    virtual ProxyConfiguration resolve(Method method) = 0;
     virtual void errorReport(const ProxyConfiguration & config) = 0;
 };
 

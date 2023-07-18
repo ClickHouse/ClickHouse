@@ -23,7 +23,7 @@ public:
         unsigned cache_ttl_
     );
 
-    ProxyConfiguration resolve(bool https) override;
+    ProxyConfiguration resolve(Method method) override;
 
     void errorReport(const ProxyConfiguration & config) override;
 
