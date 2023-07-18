@@ -92,14 +92,6 @@ public:
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
-#if USE_SSL
-    /// Encrypt text value
-    std::string encryptValue(const std::string & codec_name, const std::string & value) const;
-
-    /// Decrypt value
-    std::string decryptValue(const std::string & codec_name, const std::string & value) const;
-#endif
-
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir);
@@ -113,6 +105,14 @@ public:
 
     /// Is the file named as result of config preprocessing, not as original files.
     static bool isPreprocessedFile(const std::string & config_path);
+
+#if USE_SSL
+    /// Encrypt text value
+    static std::string encryptValue(const std::string & codec_name, const std::string & value);
+
+    /// Decrypt value
+    static std::string decryptValue(const std::string & codec_name, const std::string & value);
+#endif
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
 

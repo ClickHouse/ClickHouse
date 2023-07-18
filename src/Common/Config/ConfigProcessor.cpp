@@ -184,7 +184,7 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 
 #if USE_SSL
 
-std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value) const
+std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
 {
     EncryptionMethod method = getEncryptionMethod(codec_name);
     CompressionCodecEncrypted codec(method);
@@ -198,7 +198,7 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     return hex_value;
 }
 
-std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value) const
+std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
 {
     EncryptionMethod method = getEncryptionMethod(codec_name);
     CompressionCodecEncrypted codec(method);
