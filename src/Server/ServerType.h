@@ -30,7 +30,7 @@ public:
     };
 
     ServerType() = default;
-    ServerType(Type type_, const std::string & custom_name_ = "") : type(type_), custom_name(custom_name_) {}
+    explicit ServerType(Type type_, const std::string & custom_name_ = "") : type(type_), custom_name(custom_name_) {}
 
     static const char * serverTypeToString(Type type);
 
