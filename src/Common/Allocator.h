@@ -305,7 +305,7 @@ private:
     }
 #endif
 
-    static void ALWAYS_INLINE considerEnablingHugePages(void * buf, size_t new_size)
+    static void ALWAYS_INLINE considerEnablingHugePages([[maybe_unused]] void * buf, [[maybe_unused]] size_t new_size)
     {
         /// MADV_HUGEPAGE is a non-standard flag according to https://manpages.ubuntu.com/manpages/focal/en/man2/madvise.2.html.
 #if defined(MADV_HUGEPAGE)
