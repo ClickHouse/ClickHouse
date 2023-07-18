@@ -42,6 +42,7 @@
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
+#    include <Server/CertificateReloader.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
@@ -451,10 +452,18 @@ try
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+
+    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+
+    std::vector<std::string> extra_paths = {include_from_path};
+    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
+    if (!key_path.empty()) extra_paths.emplace_back(key_path);
+
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        include_from_path,
+        extra_paths,
         config().getString("path", ""),
         std::move(unused_cache),
         unused_event,
@@ -462,6 +471,10 @@ try
         {
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
+
+#if USE_SSL
+            CertificateReloader::instance().tryLoad(*config);
+#endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -485,7 +498,7 @@ try
             LOG_INFO(log, "Closed all listening sockets.");
 
         if (current_connections > 0)
-            current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
+            current_connections = waitServersToFinish(*servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
 
         if (current_connections)
             LOG_INFO(log, "Closed connections to Keeper. But {} remain. Probably some users cannot finish their connections after context shutdown.", current_connections);
