@@ -126,6 +126,7 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }
