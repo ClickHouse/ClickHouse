@@ -145,14 +145,14 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         const auto create_writer = [&](const auto & key)
         {
-            return WriteBufferFromS3
-            {
+            return WriteBufferFromS3(
+                s3_client->client,
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 request_settings_1
-            };
+            );
         };
 
         LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_file_info.path);

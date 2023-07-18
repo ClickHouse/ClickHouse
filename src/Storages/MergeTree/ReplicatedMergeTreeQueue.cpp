@@ -218,6 +218,9 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
     for (const auto & broken_part_name : broken_parts)
         storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
+    Strings parts_in_zk = storage.getZooKeeper()->getChildren(replica_path + "/parts");
+    storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, {});
+
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
     /// so actually no race conditions are possible
