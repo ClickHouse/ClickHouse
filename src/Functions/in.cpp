@@ -3,12 +3,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+//#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnLowCardinality.h>
+//#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Set.h>
 
 
@@ -74,7 +74,9 @@ public:
     /// For now, Set may be const or non const column, depending on how it was created.
     /// But we will return UInt8 for any case.
     /// TODO: we could use special implementation later.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+//    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+//    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -144,7 +146,7 @@ public:
             columns_of_key_columns.emplace_back(left_arg);
 
         /// Replace single LowCardinality column to it's dictionary if possible.
-        ColumnPtr lc_indexes = nullptr;
+//        ColumnPtr lc_indexes = nullptr;
         bool is_const = false;
         if (columns_of_key_columns.size() == 1)
         {
@@ -156,18 +158,18 @@ public:
                 is_const = true;
             }
 
-            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(col))
-            {
-                lc_indexes = lc->getIndexesPtr();
-                arg.column = lc->getDictionary().getNestedColumn();
-                arg.type = removeLowCardinality(arg.type);
-            }
+//            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(col))
+//            {
+//                lc_indexes = lc->getIndexesPtr();
+//                arg.column = lc->getDictionary().getNestedColumn();
+//                arg.type = removeLowCardinality(arg.type);
+//            }
         }
 
         auto res = set->execute(columns_of_key_columns, negative);
 
-        if (lc_indexes)
-            res = res->index(*lc_indexes, 0);
+//        if (lc_indexes)
+//            res = res->index(*lc_indexes, 0);
 
         if (is_const)
             res = ColumnUInt8::create(input_rows_count, res->getUInt(0));
