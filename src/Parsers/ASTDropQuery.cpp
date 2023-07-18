@@ -71,16 +71,16 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
       if (!elem_table && elem_database)
       {
         String database_name;
-        tryGetIdentifierNameInfo(elem_database,database_name);
+        tryGetIdentifierNameInto(elem_database,database_name);
         settings.ostr << backQuoteIfNeed(database_name);
       }
       else
       {
         String database_name;
-        tryGetIdentifierNameInfo(elem_database,database_name);
+        tryGetIdentifierNameInto(elem_database,database_name);
         database_name = (elem_database ? backQuoteIfNeed(database_name)+".":"");
         String table_name;
-        tryGetIdentifierNameInfo(elem_table,table_name);
+        tryGetIdentifierNameInto(elem_table,table_name);
         settings.ostr << database_name << backQuoteIfNeed(table_name);
       }
     }
