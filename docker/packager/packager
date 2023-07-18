@@ -138,6 +138,7 @@ def parse_env_variables(
     ARM_V80COMPAT_SUFFIX = "-aarch64-v80compat"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
+    RISCV_SUFFIX = "-riscv64"
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
 
     result = []
@@ -150,6 +151,7 @@ def parse_env_variables(
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
     is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
+    is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
 
@@ -205,6 +207,11 @@ def parse_env_variables(
         cc = compiler[: -len(PPC_SUFFIX)]
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
+        )
+    elif is_cross_riscv:
+        cc = compiler[: -len(RISCV_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake"
         )
     elif is_amd64_compat:
         cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
@@ -370,6 +377,7 @@ def parse_args() -> argparse.Namespace:
             "clang-16-aarch64",
             "clang-16-aarch64-v80compat",
             "clang-16-ppc64le",
+            "clang-16-riscv64",
             "clang-16-amd64-compat",
             "clang-16-freebsd",
         ),

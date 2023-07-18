@@ -669,7 +669,7 @@ Block MergeJoin::modifyRightBlock(const Block & src_block) const
     return block;
 }
 
-bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
+bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
 {
     Block block = modifyRightBlock(src_block);
 

@@ -349,7 +349,7 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = "<tr>"
-            has_error = test_result.status in ("FAIL", "FLAKY", "NOT_FAILED")
+            has_error = test_result.status in ("FAIL", "NOT_FAILED")
             if has_error and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_result.name + "</td>"

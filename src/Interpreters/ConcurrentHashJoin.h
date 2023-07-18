@@ -16,13 +16,13 @@ namespace DB
 {
 
 /**
- * Can run addJoinedBlock() parallelly to speedup the join process. On test, it almose linear speedup by
+ * Can run addBlockToJoin() parallelly to speedup the join process. On test, it almose linear speedup by
  * the degree of parallelism.
  *
  * The default HashJoin is not thread safe for inserting right table's rows and run it in a single thread. When
  * the right table is large, the join process is too slow.
  *
- * We create multiple HashJoin instances here. In addJoinedBlock(), one input block is split into multiple blocks
+ * We create multiple HashJoin instances here. In addBlockToJoin(), one input block is split into multiple blocks
  * corresponding to the HashJoin instances by hashing every row on the join keys. And make a guarantee that every HashJoin
  * instance is written by only one thread.
  *
@@ -37,7 +37,7 @@ public:
     ~ConcurrentHashJoin() override = default;
 
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
     void setTotals(const Block & block) override;
