@@ -18,7 +18,7 @@ enum EncryptionMethod
     MAX_ENCRYPTION_METHOD
 };
 
-/// Get method for string name. Throw exception for wrong name
+/// Get method for string name. Throw exception for wrong name.
 EncryptionMethod getEncryptionMethod(const std::string & name);
 
 /** This codec encrypts and decrypts blocks with AES-128 in
