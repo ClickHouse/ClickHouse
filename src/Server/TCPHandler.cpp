@@ -888,16 +888,19 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
 
             auto completed_pipelines_executor = executor->getCompletedPipelinesExecutor();
 
-            auto callback = [this]()
+            if (completed_pipelines_executor)
             {
-                std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+                auto callback = [this]()
+                {
+                    std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
-                if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
-                    return true;
+                    if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                        return true;
 
-                return false;
-            };
-            completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+                    return false;
+                };
+                completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+            }
 
             auto remote_pipelines_manager = executor->getRemotePipelinesManager();
             remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);

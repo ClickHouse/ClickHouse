@@ -4,8 +4,9 @@
 namespace DB
 {
 
-void Pipelines::assignThreadNum()
+void Pipelines::assignThreadNum(size_t max_threads_)
 {
+    max_threads = max_threads_;
     std::vector<Float64> threads_weight;
     Float64 total_weight = 0;
 

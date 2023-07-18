@@ -16,7 +16,7 @@ Pipelines PipelinesBuilder::build()
     {
         auto fragment = distributed_fragment.getFragment();
         const auto & data_to = distributed_fragment.getDataTo();
-        for (auto & to : data_to)
+        for (const auto & to : data_to)
         {
             LOG_DEBUG(log, "Fragment {} will send data to {}", fragment->getFragmentID(), to);
         }
@@ -102,7 +102,7 @@ Pipelines PipelinesBuilder::build()
         }
     }
 
-    pipelines.assignThreadNum();
+    pipelines.assignThreadNum(settings.max_threads);
 
     return pipelines;
 }

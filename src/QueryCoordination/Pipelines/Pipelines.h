@@ -15,7 +15,7 @@ public:
         QueryPipeline pipeline;
     };
 
-    void assignThreadNum();
+    void assignThreadNum(size_t max_threads_);
 
     QueryPipeline detachRootPipeline()
     {
