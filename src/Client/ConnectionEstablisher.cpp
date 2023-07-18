@@ -4,6 +4,8 @@
 
 namespace ProfileEvents
 {
+    extern const Event DistributedConnectionTries;
+    extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
 }
@@ -35,6 +37,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     SCOPE_EXIT(is_finished = true);
     try
     {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
         result.entry = pool->get(*timeouts, settings, /* force_connected = */ false);
         AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
 
@@ -45,6 +48,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected(*timeouts);
+            ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;
             return;
@@ -65,6 +69,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
 
         UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
@@ -116,7 +121,7 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     epoll.add(timeout_descriptor.getDescriptor());
 }
 
-void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, ResumeCallback)
+void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, SuspendCallback)
 {
     connection_establisher_async.reset();
     connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);

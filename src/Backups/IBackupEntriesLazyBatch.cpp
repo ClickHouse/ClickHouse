@@ -17,23 +17,16 @@ class IBackupEntriesLazyBatch::BackupEntryFromBatch : public IBackupEntry
 public:
     BackupEntryFromBatch(const std::shared_ptr<IBackupEntriesLazyBatch> & batch_, size_t index_) : batch(batch_), index(index_) { }
 
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getReadBuffer(read_settings); }
     UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
-    std::optional<UInt128> getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return getInternalBackupEntry()->getReadBuffer(); }
-    String getFilePath() const override
-    {
-        return getInternalBackupEntry()->getFilePath();
-    }
-
-    DiskPtr tryGetDiskIfExists() const override
-    {
-        return getInternalBackupEntry()->tryGetDiskIfExists();
-    }
-
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return getInternalBackupEntry()->getDataSourceDescription();
-    }
+    UInt128 getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
+    std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override { return getInternalBackupEntry()->getPartialChecksum(prefix_length); }
+    DataSourceDescription getDataSourceDescription() const override { return getInternalBackupEntry()->getDataSourceDescription(); }
+    bool isEncryptedByDisk() const override { return getInternalBackupEntry()->isEncryptedByDisk(); }
+    bool isFromFile() const override { return getInternalBackupEntry()->isFromFile(); }
+    bool isFromImmutableFile() const override { return getInternalBackupEntry()->isFromImmutableFile(); }
+    String getFilePath() const override { return getInternalBackupEntry()->getFilePath(); }
+    DiskPtr getDisk() const override { return getInternalBackupEntry()->getDisk(); }
 
 private:
     BackupEntryPtr getInternalBackupEntry() const

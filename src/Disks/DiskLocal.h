@@ -19,23 +19,25 @@ public:
     friend class DiskLocalCheckThread;
     friend class DiskLocalReservation;
 
-    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_);
+    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
+              const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
     DiskLocal(
         const String & name_,
         const String & path_,
         UInt64 keep_free_space_bytes_,
         ContextPtr context,
-        UInt64 local_disk_check_period_ms);
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix);
+
+    DiskLocal(const String & name_, const String & path_);
 
     const String & getPath() const override { return disk_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    UInt64 getTotalSpace() const override;
-
-    UInt64 getAvailableSpace() const override;
-
-    UInt64 getUnreservedSpace() const override;
+    std::optional<UInt64> getTotalSpace() const override;
+    std::optional<UInt64> getAvailableSpace() const override;
+    std::optional<UInt64> getUnreservedSpace() const override;
 
     UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; }
 
@@ -63,8 +65,6 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
-
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
@@ -80,6 +80,9 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings) override;
+
+    Strings getBlobPath(const String & path) const override;
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -99,6 +102,7 @@ public:
     void truncateFile(const String & path, size_t size) override;
 
     DataSourceDescription getDataSourceDescription() const override;
+    static DataSourceDescription getLocalDataSourceDescription(const String & path);
 
     bool isRemote() const override { return false; }
 

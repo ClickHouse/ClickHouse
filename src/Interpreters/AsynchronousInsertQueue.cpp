@@ -125,7 +125,7 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
         // Entries data must be destroyed in context of user who runs async insert.
         // Each entry in the list may correspond to a different user,
         // so we need to switch current thread's MemoryTracker.
-        UserMemoryTrackerSwitcher switcher(user_memory_tracker);
+        MemoryTrackerSwitcher switcher(user_memory_tracker);
         bytes = "";
     }
 
@@ -190,9 +190,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
+    pool.scheduleOrThrowOnError([key, global_context, my_data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
     {
-        processData(key, std::move(*data), std::move(global_context));
+        processData(key, std::move(*my_data), std::move(global_context));
     });
 }
 

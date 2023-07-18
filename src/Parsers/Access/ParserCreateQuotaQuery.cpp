@@ -1,20 +1,21 @@
-#include <Parsers/Access/ParserCreateQuotaQuery.h>
-#include <Parsers/Access/ASTCreateQuotaQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/Access/ParserRolesOrUsersSet.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ParserCreateQuotaQuery.h>
+#include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseIntervalKind.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Parsers/parseIntervalKind.h>
 #include <base/range.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -82,7 +83,7 @@ namespace
         {
             for (auto qt : collections::range(QuotaType::MAX))
             {
-                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword.c_str()}.ignore(pos, expected))
+                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword}.ignore(pos, expected))
                 {
                     quota_type = qt;
                     return true;
@@ -107,22 +108,29 @@ namespace
         });
     }
 
+    template <typename T, typename = std::enable_if_t<std::is_same_v<T, double> || std::is_same_v<T, QuotaValue>>>
+    T fieldToNumber(const Field & f)
+    {
+        if (f.getType() == Field::Types::String)
+            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.get<std::string>()));
+        else
+            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+    }
 
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
     {
         ASTPtr ast;
-        if (!ParserNumber{}.parse(pos, ast, expected))
+        if (!ParserNumber{}.parse(pos, ast, expected) && !ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
 
         const Field & max_field = ast->as<ASTLiteral &>().value;
         const auto & type_info = QuotaTypeInfo::get(quota_type);
         if (type_info.output_denominator == 1)
-            max_value = applyVisitor(FieldVisitorConvertToNumber<QuotaValue>(), max_field);
+            max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = static_cast<QuotaValue>(applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * type_info.output_denominator);
         return true;
     }
-
 
     bool parseLimits(IParserBase::Pos & pos, Expected & expected, std::vector<std::pair<QuotaType, QuotaValue>> & limits)
     {
