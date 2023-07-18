@@ -186,6 +186,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int NOT_INITIALIZED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int TABLE_IS_DROPPED;
 }
 
 namespace ActionLocks
@@ -3918,7 +3919,10 @@ void StorageReplicatedMergeTree::startBeingLeader()
 void StorageReplicatedMergeTree::stopBeingLeader()
 {
     if (!is_leader)
+    {
+        LOG_TRACE(log, "stopBeingLeader called but we are not a leader already");
         return;
+    }
 
     LOG_INFO(log, "Stopped being leader");
     is_leader = false;
@@ -4774,6 +4778,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
 
 void StorageReplicatedMergeTree::startup()
 {
+    LOG_TRACE(log, "Starting up table");
     startOutdatedDataPartsLoadingTask();
     if (attach_thread)
     {
@@ -4795,6 +4800,8 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
             since_metadata_err_incr_readonly_metric = true;
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
         }
+
+        LOG_TRACE(log, "No connection to ZooKeeper or no metadata in ZooKeeper, will not startup");
         return;
     }
 
@@ -4829,6 +4836,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 
         if (from_attach_thread)
         {
+            LOG_TRACE(log, "Trying to startup table from right now");
             /// Try activating replica in current thread.
             restarting_thread.run();
         }
@@ -4838,8 +4846,12 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
             /// NOTE It does not mean that replication is actually started after receiving this event.
             /// It only means that an attempt to startup replication was made.
             /// Table may be still in readonly mode if this attempt failed for any reason.
-            startup_event.wait();
+            while (!startup_event.tryWait(10 * 1000))
+                LOG_TRACE(log, "Waiting for RestartingThread to startup table");
         }
+
+        if (shutdown_prepared_called.load() || shutdown_called.load())
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot startup table because it is dropped");
 
         /// And this is just a callback
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
@@ -4898,6 +4910,8 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         attach_thread->shutdown();
 
     restarting_thread.shutdown(/* part_of_full_shutdown */true);
+    /// Explicetly set the event, because the restarting thread will not set it again
+    startup_event.set();
     shutdown_deadline.emplace(std::chrono::system_clock::now() + std::chrono::milliseconds(settings_ptr->wait_for_unique_parts_send_before_shutdown_ms.totalMilliseconds()));
 }
 
