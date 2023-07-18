@@ -74,25 +74,20 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         }
 
         query->databases_tables.emplace_back(std::make_tuple(database,table));
-        while(s_comma.ignore(pos, expected)){
-
+        while(s_comma.ignore(pos, expected))
+        {
             ASTPtr tmp_database;
             ASTPtr tmp_table;
-
-
             if (!name_p.parse(pos, tmp_table, expected))
                 return false;
-
-            if(s_dot.ignore(pos,expected)){
-
+            if(s_dot.ignore(pos,expected))
+            {
                 tmp_database = tmp_table;
                 if (!name_p.parse(pos, tmp_table, expected))
                     return false;
             }
             query->databases_tables.emplace_back(std::make_tuple(tmp_database,tmp_table));
-
         }
-
     }
 
     /// common for tables / dictionaries / databases
