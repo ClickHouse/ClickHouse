@@ -191,8 +191,8 @@ public:
     struct FormatSettings
     {
         WriteBuffer & ostr;
-        bool hilite = false;
         bool one_line;
+        bool hilite = false;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
@@ -207,13 +207,13 @@ public:
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_)
-            , hilite(other.hilite)
             , one_line(other.one_line)
+            , hilite(other.hilite)
             , always_quote_identifiers(other.always_quote_identifiers)
             , identifier_quoting_style(other.identifier_quoting_style)
             , show_secrets(other.show_secrets)
+            , nl_or_ws(other.nl_or_ws)
         {
-            nl_or_ws = one_line ? ' ' : '\n';
         }
 
         void writeIdentifier(const String & name) const;
