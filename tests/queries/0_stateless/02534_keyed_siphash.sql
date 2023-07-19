@@ -331,3 +331,6 @@ INSERT INTO sipHashKeyed_keys VALUES (4, 4);
 SELECT sipHash64Keyed((key0, key1), 4::UInt64) FROM sipHashKeyed_keys ORDER by key0;
 SELECT hex(sipHash128Keyed((key0, key1), 4::UInt64)) FROM sipHashKeyed_keys ORDER by key0;
 DROP TABLE sipHashKeyed_keys;
+
+SELECT 'Check asan bug';
+SELECT sipHash128((toUInt64(9223372036854775806), 1)) = sipHash128(1) GROUP BY sipHash128(1::UInt8), toUInt64(9223372036854775806);

@@ -232,3 +232,5 @@ Check multiple keys as separate ints from a table with constant data
 9357996107237883963
 86AE90BB6A238D3F6221457630142C9B
 F6D93D8FEA6D7DECCDD95A7A0A2AA36D
+Check asan bug
+0
