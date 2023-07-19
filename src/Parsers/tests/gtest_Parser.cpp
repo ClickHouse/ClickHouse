@@ -64,7 +64,10 @@ TEST_P(ParserTest, parseQuery)
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
-                EXPECT_EQ(expected_ast, serializeAST(*ast->clone(), false));
+                WriteBufferFromOwnString buf;
+                formatAST(*ast->clone(), buf, false, false);
+                String formatted_ast = buf.str();
+                EXPECT_EQ(expected_ast, formatted_ast);
             }
             else
             {
@@ -75,7 +78,10 @@ TEST_P(ParserTest, parseQuery)
                 }
                 else
                 {
-                    EXPECT_TRUE(std::regex_match(serializeAST(*ast->clone(), false), std::regex(expected_ast)));
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast->clone(), buf, false, false);
+                    String formatted_ast = buf.str();
+                    EXPECT_TRUE(std::regex_match(formatted_ast, std::regex(expected_ast)));
                 }
             }
         }
