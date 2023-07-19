@@ -370,18 +370,7 @@ BlockIO InterpreterSystemQuery::execute()
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                if (query.key_to_drop.empty())
-                {
-                    cache->removeAllReleasable();
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                    if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
-                    else
-                        cache->removeKey(key);
-                }
+                cache->removeAllReleasable();
             }
             break;
         }
@@ -470,16 +459,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
-        case Type::RELOAD_SYMBOLS:
-        {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
-            break;
-#else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
-#endif
-        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -1054,11 +1033,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_USERS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
-            break;
-        }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
             break;
         }
         case Type::STOP_MERGES:
