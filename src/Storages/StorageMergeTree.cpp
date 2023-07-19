@@ -599,7 +599,20 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
-    Int64 version = startMutation(commands, query_context);
+    Int64 version;
+    {
+        /// It's important to serialize order of mutations with alter queries because
+        /// they can depend on each other.
+        if (auto alter_lock = tryLockForAlter(query_context->getSettings().lock_acquire_timeout); alter_lock == std::nullopt)
+        {
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                            "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+                            "You can change this timeout with `lock_acquire_timeout` setting",
+                            query_context->getSettings().lock_acquire_timeout.totalMilliseconds());
+        }
+        version = startMutation(commands, query_context);
+    }
+
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version, false);
 }
