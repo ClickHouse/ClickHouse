@@ -23,6 +23,12 @@ function wget_with_retry
 wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
 chmod +x clickhouse
 ./clickhouse install --noninteractive
+
+echo "
+users:
+  default:
+    access_management: 1" > /etc/clickhouse-server/users.d/access_management.yaml
+
 clickhouse start
 
 # Wait for start
