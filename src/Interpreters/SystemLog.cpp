@@ -334,21 +334,14 @@ SystemLog<LogElement>::SystemLog(
     const String & storage_def_,
     size_t flush_interval_milliseconds_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
-    : WithContext(context_)
+    : Base(database_name_ + "." + table_name_, flush_interval_milliseconds_, queue_)
+    , WithContext(context_)
     , log(&Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")"))
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , create_query(serializeAST(*getCreateTableQuery()))
-    , queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(database_name_ + "." + table_name_, flush_interval_milliseconds_))
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::startup()
-{
-    std::lock_guard lock(queue->mutex);
-    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 
 template <typename LogElement>
@@ -618,24 +611,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     return create;
 }
-template <typename LogElement>
-void SystemLog<LogElement>::add(const LogElement & element)
-{
-    queue->push(element);
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::flush(bool force)
-{
-    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
-    if (this_thread_requested_offset == uint64_t(-1))
-        return;
-
-    queue->waitFlush(this_thread_requested_offset);
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
 
 #define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class SystemLog<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)

@@ -121,4 +121,37 @@ private:
     const size_t flush_interval_milliseconds;
 };
 
+
+
+template <typename LogElement>
+class SystemLogBase : public ISystemLog
+{
+public:
+    using Self = SystemLogBase;
+
+    SystemLogBase(
+        const String& name,
+        size_t flush_interval_milliseconds_,
+        std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
+
+    void startup() override;
+
+    /** Append a record into log.
+      * Writing to table will be done asynchronously and in case of failure, record could be lost.
+      */
+    void add(const LogElement & element);
+
+    /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
+    void flush(bool force) override;
+
+    /// Non-blocking flush data in the buffer to disk.
+    void notifyFlush(bool force);
+
+    String getName() const override { return LogElement::name(); }
+
+    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
+
+protected:
+    std::shared_ptr<SystemLogQueue<LogElement>> queue;
+};
 }
