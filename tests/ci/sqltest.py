@@ -11,7 +11,6 @@ from build_download_helper import get_build_name_for_check, read_build_urls
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
     RerunHelper,
-    format_description,
     get_commit,
     post_commit_status,
 )
