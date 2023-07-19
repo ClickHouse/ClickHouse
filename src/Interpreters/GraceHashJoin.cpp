@@ -301,7 +301,6 @@ void GraceHashJoin::initBuckets()
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-
     bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
     auto kind = table_join->kind();
     return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)) && table_join->oneDisjunct();

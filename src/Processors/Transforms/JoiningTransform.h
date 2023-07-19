@@ -152,11 +152,10 @@ private:
 class DelayedJoinedBlocksWorkerTransform : public IProcessor
 {
 public:
+    using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
     explicit DelayedJoinedBlocksWorkerTransform(
-        Block left_header_,
         Block output_header_,
-        size_t max_block_size_,
-        JoinPtr join_);
+        NonJoinedStreamBuilder non_joined_stream_builder_);
 
     String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }
 
@@ -164,15 +163,10 @@ public:
     void work() override;
 
 private:
-    Block left_header;
-    Block output_header;
-    size_t max_block_size;
-    JoinPtr join;
     DelayedBlocksTaskPtr task;
     Chunk output_chunk;
-
-    /// All joined and non-joined rows from left stream are emitted, only right non-joined rows are left
-    bool left_delayed_stream_finished = false;
+    /// For building a block stream to access the non-joined rows.
+    NonJoinedStreamBuilder non_joined_stream_builder;
     IBlocksStreamPtr non_joined_delayed_stream = nullptr;
 
     void resetTask();
