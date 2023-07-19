@@ -97,7 +97,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DuplicateOrderByVisitor>;
     using Base::Base;
 
-    static bool shouldTraverseTopToBottom() const
+    static bool shouldTraverseTopToBottom()
     {
         return false;
     }
