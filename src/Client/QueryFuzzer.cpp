@@ -848,6 +848,9 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
 
 void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 {
+    if (ast == nullptr)
+        return;
+
     auto remove_fuzzed_table = [this](const auto & table_name)
     {
         auto pos = table_name.find("__fuzz_");
