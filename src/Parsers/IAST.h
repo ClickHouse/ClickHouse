@@ -198,10 +198,9 @@ public:
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
         char nl_or_ws; /// Newline or whitespace.
 
-        FormatSettings(WriteBuffer & ostr_, bool one_line_, bool show_secrets_ = true)
+        FormatSettings(WriteBuffer & ostr_, bool one_line_)
             : ostr(ostr_)
             , one_line(one_line_)
-            , show_secrets(show_secrets_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
