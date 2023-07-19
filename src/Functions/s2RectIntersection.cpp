@@ -133,8 +133,8 @@ public:
 
             if (!rect1.is_valid() || !rect2.is_valid())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed"
-                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value."
+                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed "
+                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value. "
                     "Also, if either the latitude or longitude bound is empty then both must be.");
 
             S2LatLngRect rect_intersection = rect1.Intersection(rect2);
