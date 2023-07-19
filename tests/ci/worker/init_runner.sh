@@ -12,7 +12,8 @@ echo "Running init script"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
-export RUNNER_URL="https://github.com/ClickHouse"
+export RUNNER_ORG="ClickHouse"
+export RUNNER_URL="https://github.com/${RUNNER_ORG}"
 # Funny fact, but metadata service has fixed IP
 INSTANCE_ID=$(ec2metadata --instance-id)
 export INSTANCE_ID
@@ -282,18 +283,11 @@ while true; do
             RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$runner_pid" 2>/dev/null || date +%s) ))
             echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
             if (( 60 < RUNNER_AGE )); then
-                echo "Check if the instance should tear down"
-                if ! no_terminating_metadata; then
-                    # Another check if the worker still didn't start
-                    if is_job_assigned; then
-                        echo "During the metadata check the job was assigned, continue"
-                        continue
-                    fi
-                    # shellcheck disable=SC2046
-                    kill -9 $(list_children "$runner_pid")
-                    sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
-                    terminate_on_event
-                fi
+                echo "Attempt to delete the runner for a graceful shutdown"
+                sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
+                    || continue
+                echo "Runner didn't launch or have assigned jobs after ${RUNNER_AGE} seconds, shutting down"
+                terminate_and_exit
             fi
         fi
         sleep 5
