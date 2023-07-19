@@ -36,10 +36,10 @@ bool projectionMatches(const QueryNode * query_node, const QueryNode * subquery_
     return true;
 };
 
-class DuplicateDistinctVisitor : public InDepthQueryTreeVisitorWithContext<DuplicateDistinctVisitor>
+class DuplicateDistinctVisitor : public InDepthQueryTreeVisitor<DuplicateDistinctVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<DuplicateDistinctVisitor>;
+    using Base = InDepthQueryTreeVisitor<DuplicateDistinctVisitor>;
     using Base::Base;
 
     static bool shouldTraverseTopToBottom()
@@ -49,11 +49,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_duplicate_order_by_and_distinct)
-            return;
-        if (getSettings().distributed_group_by_no_merge)
-            return;
-
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -96,7 +91,13 @@ private:
 
 void DuplicateDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    DuplicateDistinctVisitor visitor(context);
+    if (!context->getSettings().optimize_duplicate_order_by_and_distinct)
+        return;
+
+    if (context->getSettings().distributed_group_by_no_merge)
+        return;
+
+    DuplicateDistinctVisitor visitor;
     visitor.visit(query_tree_node);
 }
 
