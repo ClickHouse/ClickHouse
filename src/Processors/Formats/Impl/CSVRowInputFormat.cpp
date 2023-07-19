@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
@@ -316,49 +317,52 @@ bool CSVFormatReader::readField(
         return false;
     }
 
-    BufferBase::Position pos_start = buf->position();
+    if (format_settings.csv.use_default_on_bad_values)
+        return readFieldOrDefault(column, type, serialization);
+    return readFieldImpl(*buf, column, type, serialization);
+}
+
+bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
+{
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+    {
+        /// If value is null but type is not nullable then use default value instead.
+        return SerializationNullable::deserializeTextCSVImpl(column, istr, format_settings, serialization);
+    }
+
+    /// Read the column normally.
+    serialization->deserializeTextCSV(column, istr, format_settings);
+    return true;
+}
+
+bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
+{
+    String field;
+    readCSVField(field, *buf, format_settings.csv);
+    ReadBufferFromString tmp_buf(field);
+    bool is_bad_value = false;
+    bool res = false;
+
     size_t col_size = column.size();
     try
     {
-        if (format_settings.csv.allow_check_field_deserialization)
-        {
-            std::string field;
-            readCSVField(field, *buf, format_settings.csv);
-            ReadBufferFromMemory tmp(field);
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                SerializationNullable::deserializeTextCSVImpl(column, tmp, format_settings, serialization);
-            else
-                serialization->deserializeTextCSV(column, tmp, format_settings);
-            if (column.size() == col_size + 1 && field.size() > 0 && !tmp.eof())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Text CSV deserialize field bytes logical error.");
-        }
-        else
-        {
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-            {
-                /// If value is null but type is not nullable then use default value instead.
-                return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
-            }
-            /// Read the column normally.
-            serialization->deserializeTextCSV(column, *buf, format_settings);
-        }
+        res = readFieldImpl(tmp_buf, column, type, serialization);
+        /// Check if we parsed the whole field successfully.
+        if (!field.empty() && !tmp_buf.eof())
+            is_bad_value = true;
     }
-    catch (Exception & e)
+    catch (const Exception &)
     {
-        LOG_DEBUG(&Poco::Logger::get("CSVRowInputFormat"), "Failed to deserialize CSV column, exception message:{}", e.what());
-        if (format_settings.csv.set_default_if_deserialization_failed)
-        {
-            // Reset the column and buffer position, then skip the field and set column default value.
-            if (column.size() == col_size + 1)
-                column.popBack(1);
-            buf->position() = pos_start;
-            skipField();
-            column.insertDefault();
-        }
-        else
-            throw;
+        is_bad_value = true;
     }
-    return true;
+
+    if (!is_bad_value)
+        return res;
+
+    if (column.size() == col_size + 1)
+        column.popBack(1);
+    column.insertDefault();
+    return false;
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
