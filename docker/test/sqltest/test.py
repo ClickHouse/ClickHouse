@@ -95,7 +95,7 @@ def print_ratio(indent, name, success, total, description):
         f" - {description}" if description else ''))
 
 
-report_html_file.write("<html style='font: 16pt Monospace; padding: 1em;'><body><p>")
+report_html_file.write("<html style='font: 16pt; padding: 1em;'><body><pre>")
 
 print_ratio(0, 'Total', summary['success'], summary['total'], '')
 
@@ -115,4 +115,4 @@ for category in summary['results']:
 
         print_ratio(4, test, test_summary['success'], test_summary['total'], test_summary['description'])
 
-report_html_file.write("</p></body></html>")
+report_html_file.write("</pre></body></html>")
