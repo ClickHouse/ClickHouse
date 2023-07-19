@@ -255,10 +255,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 #ifndef WITHOUT_TEXT_LOG
     if (config.has("text_log"))
     {
-        String text_log_level_str = config.getString("text_log.level", "");
-        int text_log_level = text_log_level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(text_log_level_str);
+        String text_log_level_str = config.getString("text_log.level", "trace");
+        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
         size_t flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
-                                                        DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+            DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
         split->addTextLog(DB::TextLog::getLogQueue(flush_interval_milliseconds), text_log_level);
     }
 #endif

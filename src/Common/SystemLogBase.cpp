@@ -41,9 +41,9 @@ ISystemLog::~ISystemLog() = default;
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(
-    const String & name_,
+    const String & table_name_,
     size_t flush_interval_milliseconds_)
-    : log(&Poco::Logger::get(name_))
+    : log(&Poco::Logger::get("SystemLogQueue (" + table_name_ + ")"))
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {}
 
@@ -120,6 +120,7 @@ void SystemLogQueue<LogElement>::push(const LogElement & element)
 template <typename LogElement>
 uint64_t SystemLogQueue<LogElement>::notifyFlush(bool should_prepare_tables_anyway)
 {
+    
     uint64_t this_thread_requested_offset;
 
     {
@@ -204,10 +205,10 @@ void SystemLogQueue<LogElement>::shutdown()
 
 template <typename LogElement>
 SystemLogBase<LogElement>::SystemLogBase(
-    const String& name,
+    const String& table_name_,
     size_t flush_interval_milliseconds_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
-    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(name, flush_interval_milliseconds_))
+    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(table_name_, flush_interval_milliseconds_))
 {
 }
 
