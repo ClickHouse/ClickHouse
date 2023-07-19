@@ -168,7 +168,7 @@ String prepareEnumAndGetProtobufTypeName(WriteBuffer & buf, const DataTypePtr & 
 String prepareAndGetProtobufTypeName(WriteBuffer & buf, const DataTypePtr & data_type, const String & column_name, size_t indent)
 {
     TypeIndex type_id = data_type->getTypeId();
-    
+
     switch (data_type->getTypeId())
     {
         case TypeIndex::Nullable:

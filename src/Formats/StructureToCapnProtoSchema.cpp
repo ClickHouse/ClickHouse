@@ -188,7 +188,7 @@ String prepareEnumAndGetCapnProtoTypeName(WriteBuffer & buf, const DataTypePtr &
 String prepareAndGetCapnProtoTypeName(WriteBuffer & buf, const DataTypePtr & data_type, const String & column_name, size_t indent)
 {
     TypeIndex type_id = data_type->getTypeId();
-    
+
     switch (data_type->getTypeId())
     {
         case TypeIndex::Nullable:
