@@ -172,8 +172,11 @@ public:
 
 }
 
-void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr /*context*/)
+void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
+    if (!context->getSettingsRef().optimize_aggregators_of_group_by_keys)
+        return;
+
     CollectQueryAndGroupByKeysVisitor collector;
     collector.visit(query_tree_node);
 
