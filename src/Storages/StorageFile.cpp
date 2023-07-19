@@ -93,6 +93,65 @@ namespace ErrorCodes
 namespace
 {
 
+/// Forward-declare to use in listFilesWithFoldedRegexpMatchingImpl()
+void listFilesWithRegexpMatchingImpl(
+    const std::string & path_for_ls,
+    const std::string & for_match,
+    size_t & total_bytes_to_read,
+    std::vector<std::string> & result,
+    bool recursive = false);
+
+/*
+ * When `{...}` has any `/`s, it must be processed in a different way:
+ * Basically, a path with globs is processed by listFilesWithRegexpMatchingImpl. In case it detects multi-dir glob {.../..., .../...},
+ * listFilesWithFoldedRegexpMatchingImpl is in charge from now on.
+ * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
+ * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
+ * StorageHDFS.cpp has the same logic.
+*/
+void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
+                                           const std::string & processed_suffix,
+                                           const std::string & suffix_with_globs,
+                                           re2::RE2 & matcher,
+                                           size_t & total_bytes_to_read,
+                                           const size_t max_depth,
+                                           const size_t next_slash_after_glob_pos,
+                                           std::vector<std::string> & result)
+{
+    if (!max_depth)
+        return;
+
+    const fs::directory_iterator end;
+    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
+    {
+        const std::string full_path = it->path().string();
+        const size_t last_slash = full_path.rfind('/');
+        const String dir_or_file_name = full_path.substr(last_slash);
+
+        if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
+        {
+            if (next_slash_after_glob_pos == std::string::npos)
+            {
+                total_bytes_to_read += it->file_size();
+                result.push_back(it->path().string());
+            }
+            else
+            {
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "" ,
+                                                suffix_with_globs.substr(next_slash_after_glob_pos),
+                                                total_bytes_to_read, result);
+            }
+        }
+        else if (it->is_directory())
+        {
+            listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path), processed_suffix + dir_or_file_name,
+                                                  suffix_with_globs, matcher, total_bytes_to_read,
+                                                  max_depth - 1, next_slash_after_glob_pos, result);
+        }
+
+    }
+}
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -101,15 +160,42 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive = false)
+    bool recursive)
 {
-    const size_t first_glob = for_match.find_first_of("*?{");
+    const size_t first_glob_pos = for_match.find_first_of("*?{");
+    const bool has_glob = first_glob_pos != std::string::npos;
 
-    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    const size_t next_slash = suffix_with_globs.find('/', 1);
-    const std::string current_glob = suffix_with_globs.substr(0, next_slash);
+    /// slashes_in_glob counter is a upper-bound estimate of recursion depth
+    /// needed to process complex cases when `/` is included into glob, e.g. /pa{th1/a,th2/b}.csv
+    size_t slashes_in_glob = 0;
+    const size_t next_slash_after_glob_pos = [&]()
+    {
+        if (!has_glob)
+            return suffix_with_globs.find('/', 1);
+
+        size_t in_curly = 0;
+        for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
+        {
+            if (*it == '{')
+                ++in_curly;
+            else if (*it == '/')
+            {
+                if (in_curly)
+                    ++slashes_in_glob;
+                else
+                    return size_t(std::distance(suffix_with_globs.begin(), it));
+            }
+            else if (*it == '}')
+                --in_curly;
+        }
+        return std::string::npos;
+    }();
+
+    const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
+
     auto regexp = makeRegexpPatternFromGlobs(current_glob);
 
     re2::RE2 matcher(regexp);
@@ -126,13 +212,22 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs))
         return;
 
+    const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
+
+    if (slashes_in_glob)
+    {
+        listFilesWithFoldedRegexpMatchingImpl(fs::path(prefix_without_globs), "", suffix_with_globs,
+                                              matcher, total_bytes_to_read, slashes_in_glob,
+                                              next_slash_after_glob_pos, result);
+        return;
+    }
+
     const fs::directory_iterator end;
     for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
-        const bool looking_for_directory = next_slash != std::string::npos;
 
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
@@ -148,14 +243,12 @@ void listFilesWithRegexpMatchingImpl(
             if (recursive)
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "" ,
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash) : current_glob ,
+                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob ,
                                                 total_bytes_to_read, result, recursive);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-            {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);
-            }
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos), total_bytes_to_read, result);
         }
     }
 }
@@ -206,7 +299,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef().storage_file_read_method;
 
-    /** But using mmap on server-side is unsafe for the following reasons:
+    /** Using mmap on server-side is unsafe for the following reasons:
       * - concurrent modifications of a file will result in SIGBUS;
       * - IO error from the device will result in SIGBUS;
       * - recovery from this signal is not feasible even with the usage of siglongjmp,
@@ -215,10 +308,10 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
       *
       * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
       */
+    if (context->getApplicationType() == Context::ApplicationType::SERVER && read_method == LocalFSReadMethod::mmap)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using storage_file_read_method=mmap is not safe in server mode. Consider using pread.");
 
-    if (S_ISREG(file_stat.st_mode)
-        && context->getApplicationType() != Context::ApplicationType::SERVER
-        && read_method == LocalFSReadMethod::mmap)
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
