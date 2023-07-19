@@ -302,12 +302,21 @@ def test_alter_attach(started_cluster, attachable_part, engine):
     )
     main_node.query(f"ALTER TABLE {database}.alter_attach_test ATTACH PART 'all_1_1_0'")
     # On the main node, data is attached
-    assert main_node.query(f"SELECT CounterID FROM {database}.alter_attach_test") == "123\n"
+    assert (
+        main_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
+        == "123\n"
+    )
     # On the other node, data is replicated only if using a Replicated table engine
     if engine == "ReplicatedMergeTree":
-        assert dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test") == "123\n"
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
+            == "123\n"
+        )
     else:
-        assert dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test") == ""
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
+            == ""
+        )
     main_node.query(f"DROP DATABASE {database} SYNC")
     dummy_node.query(f"DROP DATABASE {database} SYNC")
 
@@ -333,7 +342,9 @@ def test_alter_drop_part(started_cluster, engine):
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
-        assert dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
+        )
     else:
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
