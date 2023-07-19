@@ -1,33 +1,37 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
-#include <Core/Settings.h>
-#include <QueryPipeline/BlockIO.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/AsynchronousInsertLog.h>
-#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <IO/ConcatReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/copyData.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
-#include <Storages/IStorage.h>
-#include <Common/CurrentThread.h>
-#include <Common/SipHash.h>
-#include <Common/FieldVisitorHash.h>
-#include <Common/DateLUT.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Common/logger_useful.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/copyData.h>
+#include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Storages/IStorage.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SensitiveDataMasker.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -207,6 +211,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     query = query->clone();
     const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
+    insert_query.async_insert_flush = true;
 
     InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
@@ -403,6 +408,12 @@ try
     const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto insert_context = Context::createCopy(global_context);
+    DB::CurrentThread::QueryScope query_scope_holder(insert_context);
+    bool internal = false; // To enable logging this query
+    bool async_insert = true;
+
+    /// Disabled query spans. Could be activated by initializing this to a SpanHolder
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span{nullptr};
 
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings.set("input_format_parallel_parsing", false);
@@ -410,12 +421,67 @@ try
     insert_context->setSettings(key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
-    insert_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
     insert_context->setCurrentQueryId("");
 
-    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
-    auto pipeline = interpreter.execute().pipeline;
-    assert(pipeline.pushing());
+    auto insert_query_id = insert_context->getCurrentQueryId();
+    auto query_start_time = std::chrono::system_clock::now();
+    Stopwatch start_watch{CLOCK_MONOTONIC};
+    ClientInfo & client_info = insert_context->getClientInfo();
+    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    client_info.initial_query_start_time = timeInSeconds(query_start_time);
+    client_info.initial_query_start_time_microseconds = timeInMicroseconds(query_start_time);
+    client_info.current_query_id = insert_query_id;
+    client_info.initial_query_id = insert_query_id;
+    size_t log_queries_cut_to_length = insert_context->getSettingsRef().log_queries_cut_to_length;
+    String query_for_logging = insert_query.hasSecretParts()
+        ? insert_query.formatForLogging(log_queries_cut_to_length)
+        : wipeSensitiveDataAndCutToLength(serializeAST(insert_query), log_queries_cut_to_length);
+
+    /// We add it to the process list so
+    /// a) it appears in system.processes
+    /// b) can be cancelled if we want to
+    /// c) has an associated process list element where runtime metrics are stored
+    auto process_list_entry
+        = insert_context->getProcessList().insert(query_for_logging, key.query.get(), insert_context, start_watch.getStart());
+    auto query_status = process_list_entry->getQueryStatus();
+    insert_context->setProcessListElement(std::move(query_status));
+
+    String query_database{};
+    String query_table{};
+    if (insert_query.table_id)
+    {
+        query_database = insert_query.table_id.getDatabaseName();
+        query_table = insert_query.table_id.getTableName();
+        insert_context->setInsertionTable(insert_query.table_id);
+    }
+    std::unique_ptr<DB::IInterpreter> interpreter;
+    QueryPipeline pipeline;
+    QueryLogElement query_log_elem;
+
+    try
+    {
+        interpreter = std::make_unique<InterpreterInsertQuery>(
+            key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
+        pipeline = interpreter->execute().pipeline;
+        chassert(pipeline.pushing());
+
+        query_log_elem = logQueryStart(
+            query_start_time,
+            insert_context,
+            query_for_logging,
+            key.query,
+            pipeline,
+            interpreter,
+            internal,
+            query_database,
+            query_table,
+            async_insert);
+    }
+    catch (...)
+    {
+        logExceptionBeforeStart(query_for_logging, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
+        throw;
+    }
 
     auto header = pipeline.getHeader();
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
@@ -476,7 +542,10 @@ try
             AsynchronousInsertLogElement elem;
             elem.event_time = timeInSeconds(entry->create_time);
             elem.event_time_microseconds = timeInMicroseconds(entry->create_time);
-            elem.query = key.query;
+            elem.query_for_logging = query_for_logging;
+            elem.database = query_database;
+            elem.table = query_table;
+            elem.format = insert_query.format;
             elem.query_id = entry->query_id;
             elem.bytes = bytes_size;
             elem.rows = num_rows;
@@ -499,7 +568,6 @@ try
     }
 
     format->addBuffer(std::move(last_buffer));
-    auto insert_query_id = insert_context->getCurrentQueryId();
     ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     auto finish_entries = [&]
@@ -537,9 +605,14 @@ try
 
         LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
             total_rows, total_bytes, key.query_str);
+
+        bool pulling_pipeline = false;
+        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, internal);
     }
     catch (...)
     {
+        bool log_error = true;
+        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, log_error);
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);
