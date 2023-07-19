@@ -993,6 +993,7 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1429,6 +1430,7 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
+firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
