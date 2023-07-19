@@ -30,7 +30,7 @@ description: In order to effectively mitigate possible human errors, you should 
 ```
 
 :::note ALL
-Prior to version 23.4 of Clickhouse, `ALL` was only applicable to the `RESTORE` command.
+Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` command.
 :::
 
 ## Background
