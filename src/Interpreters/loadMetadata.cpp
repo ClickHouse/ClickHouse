@@ -238,22 +238,24 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
 
-    // Schedule all the jobs.
-    // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
-    // All startup jobs are assigned to pool with lower priority than load jobs pool.
-    // So all tables will finish loading before the first table startup if there are no queries (or dependencies).
-    // Query waiting for a table boosts its priority by moving jobs into `AsyncLoaderPoolId::Foreground` pool
-    // to finish table startup faster than load of the other tables.
-    scheduleLoadAll(load_tasks, startup_tasks);
-
     if (!async_load_databases)
     {
-        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize and wait all the load table tasks
-        waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize and wait all the startup tasks
+        // Note that wait implicitly calls schedule
+        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize, schedule and wait all the load table tasks
+        waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
         return {};
     }
     else
     {
+        // Schedule all the jobs.
+        // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
+        // All startup jobs are assigned to pool with lower priority than load jobs pool.
+        // So all tables will finish loading before the first table startup if there are no queries (or dependencies).
+        // Query waiting for a table boosts its priority by moving jobs into `AsyncLoaderPoolId::Foreground` pool
+        // to finish table startup faster than load of the other tables.
+        scheduleLoad(load_tasks);
+        scheduleLoad(startup_tasks);
+
         // Do NOT wait, just return tasks for continuation or later wait.
         return joinTasks(load_tasks, startup_tasks);
     }
@@ -387,7 +389,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (startup_tasks) // NOTE: only for system database
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, *startup_tasks);
+            scheduleLoad(*startup_tasks);
+            waitLoad(AsyncLoaderPoolId::Foreground, *startup_tasks);
             startup_tasks->clear();
         }
 
@@ -438,13 +441,20 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-        scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, loader.loadTablesAsync());
+        auto load_tasks = loader.loadTablesAsync();
+        scheduleLoad(load_tasks);
+        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks);
 
         /// Startup tables if they were started before conversion and detach/attach
         if (startup_tasks) // NOTE: only for system database
             *startup_tasks = loader.startupTablesAsync(); // We have loaded old database(s), replace tasks to startup new database
         else
-            scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, loader.startupTablesAsync()); // An old database was already loaded, so we should load new one as well
+        {
+            // An old database was already loaded, so we should load new one as well
+            auto tasks = loader.startupTablesAsync();
+            scheduleLoad(tasks);
+            waitLoad(AsyncLoaderPoolId::Foreground, tasks);
+        }
     }
     catch (Exception & e)
     {
@@ -498,7 +508,9 @@ LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
         {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-    scheduleAndWaitLoadAllIn(AsyncLoaderPoolId::Foreground, loader.loadTablesAsync());
+    auto tasks = loader.loadTablesAsync();
+    scheduleLoad(tasks);
+    waitLoad(AsyncLoaderPoolId::Foreground, tasks);
 
     /// Will startup tables in system database after all databases are loaded.
     return loader.startupTablesAsync();

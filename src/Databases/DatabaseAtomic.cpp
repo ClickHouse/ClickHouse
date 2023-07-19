@@ -459,7 +459,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup Atomic database {}", database_name),
-        [this, mode] (const LoadJobPtr &)
+        [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
                 return;

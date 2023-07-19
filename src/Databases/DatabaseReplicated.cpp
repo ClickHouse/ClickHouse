@@ -510,7 +510,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup Replicated database {}", database_name),
-        [this] (const LoadJobPtr &)
+        [this] (AsyncLoader &, const LoadJobPtr &)
         {
             /// TSA: No concurrent writes are possible during loading
             UInt64 digest = 0;

@@ -72,7 +72,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup MaterializedMySQL database {}", database_name),
-        [this, mode] (const LoadJobPtr &)
+        [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
                 materialize_thread.assertMySQLAvailable();

@@ -1,3 +1,4 @@
+#include "Common/QueryProfiler.h"
 #include <Common/AsyncLoader.h>
 
 #include <limits>
@@ -56,84 +57,6 @@ size_t LoadJob::pool() const
     return pool_id;
 }
 
-void LoadJob::wait() const
-{
-    std::unique_lock lock{mutex};
-    waitImpl(lock);
-    if (load_exception)
-        std::rethrow_exception(load_exception);
-}
-
-void LoadJob::waitNoThrow() const
-{
-    std::unique_lock lock{mutex};
-    waitImpl(lock);
-}
-
-// Keep track of currently executing load jobs to be able to:
-// 1) Detect "wait dependent" deadlocks
-//    (when job A function waits for job B that depends on job A)
-// 2) Detect "priority inversion" deadlocks
-//    (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
-// 3) Resolve "blocked pool" deadlocks
-//    (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
-// 4) Note that there is "wait not scheduled" deadlock type possible, that is NOT possible to detected
-//    (thread T is waiting on an assigned job A, but job A is only scheduled after the wait by T)
-thread_local AsyncLoader * current_async_loader = nullptr;
-thread_local LoadJob * current_load_job = nullptr;
-
-size_t currentPoolOr(size_t pool)
-{
-    return current_load_job ? current_load_job->executionPool() : pool;
-}
-
-bool DetectWaitDependentDeadlockImpl(const LoadJob & waited)
-{
-    if (&waited == current_load_job)
-        return true;
-    for (const auto & dep : waited.dependencies)
-    {
-        if (DetectWaitDependentDeadlockImpl(*dep))
-            return true;
-    }
-    return false;
-}
-
-void LoadJob::waitImpl(std::unique_lock<std::mutex> & lock) const
-{
-    // Deadlock detection and resolution
-    if (current_load_job && load_status == LoadStatus::PENDING)
-    {
-        chassert(current_async_loader); // We are inside a worker
-        auto current_pool = current_load_job->executionPool();
-        auto current_priority = current_async_loader->getPoolPriority(current_pool);
-
-        // NOTE: We assume that `this` and `current_load_job` are in the same AsyncLoader.
-        // NOTE: To avoid assuming this, we have to store async_loader in every job, which looks unreasonable.
-        auto priority = current_async_loader->getPoolPriority(pool_id);
-
-        if (DetectWaitDependentDeadlockImpl(*this))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for dependent load job '{}'", current_load_job->name, name);
-
-        // Waiting for a lower-priority job is not allowed.
-        // It is not a deadlock if job has already started, but not finished. Nevertheless, it is a race condition, so must be reported.
-        if (current_priority < priority)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' (priority={}) waits for lower-priority load job '{}' (priority={})",
-                current_load_job->name, current_priority.value, name, priority.value);
-
-        if (current_pool == pool_id)
-        {
-            lock.unlock(); // Avoid reverse locking order
-            current_async_loader->workerIsSuspendedByWait(current_pool, this);
-            lock.lock();
-        }
-    }
-
-    waiters++;
-    finished.wait(lock, [this] { return load_status != LoadStatus::PENDING; });
-    waiters--;
-}
-
 size_t LoadJob::waitersCount() const
 {
     std::unique_lock lock{mutex};
@@ -165,7 +88,7 @@ size_t LoadJob::canceled(const std::exception_ptr & ptr)
 
 size_t LoadJob::finish()
 {
-    func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` and `LoadJob::wait()` return
+    func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` return
     finish_time = std::chrono::system_clock::now();
     if (waiters > 0)
         finished.notify_all();
@@ -174,6 +97,7 @@ size_t LoadJob::finish()
 
 void LoadJob::scheduled(UInt64 job_id_)
 {
+    chassert(job_id == 0); // Job cannot be scheduled twice
     job_id = job_id_;
     schedule_time = std::chrono::system_clock::now();
 }
@@ -184,13 +108,11 @@ void LoadJob::enqueued()
         enqueue_time = std::chrono::system_clock::now();
 }
 
-void LoadJob::execute(size_t pool, const LoadJobPtr & self)
+void LoadJob::execute(AsyncLoader & loader, size_t pool, const LoadJobPtr & self)
 {
-    current_load_job = this;
-    SCOPE_EXIT({ current_load_job = nullptr; }); // Note that recursive job execution is not supported yet
     execution_pool_id = pool;
     start_time = std::chrono::system_clock::now();
-    func(self);
+    func(loader, self);
 }
 
 
@@ -294,16 +216,16 @@ void AsyncLoader::stop()
 void AsyncLoader::schedule(LoadTask & task)
 {
     chassert(this == &task.loader);
-    scheduleImpl(task.jobs);
+    schedule(task.jobs);
 }
 
 void AsyncLoader::schedule(const LoadTaskPtr & task)
 {
     chassert(this == &task->loader);
-    scheduleImpl(task->jobs);
+    schedule(task->jobs);
 }
 
-void AsyncLoader::schedule(const std::vector<LoadTaskPtr> & tasks)
+void AsyncLoader::schedule(const LoadTaskPtrs & tasks)
 {
     LoadJobSet all_jobs;
     for (const auto & task : tasks)
@@ -311,10 +233,10 @@ void AsyncLoader::schedule(const std::vector<LoadTaskPtr> & tasks)
         chassert(this == &task->loader);
         all_jobs.insert(task->jobs.begin(), task->jobs.end());
     }
-    scheduleImpl(all_jobs);
+    schedule(all_jobs);
 }
 
-void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
+void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
 {
     std::unique_lock lock{mutex};
 
@@ -330,7 +252,7 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
     // 1) exclude already scheduled or finished jobs
     // 2) include assigned job dependencies (that are not yet scheduled)
     LoadJobSet jobs;
-    for (const auto & job : input_jobs)
+    for (const auto & job : jobs_to_schedule)
         gatherNotScheduled(job, jobs, lock);
 
     // Ensure scheduled_jobs graph will have no cycles. The only way to get a cycle is to add a cycle, assuming old jobs cannot reference new ones.
@@ -345,7 +267,11 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
         chassert(job->pool() < pools.size());
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            scheduled_jobs.try_emplace(job);
+            if (scheduled_jobs.try_emplace(job).second)
+            {
+                // TODO(serxa): debug print
+                LOG_INFO(log, "Schedule '{}'", job->name);
+            }
             job->scheduled(++last_job_id);
         });
     }
@@ -431,9 +357,33 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool)
     if (!job)
         return;
     chassert(new_pool < pools.size());
+
+    // TODO(serxa): debug print
+    LOG_INFO(log, "Prioritizing '{}' to pool {}", job->name, getPoolName(new_pool));
+
     DENY_ALLOCATIONS_IN_SCOPE;
     std::unique_lock lock{mutex};
     prioritize(job, new_pool, lock);
+
+    // TODO(serxa): debug print
+    NOEXCEPT_SCOPE({
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        LOG_INFO(log, "Prioritizing '{}' finished", job->name);
+    });
+}
+
+void AsyncLoader::wait(const LoadJobPtr & job)
+{
+    std::unique_lock job_lock{job->mutex};
+    wait(job_lock, job);
+    if (job->load_exception)
+        std::rethrow_exception(job->load_exception);
+}
+
+void AsyncLoader::waitNoThrow(const LoadJobPtr & job)
+{
+    std::unique_lock job_lock{mutex};
+    wait(job_lock, job);
 }
 
 void AsyncLoader::remove(const LoadJobSet & jobs)
@@ -463,9 +413,10 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
         if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
         {
             // Job is currently executing
+            ALLOW_ALLOCATIONS_IN_SCOPE;
             chassert(info->second.isExecuting());
             lock.unlock();
-            job->waitNoThrow(); // Wait for job to finish
+            waitNoThrow(job); // Wait for job to finish
             lock.lock();
         }
     }
@@ -508,7 +459,6 @@ Priority AsyncLoader::getPoolPriority(size_t pool) const
     return pools[pool].priority; // NOTE: lock is not needed because `priority` is const and `pools` are immutable
 }
 
-
 size_t AsyncLoader::getScheduledJobCount() const
 {
     std::unique_lock lock{mutex};
@@ -545,11 +495,11 @@ void AsyncLoader::checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mute
     while (!left.empty())
     {
         LoadJobPtr job = *left.begin();
-        checkCycleImpl(job, left, visited, lock);
+        checkCycle(job, left, visited, lock);
     }
 }
 
-String AsyncLoader::checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock)
+String AsyncLoader::checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock)
 {
     if (!left.contains(job))
         return {}; // Do not consider external dependencies and already processed jobs
@@ -560,7 +510,7 @@ String AsyncLoader::checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, Lo
     }
     for (const auto & dep : job->dependencies)
     {
-        if (auto chain = checkCycleImpl(dep, left, visited, lock); !chain.empty())
+        if (auto chain = checkCycle(dep, left, visited, lock); !chain.empty())
         {
             if (!visited.contains(job)) // Check for cycle end
                 throw Exception(ErrorCodes::ASYNC_LOAD_CYCLE, "Load job dependency cycle detected: {} -> {}", job->name, chain);
@@ -663,9 +613,27 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
         if (UInt64 ready_seqno = info->second.ready_seqno)
         {
             new_pool.ready_queue.insert(old_pool.ready_queue.extract(ready_seqno));
+            // TODO(serxa): debug print
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+            });
+
             if (canSpawnWorker(new_pool, lock))
                 spawn(new_pool, lock);
         }
+        // TODO(serxa): debug print
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            LOG_INFO(log, "scheduled '{}': {} -> {}", job->name, old_pool.name, new_pool.name);
+        });
+    }
+    else
+    {
+        // TODO(serxa): debug print
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            LOG_INFO(log, "pending or finished '{}': {} -> {}", job->name, old_pool.name, new_pool.name);
+        });
     }
 
     job->pool_id.store(new_pool_id);
@@ -692,10 +660,89 @@ void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<
         spawn(pool, lock);
 }
 
-void AsyncLoader::workerIsSuspendedByWait(size_t pool_id, const LoadJob * job)
+// Keep track of currently executing load jobs to be able to:
+// 1) Detect "wait dependent" deadlocks -- throw LOGICAL_ERROR
+//    (when job A function waits for job B that depends on job A)
+// 2) Resolve "wait not scheduled" deadlocks -- implicitly schedule job with all its dependencies
+//    (thread T is waiting on an assigned job A, but job A is not yet scheduled)
+// 3) Resolve "priority inversion" deadlocks -- apply priority inheritance
+//    (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
+// 4) Resolve "blocked pool" deadlocks -- spawn more workers
+//    (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
+thread_local LoadJob * current_load_job = nullptr;
+
+size_t currentPoolOr(size_t pool)
+{
+    return current_load_job ? current_load_job->executionPool() : pool;
+}
+
+bool DetectWaitDependentDeadlock(const LoadJobPtr & waited)
+{
+    if (waited.get() == current_load_job)
+        return true;
+    for (const auto & dep : waited->dependencies)
+    {
+        if (DetectWaitDependentDeadlock(dep))
+            return true;
+    }
+    return false;
+}
+
+void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job)
+{
+    // Ensure job we are going to wait was scheduled to avoid "wait not scheduled" deadlocks
+    if (job->job_id == 0)
+    {
+        job_lock.unlock(); // Avoid reverse locking order
+        schedule(LoadJobSet{job});
+        job_lock.lock();
+        chassert(job->job_id != 0);
+    }
+
+    // Deadlock detection and resolution
+    if (current_load_job && job->load_status == LoadStatus::PENDING)
+    {
+        if (DetectWaitDependentDeadlock(job))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for dependent load job '{}'", current_load_job->name, job->name);
+
+        auto worker_pool = current_load_job->executionPool();
+        auto worker_priority = getPoolPriority(worker_pool);
+        auto job_priority = getPoolPriority(job->pool_id);
+
+        // TODO(serxa): debug print
+        LOG_INFO(&Poco::Logger::get("AsyncLoader"), "'{}' waits for '{}' from pool {}", current_load_job->name, job->name, getPoolName(worker_pool));
+
+        // Waiting for a lower-priority job ("priority inversion" deadlock) is resolved using priority inheritance.
+        if (worker_priority < job_priority)
+        {
+            job_lock.unlock(); // Avoid reverse locking order
+            prioritize(job, worker_pool);
+            job_lock.lock();
+        }
+
+        // Spawn more workers to avoid exhaustion of worker pool ("blocked pool" deadlock)
+        if (worker_pool == job->pool_id)
+        {
+            job_lock.unlock(); // Avoid reverse locking order
+            workerIsSuspendedByWait(worker_pool, job);
+            job_lock.lock();
+        }
+    }
+    else
+    {
+        // TODO(serxa): debug print
+        LOG_INFO(&Poco::Logger::get("AsyncLoader"), "External wait for {}", job->name);
+    }
+
+    job->waiters++;
+    job->finished.wait(job_lock, [&] { return job->load_status != LoadStatus::PENDING; });
+    job->waiters--;
+}
+
+void AsyncLoader::workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job)
 {
     std::unique_lock lock{mutex};
-    std::unique_lock lock2{job->mutex};
+    std::unique_lock job_lock{job->mutex};
 
     if (job->load_status != LoadStatus::PENDING)
         return; // Job is already done, worker can continue execution
@@ -716,6 +763,7 @@ void AsyncLoader::workerIsSuspendedByWait(size_t pool_id, const LoadJob * job)
 
 bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
 {
+    // TODO(serxa): optimization: we should not spawn new worker on the first enqueue during `finish()` because current worker will take this job.
     return is_running
         && !pool.ready_queue.empty()
         && pool.workers < pool.max_threads + pool.suspended_workers
@@ -742,6 +790,13 @@ void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & l
     }
     current_priority = priority;
 
+    // TODO(serxa): debug print
+    NOEXCEPT_SCOPE({
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        if (current_priority)
+            LOG_INFO(log, "Current priority: {}", current_priority->value);
+    });
+
     // Spawn workers in all pools with current priority
     for (Pool & pool : pools)
     {
@@ -752,6 +807,11 @@ void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & l
 
 void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> &)
 {
+    // TODO(serxa): debug print
+    NOEXCEPT_SCOPE({
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        LOG_INFO(log, "Spawn {} #{}", pool.name, pool.workers + 1);
+    });
     pool.workers++;
     current_priority = pool.priority; // canSpawnWorker() ensures this would not decrease current_priority
     NOEXCEPT_SCOPE({
@@ -763,9 +823,6 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> &)
 void AsyncLoader::worker(Pool & pool)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-
-    current_async_loader = this;
-    SCOPE_EXIT({ current_async_loader = nullptr; });
 
     size_t pool_id = &pool - &*pools.begin();
     LoadJobPtr job;
@@ -786,6 +843,12 @@ void AsyncLoader::worker(Pool & pool)
 
             if (!canWorkerLive(pool, lock))
             {
+                // TODO(serxa): debug print
+                NOEXCEPT_SCOPE({
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    LOG_INFO(log, "Stopped {}, left: {}", pool.name, pool.workers - 1);
+                });
+
                 if (--pool.workers == 0)
                     updateCurrentPriorityAndSpawn(lock); // It will spawn lower priority workers if needed
                 return;
@@ -802,8 +865,14 @@ void AsyncLoader::worker(Pool & pool)
 
         try
         {
-            job->execute(pool_id, job);
+            // TODO(serxa): debug print
+            LOG_INFO(log, "Executing '{}' in {}", job->name, pool.name);
+            current_load_job = job.get();
+            SCOPE_EXIT({ current_load_job = nullptr; }); // Note that recursive job execution is not supported
+            job->execute(*this, pool_id, job);
             exception_from_job = {};
+            // TODO(serxa): debug print
+            LOG_INFO(log, "Done! '{}'", job->name);
         }
         catch (...)
         {

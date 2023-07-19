@@ -134,7 +134,7 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup MaterializedMySQL database {}", database_name),
-        [this] (const LoadJobPtr &)
+        [this] (AsyncLoader &, const LoadJobPtr &)
         {
             startup_task->activateAndSchedule();
         });

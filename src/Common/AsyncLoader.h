@@ -68,13 +68,6 @@ public:
     // Value may change during job execution by `prioritize()`.
     size_t pool() const;
 
-    // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
-    // Throws if job is FAILED or CANCELED. Returns or throws immediately if called on non-pending job.
-    void wait() const;
-
-    // Wait for a job to reach any non PENDING status. May throw if deadlock is detected.
-    void waitNoThrow() const;
-
     // Returns number of threads blocked by `wait()` or `waitNoThrow()` calls.
     size_t waitersCount() const;
 
@@ -92,8 +85,6 @@ public:
 private:
     friend class AsyncLoader;
 
-    void waitImpl(std::unique_lock<std::mutex> & lock) const;
-
     [[nodiscard]] size_t ok();
     [[nodiscard]] size_t failed(const std::exception_ptr & ptr);
     [[nodiscard]] size_t canceled(const std::exception_ptr & ptr);
@@ -101,12 +92,12 @@ private:
 
     void scheduled(UInt64 job_id_);
     void enqueued();
-    void execute(size_t pool, const LoadJobPtr & self);
+    void execute(AsyncLoader & loader, size_t pool, const LoadJobPtr & self);
 
     std::atomic<UInt64> job_id{0};
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
-    std::function<void(const LoadJobPtr & self)> func;
+    std::function<void(AsyncLoader & loader, const LoadJobPtr & self)> func;
 
     mutable std::mutex mutex;
     mutable std::condition_variable finished;
@@ -123,7 +114,7 @@ private:
 
 struct EmptyJobFunc
 {
-    void operator()(const LoadJobPtr &) {}
+    void operator()(AsyncLoader &, const LoadJobPtr &) {}
 };
 
 template <class Func = EmptyJobFunc>
@@ -200,8 +191,8 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
 //
 //     // Create and schedule a task consisting of three jobs. Job1 has no dependencies and is run first.
 //     // Job2 and job3 depend on job1 and are run only after job1 completion.
-//     auto job_func = [&] (const LoadJobPtr & self) {
-//         LOG_TRACE(log, "Executing load job '{}' in pool '{}'", self->name, async_loader->getPoolName(self->pool()));
+//     auto job_func = [&] (AsyncLoader & loader, const LoadJobPtr & self) {
+//         LOG_TRACE(log, "Executing load job '{}' in pool '{}'", self->name, loader->getPoolName(self->pool()));
 //     };
 //     auto job1 = makeLoadJob({}, "job1", /* pool_id = */ 1, job_func);
 //     auto job2 = makeLoadJob({ job1 }, "job2", /* pool_id = */ 1, job_func);
@@ -211,7 +202,7 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
 //
 //     // Another thread may prioritize a job by changing its pool and wait for it:
 //     async_loader.prioritize(job3, /* pool_id = */ 0); // Increase priority: 1 -> 0 (lower is better)
-//     job3->wait(); // Blocks until job completion or cancellation and rethrow an exception (if any)
+//     async_loader.wait(job3); // Blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // Every job has a pool associated with it. AsyncLoader starts every job in its thread pool.
 // Each pool has a constant priority and a mutable maximum number of threads.
@@ -322,14 +313,22 @@ public:
     // and are removed from AsyncLoader, so it is thread-safe to destroy them.
     void schedule(LoadTask & task);
     void schedule(const LoadTaskPtr & task);
+    void schedule(const LoadJobSet & jobs_to_schedule);
 
     // Schedule all tasks atomically. To ensure only highest priority jobs among all tasks are run first.
     void schedule(const LoadTaskPtrs & tasks);
 
-    // Increase priority of a scheduled job and all its dependencies recursively.
-    // Jobs from higher (than `new_pool`) priority pools are not changed. Finished jobs are also not changed.
-    // WARNING: it does nothing for assigned jobs, caller must make sure that job has been scheduled.
+    // Increase priority of a job and all its dependencies recursively.
+    // Jobs from higher (than `new_pool`) priority pools are not changed.
     void prioritize(const LoadJobPtr & job, size_t new_pool);
+
+    // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
+    // Throws if job is FAILED or CANCELED. Returns or throws immediately if called on non-pending job.
+    // If job was not scheduled, it will be implicitly scheduled before the wait (deadlock auto-resolution).
+    void wait(const LoadJobPtr & job);
+
+    // Wait for a job to reach any non PENDING status. The same as `wait()` but does not throw.
+    void waitNoThrow(const LoadJobPtr & job);
 
     // Remove finished jobs, cancel scheduled jobs, wait for executing jobs to finish and remove them.
     void remove(const LoadJobSet & jobs);
@@ -358,22 +357,22 @@ public:
     std::vector<JobState> getJobStates() const;
 
     // For deadlock resolution. Should not be used directly.
-    void workerIsSuspendedByWait(size_t pool_id, const LoadJob * job);
+    void workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job);
 
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
-    String checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
+    String checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
     void finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job, std::unique_lock<std::mutex> & lock);
-    void scheduleImpl(const LoadJobSet & input_jobs);
     void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
-    bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &);
-    bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &);
-    void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> &);
-    void spawn(Pool & pool, std::unique_lock<std::mutex> &);
+    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
+    bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
+    bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
+    void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & lock);
+    void spawn(Pool & pool, std::unique_lock<std::mutex> & lock);
     void worker(Pool & pool);
-    bool hasWorker(std::unique_lock<std::mutex> &) const;
+    bool hasWorker(std::unique_lock<std::mutex> & lock) const;
 
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
@@ -396,6 +395,11 @@ private:
 
 size_t currentPoolOr(size_t pool);
 
+inline void scheduleLoad(AsyncLoader & loader, const LoadJobSet & jobs)
+{
+    loader.schedule(jobs);
+}
+
 inline void scheduleLoad(const LoadTaskPtr & task)
 {
     task->schedule();
@@ -406,76 +410,60 @@ inline void scheduleLoad(const LoadTaskPtrs & tasks)
     if (tasks.empty())
         return;
     // NOTE: it is assumed that all tasks use the same `AsyncLoader`
-    AsyncLoader & async_loader = tasks.front()->loader;
-    async_loader.schedule(tasks);
+    AsyncLoader & loader = tasks.front()->loader;
+    loader.schedule(tasks);
 }
 
-template <class... Args>
-inline void scheduleLoadAll(Args && ... args)
-{
-    (scheduleLoad(std::forward<Args>(args)), ...);
-}
-
-inline void waitLoad(const LoadJobSet & jobs)
+inline void waitLoad(AsyncLoader & loader, const LoadJobSet & jobs)
 {
     for (const auto & job : jobs)
-        job->wait();
+        loader.wait(job);
 }
 
 inline void waitLoad(const LoadTaskPtr & task)
 {
-    waitLoad(task->goals());
+    waitLoad(task->loader, task->goals());
 }
 
 inline void waitLoad(const LoadTaskPtrs & tasks)
 {
     for (const auto & task : tasks)
-        waitLoad(task->goals());
+        waitLoad(task->loader, task->goals());
 }
 
-inline void waitLoad(AsyncLoader & async_loader, size_t pool_id, const LoadJobSet & jobs)
+inline void prioritizeLoad(AsyncLoader & loader, size_t pool_id, const LoadJobSet & jobs)
 {
     for (const auto & job : jobs)
-        async_loader.prioritize(job, pool_id);
-    for (const auto & job : jobs)
-        job->wait();
+        loader.prioritize(job, pool_id);
+}
+
+inline void prioritizeLoad(size_t pool_id, const LoadTaskPtr & task)
+{
+    prioritizeLoad(task->loader, pool_id, task->goals());
+}
+
+inline void prioritizeLoad(size_t pool_id, const LoadTaskPtrs & tasks)
+{
+    for (const auto & task : tasks)
+        prioritizeLoad(task->loader, pool_id, task->goals());
+}
+
+inline void waitLoad(AsyncLoader & loader, size_t pool_id, const LoadJobSet & jobs)
+{
+    prioritizeLoad(loader, pool_id, jobs);
+    waitLoad(loader, jobs);
 }
 
 inline void waitLoad(size_t pool_id, const LoadTaskPtr & task)
 {
-    waitLoad(task->loader, pool_id, task->goals());
+    prioritizeLoad(task->loader, pool_id, task->goals());
+    waitLoad(task->loader, task->goals());
 }
 
 inline void waitLoad(size_t pool_id, const LoadTaskPtrs & tasks)
 {
-    for (const auto & task : tasks)
-        waitLoad(task->loader, pool_id, task->goals());
-}
-
-template <class... Args>
-inline void waitLoadAll(Args && ... args)
-{
-    (waitLoad(std::forward<Args>(args)), ...);
-}
-
-template <class... Args>
-inline void waitLoadAllIn(size_t pool_id, Args && ... args)
-{
-    (waitLoad(pool_id, std::forward<Args>(args)), ...);
-}
-
-template <class... Args>
-inline void scheduleAndWaitLoadAll(Args && ... args)
-{
-    scheduleLoadAll(std::forward<Args>(args)...);
-    waitLoadAll(std::forward<Args>(args)...);
-}
-
-template <class... Args>
-inline void scheduleAndWaitLoadAllIn(size_t pool_id, Args && ... args)
-{
-    scheduleLoadAll(std::forward<Args>(args)...);
-    waitLoadAllIn(pool_id, std::forward<Args>(args)...);
+    prioritizeLoad(pool_id, tasks);
+    waitLoad(tasks);
 }
 
 inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)

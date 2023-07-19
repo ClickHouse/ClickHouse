@@ -174,7 +174,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         std::move(load_after),
         AsyncLoaderPoolId::BackgroundLoad,
         fmt::format("load table {}", name.getFullName()),
-        [this, local_context, file_path, name, ast, mode] (const LoadJobPtr &)
+        [this, local_context, file_path, name, ast, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
@@ -201,8 +201,9 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
         std::move(startup_after),
         AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup table {}", name.getFullName()),
-        [this, name] (const LoadJobPtr &)
+        [this, name] (AsyncLoader &, const LoadJobPtr &)
         {
+            // `DatabaseOnDisk::tryGetTable()` is used to avoid waiting for a startup
             if (auto table = DatabaseOnDisk::tryGetTable(name.table, {}))
             {
                 /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
