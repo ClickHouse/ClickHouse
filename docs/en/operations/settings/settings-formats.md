@@ -989,6 +989,28 @@ Result
 a  b
 ```
 
+### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
+
+Allow to set default value to column when CSV field deserialization failed on bad value
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
+echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  0  1971-01-01
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
