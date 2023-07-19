@@ -4570,3 +4570,8 @@ Type: Int64
 
 Default: 0
 
+## allow_experimental_block_number_column
+
+Persists virtual column `_block_number` on merges.
+
+Default value: false.
