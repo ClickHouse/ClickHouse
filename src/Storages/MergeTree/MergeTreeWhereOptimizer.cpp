@@ -88,6 +88,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
@@ -117,6 +118,7 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = {};
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
 
     RPNBuilderTreeContext tree_context(context);
@@ -262,8 +264,13 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (cond.viable)
             cond.good = isConditionGood(node, table_columns);
 
-        /// Find min position in PK of any column that is used in this condition.
-        cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
+        if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+        {
+            /// Consider all conditions good with this setting enabled.
+            cond.good = cond.viable;
+            /// Find min position in PK of any column that is used in this condition.
+            cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
+        }
 
         res.emplace_back(std::move(cond));
     }
