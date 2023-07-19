@@ -362,7 +362,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         std::cout << std::endl;
         WriteBufferFromOStream res_buf(std::cout, 4096);
         formatAST(*res, res_buf);
-        res_buf.next();
+        res_buf.finalize();
         std::cout << std::endl << std::endl;
     }
 
@@ -575,9 +575,11 @@ try
                 }
 
                 auto flags = O_WRONLY | O_EXCL;
-                if (query_with_output->is_outfile_append)
+
+                auto file_exists = fs::exists(out_file);
+                if (file_exists && query_with_output->is_outfile_append)
                     flags |= O_APPEND;
-                else if (query_with_output->is_outfile_truncate)
+                else if (file_exists && query_with_output->is_outfile_truncate)
                     flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
@@ -2297,7 +2299,9 @@ void ClientBase::runInteractive()
         catch (const ErrnoException & e)
         {
             if (e.getErrno() != EEXIST)
-                throw;
+            {
+                std::cerr << getCurrentExceptionMessage(false) << '\n';
+            }
         }
     }
 

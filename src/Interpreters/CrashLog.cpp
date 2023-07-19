@@ -52,7 +52,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 
     String build_id_hex;
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);
 }
@@ -84,5 +84,8 @@ void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, co
 
         CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
         crash_log_owned->add(element);
+        /// Notify savingThreadFunction to start flushing crash log
+        /// Crash log is storing in parallel with the signal processing thread.
+        crash_log_owned->notifyFlush(true);
     }
 }

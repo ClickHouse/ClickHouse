@@ -34,6 +34,16 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
+static std::string renderFileNameTemplate(time_t now, const std::string & file_path)
+{
+    fs::path path{file_path};
+    std::tm buf;
+    localtime_r(&now, &buf);
+    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss << std::put_time(&buf, file_path.c_str());
+    return path.replace_filename(ss.str());
+}
+
 #ifndef WITHOUT_TEXT_LOG
 void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
@@ -68,9 +78,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// The maximum (the most verbose) of those will be used as default for Poco loggers
     int max_log_level = 0;
 
-    const auto log_path = config.getString("logger.log", "");
-    if (!log_path.empty())
+    time_t now = std::time({});
+
+    const auto log_path_prop = config.getString("logger.log", "");
+    if (!log_path_prop.empty())
     {
+        const auto log_path = renderFileNameTemplate(now, log_path_prop);
         createDirectory(log_path);
 
         std::string ext;
@@ -109,9 +122,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log, "log");
     }
 
-    const auto errorlog_path = config.getString("logger.errorlog", "");
-    if (!errorlog_path.empty())
+    const auto errorlog_path_prop = config.getString("logger.errorlog", "");
+    if (!errorlog_path_prop.empty())
     {
+        const auto errorlog_path = renderFileNameTemplate(now, errorlog_path_prop);
         createDirectory(errorlog_path);
 
         // NOTE: we don't use notice & critical in the code, so in practice error log collects fatal & error & warning.
