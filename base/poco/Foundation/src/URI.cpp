@@ -633,8 +633,6 @@ void URI::encode(const std::string& str, const std::string& reserved, std::strin
 	for (std::string::const_iterator it = str.begin(); it != str.end(); ++it)
 	{
 		char c = *it;
-        if (c == '%')
-            throw std::runtime_error("WTF");
 		if ((c >= 'a' && c <= 'z') ||
 		    (c >= 'A' && c <= 'Z') ||
 		    (c >= '0' && c <= '9') ||
