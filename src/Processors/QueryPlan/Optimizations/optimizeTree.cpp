@@ -146,8 +146,13 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
+        /// NOTE: optimizePrewhere can modify the stack.
+        optimizePrewhere(stack, nodes);
+        optimizePrimaryKeyCondition(stack);
+
         if (optimization_settings.optimize_projection)
         {
+            /// Normal projection optimization relies on PK optimization
             if (optimizeUseNormalProjections(stack, nodes))
             {
                 ++num_applied_projection;
@@ -164,9 +169,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        /// NOTE: optimizePrewhere can modify the stack.
-        optimizePrewhere(stack, nodes);
-        optimizePrimaryKeyCondition(stack);
         enableMemoryBoundMerging(*stack.back().node, nodes);
 
         stack.pop_back();
