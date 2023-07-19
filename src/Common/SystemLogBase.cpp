@@ -202,7 +202,45 @@ void SystemLogQueue<LogElement>::shutdown()
     flush_event.notify_all();
 }
 
-#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogQueue<ELEMENT>;
+template <typename LogElement>
+SystemLogBase<LogElement>::SystemLogBase(
+    const String& name,
+    size_t flush_interval_milliseconds_,
+    std::shared_ptr<SystemLogQueue<LogElement>> queue_)
+    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(name, flush_interval_milliseconds_))
+{
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::startup()
+{
+    std::lock_guard lock(queue->mutex);
+    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::add(const LogElement & element)
+{
+    queue->push(element);
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::flush(bool force)
+{
+    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
+    if (this_thread_requested_offset == uint64_t(-1))
+        return;
+
+    queue->waitFlush(this_thread_requested_offset);
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
+
+#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
+
+#define INSTANTIATE_SYSTEM_LOG_QUEUE(ELEMENT) template class SystemLogQueue<ELEMENT>;
+SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }
