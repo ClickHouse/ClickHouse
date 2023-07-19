@@ -57,7 +57,7 @@ public:
     URI();
     /// Creates an empty URI.
 
-    explicit URI(const std::string & uri);
+    explicit URI(const std::string & uri, bool decode_and_encode_path = true);
     /// Parses an URI from the given string. Throws a
     /// SyntaxException if the uri is not valid.
 
@@ -350,6 +350,8 @@ protected:
     static const std::string ILLEGAL;
 
 private:
+    void encodePath(std::string & encodedStr) const;
+
     std::string _scheme;
     std::string _userInfo;
     std::string _host;
@@ -357,6 +359,8 @@ private:
     std::string _path;
     std::string _query;
     std::string _fragment;
+
+    bool _decode_and_encode_path = true;
 };
 
 
