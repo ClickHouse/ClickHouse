@@ -1061,10 +1061,7 @@ TEST(AsyncLoader, RecursiveJob)
         {
             int next = --jobs_left;
             if (next > 0)
-            {
-                auto task = loadAsyncImpl(next);
-                waitLoad(self->pool(), task);
-            }
+                waitLoad(self->pool(), loadAsyncImpl(next));
         }
 
         AsyncLoader & loader;

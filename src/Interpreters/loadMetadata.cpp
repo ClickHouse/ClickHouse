@@ -389,7 +389,6 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (startup_tasks) // NOTE: only for system database
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            scheduleLoad(*startup_tasks);
             waitLoad(AsyncLoaderPoolId::Foreground, *startup_tasks);
             startup_tasks->clear();
         }
@@ -441,20 +440,14 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-        auto load_tasks = loader.loadTablesAsync();
-        scheduleLoad(load_tasks);
-        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks);
+        waitLoad(AsyncLoaderPoolId::Foreground, loader.loadTablesAsync());
 
         /// Startup tables if they were started before conversion and detach/attach
         if (startup_tasks) // NOTE: only for system database
             *startup_tasks = loader.startupTablesAsync(); // We have loaded old database(s), replace tasks to startup new database
         else
-        {
             // An old database was already loaded, so we should load new one as well
-            auto tasks = loader.startupTablesAsync();
-            scheduleLoad(tasks);
-            waitLoad(AsyncLoaderPoolId::Foreground, tasks);
-        }
+            waitLoad(AsyncLoaderPoolId::Foreground, loader.startupTablesAsync());
     }
     catch (Exception & e)
     {
@@ -509,7 +502,6 @@ LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
     auto tasks = loader.loadTablesAsync();
-    scheduleLoad(tasks);
     waitLoad(AsyncLoaderPoolId::Foreground, tasks);
 
     /// Will startup tables in system database after all databases are loaded.

@@ -1628,7 +1628,6 @@ try
         auto load_metadata = loadMetadata(global_context, default_database, server_settings.async_load_databases);
         /// If we need to convert database engines, disable async tables loading
         convertDatabasesEnginesIfNeed(load_metadata, global_context);
-        scheduleLoad(system_startup_tasks);
         waitLoad(AsyncLoaderPoolId::Foreground, system_startup_tasks);
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists

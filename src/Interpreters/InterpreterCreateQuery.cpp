@@ -324,15 +324,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
-
-            auto load_tasks = loader.loadTablesAsync();
-            auto startup_tasks = loader.startupTablesAsync();
-            scheduleLoad(load_tasks);
-            scheduleLoad(startup_tasks);
-
-            auto pool = currentPoolOr(AsyncLoaderPoolId::Foreground);
-            waitLoad(pool, load_tasks);
-            waitLoad(pool, startup_tasks);
+            waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), loader.loadTablesAsync());
+            waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), loader.startupTablesAsync());
         }
     }
     catch (...)
