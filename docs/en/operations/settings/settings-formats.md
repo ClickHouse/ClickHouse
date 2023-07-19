@@ -980,9 +980,8 @@ Default value: `false`.
 Query
 
 ```bash
-echo 'a,b,c' > 1.txt
 ./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
-cat 1.txt | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
+echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
 ./clickhouse local -q "select * from test_tbl"
 ```
 
