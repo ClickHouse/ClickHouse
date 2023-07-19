@@ -266,7 +266,7 @@ public:
     }
 
     UInt64 getSize() const override { return reservation->getSize(); }
-    UInt64 getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+    std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
     DiskPtr getDisk(size_t i) const override
     {
@@ -285,19 +285,32 @@ private:
 };
 
 DiskEncrypted::DiskEncrypted(
-    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_, bool use_fake_transaction_)
-    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), use_fake_transaction_)
+    const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_)
+    : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), config_, config_prefix_)
 {
 }
 
-DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_, bool use_fake_transaction_)
+DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_,
+                             const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_)
+    : IDisk(name_, config_, config_prefix_)
+    , delegate(settings_->wrapped_disk)
+    , encrypted_name(name_)
+    , disk_path(settings_->disk_path)
+    , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
+    , current_settings(std::move(settings_))
+    , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
+{
+    delegate->createDirectories(disk_path);
+}
+
+DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
     : IDisk(name_)
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
-    , use_fake_transaction(use_fake_transaction_)
+    , use_fake_transaction(true)
 {
     delegate->createDirectories(disk_path);
 }
@@ -308,32 +321,6 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     if (!reservation)
         return {};
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
-}
-
-void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
-{
-    /// Check if we can copy the file without deciphering.
-    if (isSameDiskType(*this, *to_disk))
-    {
-        /// Disk type is the same, check if the key is the same too.
-        if (auto * to_disk_enc = typeid_cast<DiskEncrypted *>(to_disk.get()))
-        {
-            auto from_settings = current_settings.get();
-            auto to_settings = to_disk_enc->current_settings.get();
-            if (from_settings->all_keys == to_settings->all_keys)
-            {
-                /// Keys are the same so we can simply copy the encrypted file.
-                auto wrapped_from_path = wrappedPath(from_path);
-                auto to_delegate = to_disk_enc->delegate;
-                auto wrapped_to_path = to_disk_enc->wrappedPath(to_path);
-                delegate->copy(wrapped_from_path, to_delegate, wrapped_to_path);
-                return;
-            }
-        }
-    }
-
-    /// Copy the file through buffers with deciphering.
-    copyThroughBuffers(from_path, to_disk, to_path);
 }
 
 
@@ -359,11 +346,8 @@ void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::sha
         }
     }
 
-    if (!to_disk->exists(to_dir))
-        to_disk->createDirectories(to_dir);
-
     /// Copy the file through buffers with deciphering.
-    copyThroughBuffers(from_dir, to_disk, to_dir);
+    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
@@ -443,7 +427,7 @@ std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const st
 
 void DiskEncrypted::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
-    ContextPtr /*context*/,
+    ContextPtr context,
     const String & config_prefix,
     const DisksMap & disk_map)
 {
@@ -455,6 +439,7 @@ void DiskEncrypted::applyNewSettings(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Сhanging disk path on the fly is not supported. Disk {}", name);
 
     current_settings.set(std::move(new_settings));
+    IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
@@ -467,7 +452,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const DisksMap & map) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
-        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map, config.getBool(config_prefix + ".use_fake_transaction", true));
+        DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(context, skip_access_check);
         return disk;
     };

@@ -53,6 +53,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
+            user_configs=["configs/users.d/users.xml"],
             with_minio=True,
         )
 

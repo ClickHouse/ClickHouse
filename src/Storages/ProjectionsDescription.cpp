@@ -7,18 +7,18 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/formatAST.h>
 
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
 
 
@@ -109,9 +109,16 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {},
+        result.query_ast,
+        query_context,
+        storage,
+        {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+            .modify()
+            .ignoreAlias()
+            .ignoreASTOptimizations()
+            .ignoreSettingConstraints());
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
@@ -220,9 +227,16 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {},
+        result.query_ast,
+        query_context,
+        storage,
+        {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+            .modify()
+            .ignoreAlias()
+            .ignoreASTOptimizations()
+            .ignoreSettingConstraints());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
@@ -241,7 +255,8 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
             result.sample_block_for_keys.insert({nullptr, key.type, key.name});
             auto it = partition_column_name_to_value_index.find(key.name);
             if (it == partition_column_name_to_value_index.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "minmax_count projection can only have keys about partition columns. It's a bug");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "minmax_count projection can only have keys about partition columns. It's a bug");
             result.partition_value_indices.push_back(it->second);
         }
     }
@@ -282,7 +297,8 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                       : QueryProcessingStage::WithMergeableState})
+                                                                       : QueryProcessingStage::WithMergeableState}
+                           .ignoreSettingConstraints())
                        .buildQueryPipeline();
     builder.resize(1);
     // Generate aggregated blocks with rows less or equal than the original block.
@@ -353,8 +369,8 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
     {
         if (if_not_exists)
             return;
-        throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists",
-            projection.name);
+        throw Exception(
+            ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
     }
 
     auto insert_it = projections.cend();
@@ -363,10 +379,10 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
         insert_it = projections.cbegin();
     else if (!after_projection.empty())
     {
-        auto it = std::find_if(projections.cbegin(), projections.cend(), [&after_projection](const auto & projection_)
-        {
-            return projection_.name == after_projection;
-        });
+        auto it = std::find_if(
+            projections.cbegin(),
+            projections.cend(),
+            [&after_projection](const auto & projection_) { return projection_.name == after_projection; });
         if (it != projections.cend())
             ++it;
         insert_it = it;

@@ -308,6 +308,8 @@ private:
 
     Poco::Logger * log;
 
+    std::atomic_bool is_shutting_down = false;
+
     /// Do not allow simultaneous execution of DDL requests on the same table.
     /// database name -> database guard -> (table name mutex, counter),
     /// counter: how many threads are running a query on the table at the same time
