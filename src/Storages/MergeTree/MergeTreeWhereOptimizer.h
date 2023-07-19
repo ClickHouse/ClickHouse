@@ -96,6 +96,7 @@ private:
         ContextPtr context;
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
+        bool move_primary_key_columns_to_end_of_prewhere = false;
         bool is_final = false;
     };
 
