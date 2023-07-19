@@ -15,7 +15,7 @@ namespace DB
 namespace
 {
 
-class AnyFunctionVisitor : public InDepthQueryTreeVisitorWithContext<AnyFunctionVisitor>
+class AnyFunctionVisitor : public InDepthQueryTreeVisitor<AnyFunctionVisitor>
 {
 private:
     bool canRewrite(const FunctionNode * function_node)
@@ -51,14 +51,11 @@ private:
     }
 
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<AnyFunctionVisitor>;
+    using Base = InDepthQueryTreeVisitor<AnyFunctionVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_move_functions_out_of_any)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
@@ -132,7 +129,10 @@ private:
 
 void AnyFunctionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    AnyFunctionVisitor visitor(std::move(context));
+    if (!context->getSettings().optimize_move_functions_out_of_any)
+        return;
+
+    AnyFunctionVisitor visitor;
     visitor.visit(query_tree_node);
 }
 
