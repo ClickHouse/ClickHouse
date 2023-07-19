@@ -53,7 +53,8 @@ select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_st
 
 -- Same as above. Feel free to update the threshold or remove this query if really necessary
 -- select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 3) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
-select message_format_string from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
+select 'from logs', message_format_string from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
+select 'from system.text_log', message_format_string from system.text_log where length(message_format_string) < 16 and message_format_string not in known_short_messages and now() - toIntervalMinute(120) < event_time;
 
 -- Unlike above, here we look at length of the formatted message, not format string. Most short format strings are fine because they end up decorated with context from outer or inner exceptions, e.g.:
 -- "Expected end of line" -> "Code: 117. DB::Exception: Expected end of line: (in file/uri /var/lib/clickhouse/user_files/data_02118): (at row 1)"
