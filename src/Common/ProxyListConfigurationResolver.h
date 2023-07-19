@@ -15,19 +15,18 @@ namespace DB
 class ProxyListConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    // I guess extra copy is happening here.
-    ProxyListConfigurationResolver(std::vector<Poco::URI> http_proxies_, std::vector<Poco::URI> https_proxies_);
+    explicit ProxyListConfigurationResolver(std::vector<Poco::URI> proxies_);
 
     ProxyConfiguration resolve(Method method) override;
 
     void errorReport(const ProxyConfiguration &) override {}
 
 private:
-    AtomicRoundRobin<Poco::URI> http_proxies;
-    AtomicRoundRobin<Poco::URI> https_proxies;
-    AtomicRoundRobin<Poco::URI> any_proxies;
+    std::vector<Poco::URI> proxies;
 
-    Poco::URI getProxyURI(Method method);
+    /// Access counter to get proxy using round-robin strategy.
+    std::atomic<size_t> access_counter;
+
 };
 
 }

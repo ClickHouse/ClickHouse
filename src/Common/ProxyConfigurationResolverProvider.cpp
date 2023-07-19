@@ -118,27 +118,25 @@ namespace
         {
             for (const auto & key : keys)
             {
-                if (startsWith(key, "http"))
+                if (key == "http")
                 {
                     for (const auto & uri : extractURIList(config_prefix + "." + key, configuration))
                     {
                         http_uris.push_back(uri);
                     }
                 }
-                else if (startsWith(key, "https"))
+                else if (key == "https")
                 {
                     for (const auto & uri : extractURIList(config_prefix + "." + key, configuration))
                     {
                         https_uris.push_back(uri);
                     }
                 }
-                else if (startsWith(key, "uri"))
+                else if (key == "uri")
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old proxy syntax can't be mixed with new one.");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old proxy syntax can't be mixed with new one");
                 }
             }
-
-            return std::make_shared<ProxyListConfigurationResolver>(http_uris, https_uris);
         }
         else
         {
@@ -153,7 +151,11 @@ namespace
             return nullptr;
         }
 
-        return std::make_shared<ProxyListConfigurationResolver>(http_uris, https_uris);
+        auto http_resolver = std::make_shared<ProxyListConfigurationResolver>(http_uris);
+        auto https_resolver = std::make_shared<ProxyListConfigurationResolver>(https_uris);
+        auto any_resolver = https_resolver;
+
+        return std::make_shared<MethodAwareProxyConfigurationResolver>(http_resolver, https_resolver, any_resolver);
     }
 }
 
@@ -190,9 +192,9 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
             }
 
             auto [http_resolver, https_resolver] = getRemoteResolvers(proxy_prefix, configuration);
+            auto any_resolver = https_resolver;
 
-            // using https_resolver as any resolver
-            return std::make_shared<MethodAwareProxyConfigurationResolver>(http_resolver, https_resolver, https_resolver);
+            return std::make_shared<MethodAwareProxyConfigurationResolver>(http_resolver, https_resolver, any_resolver);
         }
 
         if (auto list_resolver = getListResolver(proxy_prefix, configuration))
