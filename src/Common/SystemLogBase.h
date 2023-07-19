@@ -122,7 +122,6 @@ private:
 };
 
 
-
 template <typename LogElement>
 class SystemLogBase : public ISystemLog
 {
