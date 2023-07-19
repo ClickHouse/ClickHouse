@@ -91,10 +91,10 @@ bool containsStatefulFunc(const QueryTreeNodes & nodes)
     return false;
 }
 
-class DuplicateOrderByVisitor : public InDepthQueryTreeVisitorWithContext<DuplicateOrderByVisitor>
+class DuplicateOrderByVisitor : public InDepthQueryTreeVisitor<DuplicateOrderByVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<DuplicateOrderByVisitor>;
+    using Base = InDepthQueryTreeVisitor<DuplicateOrderByVisitor>;
     using Base::Base;
 
     static bool shouldTraverseTopToBottom()
@@ -104,9 +104,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_duplicate_order_by_and_distinct)
-            return;
-
         auto * query_node = node->as<QueryNode>();
 
         if (!query_node)
@@ -133,7 +130,10 @@ public:
 
 void DuplicateOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    DuplicateOrderByVisitor visitor(context);
+    if (!context->getSettings().optimize_duplicate_order_by_and_distinct)
+        return;
+
+    DuplicateOrderByVisitor visitor;
     visitor.visit(query_tree_node);
 }
 
