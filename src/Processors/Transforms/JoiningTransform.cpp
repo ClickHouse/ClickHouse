@@ -311,15 +311,10 @@ void FillingRightJoinSideTransform::work()
 
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
-    Block left_header_,
     Block output_header_,
-    size_t max_block_size_,
-    JoinPtr join_)
+    NonJoinedStreamBuilder non_joined_stream_builder_)
     : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
-    , left_header(left_header_)
-    , output_header(output_header_)
-    , max_block_size(max_block_size_)
-    , join(join_)
+    , non_joined_stream_builder(std::move(non_joined_stream_builder_))
 {
 }
 
@@ -396,15 +391,12 @@ void DelayedJoinedBlocksWorkerTransform::work()
         return;
 
     Block block;
-    if (!left_delayed_stream_finished)
+    /// All joined and non-joined rows from left stream are emitted, only right non-joined rows are left
+    if (!task->delayed_blocks->isFinished())
     {
         block = task->delayed_blocks->next();
-
         if (!block)
-        {
-            left_delayed_stream_finished = true;
             block = nextNonJoinedBlock();
-        }
     }
     else
     {
@@ -424,7 +416,6 @@ void DelayedJoinedBlocksWorkerTransform::work()
 void DelayedJoinedBlocksWorkerTransform::resetTask()
 {
     task.reset();
-    left_delayed_stream_finished = false;
     non_joined_delayed_stream = nullptr;
 }
 
@@ -436,7 +427,7 @@ Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
     // To make only one processor could read from non-joined stream seems be a easy way.
     if (!non_joined_delayed_stream && task && task->left_delayed_stream_finish_counter->isLast())
     {
-        non_joined_delayed_stream = join->getNonJoinedBlocks(left_header, output_header, max_block_size);
+        non_joined_delayed_stream = non_joined_stream_builder();
     }
 
     if (non_joined_delayed_stream)
