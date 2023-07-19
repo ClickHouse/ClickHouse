@@ -42,6 +42,7 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+#include <Analyzer/Passes/DuplicateOrderByPass.h>
 
 namespace DB
 {
@@ -278,6 +279,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
+
+    manager.addPass(std::make_unique<DuplicateOrderByPass>());
 }
 
 }
