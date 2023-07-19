@@ -9,7 +9,7 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_);
+    explicit ReadFromPreparedSource(Pipe pipe_, ContextPtr context_ = nullptr, const String & qualified_projection_name_ = "");
 
     String getName() const override { return "ReadFromPreparedSource"; }
 
@@ -18,6 +18,7 @@ public:
 protected:
     Pipe pipe;
     ContextPtr context;
+    String qualified_projection_name;
 };
 
 class ReadFromStorageStep : public ReadFromPreparedSource
