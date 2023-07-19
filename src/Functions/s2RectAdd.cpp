@@ -118,14 +118,14 @@ public:
 
             if (!point.is_valid())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Point is invalid. For valid point the latitude is between -90 and 90 degrees inclusive"
+                    "Point is invalid. For valid point the latitude is between -90 and 90 degrees inclusive "
                     "and the longitude is between -180 and 180 degrees inclusive.");
 
             if (!rect.is_valid())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed"
-                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value."
-                    "Also, if either the latitude or longitude bound is empty then both must be.");
+                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed "
+                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value. "
+                    "Also, if either the latitude or longitude bound is empty then both must be. ");
 
             rect.AddPoint(point.ToPoint());
 
