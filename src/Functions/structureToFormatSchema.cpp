@@ -19,8 +19,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 template <class Impl>
@@ -108,10 +106,14 @@ REGISTER_FUNCTION(StructureToCapnProtoSchema)
     factory.registerFunction<FunctionStructureToFormatSchema<StructureToCapnProtoSchema>>(FunctionDocumentation
         {
             .description=R"(
-
+Function that converts ClickHouse table structure to CapnProto format schema
 )",
             .examples{
-                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName')", ""},
+                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "struct MessageName\n"
+"{\n"
+"    s @0 : Data;\n"
+"    x @1 : UInt32;\n"
+"}"},
             },
             .categories{"Other"}
         },
@@ -124,10 +126,16 @@ REGISTER_FUNCTION(StructureToProtobufSchema)
     factory.registerFunction<FunctionStructureToFormatSchema<StructureToProtobufSchema>>(FunctionDocumentation
         {
             .description=R"(
-
+Function that converts ClickHouse table structure to Protobuf format schema
 )",
             .examples{
-                {"random", "SELECT structureToCapnProtoSchema()", ""},
+                {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
+"\n"
+"message MessageName\n"
+"{\n"
+"    bytes s = 1;\n"
+"    uint32 x = 2;\n"
+"}"},
             },
             .categories{"Other"}
         },
