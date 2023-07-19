@@ -50,7 +50,6 @@ FinishSortingTransform::FinishSortingTransform(
             description_sorted_without_constants.push_back(column_description);
         }
     }
-    
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
     for (const auto & column_sort_desc : description_sorted_without_constants)
