@@ -3466,6 +3466,12 @@ Possible values:
 
 Default value: `0`.
 
+## decode_and_encode_path_in_url {#decode_and_encode_path_in_url}
+
+Enables or disables decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Enabled by default.
+
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
