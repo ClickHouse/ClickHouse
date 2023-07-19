@@ -155,11 +155,14 @@
     },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
-        "dependent": [
-        ]
+        "dependent": []
     },
     "docker/test/sqllogic": {
         "name": "clickhouse/sqllogic-test",
+        "dependent": []
+    },
+    "docker/test/sqltest": {
+        "name": "clickhouse/sqltest",
         "dependent": []
     }
 }
