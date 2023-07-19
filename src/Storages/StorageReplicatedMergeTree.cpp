@@ -4114,7 +4114,7 @@ std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(c
     }
 
     if (!our_parts.empty() && our_unique_parts.empty())
-        LOG_TRACE(log_, "All parts found on replica");
+        LOG_TRACE(log_, "All parts found on replicas");
 
     return our_unique_parts;
 }
