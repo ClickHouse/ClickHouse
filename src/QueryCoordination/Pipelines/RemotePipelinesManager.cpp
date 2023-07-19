@@ -166,6 +166,14 @@ void RemotePipelinesManager::cancel()
 
             if (!node.is_finished)
                 node.connection->sendCancel();
+
+            /// wait EndOfStream or Exception
+            Packet packet;
+            while (!node.is_finished && !packet.exception)
+            {
+                packet = node.connection->receivePacket();
+                processPacket(packet, node);
+            }
         }
 
         for (auto & node : managed_nodes)

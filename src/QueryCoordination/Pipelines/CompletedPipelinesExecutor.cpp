@@ -80,7 +80,7 @@ struct CompletedPipelinesExecutor::Datas
         }
     }
 
-    size_t size()
+    size_t size() const
     {
         return datas.size();
     }
@@ -101,7 +101,7 @@ static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupP
         if (thread_group)
             CurrentThread::detachFromGroupIfNotDetached();
     );
-    setThreadName("QCompPipesExaaaa"); /// TODO bytes > 15 can be used test query cancel
+    setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used test query cancel
 
     try
     {

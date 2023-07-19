@@ -140,6 +140,49 @@ def test_aggregate_query(started_cluster):
     assert r == rr
 
     print("local table select:")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with totals SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with totals")
+    print(rr)
+
+    assert r == rr
+
+
+    print("local table select:")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with rollup SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with rollup")
+    print(rr)
+
+    assert r == rr
+
+
+    print("local table select:")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with cube SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with cube")
+    print(rr)
+
+    assert r == rr
+
+
+    print("local table select:")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with totals SETTINGS extremes=1,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with totals SETTINGS extremes=1")
+    print(rr)
+
+    assert r == rr
+
+    print("local table select:")
     r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val LIMIT 10 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
