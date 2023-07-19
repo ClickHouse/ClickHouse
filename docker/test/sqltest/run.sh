@@ -34,7 +34,7 @@ done
 
 # Run the test
 pushd sqltest/standards/2016/
-./test.py
+/test.py
 popd
 
 zstd --threads=0 /var/log/clickhouse-server/clickhouse-server.log
