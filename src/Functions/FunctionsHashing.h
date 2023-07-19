@@ -1535,33 +1535,33 @@ public:
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
 
-        if (input_rows_count == 0)
-            return col_to;
-
-        typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-
-        /// If using a "keyed" algorithm, the first argument is the key and
-        /// the data starts from the second argument.
-        /// Otherwise there is no key and all arguments are interpreted as data.
-        constexpr size_t first_data_argument = Keyed;
-
-        if (arguments.size() <= first_data_argument)
+        if (input_rows_count != 0)
         {
-            /// Return a fixed random-looking magic number when input is empty
-            vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
-        }
+            typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
-        KeyColumnsType key_cols{};
-        if constexpr (Keyed)
-            if (!arguments.empty())
-                key_cols = Impl::parseKeyColumns(arguments[0]);
+            /// If using a "keyed" algorithm, the first argument is the key and
+            /// the data starts from the second argument.
+            /// Otherwise there is no key and all arguments are interpreted as data.
+            constexpr size_t first_data_argument = Keyed;
 
-        /// The function supports arbitrary number of arguments of arbitrary types.
-        bool is_first_argument = true;
-        for (size_t i = first_data_argument; i < arguments.size(); ++i)
-        {
-            const auto & col = arguments[i];
-            executeForArgument(key_cols, col.type.get(), col.column.get(), vec_to, is_first_argument);
+            if (arguments.size() <= first_data_argument)
+            {
+                /// Return a fixed random-looking magic number when input is empty
+                vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
+            }
+
+            KeyColumnsType key_cols{};
+            if constexpr (Keyed)
+                if (!arguments.empty())
+                    key_cols = Impl::parseKeyColumns(arguments[0]);
+
+            /// The function supports arbitrary number of arguments of arbitrary types.
+            bool is_first_argument = true;
+            for (size_t i = first_data_argument; i < arguments.size(); ++i)
+            {
+                const auto & col = arguments[i];
+                executeForArgument(key_cols, col.type.get(), col.column.get(), vec_to, is_first_argument);
+            }
         }
 
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
