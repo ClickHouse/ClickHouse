@@ -26,4 +26,5 @@ ENV MAX_RUN_TIME=900
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 COPY run.sh /
+COPY test.py /
 CMD ["/bin/bash", "/run.sh"]
