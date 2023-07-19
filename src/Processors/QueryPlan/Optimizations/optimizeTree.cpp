@@ -114,6 +114,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
+        /// NOTE: optimizePrewhere can modify the stack.
+        optimizePrewhere(stack, nodes);
+        optimizePrimaryKeyCondition(stack);
+
         {
             /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
@@ -125,6 +129,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 if (optimization_settings.read_in_order)
                     optimizeReadInOrder(*frame.node, nodes);
 
+                /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
                     num_applied_projection
                         += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
@@ -146,13 +151,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        /// NOTE: optimizePrewhere can modify the stack.
-        optimizePrewhere(stack, nodes);
-        optimizePrimaryKeyCondition(stack);
-
         if (optimization_settings.optimize_projection)
         {
-            /// Normal projection optimization relies on PK optimization
+            /// Projection optimization relies on PK optimization
             if (optimizeUseNormalProjections(stack, nodes))
             {
                 ++num_applied_projection;
