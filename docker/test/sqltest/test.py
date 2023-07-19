@@ -2,6 +2,7 @@
 
 import os
 import yaml
+import html
 import random
 import string
 from clickhouse_driver import Client
@@ -26,11 +27,11 @@ with open('features.yml', 'r') as file:
     yaml_content = yaml.safe_load(file)
 
     for category in yaml_content:
-        log_file.write(category.capitalize() + " features:")
+        log_file.write(category.capitalize() + " features:\n")
         summary['results'][category] = {'success': 0, 'total': 0, 'results': {}}
 
         for test in yaml_content[category]:
-            log_file.write(test + ": " + yaml_content[category][test])
+            log_file.write(test + ": " + yaml_content[category][test] + "\n")
             summary['results'][category]['results'][test] = {'success': 0, 'total': 0, 'description': yaml_content[category][test]}
 
             test_path = test[0] + "/" + test + ".tests.yml"
@@ -54,11 +55,11 @@ with open('features.yml', 'r') as file:
                             summary['results'][category]['total'] += 1
                             summary['total'] += 1
 
-                            log_file.write(query)
+                            log_file.write(query + "\n")
 
                             try:
                                 result = client.execute(query, settings = settings)
-                                log_file.write(result)
+                                log_file.write(result + "\n")
 
                                 if test_group:
                                     summary['results'][category]['results'][test_group]['success'] += 1
@@ -67,7 +68,7 @@ with open('features.yml', 'r') as file:
                                 summary['success'] += 1
 
                             except Exception as e:
-                                log_file.write(f"Error occurred: {str(e)}")
+                                log_file.write(f"Error occurred: {str(e)}\n")
 
 client.execute(f"DROP DATABASE {database_name}", settings = settings)
 
@@ -84,7 +85,7 @@ def enable_color(ratio):
 reset_color = "</b>"
 
 def print_ratio(indent, name, success, total, description):
-    report_html_file.write("{}{}: {}{} / {} ({:.1%}){}{}<br/>".format(
+    report_html_file.write("{}{}: {}{} / {} ({:.1%}){}{}<br/>\n".format(
         ' ' * indent,
         name,
         enable_color(success / total),
@@ -92,10 +93,10 @@ def print_ratio(indent, name, success, total, description):
         total,
         success / total,
         reset_color,
-        f" - {description}" if description else ''))
+        f" - " + html.escape(description) if description else ''))
 
 
-report_html_file.write("<html style='font: 16pt; padding: 1em;'><body><pre>")
+report_html_file.write("<html style='font: 16pt; padding: 1em;'><body><pre>\n")
 
 print_ratio(0, 'Total', summary['success'], summary['total'], '')
 
@@ -115,4 +116,4 @@ for category in summary['results']:
 
         print_ratio(4, test, test_summary['success'], test_summary['total'], test_summary['description'])
 
-report_html_file.write("</pre></body></html>")
+report_html_file.write("</pre></body></html>\n")
