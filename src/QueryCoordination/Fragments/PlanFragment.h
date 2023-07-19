@@ -426,6 +426,12 @@ public:
         std::vector<QueryPlanStepPtr> child_steps,
         std::vector<std::shared_ptr<PlanFragment>> child_fragments,
         StorageLimitsList storage_limits_ = {});
+
+    void addChildPlanFragments(
+        QueryPlanStepPtr root_step,
+        std::vector<std::shared_ptr<PlanFragment>> child_fragments,
+        StorageLimitsList storage_limits_ = {});
+
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty

@@ -138,6 +138,70 @@ void PlanFragment::unitePlanFragments(
     setCluster(child_fragments[0]->getCluster());
 }
 
+void PlanFragment::addChildPlanFragments(
+    QueryPlanStepPtr root_step,
+    std::vector<std::shared_ptr<PlanFragment>> child_fragments,
+    StorageLimitsList storage_limits_)
+{
+    size_t num_inputs = root_step->getInputStreams().size();
+    if ((num_inputs - 1) != child_fragments.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot unite PlanFragments using {} because step has different number of inputs. Has {} plans and {} inputs",
+            root_step->getName(),
+            child_fragments.size(),
+            (num_inputs - 1));
+
+    const auto & inputs = root_step->getInputStreams();
+    for (size_t i = 0; i < num_inputs; ++i)
+    {
+        const auto & step_header = inputs[i].header;
+
+        Block plan_header;
+        if (i == 0) /// Most left
+        {
+            plan_header = nodes.back().step->getOutputStream().header;
+        }
+        else
+        {
+            plan_header = child_fragments[i - 1]->getCurrentDataStream().header;
+        }
+
+        if (!blocksHaveEqualStructure(step_header, plan_header))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot unite PlanFragments using {} because it has incompatible header with plan {} plan header: {} step header: {}",
+                root_step->getName(),
+                root->step->getName(),
+                plan_header.dumpStructure(),
+                step_header.dumpStructure());
+    }
+
+    std::vector<PlanNode *> child_nodes{&nodes.back()};
+    for (size_t i = 0; i < child_fragments.size(); ++i)
+    {
+        auto & fragment = child_fragments[i];
+        auto exchange_step = std::make_shared<ExchangeDataStep>(fragment_id, fragment->getCurrentDataStream(), storage_limits_);
+        nodes.emplace_back(makeNewNode(exchange_step, {fragment->getRootNode()}));
+
+        exchange_step->setPlanID(nodes.back().plan_id);
+
+        fragment->setDestination(&nodes.back());
+        fragment->setOutputPartition(data_partition);
+
+        child_nodes.emplace_back(&nodes.back());
+
+        max_threads = std::max(max_threads, fragment->max_threads);
+        resources = std::move(fragment->resources);
+    }
+
+    nodes.emplace_back(makeNewNode(root_step, child_nodes));
+    root = &nodes.back();
+
+    setFragmentInPlanTree(root);
+    setCluster(child_fragments[0]->getCluster());
+}
+
 
 void PlanFragment::addStep(QueryPlanStepPtr step)
 {

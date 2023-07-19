@@ -383,30 +383,52 @@ PlanFragmentPtr PlanFragmentBuilder::createParentFragment(PlanFragmentPtr child_
     return parent_fragment;
 }
 
+/*
+ConcurrentHashJoin (DB)
+DirectKeyValueJoin (DB)
+FullSortingMergeJoin (DB)
+GraceHashJoin (DB)
+HashJoin (DB)
+JoinSwitcher (DB)
+MergeJoin (DB)
+ */
+
 PlanFragmentPtr PlanFragmentBuilder::createJoinFragment(QueryPlanStepPtr step, PlanFragmentPtr left_child_fragment, PlanFragmentPtr right_child_fragment)
 {
-    /// Just only impl hash shaffle join yet
-
     auto * join_step = dynamic_cast<JoinStep *>(step.get());
-    auto join_clause = join_step->getJoin()->getTableJoin().getOnlyClause();
-    DataPartition lhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_left, .keys_size = join_clause.key_names_left.size(), .partition_by_bucket_num = false};
 
-    DataPartition rhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_right, .keys_size = join_clause.key_names_right.size(), .partition_by_bucket_num = false};
+    JoinPtr join = join_step->getJoin();
+    const TableJoin & table_join = join->getTableJoin();
 
-    PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), lhs_join_partition, context);
+    if (table_join.getClauses().size() != 1 || table_join.strictness() == JoinStrictness::Asof) /// broadcast join. Asof support != condition
+    {
+        /// join_step push down left fragment, right fragment as left fragment child
+        left_child_fragment->addChildPlanFragments(step, {right_child_fragment});
+        right_child_fragment->setOutputPartition(DataPartition{.type = PartitionType::UNPARTITIONED});
+        return left_child_fragment;
+    }
+    else
+    {
+        auto join_clause = table_join.getOnlyClause(); /// Definitely equals condition
+        DataPartition lhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_left, .keys_size = join_clause.key_names_left.size(), .partition_by_bucket_num = false};
 
-    PlanFragmentPtrs left_right_fragments;
-    left_right_fragments.emplace_back(left_child_fragment);
-    left_right_fragments.emplace_back(right_child_fragment);
+        DataPartition rhs_join_partition{.type = HASH_PARTITIONED, .keys = join_clause.key_names_right, .keys_size = join_clause.key_names_right.size(), .partition_by_bucket_num = false};
 
-    parent_fragment->unitePlanFragments(step, left_right_fragments, storage_limits);
+        PlanFragmentPtr parent_fragment = std::make_shared<PlanFragment>(context->getFragmentID(), lhs_join_partition, context);
 
-    left_child_fragment->setOutputPartition(lhs_join_partition);
-    right_child_fragment->setOutputPartition(rhs_join_partition);
+        PlanFragmentPtrs left_right_fragments;
+        left_right_fragments.emplace_back(left_child_fragment);
+        left_right_fragments.emplace_back(right_child_fragment);
 
-    all_fragments.emplace_back(parent_fragment);
+        parent_fragment->unitePlanFragments(step, left_right_fragments, storage_limits);
 
-    return parent_fragment;
+        left_child_fragment->setOutputPartition(lhs_join_partition);
+        right_child_fragment->setOutputPartition(rhs_join_partition);
+
+        all_fragments.emplace_back(parent_fragment);
+
+        return parent_fragment;
+    }
 }
 
 PlanFragmentPtr PlanFragmentBuilder::createCreatingSetsFragment(Node & root_node, PlanFragmentPtrs child_fragments)

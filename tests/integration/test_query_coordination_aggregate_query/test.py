@@ -140,44 +140,44 @@ def test_aggregate_query(started_cluster):
     assert r == rr
 
     print("local table select:")
-    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with totals SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val  with totals ORDER BY name,val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with totals")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val  with totals ORDER BY name,val")
     print(rr)
 
     assert r == rr
 
 
     print("local table select:")
-    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with rollup SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val with rollup ORDER BY name,val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with rollup")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val with rollup ORDER BY name,val")
     print(rr)
 
     assert r == rr
 
 
     print("local table select:")
-    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with cube SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val with cube ORDER BY name,val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with cube")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val with cube ORDER BY name,val")
     print(rr)
 
     assert r == rr
 
 
     print("local table select:")
-    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val ORDER BY name,val with totals SETTINGS extremes=1,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
+    r = node1.query("SELECT sum(id),name,val FROM local_table GROUP BY name,val with totals ORDER BY name,val SETTINGS extremes=1,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 0")
     print(r)
 
     print("distribute table select:")
-    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val ORDER BY name,val with totals SETTINGS extremes=1")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val with totals ORDER BY name,val SETTINGS extremes=1")
     print(rr)
 
     assert r == rr
