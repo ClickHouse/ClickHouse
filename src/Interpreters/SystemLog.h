@@ -124,6 +124,7 @@ protected:
 
     using ISystemLog::is_shutdown;
     using ISystemLog::saving_thread;
+    using ISystemLog::thread_mutex;
     using Base::queue;
 
 private:

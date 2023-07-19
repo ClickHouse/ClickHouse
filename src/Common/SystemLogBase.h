@@ -67,6 +67,7 @@ public:
     virtual void savingThreadFunction() = 0;
 
 protected:
+    std::mutex thread_mutex;
     std::unique_ptr<ThreadFromGlobalPool> saving_thread;
 
     bool is_shutdown = false;
@@ -93,10 +94,10 @@ public:
     Index pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread);
     void confirm(Index to_flush_end);
 
+private:
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
 
-private:
     Poco::Logger * log;
 
     // Queue is bounded. But its size is quite large to not block in all normal cases.

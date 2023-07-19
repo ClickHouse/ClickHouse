@@ -214,7 +214,7 @@ SystemLogBase<LogElement>::SystemLogBase(
 template <typename LogElement>
 void SystemLogBase<LogElement>::startup()
 {
-    std::lock_guard lock(queue->mutex);
+    std::lock_guard lock(thread_mutex);
     saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 

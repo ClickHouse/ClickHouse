@@ -358,7 +358,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::stopFlushThread()
 {
     {
-        std::lock_guard lock(queue->mutex);
+        std::lock_guard lock(thread_mutex);
 
         if (!saving_thread || !saving_thread->joinable())
             return;
