@@ -120,7 +120,6 @@ void SystemLogQueue<LogElement>::push(const LogElement & element)
 template <typename LogElement>
 uint64_t SystemLogQueue<LogElement>::notifyFlush(bool should_prepare_tables_anyway)
 {
-    
     uint64_t this_thread_requested_offset;
 
     {
