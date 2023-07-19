@@ -150,7 +150,6 @@ struct PerfDescriptorsHolder : boost::noncopyable
 struct PerfEventsCounters
 {
     PerfDescriptorsHolder thread_events_descriptors_holder;
-    bool disabled = true;
 
     // time_enabled and time_running can't be reset, so we have to store the
     // data from the previous profiling period and calculate deltas to them,
