@@ -223,6 +223,7 @@ def mode_check_statements(parser):
 
     parser.set_defaults(func=calle)
 
+
 def mode_check_complete(parser):
     parser.add_argument("--input-dir", metavar="DIR", required=True)
     parser.add_argument("--out-dir", metavar="DIR", required=True)
@@ -279,6 +280,7 @@ def mode_check_complete(parser):
         statements_report(reports, out_dir, args.mode)
 
     parser.set_defaults(func=calle)
+
 
 def make_actual_report(reports):
     return {stage: report.get_map() for stage, report in reports.items()}

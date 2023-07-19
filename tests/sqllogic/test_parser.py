@@ -9,7 +9,13 @@ from enum import Enum
 from hashlib import md5
 from functools import reduce
 
-from exceptions import Error, ProgramError, ErrorWithParent, DataResultDiffer, QueryExecutionError
+from exceptions import (
+    Error,
+    ProgramError,
+    ErrorWithParent,
+    DataResultDiffer,
+    QueryExecutionError,
+)
 
 
 logger = logging.getLogger("parser")
@@ -494,7 +500,9 @@ class QueryResult:
                     try:
                         res_row.append(str(int(c)))
                     except ValueError as ex:
-                        raise QueryExecutionError(f"Got non-integer result '{c}' for I type.")
+                        raise QueryExecutionError(
+                            f"Got non-integer result '{c}' for I type."
+                        )
                 elif t == "R":
                     res_row.append(f"{c:.3f}")
 
