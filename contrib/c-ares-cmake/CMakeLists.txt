@@ -48,6 +48,7 @@ SET(SRCS
     "${LIBRARY_DIR}/src/lib/ares_platform.c"
     "${LIBRARY_DIR}/src/lib/ares_process.c"
     "${LIBRARY_DIR}/src/lib/ares_query.c"
+    "${LIBRARY_DIR}/src/lib/ares_rand.c"
     "${LIBRARY_DIR}/src/lib/ares_search.c"
     "${LIBRARY_DIR}/src/lib/ares_send.c"
     "${LIBRARY_DIR}/src/lib/ares_strcasecmp.c"

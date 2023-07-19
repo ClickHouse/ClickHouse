@@ -365,6 +365,12 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
+
+    if (storage.since_metadata_err_incr_readonly_metric)
+    {
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+    }
 }
 
 void ReplicatedMergeTreeRestartingThread::setNotReadonly()

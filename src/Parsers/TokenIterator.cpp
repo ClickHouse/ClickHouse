@@ -4,7 +4,7 @@
 namespace DB
 {
 
-Tokens::Tokens(const char * begin, const char * end, size_t max_query_size)
+Tokens::Tokens(const char * begin, const char * end, size_t max_query_size, bool skip_insignificant)
 {
     Lexer lexer(begin, end, max_query_size);
 
@@ -13,7 +13,7 @@ Tokens::Tokens(const char * begin, const char * end, size_t max_query_size)
     {
         Token token = lexer.nextToken();
         stop = token.isEnd() || token.type == TokenType::ErrorMaxQuerySizeExceeded;
-        if (token.isSignificant())
+        if (token.isSignificant() || (!skip_insignificant && !data.empty() && data.back().isSignificant()))
             data.emplace_back(std::move(token));
     } while (!stop);
 }

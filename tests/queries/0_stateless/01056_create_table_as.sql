@@ -16,12 +16,6 @@ DROP TABLE t2;
 CREATE TABLE t3 AS numbers(10);
 DROP TABLE t3;
 
--- live view
-SET allow_experimental_live_view=1;
-CREATE LIVE VIEW lv AS SELECT * FROM t1;
-CREATE TABLE t3 AS lv; -- { serverError 80 }
-DROP TABLE lv;
-
 -- view
 CREATE VIEW v AS SELECT * FROM t1;
 CREATE TABLE t3 AS v; -- { serverError 80 }

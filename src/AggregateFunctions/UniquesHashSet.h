@@ -335,7 +335,7 @@ public:
         if constexpr (std::endian::native == std::endian::little)
             hash_value = hash(x);
         else
-            hash_value = __builtin_bswap32(hash(x));
+            hash_value = std::byteswap(hash(x));
         if (!good(hash_value))
             return;
 

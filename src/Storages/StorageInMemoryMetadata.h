@@ -147,9 +147,12 @@ struct StorageInMemoryMetadata
     TTLDescriptions getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
 
-    /// Returns columns, which will be needed to calculate dependencies (skip
-    /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const;
+    /// Returns columns, which will be needed to calculate dependencies (skip indices, projections,
+    /// TTL expressions) if we update @updated_columns set of columns.
+    ColumnDependencies getColumnDependencies(
+        const NameSet & updated_columns,
+        bool include_ttl_target,
+        const std::function<bool(const String & file_name)> & has_indice_or_projection) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;

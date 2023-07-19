@@ -31,7 +31,8 @@ public:
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
     SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio, OnWeightLossFunction on_weight_loss_function_)
-        : max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
+        : Base(std::make_unique<NoCachePolicyUserQuota>())
+        , max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)

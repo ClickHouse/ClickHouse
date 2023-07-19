@@ -30,7 +30,7 @@ description: In order to effectively mitigate possible human errors, you should 
 ```
 
 :::note ALL
-`ALL` is only applicable to the `RESTORE` command.
+`ALL` is only applicable to the `RESTORE` command prior to version 23.4 of Clickhouse.
 :::
 
 ## Background
@@ -83,6 +83,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - [`compression_method`](/docs/en/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+    - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
 
 ### Usage examples
 

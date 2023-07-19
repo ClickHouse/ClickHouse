@@ -14,5 +14,6 @@ public:
 };
 
 String getFileNameFromReadBuffer(const ReadBuffer & in);
+String getExceptionEntryWithFileName(const ReadBuffer & in);
 
 }

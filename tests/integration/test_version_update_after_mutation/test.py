@@ -13,6 +13,9 @@ node1 = cluster.add_instance(
     tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
 )
 node2 = cluster.add_instance(
     "node2",
@@ -21,6 +24,9 @@ node2 = cluster.add_instance(
     tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
 )
 node3 = cluster.add_instance(
     "node3",
@@ -29,6 +35,9 @@ node3 = cluster.add_instance(
     tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
 )
 
 

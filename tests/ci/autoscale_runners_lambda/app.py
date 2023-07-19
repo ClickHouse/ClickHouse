@@ -2,30 +2,27 @@
 
 """The lambda to decrease/increase ASG desired capacity based on current queue"""
 
-import json
 import logging
-import time
 from dataclasses import dataclass
 from pprint import pformat
 from typing import Any, List, Literal, Optional, Tuple
 
 import boto3  # type: ignore
-import requests  # type: ignore
 
-RUNNER_TYPE_LABELS = [
-    "builder",
-    "func-tester",
-    "func-tester-aarch64",
-    "fuzzer-unit-tester",
-    "stress-tester",
-    "style-checker",
-    "style-checker-aarch64",
-]
+from lambda_shared import (
+    CHException,
+    ClickHouseHelper,
+    RUNNER_TYPE_LABELS,
+    get_parameter_from_ssm,
+)
 
+### Update comment on the change ###
 # 4 HOUR - is a balance to get the most precise values
 #   - Our longest possible running check is around 5h on the worst scenario
 #   - The long queue won't be wiped out and replaced, so the measurmenet is fine
 #   - If the data is spoiled by something, we are from the bills perspective
+# Changed it to 3 HOUR: in average we have 1h tasks, but p90 is around 2h.
+# With 4h we have too much wasted computing time in case of issues with DB
 QUEUE_QUERY = f"""SELECT
     last_status AS status,
     toUInt32(count()) AS length,
@@ -40,7 +37,7 @@ FROM
     FROM default.workflow_jobs
     WHERE has(labels, 'self-hosted')
         AND hasAny({RUNNER_TYPE_LABELS}, labels)
-        AND started_at > now() - INTERVAL 4 HOUR
+        AND started_at > now() - INTERVAL 3 HOUR
     GROUP BY ALL
     HAVING last_status IN ('in_progress', 'queued')
 )
@@ -62,67 +59,22 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     scale_down = 2
     scale_up = 5
     if runner_type == "style-checker":
-        # the style checkers have so many noise, so it scales up too quickly
+        # The ASG should deflate almost instantly
         scale_down = 1
-        scale_up = 10
+        # the style checkers have so many noise, so it scales up too quickly
+        # The 5 was too quick, there are complainings regarding too slow with
+        # 10. I am trying 7 now.
+        # 7 still looks a bit slow, so I try 6
+        # UPDATE THE COMMENT ON CHANGES
+        scale_up = 6
+    elif runner_type == "limited-tester":
+        # The limited runners should inflate and deflate faster
+        scale_down = 1
+        scale_up = 2
     return scale_down, scale_up
 
 
-### VENDORING
-def get_parameter_from_ssm(name, decrypt=True, client=None):
-    if not client:
-        client = boto3.client("ssm", region_name="us-east-1")
-    return client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
-
-
-class CHException(Exception):
-    pass
-
-
-class ClickHouseHelper:
-    def __init__(
-        self,
-        url: Optional[str] = None,
-        user: Optional[str] = None,
-        password: Optional[str] = None,
-    ):
-        self.url = url
-        self.auth = {}
-        if user:
-            self.auth["X-ClickHouse-User"] = user
-        if password:
-            self.auth["X-ClickHouse-Key"] = password
-
-    def _select_and_get_json_each_row(self, db, query):
-        params = {
-            "database": db,
-            "query": query,
-            "default_format": "JSONEachRow",
-        }
-        for i in range(5):
-            response = None
-            try:
-                response = requests.get(self.url, params=params, headers=self.auth)
-                response.raise_for_status()
-                return response.text
-            except Exception as ex:
-                logging.warning("Cannot fetch data with exception %s", str(ex))
-                if response:
-                    logging.warning("Reponse text %s", response.text)
-                time.sleep(0.1 * i)
-
-        raise CHException("Cannot fetch data from clickhouse")
-
-    def select_json_each_row(self, db, query):
-        text = self._select_and_get_json_each_row(db, query)
-        result = []
-        for line in text.split("\n"):
-            if line:
-                result.append(json.loads(line))
-        return result
-
-
-CH_CLIENT = ClickHouseHelper(get_parameter_from_ssm("clickhouse-test-stat-url"), "play")
+CH_CLIENT = None  # type: Optional[ClickHouseHelper]
 
 
 def set_capacity(
@@ -150,8 +102,15 @@ def set_capacity(
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
     scale_down, scale_up = get_scales(runner_type)
+    # With lyfecycle hooks some instances are actually free because some of
+    # them are in 'Terminating:Wait' state
+    effective_capacity = max(
+        asg["DesiredCapacity"],
+        len([ins for ins in asg["Instances"] if ins["HealthStatus"] == "Healthy"]),
+    )
+
     # How much nodes are free (positive) or need to be added (negative)
-    capacity_reserve = asg["DesiredCapacity"] - running - queued
+    capacity_reserve = effective_capacity - running - queued
     stop = False
     if capacity_reserve < 0:
         # This part is about scaling up
@@ -167,12 +126,24 @@ def set_capacity(
         # Finally, should the capacity be even changed
         stop = stop or asg["DesiredCapacity"] == desired_capacity
         if stop:
+            logging.info(
+                "Do not increase ASG %s capacity, current capacity=%s, effective "
+                "capacity=%s, maximum capacity=%s, running jobs=%s, queue size=%s",
+                asg["AutoScalingGroupName"],
+                asg["DesiredCapacity"],
+                effective_capacity,
+                asg["MaxSize"],
+                running,
+                queued,
+            )
             return
+
         logging.info(
             "The ASG %s capacity will be increased to %s, current capacity=%s, "
-            "maximum capacity=%s, running jobs=%s, queue size=%s",
+            "effective capacity=%sm maximum capacity=%s, running jobs=%s, queue size=%s",
             asg["AutoScalingGroupName"],
             desired_capacity,
+            effective_capacity,
             asg["DesiredCapacity"],
             asg["MaxSize"],
             running,
@@ -192,14 +163,25 @@ def set_capacity(
     desired_capacity = min(desired_capacity, asg["MaxSize"])
     stop = stop or asg["DesiredCapacity"] == desired_capacity
     if stop:
+        logging.info(
+            "Do not decrease ASG %s capacity, current capacity=%s, effective "
+            "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
+            asg["AutoScalingGroupName"],
+            asg["DesiredCapacity"],
+            effective_capacity,
+            asg["MinSize"],
+            running,
+            queued,
+        )
         return
 
     logging.info(
-        "The ASG %s capacity will be decreased to %s, current capacity=%s, "
-        "minimum capacity=%s, running jobs=%s, queue size=%s",
+        "The ASG %s capacity will be decreased to %s, current capacity=%s, effective "
+        "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
         asg["AutoScalingGroupName"],
         desired_capacity,
         asg["DesiredCapacity"],
+        effective_capacity,
         asg["MinSize"],
         running,
         queued,
@@ -216,6 +198,9 @@ def main(dry_run: bool = True) -> None:
     asg_client = boto3.client("autoscaling")
     try:
         global CH_CLIENT
+        CH_CLIENT = CH_CLIENT or ClickHouseHelper(
+            get_parameter_from_ssm("clickhouse-test-stat-url"), "play"
+        )
         queues = CH_CLIENT.select_json_each_row("default", QUEUE_QUERY)
     except CHException as ex:
         logging.exception(

@@ -293,7 +293,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
 
-    return Poco::Timespan(0, timeout_ms * 1000);
+    return Poco::Timespan(timeout_ms * 1000);
 }
 
 
@@ -342,8 +342,8 @@ void KeeperTCPHandler::runImpl()
         int32_t handshake_length = header;
         auto client_timeout = receiveHandshake(handshake_length);
 
-        if (client_timeout == 0)
-            client_timeout = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
+        if (client_timeout.totalMilliseconds() == 0)
+            client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
         session_timeout = std::max(client_timeout, min_session_timeout);
         session_timeout = std::min(session_timeout, max_session_timeout);
     }

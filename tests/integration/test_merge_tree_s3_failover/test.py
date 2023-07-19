@@ -85,7 +85,7 @@ def cluster():
 def drop_table(cluster):
     yield
     node = cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS s3_failover_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_failover_test SYNC")
 
 
 # S3 request will be failed for an appropriate part file write.
@@ -183,7 +183,8 @@ def test_move_failover(cluster):
         ) ENGINE=MergeTree()
         ORDER BY id
         TTL dt + INTERVAL 4 SECOND TO VOLUME 'external'
-        SETTINGS storage_policy='s3_cold'
+        SETTINGS storage_policy='s3_cold', temporary_directories_lifetime=1,
+        merge_tree_clear_old_temporary_directories_interval_seconds=1
         """
     )
 
