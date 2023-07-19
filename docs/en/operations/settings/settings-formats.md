@@ -971,7 +971,7 @@ a  b
 
 ### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
 
-Allow to set default value to column when CSV field deserialize failed on bad value
+Allow to set default value to column when CSV field deserialization failed on bad value
 
 Default value: `false`.
 
