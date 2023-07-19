@@ -85,9 +85,9 @@ def enable_color(ratio):
 reset_color = "</b>"
 
 def print_ratio(indent, name, success, total, description):
-    report_html_file.write("{}{}: {}{} / {} ({:.1%}){}{}<br/>\n".format(
+    report_html_file.write("{}{}: {}{} / {} ({:.1%}){}{}\n".format(
         ' ' * indent,
-        name,
+        name.capitalize(),
         enable_color(success / total),
         success,
         total,
@@ -96,7 +96,7 @@ def print_ratio(indent, name, success, total, description):
         f" - " + html.escape(description) if description else ''))
 
 
-report_html_file.write("<html style='font: 16pt; padding: 1em;'><body><pre>\n")
+report_html_file.write("<html><body><pre style='font-size: 16pt; padding: 1em; line-height: 1.25;'>\n")
 
 print_ratio(0, 'Total', summary['success'], summary['total'], '')
 
@@ -114,6 +114,6 @@ for category in summary['results']:
         if test_summary['total'] == 0:
             continue
 
-        print_ratio(4, test, test_summary['success'], test_summary['total'], test_summary['description'])
+        print_ratio(6 if '-' in test else 4, test, test_summary['success'], test_summary['total'], test_summary['description'])
 
 report_html_file.write("</pre></body></html>\n")
