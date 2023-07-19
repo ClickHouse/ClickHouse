@@ -59,7 +59,7 @@ with open('features.yml', 'r') as file:
 
                             try:
                                 result = client.execute(query, settings = settings)
-                                log_file.write(result + "\n")
+                                log_file.write(str(result) + "\n")
 
                                 if test_group:
                                     summary['results'][category]['results'][test_group]['success'] += 1
