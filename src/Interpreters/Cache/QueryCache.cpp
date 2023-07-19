@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/formatAST.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -115,12 +116,10 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-String queryStringFromAst(ASTPtr ast)
+String queryStringFromAST(ASTPtr ast)
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings format_settings(buf, /*one_line*/ true);
-    format_settings.show_secrets = false;
-    ast->format(format_settings);
+    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
     return buf.str();
 }
 
@@ -138,7 +137,7 @@ QueryCache::Key::Key(
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
-    , query_string(queryStringFromAst(ast_))
+    , query_string(queryStringFromAST(ast_))
 {
 }
 
