@@ -70,83 +70,48 @@ QUERY id: 0
           COLUMN id: 20, column_name: number, result_type: UInt64, source_id: 3
 QUERY id: 0
   PROJECTION COLUMNS
-    number UInt8
+    number UInt64
   PROJECTION
     LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: number, result_type: UInt8, source_id: 3
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
   JOIN TREE
     QUERY id: 3, is_subquery: 1
       PROJECTION COLUMNS
-        number UInt8
+        number UInt64
       PROJECTION
         LIST id: 4, nodes: 1
-          COLUMN id: 5, column_name: number, result_type: UInt8, source_id: 6
+          COLUMN id: 5, column_name: number, result_type: UInt64, source_id: 6
       JOIN TREE
-        QUERY id: 6, is_subquery: 1
-          PROJECTION COLUMNS
-            number UInt8
-          PROJECTION
+        TABLE_FUNCTION id: 6, table_function_name: numbers
+          ARGUMENTS
             LIST id: 7, nodes: 1
-              FUNCTION id: 8, function_name: modulo, function_type: ordinary, result_type: UInt8
-                ARGUMENTS
-                  LIST id: 9, nodes: 2
-                    COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
-                    CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
-          JOIN TREE
-            TABLE_FUNCTION id: 11, table_function_name: numbers
-              ARGUMENTS
-                LIST id: 13, nodes: 1
-                  CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
-  ORDER BY
-    LIST id: 15, nodes: 1
-      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
-          COLUMN id: 17, column_name: number, result_type: UInt8, source_id: 3
+              CONSTANT id: 8, constant_value: UInt64_3, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 9, nodes: 1
+      COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
 QUERY id: 0
   PROJECTION COLUMNS
-    number UInt8
+    number UInt64
   PROJECTION
     LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: number, result_type: UInt8, source_id: 3
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
   JOIN TREE
     QUERY id: 3, is_subquery: 1
       PROJECTION COLUMNS
-        number UInt8
+        number UInt64
       PROJECTION
         LIST id: 4, nodes: 1
-          COLUMN id: 5, column_name: number, result_type: UInt8, source_id: 6
+          COLUMN id: 5, column_name: number, result_type: UInt64, source_id: 6
       JOIN TREE
-        QUERY id: 6, is_subquery: 1
-          PROJECTION COLUMNS
-            number UInt8
-          PROJECTION
+        TABLE_FUNCTION id: 6, table_function_name: numbers
+          ARGUMENTS
             LIST id: 7, nodes: 1
-              FUNCTION id: 8, function_name: modulo, function_type: ordinary, result_type: UInt8
-                ARGUMENTS
-                  LIST id: 9, nodes: 2
-                    COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
-                    CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
-          JOIN TREE
-            TABLE_FUNCTION id: 11, table_function_name: numbers
-              ARGUMENTS
-                LIST id: 13, nodes: 1
-                  CONSTANT id: 14, constant_value: UInt64_3, constant_value_type: UInt8
-          ORDER BY
-            LIST id: 15, nodes: 1
-              SORT id: 16, sort_direction: ASCENDING, with_fill: 0
-                EXPRESSION
-                  FUNCTION id: 8, function_name: modulo, function_type: ordinary, result_type: UInt8
-                    ARGUMENTS
-                      LIST id: 9, nodes: 2
-                        COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
-                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+              CONSTANT id: 8, constant_value: UInt64_3, constant_value_type: UInt8
       ORDER BY
-        LIST id: 17, nodes: 1
-          SORT id: 18, sort_direction: ASCENDING, with_fill: 0
+        LIST id: 9, nodes: 1
+          SORT id: 10, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
-              COLUMN id: 19, column_name: number, result_type: UInt8, source_id: 6
-  ORDER BY
-    LIST id: 20, nodes: 1
-      SORT id: 21, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
-          COLUMN id: 22, column_name: number, result_type: UInt8, source_id: 3
+              COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 6
+  GROUP BY
+    LIST id: 12, nodes: 1
+      COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 3
