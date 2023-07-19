@@ -37,8 +37,8 @@ static bool isUnlimitedQuery(const IAST * ast)
     if (!ast)
         return false;
 
-    /// It is KILL QUERY
-    if (ast->as<ASTKillQueryQuery>())
+    /// It is KILL QUERY or an async insert flush query
+    if (ast->as<ASTKillQueryQuery>() || ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
         return true;
 
     /// It is SELECT FROM system.processes
