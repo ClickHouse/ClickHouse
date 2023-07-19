@@ -109,7 +109,8 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve(Method)
 }
 
 void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & config)
-{    if (config.host.empty())
+{
+    if (config.host.empty())
         return;
 
     std::lock_guard lock(cache_mutex);

@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/MethodAwareProxyConfigurationResolver.h>
 
 #include <Interpreters/Context.h>
 
@@ -33,6 +34,42 @@ namespace
                   endpoint.toString(), proxy_scheme, proxy_port);
 
         return std::make_shared<RemoteProxyConfigurationResolver>(endpoint, proxy_scheme, proxy_port, cache_ttl);
+    }
+
+    std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
+        const String & method, const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
+    {
+        std::vector<String> keys;
+        configuration.keys(config_prefix, keys);
+
+        std::vector<Poco::URI> uris;
+        for (const auto & key : keys)
+        {
+            if (startsWith(key, "resolver"))
+            {
+                auto proxy_scheme = configuration.getString(config_prefix + ".resolver.proxy_scheme");
+                if (proxy_scheme == method)
+                {
+                    return getRemoteResolver(config_prefix + "." + key, configuration);
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    std::pair<std::shared_ptr<ProxyConfigurationResolver>, std::shared_ptr<ProxyConfigurationResolver>> getRemoteResolvers(
+        const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
+    {
+        auto http_resolver = getRemoteResolver("http", config_prefix, configuration);
+        auto https_resolver = getRemoteResolver("https", config_prefix, configuration);
+
+        if (!https_resolver)
+        {
+            https_resolver = http_resolver;
+        }
+
+        return {http_resolver, https_resolver};
     }
 
     auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -95,6 +132,10 @@ namespace
                         https_uris.push_back(uri);
                     }
                 }
+                else if (startsWith(key, "uri"))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old proxy syntax can't be mixed with new one.");
+                }
             }
 
             return std::make_shared<ProxyListConfigurationResolver>(http_uris, https_uris);
@@ -143,10 +184,15 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 
         if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
         {
-            if (resolver_configs > 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
+            if (resolver_configs > 2)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only two remote proxy resolvers are allowed, one for HTTP and one for HTTPs");
+            }
 
-            return getRemoteResolver(proxy_prefix + ".resolver", configuration);
+            auto [http_resolver, https_resolver] = getRemoteResolvers(proxy_prefix, configuration);
+
+            // using https_resolver as any resolver
+            return std::make_shared<MethodAwareProxyConfigurationResolver>(http_resolver, https_resolver, https_resolver);
         }
 
         if (auto list_resolver = getListResolver(proxy_prefix, configuration))
