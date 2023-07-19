@@ -4903,7 +4903,6 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
-    mutations_finalizing_task->deactivate();
     stopBeingLeader();
 
     if (attach_thread)
