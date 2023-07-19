@@ -98,6 +98,7 @@ RUN python3 -m pip install --no-cache-dir \
     redis \
     requests-kerberos \
     tzlocal==2.1 \
+    retry \
     urllib3
 
 # Hudi supports only spark 3.3.*, not 3.4
