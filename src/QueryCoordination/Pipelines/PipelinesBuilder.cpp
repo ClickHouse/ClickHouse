@@ -92,7 +92,7 @@ Pipelines PipelinesBuilder::build()
             }
         }
 
-        if (!fragment->getDestFragment())
+        if (!fragment->hasDestFragment())
         {
             pipelines.addRootPipeline(fragment->getFragmentID(), std::move(pipeline));
         }

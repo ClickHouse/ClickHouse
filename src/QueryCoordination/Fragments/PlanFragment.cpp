@@ -51,7 +51,7 @@ void PlanFragment::unitePlanFragments(QueryPlanStepPtr step, std::vector<std::sh
 
         exchange_step->setPlanID(nodes.back().plan_id);
 
-        fragment->setDestination(&nodes.back());
+        fragment->setDestination(&nodes.back(), shared_from_this());
         fragment->setOutputPartition(data_partition);
 
         child_exchange_nodes.emplace_back(&nodes.back());
@@ -66,7 +66,7 @@ void PlanFragment::unitePlanFragments(QueryPlanStepPtr step, std::vector<std::sh
         resources = std::move(fragment->resources);
     }
 
-    setFragmentInPlanTree(root);
+//    setFragmentInPlanTree(root);
     setCluster(fragments[0]->getCluster());
 }
 
@@ -120,7 +120,7 @@ void PlanFragment::unitePlanFragments(
 
         exchange_step->setPlanID(nodes.back().plan_id);
 
-        fragment->setDestination(&nodes.back());
+        fragment->setDestination(&nodes.back(), shared_from_this());
         fragment->setOutputPartition(data_partition);
 
         nodes.emplace_back(makeNewNode(child_steps[i], {&nodes.back()}));
@@ -134,7 +134,7 @@ void PlanFragment::unitePlanFragments(
     nodes.emplace_back(makeNewNode(root_step, child_nodes));
     root = &nodes.back();
 
-    setFragmentInPlanTree(root);
+//    setFragmentInPlanTree(root);
     setCluster(child_fragments[0]->getCluster());
 }
 
@@ -186,7 +186,7 @@ void PlanFragment::addChildPlanFragments(
 
         exchange_step->setPlanID(nodes.back().plan_id);
 
-        fragment->setDestination(&nodes.back());
+        fragment->setDestination(&nodes.back(), shared_from_this());
         fragment->setOutputPartition(data_partition);
 
         child_nodes.emplace_back(&nodes.back());
@@ -198,7 +198,7 @@ void PlanFragment::addChildPlanFragments(
     nodes.emplace_back(makeNewNode(root_step, child_nodes));
     root = &nodes.back();
 
-    setFragmentInPlanTree(root);
+//    setFragmentInPlanTree(root);
     setCluster(child_fragments[0]->getCluster());
 }
 
@@ -590,7 +590,7 @@ QueryPipeline PlanFragment::buildQueryPipeline(std::vector<ExchangeDataSink::Cha
 
     QueryPipeline pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    if (auto dest_fragment = getDestFragment())
+    if (hasDestFragment())
     {
         String query_id;
         if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -602,7 +602,7 @@ QueryPipeline PlanFragment::buildQueryPipeline(std::vector<ExchangeDataSink::Cha
             query_id = context->getInitialQueryId();
         }
         auto sink = std::make_shared<ExchangeDataSink>(
-            pipeline.getHeader(), channels, output_partition, local_host, query_id, dest_fragment->getFragmentID(), dest_node->plan_id);
+            pipeline.getHeader(), channels, output_partition, local_host, query_id, getDestFragmentID(), dest_node->plan_id);
 
         pipeline.complete(sink);
     }

@@ -2,7 +2,6 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
-#include <QueryCoordination/Fragments/PlanFragment.h>
 
 namespace DB
 {

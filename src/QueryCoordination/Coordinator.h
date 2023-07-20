@@ -2,19 +2,19 @@
 
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
-#include <QueryCoordination/Fragments/PlanFragment.h>
+//#include <QueryCoordination/Fragments/PlanFragment.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
 using Hosts = std::vector<String>;
+using FragmentID = Int32;
 
 using HostToFragments = std::unordered_map<String, PlanFragmentPtrs>;
 using FragmentToHosts = std::unordered_map<FragmentID , Hosts>;
 
-// Need fragment container (fragment id and fragment) and receiver map. Data sink by fragment id and exchange id to find exchange data recvr.
-// maybe by query id, fragment id, exchange id
+
 class Coordinator
 {
 public:

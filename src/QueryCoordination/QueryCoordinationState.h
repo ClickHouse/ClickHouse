@@ -1,10 +1,15 @@
 #pragma once
 
 #include <QueryCoordination/Pipelines/Pipelines.h>
-#include <QueryCoordination/Fragments/PlanFragment.h>
+#include <Client/ConnectionPool.h>
 
 namespace DB
 {
+
+class PlanFragment;
+
+using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
+using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
 
 class QueryCoordinationState {
 

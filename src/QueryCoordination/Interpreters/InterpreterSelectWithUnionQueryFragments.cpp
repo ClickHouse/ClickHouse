@@ -7,6 +7,7 @@
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <QueryCoordination/Fragments/PlanFragmentBuilder.h>
+#include <QueryCoordination/Fragments/PlanFragment.h>
 #include <QueryCoordination/Coordinator.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/evaluateConstantExpression.h>

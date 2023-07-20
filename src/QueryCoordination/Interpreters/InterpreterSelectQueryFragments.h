@@ -194,10 +194,6 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
 
-    void executePreLimit(PlanFragmentPtr fragment, bool do_not_skip_offset);
-    void executeLimitBy(PlanFragmentPtr fragment);
-    void processLimitRelated(QueryPlanStepPtr step, PlanFragmentPtr child_fragment);
-
     enum class Modificator
     {
         ROLLUP = 0,

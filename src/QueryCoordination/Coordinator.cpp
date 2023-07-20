@@ -110,10 +110,12 @@ String Coordinator::assignFragmentToHost()
         std::unordered_map<FragmentID, std::vector<String>> this_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts_)
         {
-            auto dest_fragment = id_fragment[fragment_id]->getDestFragment();
+            auto dest_fragment_id = id_fragment[fragment_id]->getDestFragmentID();
 
-            if (!dest_fragment)
+            if (!id_fragment[fragment_id]->hasDestFragment())
                 return this_fragment_hosts;
+
+            auto dest_fragment = id_fragment[dest_fragment_id];
 
             /// dest_fragment scheduling by the left node
             if (dest_fragment->getChildren().size() > 1)
@@ -127,7 +129,7 @@ String Coordinator::assignFragmentToHost()
 
             if (!dest_fragment->isPartitioned())
             {
-                if (!dest_fragment->getDestFragment()) /// root fragment
+                if (!dest_fragment->hasDestFragment()) /// root fragment
                 {
                     host_fragments[local_host_port].emplace_back(dest_fragment);
                     fragment_hosts[dest_fragment->getFragmentID()].emplace_back(local_host_port);
@@ -221,7 +223,7 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
         auto & request = fragment_requests[fragment_id];
 
         auto fragment = id_fragment[fragment_id];
-        auto dest_fragment = fragment->getDestFragment();
+        auto dest_fragment = id_fragment[fragment->getDestFragmentID()];
         auto dest_exchange_id = fragment->getDestExchangeID();
 
         Destinations data_to;

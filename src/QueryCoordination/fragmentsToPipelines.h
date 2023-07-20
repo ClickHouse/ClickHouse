@@ -1,12 +1,16 @@
 #pragma once
 
-#include <QueryCoordination/Fragments/PlanFragment.h>
 #include <QueryCoordination/Pipelines/Pipelines.h>
 #include <QueryCoordination/IO/FragmentRequest.h>
 
 
 namespace DB
 {
+
+class PlanFragment;
+
+using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
+using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
 
 struct Settings;
 

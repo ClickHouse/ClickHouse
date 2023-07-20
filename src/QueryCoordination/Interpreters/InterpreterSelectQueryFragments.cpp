@@ -87,6 +87,8 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/StorageNull.h>
+#include <Storages/getStructureOfRemoteTable.h>
 
 #include <Columns/Collator.h>
 #include <Core/ColumnNumbers.h>
@@ -433,6 +435,34 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
     if (!has_input && !storage)
     {
         storage = joined_tables.getLeftTableStorage();
+        /// TODO POC test distributed to local. execute on 127.0.0.1:9000 : select * from dis(127.0.0.1:9100) join local_table
+        if (auto * distributed_storage = dynamic_cast<StorageDistributed *>(storage.get()))
+        {
+            auto database_name = distributed_storage->getRemoteDatabaseName();
+            auto table_name = distributed_storage->getRemoteTableName();
+            distributed_storage->getCluster();
+
+            StorageID local_table_id  = context->resolveStorageID(StorageID(database_name, table_name, UUIDHelpers::Nil));
+
+            storage = DatabaseCatalog::instance().getTable(local_table_id, context);
+
+            if (!storage)
+            {
+                /// create StorageNull
+                /// TODO getStructureOfRemoteTable
+
+                auto res = std::make_shared<StorageNull>(StorageID(database_name, table_name), columns, ConstraintsDescription(), String{});
+                res.startup();
+                storage = res;
+            }
+        }
+        else /// local storage
+        {
+            /// TODO may already exception from getLeftTableStorage() DatabaseCatalog::instance().getTable(table_id, context)
+            if (!storage)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "may cross cluster query, not support");
+        }
+
         // Mark uses_view_source if the returned storage is the same as the one saved in viewSource
         uses_view_source |= storage && storage == context->getViewSource();
         got_storage_from_query = true;
@@ -2727,84 +2757,6 @@ void InterpreterSelectQueryFragments::executeDistinct(QueryPlan & query_plan, bo
 
         query_plan.addStep(std::move(distinct_step));
     }
-}
-
-
-/// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQueryFragments::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
-{
-    auto & query = getSelectQuery();
-    /// If there is LIMIT
-    if (query.limitLength())
-    {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-
-        if (do_not_skip_offset)
-        {
-            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
-                return;
-
-            limit_length += limit_offset;
-            limit_offset = 0;
-        }
-
-        const Settings & settings = context->getSettingsRef();
-
-        auto limit = std::make_shared<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset, settings.exact_rows_before_limit);
-        if (do_not_skip_offset)
-            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
-        else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
-
-        query_plan.addStep(std::move(limit));
-    }
-}
-
-void InterpreterSelectQueryFragments::executePreLimit(PlanFragmentPtr fragment, bool do_not_skip_offset)
-{
-    auto & query = getSelectQuery();
-    /// If there is LIMIT
-    if (query.limitLength())
-    {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-
-        if (do_not_skip_offset)
-        {
-            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
-                return;
-
-            limit_length += limit_offset;
-            limit_offset = 0;
-        }
-
-        const Settings & settings = context->getSettingsRef();
-
-        auto limit = std::make_shared<LimitStep>(fragment->getCurrentDataStream(), limit_length, limit_offset, settings.exact_rows_before_limit);
-        if (do_not_skip_offset)
-            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
-        else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
-
-        fragment->addStep(std::move(limit));
-    }
-}
-
-
-void InterpreterSelectQueryFragments::executeLimitBy(PlanFragmentPtr fragment)
-{
-    auto & query = getSelectQuery();
-    if (!query.limitByLength() || !query.limitBy())
-        return;
-
-    Names columns;
-    for (const auto & elem : query.limitBy()->children)
-        columns.emplace_back(elem->getColumnName());
-
-    UInt64 length = getLimitUIntValue(query.limitByLength(), context, "LIMIT");
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
-
-    auto limit_by = std::make_shared<LimitByStep>(fragment->getCurrentDataStream(), length, offset, columns);
-    fragment->addStep(std::move(limit_by));
 }
 
 void InterpreterSelectQueryFragments::executeLimitBy(QueryPlan & query_plan)

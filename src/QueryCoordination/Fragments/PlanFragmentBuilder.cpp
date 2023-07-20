@@ -316,7 +316,7 @@ PlanFragmentPtr PlanFragmentBuilder::createScanFragment(QueryPlanStepPtr step)
 
     auto fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
     fragment->addStep(std::move(step));
-    fragment->setFragmentInPlanTree(fragment->getRootNode());
+//    fragment->setFragmentInPlanTree(fragment->getRootNode());
     fragment->setCluster(context->getCluster("test_two_shards"));
 
     all_fragments.emplace_back(fragment);
@@ -372,13 +372,13 @@ PlanFragmentPtr PlanFragmentBuilder::createParentFragment(PlanFragmentPtr child_
         = std::make_shared<ExchangeDataStep>(parent_fragment->getFragmentID(), child_fragment->getCurrentDataStream(), storage_limits);
     parent_fragment->addStep(exchange_step);
     auto * exchange_node = parent_fragment->getRootNode(); /// exchange node
-    parent_fragment->setFragmentInPlanTree(exchange_node);
+//    parent_fragment->setFragmentInPlanTree(exchange_node);
     parent_fragment->setCluster(context->getCluster("test_two_shards"));
 
     exchange_step->setPlanID(exchange_node->plan_id);
     exchange_node->children.emplace_back(child_fragment->getRootNode());
 
-    child_fragment->setDestination(exchange_node);
+    child_fragment->setDestination(exchange_node, parent_fragment);
     child_fragment->setOutputPartition(partition);
     return parent_fragment;
 }

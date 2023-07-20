@@ -325,37 +325,14 @@ public:
         bool header = false;
     };
 
-    /**
-     * Assigns 'this' as fragment of all PlanNodes in the plan tree rooted at node.
-     * Does not traverse the children of ExchangeNodes because those must belong to a
-     * different fragment.
-     */
-    void setFragmentInPlanTree(Node * node)
+    FragmentID getDestFragmentID() const
     {
-        if (!node || !node->step)
-        {
-            return;
-        }
-        node->fragment = shared_from_this();
-
-        if (dynamic_cast<ExchangeDataStep *>(node->step.get()))
-        {
-            return;
-        }
-
-        for (Node * child : node->children)
-        {
-            setFragmentInPlanTree(child);
-        }
+        return dest_fragment_id;
     }
 
-    PlanFragmentPtr getDestFragment() const
+    bool hasDestFragment() const
     {
-        if (!dest_node || !dest_node->step)
-        {
-            return nullptr;
-        }
-        return dest_node->fragment;
+        return dest_fragment_id != 0;
     }
 
     PlanID getDestExchangeID() const
@@ -377,11 +354,11 @@ public:
         return children;
     }
 
-    void setDestination(Node * node)
+    void setDestination(Node * node, PlanFragmentPtr dest_fragment)
     {
         dest_node = node;
-        PlanFragmentPtr dest = getDestFragment();
-        dest->addChild(shared_from_this());
+        dest_fragment_id = dest_fragment->getFragmentID();
+        dest_fragment->addChild(shared_from_this());
     }
 
     Node * getRootNode() const { return root; }
@@ -396,10 +373,10 @@ public:
         buffer.write('\n');
         std::string str("Fragment " + std::to_string(fragment_id) + ", ");
         str += data_partition.toString();
-        if (dest_node && dest_node->fragment)
+        if (hasDestFragment())
         {
             str += ", Data to:";
-            str += std::to_string(dest_node->fragment->getFragmentID()) + ", ";
+            str += std::to_string(getDestFragmentID()) + ", ";
         }
         buffer.write(str.c_str(), str.size());
         buffer.write('\n');
@@ -475,7 +452,6 @@ private:
     {
         Node node;
         node.step = step;
-        node.fragment = shared_from_this();
         node.plan_id = ++plan_id_counter;
         node.children = children_;
         return node;
@@ -491,11 +467,14 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
 
-    // id for this plan fragment
+    /// id for this plan fragment
     FragmentID fragment_id;
 
-    // exchange node to which this fragment sends its output
+    /// exchange node to which this fragment sends its output
     Node * dest_node = nullptr;
+
+    /// no dest fragment
+    FragmentID dest_fragment_id = 0;
 
     PlanFragmentPtrs children;
 
