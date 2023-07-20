@@ -82,7 +82,7 @@ std::unique_ptr<ReadBufferFromFileBase> EncryptedObjectStorage::readObject( /// 
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    return readObjects({object}, patchSettings(read_settings), read_hint, file_size);
+    return readObjects({object}, read_settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> EncryptedObjectStorage::writeObject( /// NOLINT
