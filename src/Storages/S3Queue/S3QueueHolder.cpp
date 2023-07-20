@@ -74,9 +74,9 @@ S3QueueHolder::S3QueueProcessedCollection::S3QueueProcessedCollection(const UInt
 {
 }
 
-void S3QueueHolder::S3QueueProcessedCollection::parse(const String & s)
+void S3QueueHolder::S3QueueProcessedCollection::parse(const String & collection_str)
 {
-    ReadBufferFromString buf(s);
+    ReadBufferFromString buf(collection_str);
     read(buf);
     // Remove old items
     if (max_age > 0)
@@ -111,9 +111,9 @@ S3QueueHolder::S3QueueFailedCollection::S3QueueFailedCollection(const UInt64 & m
 {
 }
 
-void S3QueueHolder::S3QueueFailedCollection::parse(const String & s)
+void S3QueueHolder::S3QueueFailedCollection::parse(const String & collection_str)
 {
-    ReadBufferFromString buf(s);
+    ReadBufferFromString buf(collection_str);
     read(buf);
 }
 
@@ -124,8 +124,7 @@ bool S3QueueHolder::S3QueueFailedCollection::add(const String & file_name)
         = std::find_if(files.begin(), files.end(), [&file_name](const TrackedCollectionItem & s) { return s.file_path == file_name; });
     if (failed_it != files.end())
     {
-        failed_it->retries_count--;
-        if (failed_it->retries_count == 0)
+        if (failed_it->retries_count == 0 || --failed_it->retries_count == 0)
         {
             return false;
         }
@@ -138,7 +137,7 @@ bool S3QueueHolder::S3QueueFailedCollection::add(const String & file_name)
     return true;
 }
 
-S3QueueHolder::S3FilesCollection S3QueueHolder::S3QueueFailedCollection::getFilesWithoutRetries()
+S3QueueHolder::S3FilesCollection S3QueueHolder::S3QueueFailedCollection::getFileNames()
 {
     S3FilesCollection failed_keys;
     for (const auto & pair : files)
@@ -233,7 +232,7 @@ S3QueueHolder::S3FilesCollection S3QueueHolder::getFailedFiles()
     auto failed_collection = S3QueueFailedCollection(max_loading_retries);
     failed_collection.parse(failed_files);
 
-    return failed_collection.getFilesWithoutRetries();
+    return failed_collection.getFileNames();
 }
 
 String S3QueueHolder::getMaxProcessedFile()

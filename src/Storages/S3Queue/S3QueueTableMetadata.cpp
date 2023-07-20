@@ -43,10 +43,10 @@ String S3QueueTableMetadata::toString() const
     return oss.str();
 }
 
-void S3QueueTableMetadata::read(const String & s)
+void S3QueueTableMetadata::read(const String & metadata_str)
 {
     Poco::JSON::Parser parser;
-    auto json = parser.parse(s).extract<Poco::JSON::Object::Ptr>();
+    auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
     after_processing = json->getValue<String>("after_processing");
     mode = json->getValue<String>("mode");
     s3queue_tracked_files_limit = json->getValue<UInt64>("s3queue_tracked_files_limit");
@@ -54,10 +54,10 @@ void S3QueueTableMetadata::read(const String & s)
     format_name = json->getValue<String>("format_name");
 }
 
-S3QueueTableMetadata S3QueueTableMetadata::parse(const String & s)
+S3QueueTableMetadata S3QueueTableMetadata::parse(const String & metadata_str)
 {
     S3QueueTableMetadata metadata;
-    metadata.read(s);
+    metadata.read(metadata_str);
     return metadata;
 }
 
