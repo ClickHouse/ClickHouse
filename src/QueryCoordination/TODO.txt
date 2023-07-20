@@ -14,7 +14,16 @@
 
    select * from d1(A) join (select * from d2(D) join l)
 
-   sql will send to (A,B,C,D,E,F), but l only in (D,E,F), then (A,B,C) will exception, so when local table not exists, we create StorageNull
+   sql execute on A, it will send to (A,B,C,D,E,F), but l only in (D,E,F), then (A,B,C) will exception, so when local table not exists,
+   this scenario is not compatible because the L table structure cannot be obtained
+
+   and
+
+   select * from l1 join dis(A)
+
+   l1 on A, but no B,C.
+   sql will send to A,B,C.
+   B,C will exception
 
 
 

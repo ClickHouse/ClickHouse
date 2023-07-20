@@ -449,10 +449,9 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
             if (!storage)
             {
                 /// create StorageNull
-                /// TODO getStructureOfRemoteTable
-
-                auto res = std::make_shared<StorageNull>(StorageID(database_name, table_name), columns, ConstraintsDescription(), String{});
-                res.startup();
+                LOG_DEBUG(log, "This node no associated local table, may remote cluster query");
+                auto res = std::make_shared<StorageNull>(StorageID(database_name, table_name), distributed_storage->getInMemoryMetadata().getColumns(), ConstraintsDescription(), String{});
+                res->startup();
                 storage = res;
             }
         }
