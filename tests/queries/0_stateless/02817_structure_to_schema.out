@@ -246,6 +246,7 @@ Read/write with no schema
 8
 9
 Output schema
+@0xda5297bc0d5b501a;
 
 struct Message
 {
@@ -456,6 +457,7 @@ Read/write with no schema
 8
 9
 Output schema
+syntax = "proto3";
 
 message Message
 {
