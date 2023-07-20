@@ -473,23 +473,30 @@ void KeeperDispatcher::shutdown()
             session_to_response_callback.clear();
         }
 
-        // if there is no leader, there is no reason to do CLOSE because it's a write request
-        if (server && hasLeader() && !close_requests.empty())
+        if (server && !close_requests.empty())
         {
-            LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
-            const auto raft_result = server->putRequestBatch(close_requests);
-            auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
-            auto sessions_closing_done = sessions_closing_done_promise->get_future();
-            raft_result->when_ready([my_sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
-                                        nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
-                                        nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
+            // if there is no leader, there is no reason to do CLOSE because it's a write request
+            if (hasLeader())
+            {
+                LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
+                const auto raft_result = server->putRequestBatch(close_requests);
+                auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
+                auto sessions_closing_done = sessions_closing_done_promise->get_future();
+                raft_result->when_ready([my_sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
+                                            nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
+                                            nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
 
-            auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
-            if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
-                LOG_WARNING(
-                    log,
-                    "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
-                    session_shutdown_timeout);
+                auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
+                if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
+                    LOG_WARNING(
+                        log,
+                        "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
+                        session_shutdown_timeout);
+            }
+            else
+            {
+                LOG_INFO(log, "Sessions cannot be closed during shutdown because there is no active leader");
+            }
         }
 
         if (server)
