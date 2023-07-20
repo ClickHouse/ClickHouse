@@ -45,7 +45,7 @@ public:
         String toString() const;
         S3FilesCollection getFileNames();
 
-        virtual void parse(const String & s) = 0;
+        virtual void parse(const String & collection_str) = 0;
 
     protected:
         TrackedFiles files;
@@ -59,7 +59,7 @@ public:
     public:
         S3QueueProcessedCollection(const UInt64 & max_size_, const UInt64 & max_age_);
 
-        void parse(const String & s) override;
+        void parse(const String & collection_str) override;
         void add(const String & file_name);
 
     private:
@@ -72,10 +72,10 @@ public:
     public:
         S3QueueFailedCollection(const UInt64 & max_retries_count_);
 
-        void parse(const String & s) override;
+        void parse(const String & collection_str) override;
         bool add(const String & file_name);
 
-        S3FilesCollection getFilesWithoutRetries();
+        S3FilesCollection getFileNames();
 
     private:
         UInt64 max_retries_count;

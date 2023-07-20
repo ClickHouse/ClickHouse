@@ -26,8 +26,8 @@ struct S3QueueTableMetadata
     S3QueueTableMetadata() = default;
     S3QueueTableMetadata(const StorageS3::Configuration & configuration, const S3QueueSettings & engine_settings);
 
-    void read(const String & s);
-    static S3QueueTableMetadata parse(const String & s);
+    void read(const String & metadata_str);
+    static S3QueueTableMetadata parse(const String & metadata_str);
 
     String toString() const;
 
