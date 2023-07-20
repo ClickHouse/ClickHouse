@@ -42,10 +42,14 @@ ISystemLog::~ISystemLog() = default;
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(
     const String & table_name_,
-    size_t flush_interval_milliseconds_)
+    size_t flush_interval_milliseconds_,
+    bool turn_off_logger_)
     : log(&Poco::Logger::get("SystemLogQueue (" + table_name_ + ")"))
     , flush_interval_milliseconds(flush_interval_milliseconds_)
-{}
+{
+    if (turn_off_logger_)
+        log->setLevel(0);
+}
 
 static thread_local bool recursive_push_call = false;
 
@@ -197,6 +201,7 @@ SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<Lo
 template <typename LogElement>
 void SystemLogQueue<LogElement>::shutdown()
 {
+    std::unique_lock lock(mutex);
     is_shutdown = true;
     /// Tell thread to shutdown.
     flush_event.notify_all();

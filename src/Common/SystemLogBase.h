@@ -81,7 +81,8 @@ class SystemLogQueue
 public:
     SystemLogQueue(
         const String & table_name_,
-        size_t flush_interval_milliseconds_);
+        size_t flush_interval_milliseconds_,
+        bool turn_off_logger_ = false);
 
     void shutdown();
 
