@@ -111,7 +111,7 @@ void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
 bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 bool addPlansForSets(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
