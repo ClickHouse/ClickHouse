@@ -98,6 +98,7 @@
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -327,9 +328,10 @@ struct ContextSharedPart : boost::noncopyable
     OrdinaryBackgroundExecutorPtr fetch_executor;
     OrdinaryBackgroundExecutorPtr common_executor;
 
-    RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
+    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
+    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
-    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
+    std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -1524,7 +1526,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
         if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            const auto & insert_structure = DatabaseCatalog::instance()
+                                                .getTable(getInsertionTable(), shared_from_this())
+                                                ->getInMemoryMetadataPtr()
+                                                ->getColumns()
+                                                .getInsertable();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -2957,6 +2963,16 @@ void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & conf
 const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
     return shared->remote_host_filter;
+}
+
+void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
+{
+    shared->http_header_filter.setValuesFromConfig(config);
+}
+
+const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
+{
+    return shared->http_header_filter;
 }
 
 UInt16 Context::getTCPPort() const
