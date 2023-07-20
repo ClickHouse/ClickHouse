@@ -121,6 +121,17 @@ namespace MySQLReplication
         {
             typ = QUERY_SAVEPOINT;
         }
+
+        // https://dev.mysql.com/worklog/task/?id=13355
+        // When doing query "CREATE TABLE xx AS SELECT", the binlog will be
+        // "CREATE TABLE ... START TRANSACTION", the DDL will be failed
+        // so, just ignore the "START TRANSACTION" suffix
+        if (query.ends_with("START TRANSACTION"))
+        {
+            auto pos = query.rfind("START TRANSACTION");
+            if (pos > 0)
+                query.resize(pos);
+        }
     }
 
     void QueryEvent::dump(WriteBuffer & out) const
