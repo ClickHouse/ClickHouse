@@ -19,7 +19,8 @@ public:
         std::unique_ptr<ReadBufferFromFileBase> in_,
         const String & key_,
         const FileEncryption::Header & header_,
-        size_t offset_ = 0);
+        size_t offset_ = 0,
+        bool use_external_buffer_ = false);
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;

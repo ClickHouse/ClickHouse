@@ -77,7 +77,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> current_read_buffer_creator;
-    current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
+    current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position, true); };
 
     if (settings.encryption_settings)
     {
@@ -107,7 +107,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             else
             {
                 Memory<> buffer;
-                auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position);
+                auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position, true);
                 if (implementation_buffer->internalBuffer().size() < FileEncryption::Header::kSize)
                 {
                     buffer.resize(FileEncryption::Header::kSize);
@@ -116,9 +116,9 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
                 header = FileEncryption::readHeader(*implementation_buffer);
             }
             String key = settings.encryption_settings->findKeyByFingerprint(header.key_fingerprint, object_path);
-            auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position);
+            auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position, false);
             return std::make_unique<ReadBufferFromEncryptedFile>(
-                settings.remote_fs_buffer_size, std::move(implementation_buffer), key, header);
+                settings.remote_fs_buffer_size, std::move(implementation_buffer), key, header, 0, true);
         };
     }
 

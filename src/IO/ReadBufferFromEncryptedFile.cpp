@@ -14,8 +14,9 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     std::unique_ptr<ReadBufferFromFileBase> in_,
     const String & key_,
     const FileEncryption::Header & header_,
-    size_t offset_)
-    : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
+    size_t offset_,
+    bool use_external_buffer_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size_, nullptr, 0)
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
     , encryptor(header_.algorithm, key_, header_.init_vector)
@@ -74,15 +75,6 @@ size_t ReadBufferFromEncryptedFile::getFileOffsetOfBufferEnd() const
 
 bool ReadBufferFromEncryptedFile::nextImpl()
 {
-    Memory<> external_buffer;
-    std::optional<Buffer> old_buffer;
-    if (in->internalBuffer().empty())
-    {
-        external_buffer.resize(encrypted_buffer.size());
-        old_buffer = in->internalBuffer();
-        in->set(external_buffer.data(), external_buffer.size());
-    }
-
     if (need_seek)
     {
         off_t raw_offset = offset + FileEncryption::Header::kSize;
@@ -100,9 +92,6 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     {
         bytes_read += in->read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
     }
-
-    if (old_buffer)
-        in->set(old_buffer->begin(), old_buffer->size());
 
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `bytes_read`.

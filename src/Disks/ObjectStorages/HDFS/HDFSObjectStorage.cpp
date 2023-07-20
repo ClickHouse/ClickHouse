@@ -58,15 +58,15 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
 {
     auto disk_read_settings = patchSettings(read_settings);
     auto read_buffer_creator =
-        [this, disk_read_settings]
-        (const std::string & path, size_t /* read_until_position */) -> std::unique_ptr<ReadBufferFromFileBase>
+        [this, disk_read_settings](
+            const std::string & path, size_t /* read_until_position */, bool use_external_buffer) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         size_t begin_of_path = path.find('/', path.find("//") + 2);
         auto hdfs_path = path.substr(begin_of_path);
         auto hdfs_uri = path.substr(0, begin_of_path);
 
         return std::make_unique<ReadBufferFromHDFS>(
-            hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
+            hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */ 0, use_external_buffer);
     };
 
     return std::make_unique<ReadBufferFromRemoteFSGather>(
