@@ -38,11 +38,12 @@ FinishSortingTransform::FinishSortingTransform(
     /// Remove constants from description_sorted_.
     SortDescription description_sorted_without_constants;
     description_sorted_without_constants.reserve(description_sorted_.size());
+    size_t num_columns = const_columns_to_remove.size();
     for (const auto & column_description : description_sorted_)
     {
         auto pos = header.getPositionByName(column_description.column_name);
 
-        if (!const_columns_to_remove[pos]){
+        if (pos < num_columns && !const_columns_to_remove[pos]){
             description_sorted_without_constants.push_back(column_description);
         }
     }
