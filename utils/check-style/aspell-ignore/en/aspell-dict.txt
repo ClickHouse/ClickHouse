@@ -762,6 +762,7 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -1428,6 +1429,7 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
+firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
@@ -2124,6 +2126,7 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
+rowbinarywithdefaults
 rsync
 rsyslog
 runnable

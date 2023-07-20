@@ -69,10 +69,11 @@ private:
         public:
             String bytes;
             const String query_id;
+            const String async_dedup_token;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_);
+            Entry(String && bytes_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
