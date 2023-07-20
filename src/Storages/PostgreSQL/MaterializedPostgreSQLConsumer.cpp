@@ -588,7 +588,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 executor.execute();
             }
         }
-        catch (DB::Exception & e)
+        catch (...)
         {
             /// Retry this buffer later.
             storage_data.buffer.columns = result_rows.mutateColumns();
