@@ -245,7 +245,7 @@ def get_too_many_failures_message(failures_count):
 
 
 def get_failed_checks_percentage_message(percentage):
-    p = percentage[0][0] * 100
+    p = float(percentage[0][0]) * 100
 
     # Always report more than 1% of failed checks
     # For <= 1%: higher percentage of failures == higher probability
