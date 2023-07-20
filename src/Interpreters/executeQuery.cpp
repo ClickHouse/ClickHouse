@@ -656,7 +656,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// the value passed by the client
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
 
     if (!internal)
     {
@@ -668,8 +668,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         // On the other hand, if it's initialized then take it as the start of the query
         if (client_info.initial_query_start_time == 0)
         {
-            client_info.initial_query_start_time = timeInSeconds(query_start_time);
-            client_info.initial_query_start_time_microseconds = timeInMicroseconds(query_start_time);
+            context->setInitialQueryStartTime(query_start_time);
         }
         else
         {
