@@ -1,7 +1,7 @@
 #include "MemoryTracker.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/VariableContext.h>
 #include <Common/TraceSender.h>
 #include <Common/Exception.h>
@@ -85,7 +85,7 @@ inline std::string_view toDescription(OvercommitResult result)
 
 bool shouldTrackAllocation(DB::Float64 probability, void * ptr)
 {
-    return sipHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
+    return intHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
 }
 
 }
