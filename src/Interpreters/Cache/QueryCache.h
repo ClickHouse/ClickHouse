@@ -24,6 +24,15 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
+    enum class Usage
+    {
+        /// starts at 1 for compatibitity with DataTypeEnum8
+        None = 1,   /// query result neither written nor read into/from query cache
+        Write,      /// query result wrote into query cache
+        Read,       /// query result read from query cache
+        Unknown,    /// we don't know what what happened
+    };
+
     /// Represents a query result in the cache.
     struct Key
     {
