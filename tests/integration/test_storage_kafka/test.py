@@ -865,7 +865,7 @@ def test_kafka_formats(kafka_cluster):
 
     expected_rows_count = raw_expected.count("\n")
     instance.query_with_retry(
-        f"SELECT * FROM test.kafka_data_{list(all_formats.keys())[-1]}_mv;",
+        f"SELECT * FROM test.kafka_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
         check_callback=lambda res: res.count("\n") == expected_rows_count,
@@ -3798,7 +3798,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 format_name=format_name
             )
         )
-        expected = pre_formatted_expected.format(
+        expected = raw_expected.format(
             topic_name=topic_name,
             offset_0=offsets[0],
             offset_1=offsets[1],
