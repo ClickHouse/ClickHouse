@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2015
 
 set -x
 set -e
