@@ -580,6 +580,8 @@ void MergeTreeData::checkProperties(
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
+            /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
+            checkProperties(*projection.metadata, *projection.metadata, attach, local_context);
             projections_names.insert(projection.name);
         }
     }
