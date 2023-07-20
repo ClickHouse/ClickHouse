@@ -3548,6 +3548,24 @@ class ClickHouseInstance:
 
         return error
 
+    def append_hosts(self, name, ip):
+        self.exec_in_container(
+            (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)]),
+            privileged=True,
+            user="root",
+        )
+
+    def set_hosts(self, hosts):
+        entries = ["127.0.0.1 localhost", "::1 localhost"]
+        for host in hosts:
+            entries.append(f"{host[0]} {host[1]}")
+
+        self.exec_in_container(
+            ["bash", "-c", 'echo -e "{}" > /etc/hosts'.format("\\n".join(entries))],
+            privileged=True,
+            user="root",
+        )
+
     # Connects to the instance via HTTP interface, sends a query and returns both the answer and the error message
     # as a tuple (output, error).
     def http_query_and_get_answer_with_error(
