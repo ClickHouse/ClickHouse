@@ -59,9 +59,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
-            return;
-
         auto * aggregate_function_node = node->as<FunctionNode>();
         if (!aggregate_function_node || !aggregate_function_node->isAggregateFunction())
             return;

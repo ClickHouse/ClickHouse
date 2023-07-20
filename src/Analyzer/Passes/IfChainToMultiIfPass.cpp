@@ -25,9 +25,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_chain_to_multiif)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "if" || function_node->getArguments().getNodes().size() != 3)
             return;

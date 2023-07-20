@@ -15,10 +15,10 @@ namespace DB
 namespace
 {
 
-class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeRedundantFunctionsInOrderByVisitor>
+class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisitor<OptimizeRedundantFunctionsInOrderByVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<OptimizeRedundantFunctionsInOrderByVisitor>;
+    using Base = InDepthQueryTreeVisitor<OptimizeRedundantFunctionsInOrderByVisitor>;
     using Base::Base;
 
     static bool needChildVisit(QueryTreeNodePtr & node, QueryTreeNodePtr & /*parent*/)
@@ -30,9 +30,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_redundant_functions_in_order_by)
-            return;
-
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -124,9 +121,9 @@ private:
 
 }
 
-void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    OptimizeRedundantFunctionsInOrderByVisitor visitor(std::move(context));
+    OptimizeRedundantFunctionsInOrderByVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

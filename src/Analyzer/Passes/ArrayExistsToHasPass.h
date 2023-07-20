@@ -21,6 +21,11 @@ public:
     String getDescription() override { return "Rewrite arrayExists(func, arr) functions to has(arr, elem) when logically equivalent"; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+
+    bool enabled(ContextPtr context) const override
+    {
+        return context->getSettings().optimize_rewrite_array_exists_to_has;
+    }
 };
 
 }

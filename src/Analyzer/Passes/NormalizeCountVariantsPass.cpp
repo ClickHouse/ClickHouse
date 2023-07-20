@@ -14,17 +14,14 @@ namespace DB
 namespace
 {
 
-class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>
+class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>;
+    using Base = InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_normalize_count_variants)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || (function_node->getFunctionName() != "count" && function_node->getFunctionName() != "sum"))
             return;
@@ -64,9 +61,9 @@ private:
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    NormalizeCountVariantsVisitor visitor(context);
+    NormalizeCountVariantsVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

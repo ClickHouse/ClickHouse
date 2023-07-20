@@ -12,10 +12,10 @@
 namespace DB
 {
 
-class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>
+class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitor<OptimizeGroupByFunctionKeysVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>;
+    using Base = InDepthQueryTreeVisitor<OptimizeGroupByFunctionKeysVisitor>;
     using Base::Base;
 
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
@@ -28,9 +28,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_group_by_function_keys)
-            return;
-
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -130,9 +127,9 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
+    OptimizeGroupByFunctionKeysVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

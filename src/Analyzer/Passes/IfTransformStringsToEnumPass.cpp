@@ -115,9 +115,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_transform_strings_to_enum)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
 
         if (!function_node)

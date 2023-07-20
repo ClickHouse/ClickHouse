@@ -19,6 +19,11 @@ public:
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 
+    bool enabled(ContextPtr context) const override
+    {
+        return context->getSettings().optimize_arithmetic_operations_in_aggregate_functions;
+    }
+
 };
 
 }

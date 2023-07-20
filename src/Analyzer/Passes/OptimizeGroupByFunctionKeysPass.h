@@ -17,6 +17,11 @@ public:
     String getDescription() override { return "Eliminates functions of other keys in GROUP BY section."; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+
+    bool enabled(ContextPtr context) const override
+    {
+        return context->getSettings().optimize_group_by_function_keys;
+    }
 };
 
 }

@@ -34,6 +34,11 @@ public:
     String getDescription() override { return "Replaces string-type arguments in If and Transform to enum"; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+
+    bool enabled(ContextPtr context) const override
+    {
+        return context->getSettings().optimize_if_transform_strings_to_enum;
+    }
 };
 
 }

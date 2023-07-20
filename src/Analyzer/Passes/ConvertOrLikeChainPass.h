@@ -15,6 +15,11 @@ public:
     String getDescription() override { return "Replaces all the 'or's with {i}like to multiMatchAny"; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+
+    bool enabled(ContextPtr context) const override
+    {
+        return context->getSettings().optimize_or_like_chain;
+    }
 };
 
 }

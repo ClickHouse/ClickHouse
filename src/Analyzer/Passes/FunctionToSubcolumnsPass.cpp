@@ -31,9 +31,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
-        if (!getSettings().optimize_functions_to_subcolumns)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;

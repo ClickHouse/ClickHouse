@@ -28,9 +28,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_rewrite_sum_if_to_count_if)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction())
             return;

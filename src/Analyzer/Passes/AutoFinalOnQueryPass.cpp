@@ -14,17 +14,14 @@ namespace DB
 namespace
 {
 
-class AutoFinalOnQueryPassVisitor : public InDepthQueryTreeVisitorWithContext<AutoFinalOnQueryPassVisitor>
+class AutoFinalOnQueryPassVisitor : public InDepthQueryTreeVisitor<AutoFinalOnQueryPassVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<AutoFinalOnQueryPassVisitor>;
+    using Base = InDepthQueryTreeVisitor<AutoFinalOnQueryPassVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().final)
-            return;
-
         const auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -67,9 +64,9 @@ private:
 
 }
 
-void AutoFinalOnQueryPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AutoFinalOnQueryPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    auto visitor = AutoFinalOnQueryPassVisitor(std::move(context));
+    auto visitor = AutoFinalOnQueryPassVisitor();
     visitor.visit(query_tree_node);
 }
 

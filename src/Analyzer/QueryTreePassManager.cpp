@@ -181,7 +181,8 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 
     for (size_t i = 0; i < passes_size; ++i)
     {
-        passes[i]->run(query_tree_node, current_context);
+        if (passes[i]->enabled(current_context))
+            passes[i]->run(query_tree_node, current_context);
 #ifndef NDEBUG
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif
@@ -200,7 +201,8 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pa
     auto current_context = getContext();
     for (size_t i = 0; i < up_to_pass_index; ++i)
     {
-        passes[i]->run(query_tree_node, current_context);
+        if (passes[i]->enabled(current_context))
+            passes[i]->run(query_tree_node, current_context);
 #ifndef NDEBUG
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif

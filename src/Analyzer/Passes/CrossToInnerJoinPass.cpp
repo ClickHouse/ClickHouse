@@ -195,9 +195,6 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!isEnabled())
-            return;
-
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -231,11 +228,6 @@ public:
     }
 
 private:
-    bool isEnabled() const
-    {
-        return getSettings().cross_to_inner_join_rewrite;
-    }
-
     bool forceRewrite(JoinKind kind) const
     {
         if (kind == JoinKind::Cross)

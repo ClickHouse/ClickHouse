@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -29,6 +29,9 @@ public:
 
     /// Get query tree pass description
     virtual String getDescription() = 0;
+
+    /// Whether is enabled
+    virtual bool enabled(ContextPtr /*context*/) const { return true; }
 
     /// Run pass over query tree
     virtual void run(QueryTreeNodePtr query_tree_node, ContextPtr context) = 0;
