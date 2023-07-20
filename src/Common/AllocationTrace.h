@@ -12,7 +12,7 @@ struct AllocationTrace
 
     ALWAYS_INLINE void onAlloc(void * ptr, size_t size) const
     {
-        if (likely(sample_probability < 0))
+        if (likely(sample_probability <= 0))
             return;
 
         onAllocImpl(ptr, size);
@@ -20,7 +20,7 @@ struct AllocationTrace
 
     ALWAYS_INLINE void onFree(void * ptr, size_t size) const
     {
-        if (likely(sample_probability < 0))
+        if (likely(sample_probability <= 0))
             return;
 
         onFreeImpl(ptr, size);
