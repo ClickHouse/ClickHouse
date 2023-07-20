@@ -181,7 +181,9 @@ def test_session_close_shutdown(started_cluster):
         if node1_zk.exists(eph_node) == None:
             break
 
-        assert node2.contains_in_log("Sessions cannot be closed during shutdown because there is no active leader")
+        assert node2.contains_in_log(
+            "Sessions cannot be closed during shutdown because there is no active leader"
+        )
 
         try:
             node1_zk.delete(eph_node)
