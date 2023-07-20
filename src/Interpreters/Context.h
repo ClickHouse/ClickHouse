@@ -657,7 +657,14 @@ public:
         const String & projection_name = {},
         const String & view_name = {});
     void addQueryAccessInfo(const Names & partition_names);
-    void addQueryAccessInfo(const String & qualified_projection_name);
+
+    struct QualifiedProjectionName
+    {
+        StorageID storage_id = StorageID::createEmpty();
+        String projection_name;
+        explicit operator bool() const { return !projection_name.empty(); }
+    };
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
 
     /// Supported factories for records in query_log

@@ -628,11 +628,10 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         projection_reading = std::make_unique<ReadFromPreparedSource>(
             std::move(pipe),
             context,
-            query_info.is_internal ? ""
-                                   : fmt::format(
-                                       "{}.{}",
-                                       reading->getMergeTreeData().getStorageID().getFullTableName(),
-                                       backQuoteIfNeed(candidates.minmax_projection->candidate.projection->name)));
+            query_info.is_internal ? Context::QualifiedProjectionName{}
+                                   : Context::QualifiedProjectionName{
+                                       .storage_id = reading->getMergeTreeData().getStorageID(),
+                                       .projection_name = candidates.minmax_projection->candidate.projection->name});
 
         has_ordinary_parts = !candidates.minmax_projection->normal_parts.empty();
         if (has_ordinary_parts)
@@ -668,11 +667,10 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             projection_reading = std::make_unique<ReadFromPreparedSource>(
                 std::move(pipe),
                 context,
-                query_info.is_internal ? ""
-                                       : fmt::format(
-                                           "{}.{}",
-                                           reading->getMergeTreeData().getStorageID().getFullTableName(),
-                                           backQuoteIfNeed(best_candidate->projection->name)));
+                query_info.is_internal
+                    ? Context::QualifiedProjectionName{}
+                    : Context::QualifiedProjectionName{
+                        .storage_id = reading->getMergeTreeData().getStorageID(), .projection_name = best_candidate->projection->name});
         }
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
