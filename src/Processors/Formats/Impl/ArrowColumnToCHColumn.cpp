@@ -684,9 +684,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     DataTypePtr type_hint = nullptr,
     bool is_map_nested = false)
 {
-    if (!is_nullable && (arrow_column->null_count() || (type_hint && type_hint->isNullable())) && arrow_column->type()->id() != arrow::Type::LIST
-        && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT &&
-        arrow_column->type()->id() != arrow::Type::DICTIONARY)
+    if (!is_nullable && (arrow_column->null_count() || (type_hint && type_hint->isNullable())) && arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
