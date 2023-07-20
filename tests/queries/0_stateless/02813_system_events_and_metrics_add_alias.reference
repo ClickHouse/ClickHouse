@@ -1,4 +1,0 @@
-CREATE TABLE system.metrics\n(\n    `metric` String,\n    `value` Int64,\n    `description` String,\n    `name` String\n)\nENGINE = SystemMetrics\nCOMMENT \'SYSTEM TABLE is built on the fly.\'
-1
-CREATE TABLE system.events\n(\n    `event` String,\n    `value` UInt64,\n    `description` String,\n    `name` String\n)\nENGINE = SystemEvents\nCOMMENT \'SYSTEM TABLE is built on the fly.\'
-1
