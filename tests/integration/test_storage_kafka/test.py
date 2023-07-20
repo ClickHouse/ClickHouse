@@ -444,6 +444,48 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     assert members[0]["client_id"] == "instance test 1234"
 
 
+def test_kafka_settings_predefined_macros(kafka_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
+                     kafka_topic_list = '{database}_{table}_topic',
+                     kafka_group_name = '{database}_{table}_group',
+                     kafka_format = '{kafka_format_json_each_row}',
+                     kafka_row_delimiter = '\\n',
+                     kafka_commit_on_select = 1,
+                     kafka_client_id = '{database}_{table} test 1234',
+                     kafka_skip_broken_messages = 1;
+        """
+    )
+
+    messages = []
+    for i in range(25):
+        messages.append(json.dumps({"key": i, "value": i}))
+    kafka_produce(kafka_cluster, "test_kafka", messages)
+
+    # Insert couple of malformed messages.
+    kafka_produce(kafka_cluster, "test_kafka", ["}{very_broken_message,"])
+    kafka_produce(kafka_cluster, "test_kafka", ["}another{very_broken_message,"])
+
+    messages = []
+    for i in range(25, 50):
+        messages.append(json.dumps({"key": i, "value": i}))
+    kafka_produce(kafka_cluster, "test_kafka", messages)
+
+    result = ""
+    while True:
+        result += instance.query("SELECT * FROM test.kafka", ignore_error=True)
+        if kafka_check_result(result):
+            break
+
+    kafka_check_result(result, True)
+
+    members = describe_consumer_group(kafka_cluster, "new")
+    assert members[0]["client_id"] == "test_kafka test 1234"
+
+
 def test_kafka_json_as_string(kafka_cluster):
     kafka_produce(
         kafka_cluster,

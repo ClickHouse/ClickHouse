@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
@@ -79,6 +80,7 @@ public:
 private:
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
+    Macros::MacroExpansionInfo macros_info;
     const Names topics;
     const String brokers;
     const String group;
