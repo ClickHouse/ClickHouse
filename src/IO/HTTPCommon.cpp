@@ -81,7 +81,7 @@ namespace
                     Session::close();
                     LOG_TRACE(
                         log,
-                        "Last ip ({})  is unreachable for {}:{}. Will try another resolved address.",
+                        "Last ip ({}) is unreachable for {}:{}. Will try another resolved address.",
                         Session::getResolvedHost(),
                         Session::getHost(),
                         Session::getPort());
