@@ -1370,13 +1370,27 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (data_settings->allow_remote_fs_zero_copy_replication)
         {
             auto disks = storage.getDisks();
-            bool only_s3_storage = true;
+            DiskPtr disk_with_zero_copy = nullptr;
             for (const auto & disk : disks)
-                if (!disk->supportZeroCopyReplication())
-                    only_s3_storage = false;
+            {
+                if (disk->supportZeroCopyReplication())
+                {
+                    disk_with_zero_copy = disk;
+                    break;
+                }
+            }
 
+            /// Technically speaking if there are more than one disk that could store the part (a local hot + cloud cold)
+            /// It would be possible for the merge to happen concurrently with other replica if the other replica is doing
+            /// a merge using zero-copy and the cloud storage, and the local replica uses the local storage instead
+            /// The question is, is it worth keep retrying to do the merge over and over for the opportunity to do
+            /// double the work? Probably not
+            /// So what we do is that, even if hot merge could happen, check the zero copy lock anyway.
+            /// Keep in mind that for the zero copy lock check to happen (via existing_zero_copy_locks) we need to
+            /// have failed first because of it and added it via watchZeroCopyLock. Considering we've already tried to
+            /// use cloud storage and zero-copy replication, the most likely scenario is that we'll try again
             String replica_to_execute_merge;
-            if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0], replica_to_execute_merge))
+            if (disk_with_zero_copy && storage.checkZeroCopyLockExists(entry.new_part_name, disk_with_zero_copy, replica_to_execute_merge))
             {
                 constexpr auto fmt_string = "Not executing merge/mutation for the part {}, waiting for {} to execute it and will fetch after.";
                 out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, replica_to_execute_merge);
