@@ -43,9 +43,8 @@ FinishSortingTransform::FinishSortingTransform(
     {
         auto pos = header.getPositionByName(column_description.column_name);
 
-        if (pos < num_columns && !const_columns_to_remove[pos]){
+        if (pos < num_columns && !const_columns_to_remove[pos])
             description_sorted_without_constants.push_back(column_description);
-        }
     }
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
