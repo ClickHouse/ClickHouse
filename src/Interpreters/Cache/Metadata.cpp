@@ -337,7 +337,7 @@ public:
     {
         {
             std::lock_guard lock(mutex);
-            queue.emplace(file_segment->key(), file_segment->offset(), file_segment);
+            queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
