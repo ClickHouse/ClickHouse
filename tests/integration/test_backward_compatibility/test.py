@@ -10,7 +10,7 @@ node1 = cluster.add_instance(
     tag="19.17.8.54",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
