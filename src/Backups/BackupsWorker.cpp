@@ -178,6 +178,42 @@ namespace
     {
         return status == BackupStatus::RESTORING;
     }
+
+    /// We use slightly different read and write settings for backup/restore
+    /// with a separate throttler and limited usage of filesystem cache.
+    ReadSettings getReadSettingsForBackup(const ContextPtr & context, const BackupSettings & backup_settings)
+    {
+        auto read_settings = context->getReadSettings();
+        read_settings.remote_throttler = context->getBackupsThrottler();
+        read_settings.local_throttler = context->getBackupsThrottler();
+        read_settings.enable_filesystem_cache = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+        return read_settings;
+    }
+
+    WriteSettings getWriteSettingsForBackup(const ContextPtr & context)
+    {
+        auto write_settings = context->getWriteSettings();
+        write_settings.enable_filesystem_cache_on_write_operations = false;
+        return write_settings;
+    }
+
+    ReadSettings getReadSettingsForRestore(const ContextPtr & context)
+    {
+        auto read_settings = context->getReadSettings();
+        read_settings.remote_throttler = context->getBackupsThrottler();
+        read_settings.local_throttler = context->getBackupsThrottler();
+        read_settings.enable_filesystem_cache = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        return read_settings;
+    }
+
+    WriteSettings getWriteSettingsForRestore(const ContextPtr & context)
+    {
+        auto write_settings = context->getWriteSettings();
+        write_settings.enable_filesystem_cache_on_write_operations = false;
+        return write_settings;
+    }
 }
 
 
@@ -350,6 +386,8 @@ void BackupsWorker::doBackup(
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
         backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
         backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
+        backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
+        backup_create_params.write_settings = getWriteSettingsForBackup(context);
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -383,7 +421,7 @@ void BackupsWorker::doBackup(
             }
 
             /// Write the backup entries to the backup.
-            buildFileInfosForBackupEntries(backup, backup_entries, backup_coordination);
+            buildFileInfosForBackupEntries(backup, backup_entries, backup_create_params.read_settings, backup_coordination);
             writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
@@ -433,12 +471,12 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination)
 {
     LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), *backups_thread_pool));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, *backups_thread_pool));
 }
 
 
@@ -650,6 +688,8 @@ void BackupsWorker::doRestore(
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
         backup_open_params.password = restore_settings.password;
         backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
+        backup_open_params.read_settings = getReadSettingsForRestore(context);
+        backup_open_params.write_settings = getWriteSettingsForRestore(context);
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         String current_database = context->getCurrentDatabase();
