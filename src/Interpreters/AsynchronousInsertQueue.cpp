@@ -97,6 +97,10 @@ UInt128 AsynchronousInsertQueue::InsertQuery::calculateHash() const
 
     for (const auto & setting : settings.allChanged())
     {
+        /// We don't consider this setting because it is only for deduplication,
+        /// which means we can put two inserts with different tokens in the same block safely.
+        if (setting.getName() == "insert_deduplication_token")
+            continue;
         siphash.update(setting.getName());
         applyVisitor(FieldVisitorHash(siphash), setting.getValue());
     }
@@ -111,9 +115,10 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, const String & async_dedup_token_, MemoryTracker * user_memory_tracker_)
     : bytes(std::move(bytes_))
     , query_id(std::move(query_id_))
+    , async_dedup_token(async_dedup_token_)
     , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
@@ -227,7 +232,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         /// to avoid buffering of huge amount of data in memory.
 
         auto read_buf = getReadBufferFromASTInsertQuery(query);
-        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, /* trow_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, /* throw_exception */ false, /* exact_limit */ {});
 
         WriteBufferFromString write_buf(bytes);
         copyData(limit_buf, write_buf);
@@ -253,7 +258,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -515,7 +520,7 @@ try
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     std::unique_ptr<ReadBuffer> last_buffer;
-    auto chunk_info = std::make_shared<ChunkOffsets>();
+    auto chunk_info = std::make_shared<AsyncInsertInfo>();
     for (const auto & entry : data->entries)
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
@@ -524,6 +529,7 @@ try
         size_t num_rows = executor.execute(*buffer);
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
+        chunk_info->tokens.push_back(entry->async_dedup_token);
 
         /// Keep buffer, because it still can be used
         /// in destructor, while resetting buffer at next iteration.

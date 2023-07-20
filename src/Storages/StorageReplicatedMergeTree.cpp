@@ -1385,7 +1385,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     }
 
     const UInt64 parts_to_fetch_blocks = std::accumulate(parts_to_fetch.cbegin(), parts_to_fetch.cend(), 0,
-        [&](UInt64 acc, const String& part_name)
+        [&](UInt64 acc, const String & part_name)
         {
             if (const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version))
                 return acc + part_info->getBlocksCount();
@@ -2448,10 +2448,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (part_desc->checksum_hex != part_desc->src_table_part->checksums.getTotalChecksumHex())
                 throw Exception(ErrorCodes::UNFINISHED, "Checksums of {} is suddenly changed", part_desc->src_table_part->name);
 
-            bool zero_copy_enabled = dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+            /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
+            bool source_zero_copy_enabled = dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+            bool our_zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication;
+
             IDataPartStorage::ClonePartParams clone_params
             {
-                .copy_instead_of_hardlink = zero_copy_enabled && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport(),
+                .copy_instead_of_hardlink = (our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
@@ -7585,8 +7588,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             UInt64 index = lock->getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
 
+            /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(dest_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
@@ -9173,8 +9178,7 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
     String zc_zookeeper_path = *getZeroCopyPartPath(part_name, disk);
 
     /// Just recursively create ancestors for lock
-    zookeeper->createAncestors(zc_zookeeper_path);
-    zookeeper->createIfNotExists(zc_zookeeper_path, "");
+    zookeeper->createAncestors(zc_zookeeper_path + "/");
 
     /// Create actual lock
     ZeroCopyLock lock(zookeeper, zc_zookeeper_path, replica_name);
