@@ -79,7 +79,7 @@ public:
     String getName() const override { return "Set"; }
 
     /// Access the insides.
-    SetPtr & getSet() { return set; }
+    SetPtr getSet() const { return std::atomic_load(&set); }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 

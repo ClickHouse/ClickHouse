@@ -176,7 +176,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), 0, true);
+    std::atomic_store(&set, std::make_shared<Set>(SizeLimits(), 0, true));
     set->setHeader(header.getColumnsWithTypeAndName());
 }
 
