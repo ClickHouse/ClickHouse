@@ -27,7 +27,7 @@ class FunctionStructureToFormatSchema : public IFunction
 public:
 
     static constexpr auto name = Impl::name;
-    FunctionStructureToFormatSchema(ContextPtr context_) : context(std::move(context_))
+    explicit FunctionStructureToFormatSchema(ContextPtr context_) : context(std::move(context_))
     {
     }
 

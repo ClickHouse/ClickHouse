@@ -15,7 +15,7 @@ function test_structure()
     structure=$3
 
     $CLICKHOUSE_LOCAL -q "select structureTo${format}Schema('$structure') format TSVRaw" > $SCHEMA_FILE.$ext
-    cat $SCHEMA_FILE.$ext
+    tail -n +2 $SCHEMA_FILE.$ext
 
     $CLICKHOUSE_LOCAL -q "select * from generateRandom('$structure', 42) limit 10 format $format settings format_schema='$SCHEMA_FILE:Message', format_capn_proto_enum_comparising_mode='by_names'" > $DATA_FILE
     $CLICKHOUSE_LOCAL -q "select * from file('$DATA_FILE', $format, '$structure') format Null settings format_schema='$SCHEMA_FILE:Message', format_capn_proto_enum_comparising_mode='by_names'"
@@ -75,7 +75,7 @@ function test_format()
 
     echo "Output schema"
     $CLICKHOUSE_LOCAL -q "select * from numbers(10) format $format settings output_format_schema='$SCHEMA_FILE.$ext'" > $DATA_FILE
-    cat $SCHEMA_FILE.$ext
+    tail -n +2 $SCHEMA_FILE.$ext
 
     echo "Bad output schema path"
     $CLICKHOUSE_CLIENT -q "insert into function file('$DATA_FILE', $format) select * from numbers(10) settings output_format_schema='/tmp/schema.$ext'" 2>&1 | grep "BAD_ARGUMENTS" -c
