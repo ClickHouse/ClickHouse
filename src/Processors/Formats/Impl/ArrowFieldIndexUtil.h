@@ -75,7 +75,7 @@ public:
             {
                 if (!allow_missing_columns)
                     throw Exception(
-                        ErrorCodes::THERE_IS_NO_COLUMN, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
+                        ErrorCodes::THERE_IS_NO_COLUMN, "Not found field ({}) in the following Arrow schema:\n{}\n", named_col.name, schema.ToString());
                 else
                     continue;
             }
@@ -168,4 +168,3 @@ private:
 };
 }
 #endif
-

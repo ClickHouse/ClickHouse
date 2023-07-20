@@ -41,9 +41,38 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
     initializeDisks(config);
 }
 
+namespace
+{
+
+bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix)
+{
+    const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
+
+    using namespace std::literals;
+    static constexpr std::array supported_disk_types
+    {
+        "s3"sv,
+        "s3_plain"sv,
+        "local"sv
+    };
+
+    if (std::all_of(
+            supported_disk_types.begin(),
+            supported_disk_types.end(),
+            [&](const auto supported_type) { return disk_type != supported_type; }))
+    {
+        LOG_INFO(&Poco::Logger::get("KeeperContext"), "Disk type '{}' is not supported for Keeper", disk_type);
+        return false;
+    }
+
+    return true;
+}
+
+}
+
 void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & config)
 {
-    disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance());
+    disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
     log_storage = getLogsPathFromConfig(config);
 
