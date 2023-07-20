@@ -1764,7 +1764,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
         if (storage_snapshot->projection)
             context->getQueryContext()->addQueryAccessInfo(
-                fmt::format("{}.{}", data.getStorageID().getFullTableName(), backQuoteIfNeed(storage_snapshot->projection->name)));
+                Context::QualifiedProjectionName{.storage_id = data.getStorageID(), .projection_name = storage_snapshot->projection->name});
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
