@@ -267,11 +267,7 @@ void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
         chassert(job->pool() < pools.size());
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            if (scheduled_jobs.try_emplace(job).second)
-            {
-                // TODO(serxa): debug print
-                LOG_INFO(log, "Schedule '{}'", job->name);
-            }
+            scheduled_jobs.try_emplace(job);
             job->scheduled(++last_job_id);
         });
     }
@@ -358,18 +354,9 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool)
         return;
     chassert(new_pool < pools.size());
 
-    // TODO(serxa): debug print
-    LOG_INFO(log, "Prioritizing '{}' to pool {}", job->name, getPoolName(new_pool));
-
     DENY_ALLOCATIONS_IN_SCOPE;
     std::unique_lock lock{mutex};
     prioritize(job, new_pool, lock);
-
-    // TODO(serxa): debug print
-    NOEXCEPT_SCOPE({
-        ALLOW_ALLOCATIONS_IN_SCOPE;
-        LOG_INFO(log, "Prioritizing '{}' finished", job->name);
-    });
 }
 
 void AsyncLoader::wait(const LoadJobPtr & job)
@@ -613,27 +600,9 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
         if (UInt64 ready_seqno = info->second.ready_seqno)
         {
             new_pool.ready_queue.insert(old_pool.ready_queue.extract(ready_seqno));
-            // TODO(serxa): debug print
-            NOEXCEPT_SCOPE({
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-            });
-
             if (canSpawnWorker(new_pool, lock))
                 spawn(new_pool, lock);
         }
-        // TODO(serxa): debug print
-        NOEXCEPT_SCOPE({
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            LOG_INFO(log, "scheduled '{}': {} -> {}", job->name, old_pool.name, new_pool.name);
-        });
-    }
-    else
-    {
-        // TODO(serxa): debug print
-        NOEXCEPT_SCOPE({
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            LOG_INFO(log, "pending or finished '{}': {} -> {}", job->name, old_pool.name, new_pool.name);
-        });
     }
 
     job->pool_id.store(new_pool_id);
@@ -709,9 +678,6 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
         auto worker_priority = getPoolPriority(worker_pool);
         auto job_priority = getPoolPriority(job->pool_id);
 
-        // TODO(serxa): debug print
-        LOG_INFO(&Poco::Logger::get("AsyncLoader"), "'{}' waits for '{}' from pool {}", current_load_job->name, job->name, getPoolName(worker_pool));
-
         // Waiting for a lower-priority job ("priority inversion" deadlock) is resolved using priority inheritance.
         if (worker_priority < job_priority)
         {
@@ -727,11 +693,6 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
             workerIsSuspendedByWait(worker_pool, job);
             job_lock.lock();
         }
-    }
-    else
-    {
-        // TODO(serxa): debug print
-        LOG_INFO(&Poco::Logger::get("AsyncLoader"), "External wait for {}", job->name);
     }
 
     job->waiters++;
@@ -790,13 +751,6 @@ void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & l
     }
     current_priority = priority;
 
-    // TODO(serxa): debug print
-    NOEXCEPT_SCOPE({
-        ALLOW_ALLOCATIONS_IN_SCOPE;
-        if (current_priority)
-            LOG_INFO(log, "Current priority: {}", current_priority->value);
-    });
-
     // Spawn workers in all pools with current priority
     for (Pool & pool : pools)
     {
@@ -807,11 +761,6 @@ void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & l
 
 void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> &)
 {
-    // TODO(serxa): debug print
-    NOEXCEPT_SCOPE({
-        ALLOW_ALLOCATIONS_IN_SCOPE;
-        LOG_INFO(log, "Spawn {} #{}", pool.name, pool.workers + 1);
-    });
     pool.workers++;
     current_priority = pool.priority; // canSpawnWorker() ensures this would not decrease current_priority
     NOEXCEPT_SCOPE({
@@ -843,12 +792,6 @@ void AsyncLoader::worker(Pool & pool)
 
             if (!canWorkerLive(pool, lock))
             {
-                // TODO(serxa): debug print
-                NOEXCEPT_SCOPE({
-                    ALLOW_ALLOCATIONS_IN_SCOPE;
-                    LOG_INFO(log, "Stopped {}, left: {}", pool.name, pool.workers - 1);
-                });
-
                 if (--pool.workers == 0)
                     updateCurrentPriorityAndSpawn(lock); // It will spawn lower priority workers if needed
                 return;
@@ -865,14 +808,10 @@ void AsyncLoader::worker(Pool & pool)
 
         try
         {
-            // TODO(serxa): debug print
-            LOG_INFO(log, "Executing '{}' in {}", job->name, pool.name);
             current_load_job = job.get();
             SCOPE_EXIT({ current_load_job = nullptr; }); // Note that recursive job execution is not supported
             job->execute(*this, pool_id, job);
             exception_from_job = {};
-            // TODO(serxa): debug print
-            LOG_INFO(log, "Done! '{}'", job->name);
         }
         catch (...)
         {
