@@ -390,7 +390,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
         /// maybe some logs were preprocessed with log idx larger than the snapshot idx
         /// we have to apply them to the new storage
-        storage->applyUncommittedState(*snapshot_deserialization_result.storage, s.get_last_log_idx());
+        storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.storage->getZXID());
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
