@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2015
 
 set -exu
 trap "exit" INT TERM
