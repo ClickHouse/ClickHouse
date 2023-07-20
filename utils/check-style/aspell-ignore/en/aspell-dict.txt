@@ -762,6 +762,7 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -991,6 +992,7 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1427,6 +1429,7 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
+firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
@@ -2123,6 +2126,7 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
+rowbinarywithdefaults
 rsync
 rsyslog
 runnable
