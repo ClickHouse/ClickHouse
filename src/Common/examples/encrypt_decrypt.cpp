@@ -3,7 +3,7 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <iostream>
 
-/** This test program encrypts or decrypts text values using AES_128_GCM_SIV or AES_256_GCM_SIV codecs.
+/** This test program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
   * Keys for codecs are loaded from <encryption_codecs> section of configuration file.
   *
   * How to use:

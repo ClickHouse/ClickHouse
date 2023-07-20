@@ -10,7 +10,7 @@ def start_clickhouse(config, err_msg):
         cluster.start()
     except Exception as e:
         caught_exception = str(e)
-    assert caught_exception.find(err_msg) != -1
+    assert err_msg in caught_exception
 
 
 def test_wrong_method():
