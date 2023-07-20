@@ -37,7 +37,7 @@ URI::URI():
 
 
 URI::URI(const std::string& uri, bool decode_and_encode_path):
-	_port(0), _decode_and_encode_path(decode_and_encode_path)
+	_port(0), _disable_url_encoding(decode_and_encode_path)
 {
 	parse(uri);
 }
@@ -108,7 +108,7 @@ URI::URI(const URI& uri):
 	_path(uri._path),
 	_query(uri._query),
 	_fragment(uri._fragment),
-    _decode_and_encode_path(uri._decode_and_encode_path)
+    _disable_url_encoding(uri._disable_url_encoding)
 {
 }
 
@@ -121,7 +121,7 @@ URI::URI(const URI& baseURI, const std::string& relativeURI):
 	_path(baseURI._path),
 	_query(baseURI._query),
 	_fragment(baseURI._fragment),
-    _decode_and_encode_path(baseURI._decode_and_encode_path)
+    _disable_url_encoding(baseURI._disable_url_encoding)
 {
 	resolve(relativeURI);
 }
@@ -153,7 +153,7 @@ URI& URI::operator = (const URI& uri)
 		_path     = uri._path;
 		_query    = uri._query;
 		_fragment = uri._fragment;
-        _decode_and_encode_path = uri._decode_and_encode_path;
+        _disable_url_encoding = uri._disable_url_encoding;
 	}
 	return *this;
 }
@@ -184,7 +184,7 @@ void URI::swap(URI& uri)
 	std::swap(_path, uri._path);
 	std::swap(_query, uri._query);
 	std::swap(_fragment, uri._fragment);
-    std::swap(_decode_and_encode_path, uri._decode_and_encode_path);
+    std::swap(_disable_url_encoding, uri._disable_url_encoding);
 }
 
 
@@ -317,10 +317,7 @@ void URI::setAuthority(const std::string& authority)
 void URI::setPath(const std::string& path)
 {
 	_path.clear();
-    if (_decode_and_encode_path)
-	    decode(path, _path);
-    else
-        _path = path;
+    decodePath(path);
 }
 
 	
@@ -690,10 +687,18 @@ void URI::decode(const std::string& str, std::string& decodedStr, bool plusAsSpa
 
 void URI::encodePath(std::string & encodedStr) const
 {
-    if (_decode_and_encode_path)
-        encode(_path, RESERVED_PATH, encodedStr);
-    else
+    if (_disable_url_encoding)
         encodedStr = _path;
+    else
+        encode(_path, RESERVED_PATH, encodedStr);
+}
+
+void URI::decodePath(const std::string & encodedStr)
+{
+    if (_disable_url_encoding)
+        _path = encodedStr;
+    else
+        decode(encodedStr, _path);
 }
 
 bool URI::isWellKnownPort() const
@@ -834,10 +839,7 @@ void URI::parsePath(std::string::const_iterator& it, const std::string::const_it
 {
 	std::string path;
 	while (it != end && *it != '?' && *it != '#') path += *it++;
-    if (_decode_and_encode_path)
-	    decode(path, _path);
-    else
-        _path = path;
+    decodePath(path);
 }
 
 
