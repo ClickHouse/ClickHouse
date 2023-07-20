@@ -56,8 +56,8 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 ## Storage Settings {#storage-settings}
 
 - [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [decode_and_encode_path_in_url](/docs/en/operations/settings/settings.md#decode_and_encode_path_in_url) - enables or disables decoding/encoding path in uri. Enabled by default.
+- [disable_url_encoding](/docs/en/operations/settings/settings.md#disable_url_encoding) - allows to disable decoding/encoding path in uri. Disabled by default.
 
-- **See Also**
+**See Also**
 
 - [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
