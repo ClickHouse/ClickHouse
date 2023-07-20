@@ -19,6 +19,7 @@ public:
         Truncate,
     };
 
+    std::vector<std::tuple<ASTPtr,ASTPtr>> databases_tables;
     Kind kind;
     bool if_exists{false};
 

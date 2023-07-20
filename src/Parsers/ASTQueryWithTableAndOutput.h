@@ -16,7 +16,6 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     ASTPtr database;
     ASTPtr table;
-    std::vector<std::tuple<ASTPtr,ASTPtr>> databases_tables;
 
     UUID uuid = UUIDHelpers::Nil;
     bool temporary{false};
