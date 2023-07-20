@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_MANY_PARTS;
 }
 
 MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
@@ -556,8 +557,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
-    for (const auto & table_name : tables_to_sync)
+    while (!tables_to_sync.empty())
     {
+        auto table_name = *tables_to_sync.begin();
         auto & storage_data = storages.find(table_name)->second;
         Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
         storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
@@ -587,10 +589,17 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 executor.execute();
             }
         }
-        catch (...)
+        catch (DB::Exception & e)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (e.code() == ErrorCodes::TOO_MANY_PARTS)
+            {
+                /// Retry this buffer later.
+                storage_data.buffer.columns = result_rows.mutateColumns();
+            }
+            throw;
         }
+
+        tables_to_sync.erase(tables_to_sync.begin());
     }
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
@@ -742,8 +751,12 @@ void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
 bool MaterializedPostgreSQLConsumer::consume()
 {
-    bool slot_empty = true;
+    if (!tables_to_sync.empty())
+    {
+        syncTables();
+    }
 
+    bool slot_empty = true;
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
