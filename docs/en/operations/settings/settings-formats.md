@@ -1347,6 +1347,17 @@ Default value: 0.
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md/#data-format-avro-confluent) format.
 
+Format:
+``` text
+http://[user:password@]machine[:port]"
+```
+
+Examples:
+``` text
+http://registry.example.com:8081
+http://admin:secret@registry.example.com:8081
+```
+
 Default value: `Empty`.
 
 ### output_format_avro_codec {#output_format_avro_codec}
