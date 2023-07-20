@@ -1,11 +1,12 @@
 #pragma once
 
-#include <base/types.h>
+#include <Core/Field.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
-#include <Core/Field.h>
+#include <base/types.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -28,10 +29,10 @@ struct MergeTreePartition
 public:
     MergeTreePartition() = default;
 
-    explicit MergeTreePartition(Row value_) : value(std::move(value_)) {}
+    explicit MergeTreePartition(Row value_) : value(std::move(value_)) { }
 
     /// For month-based partitioning.
-    explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}
+    explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) { }
 
     String getID(const MergeTreeData & storage) const;
     String getID(const Block & partition_key_sample) const;
@@ -44,8 +45,13 @@ public:
 
     /// Store functions return write buffer with written but not finalized data.
     /// User must call finish() for returned object.
-    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const;
-    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase>
+    store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(
+        const Block & partition_key_sample,
+        IDataPartStorage & data_part_storage,
+        MergeTreeDataPartChecksums & checksums,
+        const WriteSettings & settings) const;
 
     void assign(const MergeTreePartition & other) { value = other.value; }
 
