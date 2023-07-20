@@ -1,4 +1,3 @@
-#include "Common/QueryProfiler.h"
 #include <Common/AsyncLoader.h>
 
 #include <limits>
