@@ -14,6 +14,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>
@@ -476,3 +477,22 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
         }
 })));
+
+static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
+static constexpr size_t kDummyMaxParserDepth = 256;
+
+INSTANTIATE_TEST_SUITE_P(
+    ParserPRQL,
+    ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth)),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+            {
+                "from albums\ngroup [author_id] (\n  aggregate [first_pushlied = min published]\n)\njoin a=author side:left [==author_id]\njoin p=purchases side:right [==author_id]\ngroup [a.id, p.purchase_id] (\n  aggregate [avg_sell = min first_pushlied]\n)",
+                "WITH table_1 AS\n    (\n        SELECT\n            MIN(published) AS _expr_0,\n            author_id\n        FROM albums\n        GROUP BY author_id\n    )\nSELECT\n    a.id,\n    p.purchase_id,\n    MIN(table_0._expr_0) AS avg_sell\nFROM table_1 AS table_0\nLEFT JOIN author AS a ON table_0.author_id = a.author_id\nRIGHT JOIN purchases AS p ON table_0.author_id = p.author_id\nGROUP BY\n    a.id,\n    p.purchase_id",
+            },
+            {
+                "from matches\nfilter start_date > @2023-05-30                 # Some comment here\nderive [\n  some_derived_value_1 = a + (b ?? 0),          # And there\n  some_derived_value_2 = c + some_derived_value\n]\nfilter some_derived_value_2 > 0\ngroup [country, city] (\n  aggregate [\n    average some_derived_value_2,\n    aggr = max some_derived_value_2,\n  ]\n)\nderive place = f\"{city} in {country}\"\nderive country_code = s\"LEFT(country, 2)\"\nsort [aggr, -country]\ntake 1..20",
+                "WITH\n    table_3 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_3 AS table_2\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_1 AS table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
+            },
+        })));
