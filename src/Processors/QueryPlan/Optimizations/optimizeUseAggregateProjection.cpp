@@ -461,7 +461,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
 
     QueryDAG dag;
-    if (!dag.build(*node.children.front()))
+    if (!dag.build(*node.children.front()) || !dag.dag)
         return candidates;
 
     auto query_index = buildDAGIndex(*dag.dag);
