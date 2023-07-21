@@ -6,9 +6,7 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node",
-    stay_alive=True,
-    main_configs=["configs/memory.xml"]
+    "node", stay_alive=True, main_configs=["configs/memory.xml"]
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -43,14 +41,22 @@ def execute_test_for_access_type(access_type: str, system_table_name: str):
         node.query(f"CREATE {access_type} test1 IN memory")
 
     node.query(f"MOVE {access_type} test1 TO memory")
-    assert node.query(f"SELECT storage FROM system.{system_table_name} WHERE name = 'test1'") == TSV(["memory"])
+    assert node.query(
+        f"SELECT storage FROM system.{system_table_name} WHERE name = 'test1'"
+    ) == TSV(["memory"])
 
     node.query(f"MOVE {access_type} test2 TO local_directory")
-    assert node.query(f"SELECT storage FROM system.{system_table_name} WHERE name = 'test2'") == TSV(["local_directory"])
+    assert node.query(
+        f"SELECT storage FROM system.{system_table_name} WHERE name = 'test2'"
+    ) == TSV(["local_directory"])
 
     node.query(f"MOVE {access_type} test2,test3 TO memory")
-    assert node.query(f"SELECT storage FROM system.{system_table_name} WHERE name = 'test2'") == TSV(["memory"])
-    assert node.query(f"SELECT storage FROM system.{system_table_name} WHERE name = 'test3'") == TSV(["memory"])
+    assert node.query(
+        f"SELECT storage FROM system.{system_table_name} WHERE name = 'test2'"
+    ) == TSV(["memory"])
+    assert node.query(
+        f"SELECT storage FROM system.{system_table_name} WHERE name = 'test3'"
+    ) == TSV(["memory"])
 
     node.query(f"MOVE {access_type} test4,test5 TO local_directory")
 
