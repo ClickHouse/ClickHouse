@@ -180,11 +180,11 @@ void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr query_tree_node, C
     CollectQueryAndGroupByKeysVisitor collector;
     collector.visit(query_tree_node);
 
-    for (auto it = collector.data.begin(); it != collector.data.end(); it++)
+    for (auto & [query_node, group_by_keys] : collector.data)
     {
-        EliminateFunctionVisitor eliminator(it->second);
-        auto query_node = it->first;
-        eliminator.visit(query_node);
+        EliminateFunctionVisitor eliminator(group_by_keys);
+        auto mutable_query_node = query_node;
+        eliminator.visit(mutable_query_node);
     }
 }
 
