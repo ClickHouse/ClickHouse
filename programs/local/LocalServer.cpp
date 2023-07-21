@@ -738,9 +738,8 @@ void LocalServer::processConfig()
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQueryKind(query_kind);
 }
 
 

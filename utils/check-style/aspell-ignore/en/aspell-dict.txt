@@ -766,6 +766,7 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -2127,6 +2128,7 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
+rowbinarywithdefaults
 rsync
 rsyslog
 runnable
@@ -2548,3 +2550,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+curdate
