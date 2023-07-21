@@ -3,11 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/types.h>
-
-#include <sstream>
-#include <iomanip>
 #include <functional>
-
 
 namespace Coordination
 {
@@ -147,6 +143,14 @@ struct TestKeeperSyncRequest final : SyncRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
+struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
+{
+    TestKeeperReconfigRequest() = default;
+    explicit TestKeeperReconfigRequest(const ReconfigRequest & base) : ReconfigRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
@@ -226,15 +230,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             std::string path_created = path;
 
             if (is_sequential)
-            {
-                auto seq_num = it->second.seq_num;
-
-                std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                seq_num_str.exceptions(std::ios::failbit);
-                seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
-
-                path_created += seq_num_str.str();
-            }
+                path_created += fmt::format("{:0>10}", it->second.seq_num);
 
             /// Increment sequential number even if node is not sequential
             ++it->second.seq_num;
@@ -446,6 +442,17 @@ std::pair<ResponsePtr, Undo> TestKeeperSyncRequest::process(TestKeeper::Containe
     return { std::make_shared<SyncResponse>(std::move(response)), {} };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperReconfigRequest::process(TestKeeper::Container &, int64_t) const
+{
+    // In TestKeeper we assume data is stored on one server, so this is a dummy implementation to
+    // satisfy IKeeper interface.
+    // We can't even check the validity of input data, neither can we create the /keeper/config znode
+    // as we don't know the id of current "server".
+    ReconfigResponse response;
+    response.error = Error::ZOK;
+    return { std::make_shared<ReconfigResponse>(std::move(response)), {} };
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
@@ -505,6 +512,7 @@ ResponsePtr TestKeeperSetRequest::createResponse() const { return std::make_shar
 ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_shared<ListResponse>(); }
 ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_shared<CheckResponse>(); }
 ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_shared<SyncResponse>(); }
+ResponsePtr TestKeeperReconfigRequest::createResponse() const { return std::make_shared<ReconfigResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 
 
@@ -826,6 +834,28 @@ void TestKeeper::sync(
     request_info.request = std::make_shared<TestKeeperSyncRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
     pushRequest(std::move(request_info));
+}
+
+void TestKeeper::reconfig(
+    std::string_view joining,
+    std::string_view leaving,
+    std::string_view new_members,
+    int32_t version,
+    ReconfigCallback callback)
+{
+    TestKeeperReconfigRequest req;
+    req.joining = joining;
+    req.leaving = leaving;
+    req.new_members = new_members;
+    req.version = version;
+
+    pushRequest({
+        .request = std::make_shared<TestKeeperReconfigRequest>(std::move(req)),
+        .callback = [callback](const Response & response)
+        {
+            callback(dynamic_cast<const ReconfigResponse &>(response));
+        }
+    });
 }
 
 void TestKeeper::multi(
