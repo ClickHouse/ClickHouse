@@ -175,7 +175,7 @@ CI_CONFIG = {
         },
         "binary_riscv64": {
             "compiler": "clang-16-riscv64",
-            "build_type": "",
+            "debug_build": False,
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "riscv64",
