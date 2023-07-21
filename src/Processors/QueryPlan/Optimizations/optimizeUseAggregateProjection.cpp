@@ -497,6 +497,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection sample block 2 {}", block.dumpStructure());
 
+            // minmax_count_projection cannot be used used when there is no data to process, because
+            // it will produce incorrect result during constant aggregation.
+            // See https://github.com/ClickHouse/ClickHouse/issues/36728
             if (block)
             {
                 MinMaxProjectionCandidate minmax;
