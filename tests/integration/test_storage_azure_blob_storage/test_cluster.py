@@ -26,16 +26,19 @@ def cluster():
         cluster.add_instance(
             "node_0",
             main_configs=["configs/named_collections.xml", "configs/cluster.xml"],
+            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
         cluster.add_instance(
             "node_1",
             main_configs=["configs/named_collections.xml", "configs/cluster.xml"],
+            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
         cluster.add_instance(
             "node_2",
             main_configs=["configs/named_collections.xml", "configs/cluster.xml"],
+            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
         cluster.start()
