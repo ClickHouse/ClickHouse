@@ -23,5 +23,15 @@ def test_trace_boundaries_work(started_cluster):
     node.query("select randomPrintableASCII(number) from numbers(1000) FORMAT Null")
     node.query("SYSTEM FLUSH LOGS")
 
-    assert node.query("SELECT countDistinct(abs(size)) > 0 FROM system.trace_log where trace_type = 'MemorySample'") == "1\n"
-    assert node.query("SELECT count() FROM system.trace_log where trace_type = 'MemorySample' and (abs(size) > 8192 or abs(size) < 4096)") == "0\n"
+    assert (
+        node.query(
+            "SELECT countDistinct(abs(size)) > 0 FROM system.trace_log where trace_type = 'MemorySample'"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.trace_log where trace_type = 'MemorySample' and (abs(size) > 8192 or abs(size) < 4096)"
+        )
+        == "0\n"
+    )
