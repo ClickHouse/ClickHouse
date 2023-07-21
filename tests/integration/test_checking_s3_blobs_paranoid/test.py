@@ -41,6 +41,11 @@ def broken_s3(init_broken_s3):
     yield init_broken_s3
 
 
+@pytest.fixture(scope="module")
+def init_connection_reset_by_peer(cluster):
+    yield start_s3_mock(cluster, "connection_reset_by_peer", "8084")
+
+
 def test_upload_after_check_works(cluster, broken_s3):
     node = cluster.instances["node"]
 
@@ -91,7 +96,7 @@ def get_counters(node, query_id, log_type="ExceptionWhileProcessing"):
 def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression):
     node = cluster.instances["node"]
 
-    broken_s3.setup_error_at_create_multi_part_upload()
+    broken_s3.setup_at_create_multi_part_upload()
 
     insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
     error = node.query_and_get_error(
@@ -134,7 +139,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()
-    broken_s3.setup_error_at_part_upload(count=1, after=2)
+    broken_s3.setup_at_part_upload(count=1, after=2)
 
     insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
     error = node.query_and_get_error(
@@ -165,3 +170,208 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     assert count_create_multi_part_uploads == 1
     assert count_upload_parts >= 2
     assert count_s3_errors >= 2
+
+
+def test_when_s3_connection_refused_at_write_retried(
+    cluster, broken_s3
+):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(count=3, after=2, action="connection_refused")
+
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_REFUSED_RETRIED"
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_connection_refused_at_write_retried',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 1000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=100,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 39
+    assert count_s3_errors == 3
+
+    broken_s3.setup_at_part_upload(count=1000, after=2, action="connection_refused")
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_REFUSED_RETRIED_1"
+    error = node.query_and_get_error(
+        f"""
+            INSERT INTO
+                TABLE FUNCTION s3(
+                    'http://resolver:8083/root/data/test_when_s3_connection_refused_at_write_retried',
+                    'minio', 'minio123',
+                    'CSV', auto, 'none'
+                )
+            SELECT
+                *
+            FROM system.numbers
+            LIMIT 1000
+            SETTINGS
+                s3_max_single_part_upload_size=100,
+                s3_min_upload_part_size=100,
+                s3_check_objects_after_upload=0
+            """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "Poco::Exception. Code: 1000, e.code() = 111, Connection refused" in error, error
+
+
+def test_when_s3_connection_reset_by_peer_at_write_retried(
+    cluster, broken_s3
+):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(
+        count=3,
+        after=2,
+        action="connection_reset_by_peer",
+    )
+
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_RETRIED"
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_write_retried',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 1000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=100,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 39
+    assert count_s3_errors == 3
+
+    broken_s3.setup_at_part_upload(
+        count=1000,
+        after=2,
+        action="connection_reset_by_peer",
+    )
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_RETRIED_1"
+    error = node.query_and_get_error(
+        f"""
+               INSERT INTO
+                   TABLE FUNCTION s3(
+                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_write_retried',
+                       'minio', 'minio123',
+                       'CSV', auto, 'none'
+                   )
+               SELECT
+                   *
+               FROM system.numbers
+               LIMIT 1000
+               SETTINGS
+                   s3_max_single_part_upload_size=100,
+                   s3_min_upload_part_size=100,
+                   s3_check_objects_after_upload=0
+               """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error, error
+
+
+def test_when_s3_connection_reset_by_peer_at_read_retried(
+    cluster, broken_s3
+):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_create_multi_part_upload(
+        count=3,
+        after=0,
+        action="connection_reset_by_peer",
+    )
+
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_READ_RETRIED"
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_read_retried',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 1000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=100,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 39
+    assert count_s3_errors == 3
+
+    broken_s3.setup_at_create_multi_part_upload(
+        count=1000,
+        after=0,
+        action="connection_reset_by_peer",
+    )
+
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_READ_RETRIED_1"
+    error = node.query_and_get_error(
+        f"""
+               INSERT INTO
+                   TABLE FUNCTION s3(
+                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_read_retried',
+                       'minio', 'minio123',
+                       'CSV', auto, 'none'
+                   )
+               SELECT
+                   *
+               FROM system.numbers
+               LIMIT 1000
+               SETTINGS
+                   s3_max_single_part_upload_size=100,
+                   s3_min_upload_part_size=100,
+                   s3_check_objects_after_upload=0
+               """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error, error
