@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// See DateTimeTransforms.h
@@ -24,7 +25,7 @@ public:
         /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false);
             /// only validate the time_zone part if the number of arguments is 2. This is mainly
             /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
             if (arguments.size() == 2 && time_zone.empty())
@@ -53,7 +54,7 @@ public:
                 scale = std::max(source_scale, static_cast<Int64>(9));
             }
 
-            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
         }
         else
             return std::make_shared<ToDataType>();
@@ -81,6 +82,18 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
                 arguments[0].type->getName(), this->getName());
+    }
+
+    bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
+
+    RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (Transform::hasPreimage())
+            return Transform::getPreimage(type, point);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Function {} has no information about its preimage",
+                Transform::name);
     }
 
 };

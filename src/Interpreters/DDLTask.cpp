@@ -104,6 +104,14 @@ String DDLLogEntry::toString() const
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
         wb << "tracing: " << this->tracing_context;
+    /// NOTE: OPENTELEMETRY_ENABLED_VERSION has new line in TracingContext::serialize(), so no need to add one more
+
+    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
+    {
+        writeString("initial_query_id: ", wb);
+        writeEscapedString(initial_query_id, wb);
+        writeChar('\n', wb);
+    }
 
     return wb.str();
 }
@@ -150,6 +158,14 @@ void DDLLogEntry::parse(const String & data)
             rb >> "tracing: " >> this->tracing_context;
     }
 
+    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
+    {
+        checkString("initial_query_id: ", rb);
+        readEscapedString(initial_query_id, rb);
+        checkChar('\n', rb);
+    }
+
+
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -183,7 +199,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
     return query_context;
@@ -423,8 +439,8 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    query_context->getClientInfo().is_replicated_database_internal = true;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);

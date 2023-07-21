@@ -168,7 +168,6 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
         accumulated_rows += current_rows;
 
-
         if (!states[i].isValid())
             inputs_to_update.push_back(i);
     }
