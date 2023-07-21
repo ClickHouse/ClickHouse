@@ -2511,11 +2511,21 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr
         /// find input node which refers to the output node
         /// consider only aliases on the path
         const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        while (node)
         {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
+            if (node->type == ActionsDAG::ActionType::ALIAS)
+            {
+                node = node->children.front();
+            }
+            /// materiailze can occure when dealing with views, special case
+            /// TODO: not sure if it should be done here, looks too generic place
+            else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize")
+            {
+                chassert(node->children.size() == 1);
+                node = node->children.front();
+            }
+            else
+                break;
         }
         if (node && node->type == ActionsDAG::ActionType::INPUT)
             index.emplace(output_node->result_name, node);

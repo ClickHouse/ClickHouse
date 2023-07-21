@@ -1,0 +1,13 @@
+-- { echoOn }
+set query_plan_remove_redundant_distinct=1;
+-- DISTINCT has to be removed since the view already has DISTINCT on the same column
+SELECT count()
+FROM
+(
+    EXPLAIN SELECT DISTINCT x FROM tab_v
+)
+WHERE explain ILIKE '%distinct%';
+2
+SELECT DISTINCT x FROM tab_v;
+2
+1
