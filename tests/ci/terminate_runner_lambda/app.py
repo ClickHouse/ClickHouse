@@ -42,6 +42,28 @@ def get_cached_instances() -> dict:
     return cached_instances.value
 
 
+@dataclass
+class CachedRunners:
+    time: float
+    value: RunnerDescriptions
+    updating: bool = False
+
+
+cached_runners = CachedRunners(0, [])
+
+
+def get_cached_runners(access_token: str) -> RunnerDescriptions:
+    """From time to time request to GH api costs up to 3 seconds, and
+    it's a disaster from the termination lambda perspective"""
+    if time.time() - 5 < cached_runners.time or cached_instances.updating:
+        return cached_runners.value
+    cached_runners.updating = cached_value_is_valid(cached_runners.time, 15)
+    cached_runners.value = list_runners(access_token)
+    cached_runners.time = time.time()
+    cached_runners.updating = False
+    return cached_runners.value
+
+
 def how_many_instances_to_kill(event_data: dict) -> Dict[str, int]:
     data_array = event_data["CapacityToTerminate"]
     to_kill_by_zone = {}  # type: Dict[str, int]
@@ -99,7 +121,7 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
     )
     print("Time spent on the requests to AWS: ", time.time() - start)
 
-    runners = list_runners(access_token)
+    runners = get_cached_runners(access_token)
     runner_ids = set(runner.name for runner in runners)
     # We used to delete potential hosts to terminate from GitHub runners pool,
     # but the documentation states:
