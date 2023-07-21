@@ -368,7 +368,7 @@ void AsyncLoader::wait(const LoadJobPtr & job)
 
 void AsyncLoader::waitNoThrow(const LoadJobPtr & job)
 {
-    std::unique_lock job_lock{mutex};
+    std::unique_lock job_lock{job->mutex};
     wait(job_lock, job);
 }
 
