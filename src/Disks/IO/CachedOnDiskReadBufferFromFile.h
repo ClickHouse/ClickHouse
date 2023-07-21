@@ -20,8 +20,7 @@ namespace DB
 class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
-    using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
+    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
@@ -33,7 +32,8 @@ public:
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
-        std::optional<size_t> read_until_position_ = std::nullopt);
+        std::optional<size_t> read_until_position_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_);
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -61,6 +61,8 @@ public:
     };
 
 private:
+    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
+
     void initialize(size_t offset, size_t size);
     void assertCorrectness() const;
 
@@ -136,7 +138,6 @@ private:
     String last_caller_id;
 
     String query_id;
-    bool enable_logging = false;
     String current_buffer_id;
 
     bool allow_seeks_after_first_read;
@@ -146,7 +147,7 @@ private:
 
     FileCache::QueryContextHolderPtr query_context_holder;
 
-    bool is_persistent;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }

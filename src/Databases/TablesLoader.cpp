@@ -25,18 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
-static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
-
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
-{
-    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-    {
-        LOG_INFO(log, "{}%", processed * 100.0 / total);
-        watch.restart();
-    }
-}
-
 TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_)
     : global_context(global_context_)
     , databases(std::move(databases_))

@@ -3,8 +3,10 @@
 #include "KeeperException.h"
 #include "TestKeeper.h"
 
-#include <functional>
 #include <filesystem>
+#include <functional>
+#include <ranges>
+#include <vector>
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -111,6 +113,25 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
+
+        Poco::Net::SocketAddress address = impl->getConnectedAddress();
+
+        connected_zk_host = address.host().toString();
+        connected_zk_port = address.port();
+
+        connected_zk_index = 0;
+
+        if (args.hosts.size() > 1)
+        {
+            for (size_t i = 0; i < args.hosts.size(); i++)
+            {
+                if (args.hosts[i] == address.toString())
+                {
+                    connected_zk_index = i;
+                    break;
+                }
+            }
+        }
     }
     else if (args.implementation == "testkeeper")
     {
@@ -160,7 +181,7 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
-    std::function<size_t(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
+    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {
@@ -331,14 +352,59 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 
 void ZooKeeper::createAncestors(const std::string & path)
 {
+    std::string data;
+    std::string path_created; // Ignored
+    std::vector<std::string> pending_nodes;
+
+    size_t last_pos = path.rfind('/');
+    if (last_pos == std::string::npos || last_pos == 0)
+        return;
+    std::string current_node = path.substr(0, last_pos);
+
+    while (true)
+    {
+        Coordination::Error code = createImpl(current_node, data, CreateMode::Persistent, path_created);
+        if (code == Coordination::Error::ZNONODE)
+        {
+            /// The parent node doesn't exist. Save the current node and try with the parent
+            last_pos = current_node.rfind('/');
+            if (last_pos == std::string::npos || last_pos == 0)
+                throw KeeperException(code, path);
+            pending_nodes.emplace_back(std::move(current_node));
+            current_node = path.substr(0, last_pos);
+        }
+        else if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+            break;
+        else
+            throw KeeperException(code, path);
+    }
+
+    for (const std::string & pending : pending_nodes | std::views::reverse)
+        createIfNotExists(pending, data);
+}
+
+void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
+{
+    std::vector<std::string> paths_to_check;
     size_t pos = 1;
     while (true)
     {
         pos = path.find('/', pos);
         if (pos == std::string::npos)
             break;
-        createIfNotExists(path.substr(0, pos), "");
+        paths_to_check.emplace_back(path.substr(0, pos));
         ++pos;
+    }
+
+    MultiExistsResponse response = exists(paths_to_check);
+
+    for (size_t i = 0; i < paths_to_check.size(); ++i)
+    {
+        if (response[i].error != Coordination::Error::ZOK)
+        {
+            /// Ephemeral nodes cannot have children
+            requests.emplace_back(makeCreateRequest(paths_to_check[i], "", CreateMode::Persistent));
+        }
     }
 }
 
@@ -821,9 +887,9 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion()
+bool ZooKeeper::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
 {
-    return impl->getApiVersion();
+    return impl->isFeatureEnabled(feature_flag);
 }
 
 Int64 ZooKeeper::getClientID()
@@ -1281,7 +1347,6 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     request->path = path;
     return request;
 }
-
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {

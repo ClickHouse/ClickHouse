@@ -10,8 +10,8 @@ from typing import Any, Callable, List
 
 import requests  # type: ignore
 
+import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
-from get_robot_token import ROBOT_TOKEN, get_best_robot_token
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -56,13 +56,18 @@ def get_gh_api(
     def set_auth_header():
         if "headers" in kwargs:
             if "Authorization" not in kwargs["headers"]:
-                kwargs["headers"]["Authorization"] = f"Bearer {get_best_robot_token()}"
+                kwargs["headers"][
+                    "Authorization"
+                ] = f"Bearer {grt.get_best_robot_token()}"
         else:
-            kwargs["headers"] = {"Authorization": f"Bearer {get_best_robot_token()}"}
+            kwargs["headers"] = {
+                "Authorization": f"Bearer {grt.get_best_robot_token()}"
+            }
 
-    if ROBOT_TOKEN is not None:
+    if grt.ROBOT_TOKEN is not None:
         set_auth_header()
 
+    need_retry = False
     for _ in range(retries):
         try:
             response = get_with_retries(url, 1, sleep, **kwargs)
@@ -78,9 +83,11 @@ def get_gh_api(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
+                need_retry = True
                 break
 
-    return get_with_retries(url, retries, sleep, **kwargs)
+    if need_retry:
+        return get_with_retries(url, retries, sleep, **kwargs)
 
 
 def get_build_name_for_check(check_name: str) -> str:

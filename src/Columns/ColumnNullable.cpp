@@ -214,7 +214,7 @@ void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
 {
     getNestedColumn().insertRangeFrom(src, start, length);
-    getNullMapData().resize_fill(getNullMapData().size() + length, 0);
+    getNullMapData().resize_fill(getNullMapData().size() + length);
 }
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
@@ -644,9 +644,9 @@ ColumnPtr ColumnNullable::compress() const
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [nested_column = std::move(nested_compressed), null_map = std::move(null_map_compressed)]
+        [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
-            return ColumnNullable::create(nested_column->decompress(), null_map->decompress());
+            return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
         });
 }
 

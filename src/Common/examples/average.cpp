@@ -473,7 +473,8 @@ Float NO_INLINE buffered(const PODArray<UInt8> & keys, const PODArray<Float> & v
     return map[0].result();
 }
 
-
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wframe-larger-than"
 template <size_t UNROLL_COUNT>
 Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
@@ -496,6 +497,7 @@ Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Flo
 
     return map[0].result();
 }
+#pragma clang diagnostic pop
 
 
 struct State4

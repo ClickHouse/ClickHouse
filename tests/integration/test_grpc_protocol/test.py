@@ -42,7 +42,7 @@ node = cluster.add_instance(
     main_configs=["configs/grpc_config.xml"],
     # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
     env_variables={
-        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS")
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
 )
 main_channel = None

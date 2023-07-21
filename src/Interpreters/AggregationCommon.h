@@ -3,7 +3,6 @@
 #include <array>
 
 #include <Common/SipHash.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
