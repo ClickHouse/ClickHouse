@@ -30,6 +30,9 @@ enum class AuthenticationType
     /// Certificates may only be trusted if 'strict' SSL mode is enabled.
     SSL_CERTIFICATE,
 
+    /// Password is encrypted in bcrypt hash.
+    BCRYPT_PASSWORD,
+
     MAX,
 };
 

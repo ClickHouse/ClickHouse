@@ -47,8 +47,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_), scalars(scalars_)
     , external_tables(external_tables_), stage(stage_)
-    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
-    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , extension(extension_)
 {}
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -90,8 +89,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
-    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
-    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , extension(extension_)
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -108,8 +106,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
-    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
-    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , extension(extension_)
 {
     create_connections = [this, pool, throttler, extension_](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -247,6 +244,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         finished = true;
         sent_query = true;
 
+        /// We need to tell the coordinator not to wait for this replica.
+        if (extension && extension->parallel_reading_coordinator)
+        {
+            chassert(extension->replica_info);
+            extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+        }
+
         return;
     }
 
@@ -360,7 +364,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context->resume();
 
         if (needToSkipUnavailableShard())
+        {
+            /// We need to tell the coordinator not to wait for this replica.
+            /// But at this point it may lead to an incomplete result set, because
+            /// this replica committed to read some part of there data and then died.
+            if (extension && extension->parallel_reading_coordinator)
+            {
+                chassert(extension->parallel_reading_coordinator);
+                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+            }
+
             return ReadResult(Block());
+        }
 
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
@@ -419,11 +434,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
-            processMergeTreeReadTaskRequest(packet.request);
+            chassert(packet.request.has_value());
+            processMergeTreeReadTaskRequest(packet.request.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
-            processMergeTreeInitialReadAnnounecement(packet.announcement);
+            chassert(packet.announcement.has_value());
+            processMergeTreeInitialReadAnnounecement(packet.announcement.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
@@ -497,6 +514,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
             break;
 
+        case Protocol::Server::TimezoneUpdate:
+            break;
+
         default:
             got_unknown_packet_from_replica = true;
             throw Exception(
@@ -524,30 +544,30 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
 void RemoteQueryExecutor::processReadTaskRequest()
 {
-    if (!task_iterator)
+    if (!extension || !extension->task_iterator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
-    auto response = (*task_iterator)();
+    auto response = (*extension->task_iterator)();
     connections->sendReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
-    if (!parallel_reading_coordinator)
+    if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsReceived);
-    auto response = parallel_reading_coordinator->handleRequest(std::move(request));
+    auto response = extension->parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement)
 {
-    if (!parallel_reading_coordinator)
+    if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
+    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
 }
 
 void RemoteQueryExecutor::finish()
@@ -599,6 +619,9 @@ void RemoteQueryExecutor::finish()
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
+
+        case Protocol::Server::TimezoneUpdate:
             break;
 
         default:
@@ -665,24 +688,24 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
-                data->creating_pipe_callback = [cur, limits, context = this->context]()
+                data->creating_pipe_callback = [cur, limits, my_context = this->context]()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, context);
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, my_context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
+                        my_context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
                     QueryPlan plan;
                     cur->read(
                         plan,
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
-                        storage_snapshot, query_info, context,
+                        storage_snapshot, query_info, my_context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(context),
-                        BuildQueryPipelineSettings::fromContext(context));
+                        QueryPlanOptimizationSettings::fromContext(my_context),
+                        BuildQueryPipelineSettings::fromContext(my_context));
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
@@ -710,9 +733,10 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (read_context)
         read_context->cancel();
 
-    /// Query could be cancelled during connection creation or query sending,
-    /// we should check if connections were already created and query were sent.
-    if (connections && sent_query)
+    /// Query could be cancelled during connection creation, query sending or data receiving.
+    /// We should send cancel request if connections were already created, query were sent
+    /// and remote query is not finished.
+    if (connections && sent_query && !finished)
     {
         connections->sendCancel();
         if (log)

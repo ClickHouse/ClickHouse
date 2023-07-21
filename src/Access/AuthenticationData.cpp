@@ -10,6 +10,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
 #include <base/types.h>
+#include <base/hex.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -21,6 +22,9 @@
 #     include <openssl/err.h>
 #endif
 
+#if USE_BCRYPT
+#     include <bcrypt.h>
+#endif
 
 namespace DB
 {
@@ -41,7 +45,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
     ::DB::encodeSHA256(text, hash.data());
     return hash;
 #else
-    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
 #endif
 }
 
@@ -53,6 +57,47 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view
     return engine.digest();
 }
 
+AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]], int workfactor [[maybe_unused]])
+{
+#if USE_BCRYPT
+    if (text.size() > 72)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "bcrypt does not support passwords with a length of more than 72 bytes");
+
+    char salt[BCRYPT_HASHSIZE];
+    Digest hash;
+    hash.resize(64);
+
+    int ret = bcrypt_gensalt(workfactor, salt);
+    if (ret != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
+
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));
+    if (ret != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
+
+    return hash;
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library");
+#endif
+}
+
+bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
+{
+#if USE_BCRYPT
+    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
+    if (ret == -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
+    return (ret == 0);
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library");
+#endif
+}
 
 bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
@@ -75,6 +120,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
 
+        case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
@@ -87,6 +133,13 @@ void AuthenticationData::setPassword(const String & password_)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_)
+{
+    if (type != AuthenticationType::BCRYPT_PASSWORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
+
+    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
+}
 
 String AuthenticationData::getPassword() const
 {
@@ -156,6 +209,21 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
             return;
         }
 
+        case AuthenticationType::BCRYPT_PASSWORD:
+        {
+            /// Depending on the workfactor the resulting hash can be 59 or 60 characters long.
+            /// However the library we use to encode it requires hash string to be 64 characters long,
+            ///  so we also allow the hash of this length.
+
+            if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
+                                "but must be 59 or 60 bytes.", hash.size());
+            password_hash = hash;
+            password_hash.resize(64);
+            return;
+        }
+
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
@@ -216,6 +284,12 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
             break;
         }
+        case AuthenticationType::BCRYPT_PASSWORD:
+        {
+            node->contains_hash = true;
+            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
+            break;
+        }
         case AuthenticationType::LDAP:
         {
             node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
@@ -249,7 +323,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
 {
-    if (query.type && *query.type == AuthenticationType::NO_PASSWORD)
+    if (query.type && query.type == AuthenticationType::NO_PASSWORD)
         return AuthenticationData();
 
     size_t args_size = query.children.size();
@@ -265,7 +339,8 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (check_password_rules && !context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
 
-        /// NOTE: We will also extract bcrypt workfactor from context
+        if (query.type == AuthenticationType::BCRYPT_PASSWORD && !context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get bcrypt work factor without context");
 
         String value = checkAndGetLiteralArgument<String>(args[0], "password");
 
@@ -280,6 +355,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (check_password_rules)
             context->getAccessControl().checkPasswordComplexityRules(value);
+
+        if (query.type == AuthenticationType::BCRYPT_PASSWORD)
+        {
+            int workfactor = context->getAccessControl().getBcryptWorkfactor();
+            auth_data.setPasswordBcrypt(value, workfactor);
+            return auth_data;
+        }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD)
         {
@@ -318,7 +400,16 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     if (query.contains_hash)
     {
         String value = checkAndGetLiteralArgument<String>(args[0], "hash");
-        auth_data.setPasswordHashHex(value);
+
+        if (query.type == AuthenticationType::BCRYPT_PASSWORD)
+        {
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value));
+            return auth_data;
+        }
+        else
+        {
+            auth_data.setPasswordHashHex(value);
+        }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {

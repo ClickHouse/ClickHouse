@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/kafka
-sidebar_position: 8
+sidebar_position: 110
 sidebar_label: Kafka
 ---
 
@@ -19,8 +19,8 @@ Kafka lets you:
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1],
-    name2 [type2],
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
     ...
 ) ENGINE = Kafka()
 SETTINGS

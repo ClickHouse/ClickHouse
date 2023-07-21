@@ -111,6 +111,11 @@ namespace
                         type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
                         expect_hash = true;
                     }
+                    else if (ParserKeyword{"BCRYPT_HASH"}.ignore(pos, expected))
+                    {
+                        type = AuthenticationType::BCRYPT_PASSWORD;
+                        expect_hash = true;
+                    }
                     else
                         return false;
                 }
@@ -400,7 +405,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names_ref = names->names;
 
     std::optional<String> new_name;
-    std::optional<String> temporary_password;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;

@@ -68,9 +68,9 @@ namespace
             {
                 auto documentation = factory.getDocumentation(name);
                 res_columns[6]->insert(documentation.description);
-                res_columns[7]->insertDefault();
-                res_columns[8]->insertDefault();
-                res_columns[9]->insertDefault();
+                res_columns[7]->insert(documentation.syntax);
+                res_columns[8]->insert(documentation.argumentsAsString());
+                res_columns[9]->insert(documentation.returned_value);
                 res_columns[10]->insert(documentation.examplesAsString());
                 res_columns[11]->insert(documentation.categoriesAsString());
             }

@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Core/Defines.h>
 
@@ -21,6 +23,7 @@
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <Dictionaries/HashedDictionaryCollectionTraits.h>
 
 namespace CurrentMetrics
 {
@@ -28,23 +31,10 @@ namespace CurrentMetrics
     extern const Metric HashedDictionaryThreadsActive;
 }
 
-namespace
-{
-
-/// NOTE: Trailing return type is explicitly specified for SFINAE.
-
-/// google::sparse_hash_map
-template <typename T> auto getKeyFromCell(const T & value) -> decltype(value->first) { return value->first; } // NOLINT
-template <typename T> auto getValueFromCell(const T & value) -> decltype(value->second) { return value->second; } // NOLINT
-
-/// HashMap
-template <typename T> auto getKeyFromCell(const T & value) -> decltype(value->getKey()) { return value->getKey(); } // NOLINT
-template <typename T> auto getValueFromCell(const T & value) -> decltype(value->getMapped()) { return value->getMapped(); } // NOLINT
-
-}
-
 namespace DB
 {
+
+using namespace HashedDictionaryImpl;
 
 namespace ErrorCodes
 {
@@ -80,6 +70,14 @@ public:
             shards_queues[shard].emplace(backlog);
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachFromGroupIfNotDetached();
+                );
+
+                /// Do not account memory that was occupied by the dictionaries for the query/user context.
+                MemoryTrackerBlockerInThread memory_blocker;
+
                 if (thread_group)
                     CurrentThread::attachToGroupIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
@@ -238,14 +236,19 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
+            /// Do not account memory that was occupied by the dictionaries for the query/user context.
+            MemoryTrackerBlockerInThread memory_blocker;
+
             if (thread_group)
                 CurrentThread::attachToGroupIfDetached(thread_group);
             setThreadName("HashedDictDtor");
 
-            if constexpr (sparse)
-                container.clear();
-            else
-                container.clearAndShrink();
+            clearContainer(container);
         });
 
         ++hash_tables_count;
@@ -647,6 +650,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
     const auto size = dict_struct.attributes.size();
     attributes.reserve(size);
 
+    HashTableGrowerWithPrecalculationAndMaxLoadFactor grower(configuration.max_load_factor);
+
     for (const auto & dictionary_attribute : dict_struct.attributes)
     {
         auto type_call = [&, this](const auto & dictionary_attribute_type)
@@ -656,8 +661,28 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_nullable_sets = dictionary_attribute.is_nullable ? std::make_optional<NullableSets>(configuration.shards) : std::optional<NullableSets>{};
-            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_sets), CollectionsHolder<ValueType>(configuration.shards)};
-            attributes.emplace_back(std::move(attribute));
+            if constexpr (IsBuiltinHashTable<typename CollectionsHolder<ValueType>::value_type>)
+            {
+                CollectionsHolder<ValueType> collections;
+                collections.reserve(configuration.shards);
+                for (size_t i = 0; i < configuration.shards; ++i)
+                    collections.emplace_back(grower);
+
+                Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_sets), std::move(collections)};
+                attributes.emplace_back(std::move(attribute));
+            }
+            else
+            {
+                Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_sets), CollectionsHolder<ValueType>(configuration.shards)};
+                for (auto & container : std::get<CollectionsHolder<ValueType>>(attribute.containers))
+                    container.max_load_factor(configuration.max_load_factor);
+                attributes.emplace_back(std::move(attribute));
+            }
+
+            if constexpr (IsBuiltinHashTable<typename CollectionsHolder<ValueType>::value_type>)
+                LOG_TRACE(log, "Using builtin hash table for {} attribute", dictionary_attribute.name);
+            else
+                LOG_TRACE(log, "Using sparsehash for {} attribute", dictionary_attribute.name);
         };
 
         callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
@@ -665,7 +690,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
 
     if (unlikely(attributes.size()) == 0)
     {
-        no_attributes_containers.resize(configuration.shards);
+        no_attributes_containers.reserve(configuration.shards);
+        for (size_t i = 0; i < configuration.shards; ++i)
+            no_attributes_containers.emplace_back(grower);
     }
 
     string_arenas.resize(configuration.shards);
@@ -761,6 +788,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
         auto & attribute = attributes[attribute_index];
         bool attribute_is_nullable = attribute.is_nullable_sets.has_value();
 
+        /// Number of elements should not take into account multiple attributes.
+        new_element_count = 0;
+
         getAttributeContainers(attribute_index, [&](auto & containers)
         {
             using ContainerType = std::decay_t<decltype(containers.front())>;
@@ -831,12 +861,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::resize(size_t added
     if (unlikely(attributes_size == 0))
     {
         size_t reserve_size = added_rows + no_attributes_containers.front().size();
-
-        if constexpr (sparse)
-            no_attributes_containers.front().resize(reserve_size);
-        else
-            no_attributes_containers.front().reserve(reserve_size);
-
+        resizeContainer(no_attributes_containers.front(), reserve_size);
         return;
     }
 
@@ -846,11 +871,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::resize(size_t added
         {
             auto & container = containers.front();
             size_t reserve_size = added_rows + container.size();
-
-            if constexpr (sparse)
-                container.resize(reserve_size);
-            else
-                container.reserve(reserve_size);
+            resizeContainer(container, reserve_size);
         });
     }
 }
@@ -957,29 +978,22 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
 
     for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
+        /// bucket_count should be a sum over all shards (CollectionsHolder),
+        /// but it should not be a sum over all attributes, since it is used to
+        /// calculate load_factor like this:
+        ///
+        ///    element_count / bucket_count
+        ///
+        /// While element_count is a sum over all shards, not over all attributes.
+        bucket_count = 0;
+
         getAttributeContainers(attribute_index, [&](const auto & containers)
         {
             for (const auto & container : containers)
             {
-                using ContainerType = std::decay_t<decltype(container)>;
-                using AttributeValueType = typename ContainerType::mapped_type;
-
                 bytes_allocated += sizeof(container);
-
-                if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
-                {
-                    /// bucket_count() - Returns table size, that includes empty and deleted
-                    /// size()         - Returns table size, without empty and deleted
-                    /// and since this is sparsehash, empty cells should not be significant,
-                    /// and since items cannot be removed from the dictionary, deleted is also not important.
-                    bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
-                    bucket_count = container.bucket_count();
-                }
-                else
-                {
-                    bytes_allocated += container.getBufferSizeInBytes();
-                    bucket_count = container.getBufferSizeInCells();
-                }
+                bytes_allocated += getBufferSizeInBytes(container);
+                bucket_count += getBufferSizeInCells(container);
             }
         });
 
@@ -998,17 +1012,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
         for (const auto & container : no_attributes_containers)
         {
             bytes_allocated += sizeof(container);
-
-            if constexpr (sparse)
-            {
-                bytes_allocated += container.size() * (sizeof(KeyType));
-                bucket_count = container.bucket_count();
-            }
-            else
-            {
-                bytes_allocated += container.getBufferSizeInBytes();
-                bucket_count = container.getBufferSizeInCells();
-            }
+            bytes_allocated += getBufferSizeInBytes(container);
+            bucket_count += getBufferSizeInCells(container);
         }
     }
 
@@ -1066,12 +1071,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & 
             keys.reserve(keys.size() + container.size());
 
             for (const auto & key : container)
-            {
-                if constexpr (sparse)
-                    keys.emplace_back(key);
-                else
-                    keys.emplace_back(key.getKey());
-            }
+                keys.emplace_back(getSetKeyFromCell(key));
         }
     }
 
@@ -1180,9 +1180,14 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         if (shard_load_queue_backlog <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
+        float max_load_factor = static_cast<float>(config.getDouble(config_prefix + dictionary_layout_prefix + ".max_load_factor", 0.5));
+        if (max_load_factor < 0.5f || max_load_factor > 0.99f)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: max_load_factor parameter should be within [0.5, 0.99], got {}", full_name, max_load_factor);
+
         HashedDictionaryConfiguration configuration{
             static_cast<UInt64>(shards),
             static_cast<UInt64>(shard_load_queue_backlog),
+            max_load_factor,
             require_nonempty,
             dict_lifetime,
         };

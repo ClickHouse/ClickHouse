@@ -25,7 +25,7 @@ OPTIMIZE TABLE testing FINAL;
 SELECT c FROM testing ORDER BY d;
 SELECT c FROM testing ORDER BY e, d;
 
--- update all colums used by proj_1
+-- update all columns used by proj_1
 ALTER TABLE testing UPDATE c = c+1, d = d+2 WHERE True SETTINGS mutations_sync=2;
 
 SELECT * FROM system.mutations WHERE database = currentDatabase() AND table = 'testing' AND not is_done;
