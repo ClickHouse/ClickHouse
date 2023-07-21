@@ -536,7 +536,6 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 
 bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 {
-    //LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "CHECKING SIZE {} IN BORDERS [{}; {}]", size, min_allocation_size_bytes, max_allocation_size_bytes);
     /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation
     return ((max_allocation_size_bytes == 0 || size <= max_allocation_size_bytes) && size >= min_allocation_size_bytes);
 }
