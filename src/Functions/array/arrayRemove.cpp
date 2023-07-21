@@ -29,7 +29,7 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray & array, ColumnPtr mapped)
     }
 
     const IColumn::Filter & filter = column_filter->getData();
-    ColumnPtr removed = array.getData().remove(filter, -1);
+    ColumnPtr removed = array.getData().filter(filter, -1);
 
     const IColumn::Offsets & in_offsets = array.getOffsets();
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
