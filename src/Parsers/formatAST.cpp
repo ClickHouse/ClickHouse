@@ -4,9 +4,9 @@
 namespace DB
 {
 
-void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
+void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line, bool show_secrets)
 {
-    IAST::FormatSettings settings(buf, one_line);
+    IAST::FormatSettings settings(buf, one_line, show_secrets);
     settings.hilite = hilite;
 
     ast.format(settings);
