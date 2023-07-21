@@ -71,8 +71,6 @@ std::unique_ptr<ReadBufferFromFileBase> EncryptedObjectStorage::readObjects( ///
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    if (objects.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
     return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
 }
 
