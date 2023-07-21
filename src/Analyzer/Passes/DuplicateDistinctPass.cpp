@@ -84,7 +84,7 @@ private:
     ///     2. true if subquery has no distinct modifier, but its subquery can provide distinct result
     ///        and column list can match. Example(subquery): SELECT a FROM (SELECT DISTINCT a FROM t)
     ///     3. false
-    bool subquery_is_distinct;
+    bool subquery_is_distinct = false;
 };
 
 }
