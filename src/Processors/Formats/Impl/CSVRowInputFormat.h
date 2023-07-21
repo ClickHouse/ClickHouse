@@ -89,6 +89,8 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
     FormatSettings::EscapingRule getEscapingRule() const override { return FormatSettings::EscapingRule::CSV; }
+    bool readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization);
+    bool readFieldOrDefault(DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization);
 
 protected:
     PeekableReadBuffer * buf;

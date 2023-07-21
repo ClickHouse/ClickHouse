@@ -70,14 +70,13 @@ void markSessionForReuse(PooledHTTPSessionPtr session);
 void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
 
 /// Create session object to perform requests and set required parameters.
-HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host = true);
+HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts);
 
 /// As previous method creates session, but tooks it from pool, without and with proxy uri.
 PooledHTTPSessionPtr makePooledHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     size_t per_endpoint_pool_size,
-    bool resolve_host = true,
     bool wait_on_pool_size_limit = true);
 
 PooledHTTPSessionPtr makePooledHTTPSession(
@@ -85,7 +84,6 @@ PooledHTTPSessionPtr makePooledHTTPSession(
     const Poco::URI & proxy_uri,
     const ConnectionTimeouts & timeouts,
     size_t per_endpoint_pool_size,
-    bool resolve_host = true,
     bool wait_on_pool_size_limit = true);
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
