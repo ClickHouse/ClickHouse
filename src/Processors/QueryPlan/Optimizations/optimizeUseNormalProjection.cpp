@@ -188,8 +188,11 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             context,
             query_info.is_internal
                 ? Context::QualifiedProjectionName{}
-                : Context::QualifiedProjectionName{
-                    .storage_id = reading->getMergeTreeData().getStorageID(), .projection_name = best_candidate->projection->name});
+                : Context::QualifiedProjectionName
+                  {
+                      .storage_id = reading->getMergeTreeData().getStorageID(),
+                      .projection_name = best_candidate->projection->name,
+                  });
     }
 
     bool has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
