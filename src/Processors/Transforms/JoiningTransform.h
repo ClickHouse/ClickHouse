@@ -115,7 +115,7 @@ class DelayedBlocksTask : public ChunkInfo
 {
 public:
 
-    explicit DelayedBlocksTask() : finished(true) {}
+    DelayedBlocksTask() = default;
     explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter_)
         : delayed_blocks(std::move(delayed_blocks_))
         , left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
@@ -125,7 +125,6 @@ public:
     IBlocksStreamPtr delayed_blocks = nullptr;
     JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter = nullptr;
 
-    bool finished = false;
 };
 
 using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;

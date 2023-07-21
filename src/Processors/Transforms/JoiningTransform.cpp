@@ -375,7 +375,8 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
         input.setNotNeeded();
     }
 
-    if (task->finished)
+    // When delayed_blocks is nullptr, it means that all buckets have been joined.
+    if (!task->delayed_blocks)
     {
         input.close();
         output.finish();
