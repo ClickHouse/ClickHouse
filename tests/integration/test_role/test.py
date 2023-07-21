@@ -287,7 +287,7 @@ def test_introspection():
 
     assert instance.query(
         "SELECT name, storage from system.roles WHERE name IN ('R1', 'R2') ORDER BY name"
-    ) == TSV([["R1", "local directory"], ["R2", "local directory"]])
+    ) == TSV([["R1", "local_directory"], ["R2", "local_directory"]])
 
     assert instance.query(
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') OR role_name IN ('R1', 'R2') ORDER BY user_name, role_name, access_type, database, table, column, is_partial_revoke, grant_option"

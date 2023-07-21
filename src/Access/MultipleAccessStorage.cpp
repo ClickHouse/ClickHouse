@@ -213,6 +213,42 @@ ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & stora
     return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
 }
 
+StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const DB::String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage == exclude)
+            continue;
+
+        if (storage->find(type, name))
+            return storage;
+    }
+
+    return nullptr;
+}
+
+void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
+{
+    auto source_storage = findStorageByName(source_storage_name);
+    auto destination_storage = findStorageByName(destination_storage_name);
+
+    auto to_move = source_storage->read(ids);
+    source_storage->remove(ids);
+
+    try
+    {
+        destination_storage->insert(to_move, ids);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while moving access entities");
+
+        source_storage->insert(to_move, ids);
+        throw;
+    }
+}
+
 AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
     if (auto storage = findStorage(id))
@@ -280,7 +316,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -303,7 +339,7 @@ std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & en
             getStorageName());
     }
 
-    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists);
+    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists, set_id);
     if (id)
     {
         std::lock_guard lock{mutex};

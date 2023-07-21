@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Parsers/IParser.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB
@@ -36,7 +37,7 @@ inline bool parseRoleNames(IParser::Pos & pos, Expected & expected, Strings & ro
 
 inline bool parseStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
 {
-    return parseUserName(pos, expected, storage_name);
+    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
 }
 
 }

@@ -93,9 +93,6 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String cluster;
     String storage_name;
 
-    if (ParserKeyword{"AT"}.ignore(pos, expected))
-        parseStorageName(pos, expected, storage_name);
-
     while (true)
     {
         if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
@@ -112,6 +109,9 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
+        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseStorageName(pos, expected, storage_name))
             continue;
 
         break;

@@ -92,6 +92,7 @@ public:
 
     /// Returns whether there is an entity with such identifier in the storage.
     virtual bool exists(const UUID & id) const = 0;
+    bool exists(const std::vector<UUID> & ids) const;
 
     /// Reads an entity. Throws an exception if not found.
     template <typename EntityClassT = IAccessEntity>
@@ -99,6 +100,9 @@ public:
 
     template <typename EntityClassT = IAccessEntity>
     std::shared_ptr<const EntityClassT> read(const String & name, bool throw_if_not_exists = true) const;
+
+    template <typename EntityClassT = IAccessEntity>
+    std::vector<AccessEntityPtr> read(const std::vector<UUID> & ids, bool throw_if_not_exists = true) const;
 
     /// Reads an entity. Returns nullptr if not found.
     template <typename EntityClassT = IAccessEntity>
@@ -128,7 +132,9 @@ public:
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
     std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
+    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     std::optional<UUID> tryInsert(const AccessEntityPtr & entity);
@@ -179,7 +185,7 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
@@ -237,6 +243,19 @@ std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name, bo
         throwNotFound(EntityClassT::TYPE, name);
     else
         return nullptr;
+}
+
+
+template <typename EntityClassT>
+std::vector<AccessEntityPtr> IAccessStorage::read(const std::vector<UUID> & ids, bool throw_if_not_exists) const
+{
+    std::vector<AccessEntityPtr> result;
+    result.reserve(ids.size());
+
+    for (const auto & id : ids)
+        result.push_back(read<EntityClassT>(id, throw_if_not_exists));
+
+    return result;
 }
 
 
