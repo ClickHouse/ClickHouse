@@ -26,9 +26,9 @@ def test_invalid_chars():
     )
 
 
-def test_no_encryption_codecs():
+def test_no_encryption_key():
     start_clickhouse(
-        "configs/config_no_encryption_codecs.xml", "There is no key 0 in config"
+        "configs/config_no_encryption_key.xml", "There is no key 0 in config for AES_128_GCM_SIV encryption codec"
     )
 
 
