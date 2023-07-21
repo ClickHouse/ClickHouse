@@ -50,11 +50,9 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray & array, ColumnPtr mapped)
      return ColumnArray::create(removed, std::move(column_offsets)); //// return the array with all removed elements
 }
 
-
 REGISTER_FUNCTION(ArrayRemove)
 {
     factory.registerFunction<FunctionArrayRemove>();
 }
-
 
 }
