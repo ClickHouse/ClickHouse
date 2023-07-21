@@ -5074,8 +5074,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     String query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-        ast_format_settings.always_quote_identifiers = true;
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
         query.IAST::format(ast_format_settings);
         query_str = buf.str();
     }
