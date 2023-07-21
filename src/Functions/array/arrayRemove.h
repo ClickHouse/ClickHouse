@@ -7,7 +7,7 @@
 
 namespace DB
 {
-  /** arrayRemove(x -> predicate, array) - remove from the array, those elements for which the condition is true.
+ /** arrayRemove(x -> predicate, array) - remove from the array only the elements for which the expression is true.
   */
 struct ArrayRemoveImpl
 {
