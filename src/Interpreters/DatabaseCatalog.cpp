@@ -344,7 +344,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     DatabasePtr database;
     {
         std::lock_guard lock{databases_mutex};
-        auto it = databases.find(table_id.getDatabaseName());
+        // hasDatabase() to avod getDatabaseName() throwing exception if database is empty.
+        auto it = table_id.hasDatabase() ? databases.find(table_id.getDatabaseName()) : databases.end();
         if (databases.end() == it)
         {
             if (exception)
