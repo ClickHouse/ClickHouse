@@ -23,7 +23,8 @@ private:
     using LRUQueueIterator = typename LRUQueue::iterator;
 
 public:
-    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_) {
+    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_)
+    {
         CurrentMetrics::set(CurrentMetrics::FilesystemCacheSizeLimit, max_size_);
     }
 
