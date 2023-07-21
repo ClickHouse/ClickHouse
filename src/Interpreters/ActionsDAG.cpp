@@ -2517,7 +2517,7 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr
             {
                 node = node->children.front();
             }
-            /// materiailze can occure when dealing with views, special case
+            /// materiailze() function can occur when dealing with views
             /// TODO: not sure if it should be done here, looks too generic place
             else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize")
             {
