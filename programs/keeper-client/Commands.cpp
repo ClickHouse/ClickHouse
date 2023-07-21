@@ -157,6 +157,7 @@ void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client
 
     std::cout << "cZxid = " << stat.czxid << "\n";
     std::cout << "mZxid = " << stat.mzxid << "\n";
+    std::cout << "pZxid = " << stat.pzxid << "\n";
     std::cout << "ctime = " << stat.ctime << "\n";
     std::cout << "mtime = " << stat.mtime << "\n";
     std::cout << "version = " << stat.version << "\n";
@@ -165,7 +166,6 @@ void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client
     std::cout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
     std::cout << "dataLength = " << stat.dataLength << "\n";
     std::cout << "numChildren = " << stat.numChildren << "\n";
-    std::cout << "pzxid = " << stat.pzxid << "\n";
 }
 
 bool FindSupperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
