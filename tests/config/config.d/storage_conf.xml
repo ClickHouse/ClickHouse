@@ -70,6 +70,47 @@
                 <max_size>22548578304</max_size>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_multi_2>
+            <!-- OS encryption -->
+            <locobj_encrypted_cached>
+                <type>local_blob_storage</type>
+                <path>encrypted_cached/</path>
+            </locobj_encrypted_cached>
+            <encrypted_cache>
+                <type>encrypted_os</type>
+                <disk>locobj_encrypted_cached</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">41414141414141414141414141414141</key_hex>
+                <current_key_id>0</current_key_id>
+            </encrypted_cache>
+            <encrypted_cached>
+                <type>cache</type>
+                <disk>encrypted_cache</disk>
+                <path>encrypted_cached_2/</path>
+                <max_size>22548578304</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </encrypted_cached>
+            <s3obj_encrypted_cached_disk>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3obj_encrypted_cached_disk>
+            <s3encrypted_cached_enc>
+                <type>encrypted_os</type>
+                <disk>s3obj_encrypted_cached_disk</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">41414141414141414141414141414141</key_hex>
+                <current_key_id>0</current_key_id>
+            </s3encrypted_cached_enc>
+            <s3_encrypted_cached>
+                <type>cache</type>
+                <disk>s3encrypted_cached_enc</disk>
+                <path>s3encrypted_cached/</path>
+                <max_size>22548578304</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </s3_encrypted_cached>
         </disks>
         <policies>
             <s3_cache>
@@ -107,6 +148,27 @@
                     </main>
                 </volumes>
             </local_cache_3>
+            <s3_cache_small_segment_size>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_small_segment_size</disk>
+                    </main>
+                </volumes>
+            </s3_cache_small_segment_size>
+            <s3_encrypted_cached>
+                <volumes>
+                    <main>
+                        <disk>s3_encrypted_cached</disk>
+                    </main>
+                </volumes>
+            </s3_encrypted_cached>
+            <encrypted_cached>
+                <volumes>
+                    <main>
+                        <disk>encrypted_cached</disk>
+                    </main>
+                </volumes>
+            </encrypted_cached>
         </policies>
     </storage_configuration>
 </clickhouse>
