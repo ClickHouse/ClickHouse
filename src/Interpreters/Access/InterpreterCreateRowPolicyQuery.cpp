@@ -14,6 +14,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+}
+
 namespace
 {
     void updateRowPolicyFromQueryImpl(
@@ -66,6 +72,16 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
 
+    IAccessStorage * storage = &access_control;
+    MultipleAccessStorage::StoragePtr storage_ptr;
+
+    if (!query.storage_name.empty())
+    {
+        storage_ptr = access_control.getStorageByName(query.storage_name);
+        storage = storage_ptr.get();
+    }
+
+    Strings names = query.names->toStrings();
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
@@ -74,14 +90,13 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
             updateRowPolicyFromQueryImpl(*updated_policy, query, {}, roles_from_query);
             return updated_policy;
         };
-        Strings names = query.names->toStrings();
         if (query.if_exists)
         {
-            auto ids = access_control.find<RowPolicy>(names);
-            access_control.tryUpdate(ids, update_func);
+            auto ids = storage->find<RowPolicy>(names);
+            storage->tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getIDs<RowPolicy>(names), update_func);
+            storage->update(storage->getIDs<RowPolicy>(names), update_func);
     }
     else
     {
@@ -93,12 +108,21 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
             new_policies.emplace_back(std::move(new_policy));
         }
 
+        if (!query.storage_name.empty())
+        {
+            for (const auto & name : names)
+            {
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::ROW_POLICY, name, storage_ptr))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Row policy {} already exists in storage {}", name, another_storage_ptr->getStorageName());
+            }
+        }
+
         if (query.if_not_exists)
-            access_control.tryInsert(new_policies);
+            storage->tryInsert(new_policies);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_policies);
+            storage->insertOrReplace(new_policies);
         else
-            access_control.insert(new_policies);
+            storage->insert(new_policies);
     }
 
     return {};

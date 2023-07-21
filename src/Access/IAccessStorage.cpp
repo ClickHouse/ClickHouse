@@ -93,6 +93,17 @@ String IAccessStorage::readName(const UUID & id) const
 }
 
 
+bool IAccessStorage::exists(const std::vector<UUID> & ids) const
+{
+    for (const auto & id : ids)
+    {
+        if (!exists(id))
+            return false;
+    }
+
+    return true;
+}
+
 std::optional<String> IAccessStorage::readName(const UUID & id, bool throw_if_not_exists) const
 {
     if (auto name_and_type = readNameWithType(id, throw_if_not_exists))
@@ -167,15 +178,26 @@ UUID IAccessStorage::insert(const AccessEntityPtr & entity)
     return *insert(entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
 }
 
-
 std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    return insertImpl(entity, replace_if_exists, throw_if_exists);
+    return *insert(entity, replace_if_exists, throw_if_exists, /* set_id = */ std::nullopt);
 }
 
+std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
+{
+    return insertImpl(entity, replace_if_exists, throw_if_exists, set_id);
+}
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists, bool throw_if_exists)
 {
+    return insert(multiple_entities, /* ids = */ {}, replace_if_exists, throw_if_exists);
+}
+
+std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists, bool throw_if_exists)
+{
+    if (!ids.empty())
+        assert(multiple_entities.size() == ids.size());
+
     if (multiple_entities.empty())
         return {};
 
@@ -189,16 +211,24 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
     std::vector<AccessEntityPtr> successfully_inserted;
     try
     {
-        std::vector<UUID> ids;
-        for (const auto & entity : multiple_entities)
+        std::vector<UUID> new_ids;
+        for (size_t i = 0; i < multiple_entities.size(); ++i)
         {
-            if (auto id = insertImpl(entity, replace_if_exists, throw_if_exists))
+            const auto & entity = multiple_entities[i];
+
+            std::optional<UUID> id;
+            if (!ids.empty())
+                id = ids[i];
+
+            auto new_id = insertImpl(entity, replace_if_exists, throw_if_exists, id);
+
+            if (new_id)
             {
                 successfully_inserted.push_back(entity);
-                ids.push_back(*id);
+                new_ids.push_back(*new_id);
             }
         }
-        return ids;
+        return new_ids;
     }
     catch (Exception & e)
     {
@@ -244,7 +274,7 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 }
 
 
-std::optional<UUID> IAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool)
+std::optional<UUID> IAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool, std::optional<UUID>)
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());

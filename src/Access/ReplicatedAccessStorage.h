@@ -46,7 +46,7 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> watching_thread;
     std::shared_ptr<ConcurrentBoundedQueue<UUID>> watched_queue;
 
-    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 

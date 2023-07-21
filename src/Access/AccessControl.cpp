@@ -525,9 +525,9 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
-std::optional<UUID> AccessControl::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> AccessControl::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
 {
-    auto id = MultipleAccessStorage::insertImpl(entity, replace_if_exists, throw_if_exists);
+    auto id = MultipleAccessStorage::insertImpl(entity, replace_if_exists, throw_if_exists, set_id);
     if (id)
         changes_notifier->sendNotifications();
     return id;

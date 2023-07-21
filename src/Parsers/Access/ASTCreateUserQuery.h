@@ -45,6 +45,7 @@ public:
 
     std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
+    String storage_name;
 
     std::shared_ptr<ASTAuthenticationData> auth_data;
 

@@ -1,4 +1,4 @@
-#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -20,16 +20,14 @@ namespace
     }
 }
 
-
-String ASTDropAccessEntityQuery::getID(char) const
+String ASTMoveAccessEntityQuery::getID(char) const
 {
-    return String("DROP ") + toString(type) + " query";
+    return String("MOVE ") + toString(type) + " query";
 }
 
-
-ASTPtr ASTDropAccessEntityQuery::clone() const
+ASTPtr ASTMoveAccessEntityQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropAccessEntityQuery>(*this);
+    auto res = std::make_shared<ASTMoveAccessEntityQuery>(*this);
 
     if (row_policy_names)
         res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
@@ -37,12 +35,10 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
     return res;
 }
 
-
-void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTMoveAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << AccessEntityTypeInfo::get(type).name
-                  << (if_exists ? " IF EXISTS" : "")
+                  << "MOVE " << AccessEntityTypeInfo::get(type).name
                   << (settings.hilite ? hilite_none : "");
 
     if (type == AccessEntityType::ROW_POLICY)
@@ -53,16 +49,14 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
     else
         formatNames(names, settings);
 
-    if (!storage_name.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << " FROM " << (settings.hilite ? hilite_none : "")
-                      << backQuoteIfNeed(storage_name);
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << " TO " << (settings.hilite ? hilite_none : "")
+                  << backQuoteIfNeed(storage_name);
 
     formatOnCluster(settings);
 }
 
-
-void ASTDropAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTMoveAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const
 {
     if (row_policy_names)
         row_policy_names->replaceEmptyDatabase(current_database);

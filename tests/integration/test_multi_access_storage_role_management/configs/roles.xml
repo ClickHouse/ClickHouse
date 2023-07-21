@@ -1,8 +1,4 @@
 <clickhouse>
-    <user_directories>
-        <memory/>
-    </user_directories>
-
     <roles>
         <default_role>
             <grants>

@@ -63,9 +63,9 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
 {
-    UUID id = generateRandomID();
+    UUID id = set_id ? *set_id : generateRandomID();
     if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
         return id;
 

@@ -97,13 +97,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
         {
             for (const auto & name : query.names)
             {
-                auto id = access_control.find<Role>(name);
-
-                if (!id)
-                    continue;
-
-                auto another_storage_ptr = access_control.findStorage(*id);
-                if (another_storage_ptr != storage_ptr)
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::ROLE, name, storage_ptr))
                     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Role {} already exists in storage {}", name, another_storage_ptr->getStorageName());
             }
         }

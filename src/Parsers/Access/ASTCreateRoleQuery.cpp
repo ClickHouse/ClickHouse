@@ -74,7 +74,7 @@ void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (!storage_name.empty())
         format.ostr << (format.hilite ? IAST::hilite_keyword : "")
-                    << " AT " << (format.hilite ? IAST::hilite_none : "")
+                    << " IN " << (format.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
 
     formatOnCluster(format);

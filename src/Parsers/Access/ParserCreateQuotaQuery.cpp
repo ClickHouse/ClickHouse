@@ -5,6 +5,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
+#include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -288,6 +289,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     std::optional<QuotaKeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
     String cluster;
+    String storage_name;
 
     while (true)
     {
@@ -308,6 +310,9 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
+        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseStorageName(pos, expected, storage_name))
             continue;
 
         break;
@@ -332,6 +337,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->key_type = key_type;
     query->all_limits = std::move(all_limits);
     query->roles = std::move(roles);
+    query->storage_name = std::move(storage_name);
 
     return true;
 }

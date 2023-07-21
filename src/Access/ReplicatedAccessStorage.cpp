@@ -108,9 +108,9 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
 {
-    const UUID id = generateRandomID();
+    const UUID id = set_id ? *set_id : generateRandomID();
     if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
         return id;
 
