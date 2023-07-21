@@ -9,13 +9,13 @@ from typing import Any, Dict, List
 
 import boto3  # type: ignore
 
-from lambda_shared import RunnerDescriptions, list_runners
+from lambda_shared import RunnerDescriptions, list_runners, cached_value_is_valid
 from lambda_shared.token import get_access_token_by_key_app, get_cached_access_token
 
 
 @dataclass
 class CachedInstances:
-    time: int
+    time: float
     value: dict
     updating: bool = False
 
@@ -27,17 +27,12 @@ def get_cached_instances() -> dict:
     """return cached instances description with updating it once per five minutes"""
     if time.time() - 250 < cached_instances.time or cached_instances.updating:
         return cached_instances.value
-    # Indicate that the value is updating now, so the cached value can be
-    # used. The first setting and close-to-ttl are not counted as update
-    if cached_instances.time != 0 or time.time() - 300 < cached_instances.time:
-        cached_instances.updating = True
-    else:
-        cached_instances.updating = False
+    cached_instances.updating = cached_value_is_valid(cached_instances.time, 300)
     ec2_client = boto3.client("ec2")
     instances_response = ec2_client.describe_instances(
         Filters=[{"Name": "instance-state-name", "Values": ["running"]}]
     )
-    cached_instances.time = int(time.time())
+    cached_instances.time = time.time()
     cached_instances.value = {
         instance["InstanceId"]: instance
         for reservation in instances_response["Reservations"]
