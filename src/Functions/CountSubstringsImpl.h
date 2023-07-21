@@ -49,6 +49,9 @@ struct CountSubstringsImpl
         /// FIXME: suboptimal
         memset(&res[0], 0, res.size() * sizeof(res[0]));
 
+        if (needle.empty())
+            return; // Return all zeros
+
         /// Current index in the array of strings.
         size_t i = 0;
 
