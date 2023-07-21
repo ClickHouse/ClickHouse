@@ -306,7 +306,7 @@ namespace Net
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        void reconnect();
+        virtual void reconnect();
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);
