@@ -22,7 +22,7 @@ public:
     using Base = ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>;
     using Base::Base;
 
-    KeepEliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_, bool & keep_aggregator_)
+    explicit KeepEliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_, bool & keep_aggregator_)
         : group_by_keys(group_by_keys_), keep_aggregator(keep_aggregator_)
     {
     }
