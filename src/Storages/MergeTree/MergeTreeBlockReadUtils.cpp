@@ -328,11 +328,22 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
-        Names step_column_names = step.actions->getActionsDAG().getRequiredColumnsNames();
+        Names step_column_names;
+
+        /// Computation results from previous steps might be used in the current step as well. In such a case these
+        /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
+        /// exclude them from the list of columns to read. This filtering must be done before injecting required
+        /// columns to avoid adding unnecessary columns or failing to find required columns that are computation
+        /// results from previous steps.
+        /// Example: step1: sin(a)>b, step2: sin(a)>c
+        for (const auto & name : step.actions->getActionsDAG().getRequiredColumnsNames())
+            if (!columns_from_previous_steps.contains(name))
+                step_column_names.push_back(name);
 
         injectRequiredColumns(
             data_part_info_for_reader, storage_snapshot, with_subcolumns, step_column_names);
 
+        /// More columns could have been added, filter them as well by the list of columns from previous steps.
         Names columns_to_read_in_step;
         for (const auto & name : step_column_names)
         {
@@ -342,6 +353,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             columns_to_read_in_step.push_back(name);
             columns_from_previous_steps.insert(name);
         }
+
+        /// Add results of the step to the list of already "known" columns so that we don't read or compute them again.
+        for (const auto & name : step.actions->getActionsDAG().getNames())
+            columns_from_previous_steps.insert(name);
 
         result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
     };
