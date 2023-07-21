@@ -127,6 +127,7 @@ arrayPushBack
 arrayPushFront
 arrayReduce
 arrayReduceInRanges
+arrayRemove
 arrayResize
 arrayReverse
 arrayReverseFill
