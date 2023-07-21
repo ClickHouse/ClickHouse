@@ -10,7 +10,6 @@ namespace CurrentMetrics
     extern const Metric FilesystemCacheSizeLimit;
 }
 
-
 namespace DB
 {
 
