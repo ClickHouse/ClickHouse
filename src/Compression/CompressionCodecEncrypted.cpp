@@ -588,7 +588,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     if (current_params->keys_storage[method].contains(key_id))
         key = current_params->keys_storage[method].at(key_id);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config", key_id);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config for {} encryption codec", key_id, getMethodName(method));
 
     return key;
 }
