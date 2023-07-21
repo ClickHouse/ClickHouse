@@ -52,7 +52,6 @@ void registerBackupEngineS3(BackupFactory & factory)
         const auto & args = params.backup_info.args;
 
         String s3_uri, access_key_id, secret_access_key;
-        String storage_class = params.s3_storage_class;
 
         if (!id_arg.empty())
         {
@@ -77,17 +76,15 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else
         {
-            if ((args.size() != 1) && (args.size() != 3)  && (args.size() != 4))
+            if ((args.size() != 1) && (args.size() != 3))
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Backup S3 requires 1, 3 or 4 arguments: url, [access_key_id, secret_access_key, [storage_class]]");
+                                "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
 
             s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
             {
                 access_key_id = args[1].safeGet<String>();
                 secret_access_key = args[2].safeGet<String>();
-                if (args.size() == 4)
-                    storage_class = args[3].safeGet<String>();
             }
         }
 
@@ -115,7 +112,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else
         {
-            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, storage_class, params.context);
+            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, params.s3_storage_class, params.context);
 
             return std::make_unique<BackupImpl>(
                 backup_name_for_logging,
