@@ -7,7 +7,6 @@
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheSize;
-    extern const Metric FilesystemCacheSizeLimit;
     extern const Metric FilesystemCacheElements;
 }
 
@@ -102,7 +101,6 @@ void LRUFileCachePriority::updateSize(int64_t size)
 {
     current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
-    CurrentMetrics::set(CurrentMetrics::FilesystemCacheSizeLimit, getSizeLimit());
 }
 
 void LRUFileCachePriority::updateElementsCount(int64_t num)
