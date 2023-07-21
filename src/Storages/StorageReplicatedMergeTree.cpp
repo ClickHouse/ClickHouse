@@ -4905,20 +4905,29 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     if (shutdown_prepared_called.exchange(true))
         return;
 
-    auto settings_ptr = getSettings();
-    /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
-    fetcher.blocker.cancelForever();
-    merger_mutator.merges_blocker.cancelForever();
-    parts_mover.moves_blocker.cancelForever();
-    stopBeingLeader();
+    try
+    {
+        auto settings_ptr = getSettings();
+        /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
+        fetcher.blocker.cancelForever();
+        merger_mutator.merges_blocker.cancelForever();
+        parts_mover.moves_blocker.cancelForever();
+        stopBeingLeader();
 
-    if (attach_thread)
-        attach_thread->shutdown();
+        if (attach_thread)
+            attach_thread->shutdown();
 
-    restarting_thread.shutdown(/* part_of_full_shutdown */true);
-    /// Explicetly set the event, because the restarting thread will not set it again
-    startup_event.set();
-    shutdown_deadline.emplace(std::chrono::system_clock::now() + std::chrono::milliseconds(settings_ptr->wait_for_unique_parts_send_before_shutdown_ms.totalMilliseconds()));
+        restarting_thread.shutdown(/* part_of_full_shutdown */true);
+        /// Explicetly set the event, because the restarting thread will not set it again
+        startup_event.set();
+        shutdown_deadline.emplace(std::chrono::system_clock::now() + std::chrono::milliseconds(settings_ptr->wait_for_unique_parts_send_before_shutdown_ms.totalMilliseconds()));
+    }
+    catch (...)
+    {
+        /// Don't wait anything in case of inproper prepare for shutdown
+        shutdown_deadline.emplace(std::chrono::system_clock::now());
+        throw;
+    }
 }
 
 void StorageReplicatedMergeTree::partialShutdown()
