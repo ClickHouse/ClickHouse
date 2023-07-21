@@ -477,9 +477,10 @@ TEST_F(FileCacheTest, get)
                 }
                 cv.notify_one();
 
+                sleepForSeconds(1);
                 file_segment2.wait(file_segment2.range().right);
                 file_segment2.complete();
-                ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
+                ASSERT_EQ(file_segment2.state(), State::DOWNLOADED);
             });
 
             {
@@ -488,7 +489,7 @@ TEST_F(FileCacheTest, get)
             }
 
             download(file_segment);
-            ASSERT_TRUE(file_segment.state() == State::DOWNLOADED);
+            ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 
             other_1.join();
 
