@@ -40,6 +40,7 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#include <QueryCoordination/Interpreters/RewriteDistributedTableVisitor.h>
 
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -429,6 +430,46 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        RewriteDistributedTableVisitor visitor(context);
+        visitor.visit(query_ptr);
+
+        if (visitor.has_local_table && visitor.has_distributed_table)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support distributed table and local table mix query");
+
+        String cluster_name;
+        if (visitor.has_distributed_table)
+        {
+            cluster_name = visitor.clusters[0]->getName();
+            for (const auto & cluster : visitor.clusters)
+            {
+                if (cluster_name != cluster->getName())
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query");
+                }
+            }
+
+            std::vector<StorageID> storages;
+            for (const auto & visitor_storage : visitor.storages)
+            {
+                storages.emplace_back(visitor_storage->getStorageID());
+            }
+
+            if (context->addQueryCoordinationMetaInfo(cluster_name, storages, visitor.sharding_key_columns))
+                context->setDistributed(true);
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query"); /// maybe union query
+        }
+
+        if (visitor.has_local_table)
+            context->setDistributed(false);
+    }
+    else
+    {
+        context->setDistributed(true);
+    }
+
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
@@ -651,7 +692,6 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
-        context->setDistributed(syntax_analyzer_result->is_remote_storage);
 
         if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
             query.setFinal();

@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
+#include <QueryCoordination/Interpreters/RewriteDistributedTableVisitor.h>
 #include <QueryCoordination/Fragments/PlanFragmentBuilder.h>
 #include <QueryCoordination/Fragments/PlanFragment.h>
 #include <QueryCoordination/Coordinator.h>
@@ -465,6 +466,9 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
     /// schedule fragments
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
+        RewriteDistributedTableVisitor visitor(context);
+        visitor.visit(query_ptr);
+
         Coordinator coord(fragments, context, formattedAST(query_ptr));
         coord.schedulePrepareDistributedPipelines();
 

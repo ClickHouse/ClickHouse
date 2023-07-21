@@ -41,7 +41,7 @@ public:
 
     void rewriteDistributedInAndJoins(ASTPtr & query);
 
-    std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
+    std::unique_ptr<IInterpreterUnionOrSelectQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
 
 private:
     ContextPtr context;

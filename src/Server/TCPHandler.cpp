@@ -453,7 +453,7 @@ void TCPHandler::runImpl()
                     state.io.onFinish();
             };
 
-            if (query_context->getSettingsRef().allow_experimental_query_coordination)
+            if (query_context->getSettingsRef().allow_experimental_query_coordination && query_context->isDistributed())
             {
                 processOrdinaryQueryWithCoordination(finish_or_cancel);
             }

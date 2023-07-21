@@ -21,6 +21,7 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
 
 #include "config.h"
 
@@ -194,8 +195,6 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
-class Coordinator;
-
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -284,6 +283,9 @@ private:
 
     /// for query coordination
     Int32 fragment_id_counter = 0;
+
+    /// for query coordination secondary query
+    QueryCoordinationMetaInfo query_coordination_meta;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -534,6 +536,13 @@ public:
     Int32 getFragmentID()
     {
         return ++fragment_id_counter;
+    }
+
+    bool addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
+
+    QueryCoordinationMetaInfo getQueryCoordinationMetaInfo() const
+    {
+        return query_coordination_meta;
     }
 
     void setQuotaKey(String quota_key_);

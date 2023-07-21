@@ -1064,6 +1064,25 @@ std::optional<UUID> Context::getUserID() const
     return user_id;
 }
 
+bool Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_)
+{
+    auto lock = getLock();
+    if (query_coordination_meta.cluster_name.empty())
+    {
+        query_coordination_meta.cluster_name = cluster_name_;
+        query_coordination_meta.storages = storages_;
+        query_coordination_meta.sharding_keys = sharding_keys_;
+    }
+    else
+    {
+        if (query_coordination_meta.cluster_name != cluster_name_)
+            return false;
+
+        query_coordination_meta.storages.insert(query_coordination_meta.storages.end(), storages_.begin(), storages_.end());
+        query_coordination_meta.sharding_keys.insert(query_coordination_meta.sharding_keys.end(), sharding_keys_.begin(), sharding_keys_.end());
+    }
+    return true;
+}
 
 void Context::setQuotaKey(String quota_key_)
 {
