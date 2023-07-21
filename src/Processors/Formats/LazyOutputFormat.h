@@ -58,7 +58,7 @@ private:
     Chunk extremes;
 
     /// Is not used.
-    static WriteBuffer out;
+    static WriteBufferFromPointer out;
 
     ProfileInfo info;
 };

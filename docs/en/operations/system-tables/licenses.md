@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/licenses
 ---
 # licenses 
 
-Сontains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
+Contains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
 
 Columns:
 

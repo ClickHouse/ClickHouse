@@ -48,6 +48,8 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal) override;
 
+    bool canExecuteReplicatedMetadataAlter() const override;
+
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
@@ -102,7 +104,7 @@ private:
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);

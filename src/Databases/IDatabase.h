@@ -170,7 +170,7 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
-    StoragePtr getTable(const String & name, ContextPtr context) const;
+    virtual StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -182,6 +182,8 @@ public:
 
     /// Is the database empty.
     virtual bool empty() const = 0;
+
+    virtual bool isReadOnly() const { return false; }
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
@@ -253,6 +255,9 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
     }
+
+    /// Special method for ReplicatedMergeTree and DatabaseReplicated
+    virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const

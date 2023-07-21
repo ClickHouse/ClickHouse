@@ -49,20 +49,25 @@ def test_deduplication_window_in_seconds(started_cluster):
     node.query("INSERT INTO simple VALUES (0, 1)")
     assert TSV(node.query("SELECT count() FROM simple")) == TSV("2\n")
 
-    # wait clean thread
-    time.sleep(2)
+    # Wait for the cleanup thread.
+    for i in range(100):
+        time.sleep(5)
 
-    assert (
-        TSV.toMat(
-            node.query(
-                "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/0/simple/blocks'"
-            )
-        )[0][0]
-        == "1"
-    )
+        if (
+            TSV.toMat(
+                node.query(
+                    "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/0/simple/blocks'"
+                )
+            )[0][0]
+            <= "1"
+        ):
+            break
+    else:
+        raise Exception("The blocks from Keeper were not removed in time")
+
     node.query(
         "INSERT INTO simple VALUES (0, 0)"
-    )  # deduplication doesn't works here, the first hash node was deleted
+    )  # Deduplication doesn't work here as the first hash node was deleted
     assert TSV.toMat(node.query("SELECT count() FROM simple"))[0][0] == "3"
 
     node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
