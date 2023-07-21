@@ -92,7 +92,7 @@ class GetCommand : public IKeeperClientCommand
 
 class GetStatCommand : public IKeeperClientCommand
 {
-    String getName() const override { return "getstat"; }
+    String getName() const override { return "get_stat"; }
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
