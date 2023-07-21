@@ -173,6 +173,7 @@ set -uo pipefail
 
 echo "Runner's public DNS: $(ec2metadata --public-hostname)"
 echo "Runner's labels: ${LABELS}"
+echo "Runner's instance type: $(ec2metadata --instance-type)"
 EOF
 
 # Create a post-run script that will restart docker daemon before the job started
