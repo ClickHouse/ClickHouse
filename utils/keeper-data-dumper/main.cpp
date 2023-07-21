@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
-    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[1]));
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", argv[1]));
 
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();

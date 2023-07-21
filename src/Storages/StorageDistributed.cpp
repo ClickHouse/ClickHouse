@@ -914,7 +914,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
-    ++query_context->getClientInfo().distributed_depth;
+    query_context->increaseDistributedDepth();
 
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
@@ -976,7 +976,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
-    ++query_context->getClientInfo().distributed_depth;
+    query_context->increaseDistributedDepth();
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     for (const auto & replicas : getCluster()->getShardsAddresses())

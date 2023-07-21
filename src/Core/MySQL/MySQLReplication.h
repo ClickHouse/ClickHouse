@@ -120,22 +120,6 @@ namespace MySQLReplication
         BINLOG_CHECKSUM_ALG_UNDEF = 255
     };
 
-    inline String to_string(BinlogChecksumAlg type)
-    {
-        switch (type)
-        {
-            case BINLOG_CHECKSUM_ALG_OFF:
-                return "BINLOG_CHECKSUM_ALG_OFF";
-            case BINLOG_CHECKSUM_ALG_CRC32:
-                return "BINLOG_CHECKSUM_ALG_CRC32";
-            case BINLOG_CHECKSUM_ALG_ENUM_END:
-                return "BINLOG_CHECKSUM_ALG_ENUM_END";
-            case BINLOG_CHECKSUM_ALG_UNDEF:
-                return "BINLOG_CHECKSUM_ALG_UNDEF";
-        }
-        return std::string("Unknown checksum alg: ") + std::to_string(static_cast<int>(type));
-    }
-
     /// http://dev.mysql.com/doc/internals/en/binlog-event-type.html
     enum EventType
     {
@@ -186,102 +170,6 @@ namespace MySQLReplication
         MARIA_GTID_LIST_EVENT = 163,
         MARIA_START_ENCRYPTION_EVENT = 164,
     };
-
-    inline String to_string(EventType type)
-    {
-        switch (type)
-        {
-            case START_EVENT_V3:
-                return "StartEventV3";
-            case QUERY_EVENT:
-                return "QueryEvent";
-            case STOP_EVENT:
-                return "StopEvent";
-            case ROTATE_EVENT:
-                return "RotateEvent";
-            case INT_VAR_EVENT:
-                return "IntVarEvent";
-            case LOAD_EVENT:
-                return "LoadEvent";
-            case SLAVE_EVENT:
-                return "SlaveEvent";
-            case CREATE_FILE_EVENT:
-                return "CreateFileEvent";
-            case APPEND_BLOCK_EVENT:
-                return "AppendBlockEvent";
-            case EXEC_LOAD_EVENT:
-                return "ExecLoadEvent";
-            case DELETE_FILE_EVENT:
-                return "DeleteFileEvent";
-            case NEW_LOAD_EVENT:
-                return "NewLoadEvent";
-            case RAND_EVENT:
-                return "RandEvent";
-            case USER_VAR_EVENT:
-                return "UserVarEvent";
-            case FORMAT_DESCRIPTION_EVENT:
-                return "FormatDescriptionEvent";
-            case XID_EVENT:
-                return "XIDEvent";
-            case BEGIN_LOAD_QUERY_EVENT:
-                return "BeginLoadQueryEvent";
-            case EXECUTE_LOAD_QUERY_EVENT:
-                return "ExecuteLoadQueryEvent";
-            case TABLE_MAP_EVENT:
-                return "TableMapEvent";
-            case WRITE_ROWS_EVENT_V0:
-                return "WriteRowsEventV0";
-            case UPDATE_ROWS_EVENT_V0:
-                return "UpdateRowsEventV0";
-            case DELETE_ROWS_EVENT_V0:
-                return "DeleteRowsEventV0";
-            case WRITE_ROWS_EVENT_V1:
-                return "WriteRowsEventV1";
-            case UPDATE_ROWS_EVENT_V1:
-                return "UpdateRowsEventV1";
-            case DELETE_ROWS_EVENT_V1:
-                return "DeleteRowsEventV1";
-            case INCIDENT_EVENT:
-                return "IncidentEvent";
-            case HEARTBEAT_EVENT:
-                return "HeartbeatEvent";
-            case IGNORABLE_EVENT:
-                return "IgnorableEvent";
-            case ROWS_QUERY_EVENT:
-                return "RowsQueryEvent";
-            case WRITE_ROWS_EVENT_V2:
-                return "WriteRowsEventV2";
-            case UPDATE_ROWS_EVENT_V2:
-                return "UpdateRowsEventV2";
-            case DELETE_ROWS_EVENT_V2:
-                return "DeleteRowsEventV2";
-            case GTID_EVENT:
-                return "GTIDEvent";
-            case ANONYMOUS_GTID_EVENT:
-                return "AnonymousGTIDEvent";
-            case PREVIOUS_GTIDS_EVENT:
-                return "PreviousGTIDsEvent";
-            case TRANSACTION_CONTEXT_EVENT:
-                return "TransactionContextEvent";
-            case VIEW_CHANGE_EVENT:
-                return "ViewChangeEvent";
-            case XA_PREPARE_LOG_EVENT:
-                return "XAPrepareLogEvent";
-            case MARIA_ANNOTATE_ROWS_EVENT:
-                return "MariaAnnotateRowsEvent";
-            case MARIA_BINLOG_CHECKPOINT_EVENT:
-                return "MariaBinlogCheckpointEvent";
-            case MARIA_GTID_EVENT:
-                return "MariaGTIDEvent";
-            case MARIA_GTID_LIST_EVENT:
-                return "MariaGTIDListEvent";
-            case MARIA_START_ENCRYPTION_EVENT:
-                return "MariaStartEncryptionEvent";
-            default:
-                break;
-        }
-        return std::string("Unknown event: ") + std::to_string(static_cast<int>(type));
-    }
 
     enum MySQLEventType
     {
