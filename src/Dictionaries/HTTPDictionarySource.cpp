@@ -257,7 +257,6 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
             const auto & headers_prefix = settings_config_prefix + ".headers";
 
-
             if (config.has(headers_prefix))
             {
                 Poco::Util::AbstractConfiguration::Keys config_keys;
@@ -297,7 +296,10 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
         if (created_from_ddl)
+        {
             context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
+            context->getHTTPHeaderFilter().checkHeaders(configuration.header_entries);
+        }
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
