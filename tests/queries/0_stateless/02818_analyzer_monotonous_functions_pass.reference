@@ -1,0 +1,687 @@
+SET optimize_monotonous_functions_in_order_by = 1
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+2
+1
+0
+2
+1
+0
+0
+1
+2
+2
+1
+0
+2
+1
+0
+0
+1
+2
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: abs, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: toFloat32, function_type: ordinary, result_type: Float32
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: abs, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: exp, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 8, nodes: 2
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 2
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+      SORT id: 8, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: abs, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: toFloat32, function_type: ordinary, result_type: Float32
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: abs, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: exp, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 8, nodes: 2
+      SORT id: 9, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+      SORT id: 10, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+QUERY id: 0
+  PROJECTION COLUMNS
+    toFloat32(number) Float32
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: toFloat32, function_type: ordinary, result_type: Float32
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 8, nodes: 1
+      FUNCTION id: 9, function_name: toFloat32, function_type: ordinary, result_type: Float32
+        ARGUMENTS
+          LIST id: 10, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  ORDER BY
+    LIST id: 11, nodes: 1
+      SORT id: 12, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 13, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 14, nodes: 1
+                COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+SET optimize_monotonous_functions_in_order_by = 0
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+2
+1
+0
+2
+1
+0
+0
+1
+2
+2
+1
+0
+2
+1
+0
+0
+1
+2
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: toFloat64, function_type: ordinary, result_type: Float64
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: abs, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: toFloat32, function_type: ordinary, result_type: Float32
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: abs, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: negate, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: exp, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 8, nodes: 2
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 3, nodes: 1
+                COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 11, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 12, nodes: 1
+                FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 3, nodes: 1
+                      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 2
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 11, function_name: toFloat64, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 12, nodes: 1
+                FUNCTION id: 8, function_name: toFloat32, function_type: ordinary, result_type: Float32
+                  ARGUMENTS
+                    LIST id: 9, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: toFloat64, function_type: ordinary, result_type: Float64
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: abs, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: toFloat32, function_type: ordinary, result_type: Float32
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                FUNCTION id: 10, function_name: abs, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: negate, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 8, function_name: exp, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 8, nodes: 2
+      SORT id: 9, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 3, nodes: 1
+                COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+      SORT id: 10, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 11, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 12, nodes: 1
+                FUNCTION id: 2, function_name: roundToExp2, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 3, nodes: 1
+                      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+QUERY id: 0
+  PROJECTION COLUMNS
+    toFloat32(number) Float32
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: toFloat32, function_type: ordinary, result_type: Float32
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 8, nodes: 1
+      FUNCTION id: 9, function_name: toFloat32, function_type: ordinary, result_type: Float32
+        ARGUMENTS
+          LIST id: 10, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  ORDER BY
+    LIST id: 11, nodes: 1
+      SORT id: 12, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 13, function_name: toFloat32, function_type: ordinary, result_type: Float32
+            ARGUMENTS
+              LIST id: 14, nodes: 1
+                COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
