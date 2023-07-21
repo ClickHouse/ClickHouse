@@ -3994,6 +3994,13 @@ void StorageReplicatedMergeTree::addLastSentPart(const MergeTreePartInfo & info)
 
 void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(StorageReplicatedMergeTree::ShutdownDeadline shutdown_deadline_)
 {
+    /// Will be true in case in case of query
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr)
+    {
+        LOG_TRACE(log, "Will not wait for unique parts to be fetched by other replicas because shutdown called from DROP/DETACH query");
+        return;
+    }
+
     if (!shutdown_called.load())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Called waitForUniquePartsToBeFetchedByOtherReplicas before shutdown, it's a bug");
 
@@ -4951,7 +4958,6 @@ void StorageReplicatedMergeTree::shutdown()
 
     flushAndPrepareForShutdown();
 
-    auto settings_ptr = getSettings();
     if (!shutdown_deadline.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown deadline is not set in shutdown");
 
@@ -6311,7 +6317,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
 
     const auto & stop_waiting = [&]()
     {
-        bool stop_waiting_itself = waiting_itself && partial_shutdown_called;
+        bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || shutdown_prepared_called || shutdown_called);
         bool timeout_exceeded = check_timeout && wait_for_inactive_timeout < time_waiting.elapsedSeconds();
         bool stop_waiting_inactive = (!wait_for_inactive || timeout_exceeded)
             && !getZooKeeper()->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
