@@ -1081,7 +1081,7 @@ FileSegments FileCache::getSnapshot(const Key & key)
     return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::dumpQueue()
+FileSegments FileCache::dumpQueue()
 {
     assertInitialized();
 
@@ -1092,7 +1092,7 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
         return PriorityIterationResult::CONTINUE;
     }, lockCache());
 
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
