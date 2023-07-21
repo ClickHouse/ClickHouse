@@ -232,7 +232,7 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
             {
                 const NodeListPtr children = element.childNodes();
                 if (children->length() != 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} should have only one text node", node->nodeName());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} cannot contain nested elements", node->nodeName());
 
                 Node * text_node = node->firstChild();
                 if (text_node->nodeType() != Node::TEXT_NODE)

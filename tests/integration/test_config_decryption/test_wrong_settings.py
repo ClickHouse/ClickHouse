@@ -33,4 +33,4 @@ def test_no_encryption_key():
 
 
 def test_subnodes():
-    start_clickhouse("configs/config_subnodes.xml", "should have only one text node")
+    start_clickhouse("configs/config_subnodes.xml", "cannot contain nested elements")
