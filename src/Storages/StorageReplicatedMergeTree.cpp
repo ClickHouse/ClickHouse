@@ -4924,7 +4924,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     }
     catch (...)
     {
-        /// Don't wait anything in case of inproper prepare for shutdown
+        /// Don't wait anything in case of improper prepare for shutdown
         shutdown_deadline.emplace(std::chrono::system_clock::now());
         throw;
     }
