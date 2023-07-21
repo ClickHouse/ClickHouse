@@ -7,7 +7,7 @@
   * Keys for codecs are loaded from <encryption_codecs> section of configuration file.
   *
   * How to use:
-  *     ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV test
+  *     ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV text_to_encrypt
   */
 
 int main(int argc, char ** argv)
@@ -22,7 +22,7 @@ int main(int argc, char ** argv)
                 << "action: -e for encryption and -d for decryption." << std::endl
                 << "codec: AES_128_GCM_SIV or AES_256_GCM_SIV." << std::endl << std::endl
                 << "Example:"  << std::endl
-                << "    ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV test";
+                << "    ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV text_to_encrypt";
             return 3;
         }
 
