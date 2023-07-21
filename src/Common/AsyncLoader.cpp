@@ -226,6 +226,7 @@ void AsyncLoader::schedule(const LoadTaskPtr & task)
 
 void AsyncLoader::schedule(const LoadTaskPtrs & tasks)
 {
+    // TODO(serxa): optimize it to avoid creating new all_jobs - looks like unnecessary allocations
     LoadJobSet all_jobs;
     for (const auto & task : tasks)
     {

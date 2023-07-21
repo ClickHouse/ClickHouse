@@ -416,17 +416,20 @@ inline void scheduleLoad(const LoadTaskPtrs & tasks)
 
 inline void waitLoad(AsyncLoader & loader, const LoadJobSet & jobs)
 {
+    scheduleLoad(loader, jobs);
     for (const auto & job : jobs)
         loader.wait(job);
 }
 
 inline void waitLoad(const LoadTaskPtr & task)
 {
+    scheduleLoad(task);
     waitLoad(task->loader, task->goals());
 }
 
 inline void waitLoad(const LoadTaskPtrs & tasks)
 {
+    scheduleLoad(tasks);
     for (const auto & task : tasks)
         waitLoad(task->loader, task->goals());
 }
