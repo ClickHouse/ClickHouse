@@ -806,13 +806,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     return true;
 }
 
-void FileCache::removeKey(const Key & key)
-{
-    assertInitialized();
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
-    locked_key->removeAll();
-}
-
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
@@ -825,14 +818,7 @@ void FileCache::removeKeyIfExists(const Key & key)
     /// But if we have multiple replicated zero-copy tables on the same server
     /// it became possible to start removing something from cache when it is used
     /// by other "zero-copy" tables. That is why it's not an error.
-    locked_key->removeAll(/* if_releasable */true);
-}
-
-void FileCache::removeFileSegment(const Key & key, size_t offset)
-{
-    assertInitialized();
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
-    locked_key->removeFileSegment(offset);
+    locked_key->removeAllReleasable();
 }
 
 void FileCache::removePathIfExists(const String & path)
@@ -844,12 +830,22 @@ void FileCache::removeAllReleasable()
 {
     assertInitialized();
 
-    metadata.iterate([](LockedKey & locked_key) { locked_key.removeAll(/* if_releasable */true); });
+    auto lock = lockCache();
+
+    main_priority->iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    {
+        if (segment_metadata->releasable())
+        {
+            auto file_segment = segment_metadata->file_segment;
+            locked_key.removeFileSegment(file_segment->offset(), file_segment->lock());
+            return PriorityIterationResult::REMOVE_AND_CONTINUE;
+        }
+        return PriorityIterationResult::CONTINUE;
+    }, lock);
 
     if (stash)
     {
         /// Remove all access information.
-        auto lock = lockCache();
         stash->records.clear();
         stash->queue->removeAll(lock);
     }
@@ -874,13 +870,12 @@ void FileCache::loadMetadata()
     }
 
     size_t total_size = 0;
-    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()};
-         key_prefix_it != fs::directory_iterator();)
+    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}; key_prefix_it != fs::directory_iterator();
+         key_prefix_it++)
     {
         const fs::path key_prefix_directory = key_prefix_it->path();
-        key_prefix_it++;
 
-        if (!fs::is_directory(key_prefix_directory))
+        if (!key_prefix_it->is_directory())
         {
             if (key_prefix_directory.filename() != "status")
             {
@@ -891,19 +886,19 @@ void FileCache::loadMetadata()
             continue;
         }
 
-        if (fs::is_empty(key_prefix_directory))
+        fs::directory_iterator key_it{key_prefix_directory};
+        if (key_it == fs::directory_iterator{})
         {
             LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_directory.string());
             fs::remove(key_prefix_directory);
             continue;
         }
 
-        for (fs::directory_iterator key_it{key_prefix_directory}; key_it != fs::directory_iterator();)
+        for (/* key_it already initialized to verify emptiness */; key_it != fs::directory_iterator(); key_it++)
         {
             const fs::path key_directory = key_it->path();
-            ++key_it;
 
-            if (!fs::is_directory(key_directory))
+            if (!key_it->is_directory())
             {
                 LOG_DEBUG(
                     log,
@@ -912,14 +907,14 @@ void FileCache::loadMetadata()
                 continue;
             }
 
-            if (fs::is_empty(key_directory))
+            if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
             {
                 LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
                 fs::remove(key_directory);
                 continue;
             }
 
-            const auto key = Key::fromKeyString(key_directory.filename().string());
+            const auto key = Key(unhexUInt<UInt128>(key_directory.filename().string().data()));
             auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
 
             for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
@@ -1074,7 +1069,7 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
 FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
     for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
