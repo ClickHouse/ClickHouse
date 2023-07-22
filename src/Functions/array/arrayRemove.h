@@ -6,7 +6,8 @@
 
 
 namespace DB
-{
+{/** arrayRemove(x -> predicate, array) - Remove from the array only the elements for which the expression is true.
+  */
 struct ArrayRemoveImpl
 {
     static bool needBoolean() { return true; }
