@@ -8,7 +8,9 @@
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -50,6 +52,8 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 
+#include "config.h"
+
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
 #endif
@@ -71,6 +75,15 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
 }
 
+void applySettingsOverridesForLocal(ContextMutablePtr context)
+{
+    Settings settings = context->getSettings();
+
+    settings.allow_introspection_functions = true;
+    settings.storage_file_read_method = LocalFSReadMethod::mmap;
+
+    context->setSettings(settings);
+}
 
 void LocalServer::processError(const String &) const
 {
@@ -170,6 +183,13 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
+static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
+{
+    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
+    return databaseCombiner;
+}
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
@@ -657,6 +677,12 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
 #endif
 
+    /// NOTE: it is important to apply any overrides before
+    /// setDefaultProfiles() calls since it will copy current context (i.e.
+    /// there is separate context for Buffer tables).
+    applySettingsOverridesForLocal(global_context);
+    applyCmdOptions(global_context);
+
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -669,9 +695,8 @@ void LocalServer::processConfig()
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
-    applyCmdOptions(global_context);
 
     if (config().has("path"))
     {
@@ -712,9 +737,8 @@ void LocalServer::processConfig()
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQueryKind(query_kind);
 }
 
 
