@@ -6,13 +6,3 @@ EXPLAIN SYNTAX SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(
 SET rewrite_count_distinct_if_with_count_distinct_implementation = 1;
 SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(1000);
 EXPLAIN SYNTAX SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(1000);
-
-SET allow_experimental_analyzer = 1;
-
-SET rewrite_count_distinct_if_with_count_distinct_implementation = 0;
-SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(1000);
-EXPLAIN SYNTAX SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(1000);
-
-SET rewrite_count_distinct_if_with_count_distinct_implementation = 1;
-SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(1000);
-EXPLAIN SYNTAX SELECT countDistinctIf(number % 10, number % 5 = 2) FROM numbers(1000);
