@@ -373,7 +373,7 @@ void StorageMergeTree::alter(
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
-            waitForMutation(mutation_version);
+            waitForMutation(mutation_version, false);
     }
 
     {
@@ -599,9 +599,22 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
-    Int64 version = startMutation(commands, query_context);
+    Int64 version;
+    {
+        /// It's important to serialize order of mutations with alter queries because
+        /// they can depend on each other.
+        if (auto alter_lock = tryLockForAlter(query_context->getSettings().lock_acquire_timeout); alter_lock == std::nullopt)
+        {
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                            "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+                            "You can change this timeout with `lock_acquire_timeout` setting",
+                            query_context->getSettings().lock_acquire_timeout.totalMilliseconds());
+        }
+        version = startMutation(commands, query_context);
+    }
+
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
-        waitForMutation(version);
+        waitForMutation(version, false);
 }
 
 bool StorageMergeTree::hasLightweightDeletedMask() const
@@ -1300,7 +1313,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     {
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
         txn = TransactionLog::instance().beginTransaction();
-        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ true};
+        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
     bool has_mutations = false;
@@ -2291,7 +2304,7 @@ void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock 
 {
     part->info.min_block = part->info.max_block = increment.get();
     part->info.mutation = 0;
-    part->name = part->getNewName(part->info);
+    part->setName(part->getNewName(part->info));
 }
 
 }
