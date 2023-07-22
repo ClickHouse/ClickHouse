@@ -25,6 +25,7 @@ namespace ErrorCodes
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
+    M(Bool, allow_s3_native_copy) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
     M(Bool, internal) \

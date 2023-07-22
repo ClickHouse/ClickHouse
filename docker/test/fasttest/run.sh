@@ -141,7 +141,6 @@ function clone_submodules
             contrib/jemalloc
             contrib/replxx
             contrib/wyhash
-            contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
@@ -166,7 +165,6 @@ function run_cmake
         "-DENABLE_UTILS=0"
         "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
-        "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
         "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
