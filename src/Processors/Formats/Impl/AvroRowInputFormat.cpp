@@ -52,6 +52,8 @@
 #include <Poco/Buffer.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPCredentials.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
@@ -944,6 +946,27 @@ private:
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                 request.setHost(url.getHost());
+
+                if (!url.getUserInfo().empty())
+                {
+                    Poco::Net::HTTPCredentials http_credentials;
+                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
+
+                    http_credentials.fromUserInfo(url.getUserInfo());
+
+                    std::string decoded_username;
+                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                    http_basic_credentials.setUsername(decoded_username);
+
+                    if (!http_credentials.getPassword().empty())
+                    {
+                        std::string decoded_password;
+                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
+                        http_basic_credentials.setPassword(decoded_password);
+                    }
+
+                    http_basic_credentials.authenticate(request);
+                }
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
                 session->sendRequest(request);
