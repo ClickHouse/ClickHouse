@@ -19,6 +19,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Heartbeat),
     static_cast<int32_t>(OpNum::List),
     static_cast<int32_t>(OpNum::Check),
+    static_cast<int32_t>(OpNum::Reconfig),
     static_cast<int32_t>(OpNum::Multi),
     static_cast<int32_t>(OpNum::MultiRead),
     static_cast<int32_t>(OpNum::Auth),
@@ -28,55 +29,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::FilteredList),
     static_cast<int32_t>(OpNum::CheckNotExists),
 };
-
-std::string toString(OpNum op_num)
-{
-    switch (op_num)
-    {
-        case OpNum::Close:
-            return "Close";
-        case OpNum::Error:
-            return "Error";
-        case OpNum::Create:
-            return "Create";
-        case OpNum::Remove:
-            return "Remove";
-        case OpNum::Exists:
-            return "Exists";
-        case OpNum::Get:
-            return "Get";
-        case OpNum::Set:
-            return "Set";
-        case OpNum::SimpleList:
-            return "SimpleList";
-        case OpNum::List:
-            return "List";
-        case OpNum::Check:
-            return "Check";
-        case OpNum::Multi:
-            return "Multi";
-        case OpNum::MultiRead:
-            return "MultiRead";
-        case OpNum::Sync:
-            return "Sync";
-        case OpNum::Heartbeat:
-            return "Heartbeat";
-        case OpNum::Auth:
-            return "Auth";
-        case OpNum::SessionID:
-            return "SessionID";
-        case OpNum::SetACL:
-            return "SetACL";
-        case OpNum::GetACL:
-            return "GetACL";
-        case OpNum::FilteredList:
-            return "FilteredList";
-        case OpNum::CheckNotExists:
-            return "CheckNotExists";
-    }
-    int32_t raw_op = static_cast<int32_t>(op_num);
-    throw Exception("Operation " + std::to_string(raw_op) + " is unknown", Error::ZUNIMPLEMENTED);
-}
 
 OpNum getOpNum(int32_t raw_op_num)
 {
