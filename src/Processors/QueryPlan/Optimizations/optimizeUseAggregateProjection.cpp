@@ -628,8 +628,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         //           candidates.minmax_projection->block.dumpStructure());
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            std::move(pipe),
+            context,
+            query_info.is_internal
+                ? Context::QualifiedProjectionName{}
+                : Context::QualifiedProjectionName
+                  {
+                      .storage_id = reading->getMergeTreeData().getStorageID(),
+                      .projection_name = candidates.minmax_projection->candidate.projection->name,
+                  });
         has_ordinary_parts = !candidates.minmax_projection->normal_parts.empty();
         if (has_ordinary_parts)
             reading->resetParts(std::move(candidates.minmax_projection->normal_parts));
@@ -661,7 +669,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         {
             auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
-            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            projection_reading = std::make_unique<ReadFromPreparedSource>(
+                std::move(pipe),
+                context,
+                query_info.is_internal
+                    ? Context::QualifiedProjectionName{}
+                    : Context::QualifiedProjectionName
+                      {
+                          .storage_id = reading->getMergeTreeData().getStorageID(),
+                          .projection_name = best_candidate->projection->name,
+                      });
         }
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
