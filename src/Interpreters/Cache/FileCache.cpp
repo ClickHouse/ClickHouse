@@ -870,13 +870,12 @@ void FileCache::loadMetadata()
     }
 
     size_t total_size = 0;
-    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()};
-         key_prefix_it != fs::directory_iterator();)
+    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}; key_prefix_it != fs::directory_iterator();
+         key_prefix_it++)
     {
         const fs::path key_prefix_directory = key_prefix_it->path();
-        key_prefix_it++;
 
-        if (!fs::is_directory(key_prefix_directory))
+        if (!key_prefix_it->is_directory())
         {
             if (key_prefix_directory.filename() != "status")
             {
@@ -887,19 +886,19 @@ void FileCache::loadMetadata()
             continue;
         }
 
-        if (fs::is_empty(key_prefix_directory))
+        fs::directory_iterator key_it{key_prefix_directory};
+        if (key_it == fs::directory_iterator{})
         {
             LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_directory.string());
             fs::remove(key_prefix_directory);
             continue;
         }
 
-        for (fs::directory_iterator key_it{key_prefix_directory}; key_it != fs::directory_iterator();)
+        for (/* key_it already initialized to verify emptiness */; key_it != fs::directory_iterator(); key_it++)
         {
             const fs::path key_directory = key_it->path();
-            ++key_it;
 
-            if (!fs::is_directory(key_directory))
+            if (!key_it->is_directory())
             {
                 LOG_DEBUG(
                     log,
@@ -908,7 +907,7 @@ void FileCache::loadMetadata()
                 continue;
             }
 
-            if (fs::is_empty(key_directory))
+            if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
             {
                 LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
                 fs::remove(key_directory);
