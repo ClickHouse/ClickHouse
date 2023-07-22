@@ -117,17 +117,8 @@ ExpressionTransform
                 SortingAggregatedTransform 4 → 1
                   MergingAggregatedBucketTransform × 4
                     Resize 1 → 4
-                      GroupingAggregatedTransform 6 → 1
+                      GroupingAggregatedTransform 3 → 1
                         (Union)
-                          (Aggregating)
-                          MergingAggregatedBucketTransform × 4
-                            Resize 1 → 4
-                              FinishAggregatingInOrderTransform 4 → 1
-                                AggregatingInOrderTransform × 4
-                                  (Expression)
-                                  ExpressionTransform × 4
-                                    (ReadFromMergeTree)
-                                    MergeTreeInOrder × 4 0 → 1
                           (ReadFromRemoteParallelReplicas)
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 500	1000

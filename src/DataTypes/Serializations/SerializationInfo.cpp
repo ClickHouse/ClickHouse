@@ -97,6 +97,41 @@ MutableSerializationInfoPtr SerializationInfo::clone() const
     return std::make_shared<SerializationInfo>(kind, settings, data);
 }
 
+/// Returns true if all rows with default values of type 'lhs'
+/// are mapped to default values of type 'rhs' after conversion.
+static bool preserveDefaultsAfterConversion(const IDataType & lhs, const IDataType & rhs)
+{
+    if (lhs.equals(rhs))
+        return true;
+
+    bool lhs_is_columned_as_numeric = isColumnedAsNumber(lhs) || isColumnedAsDecimal(lhs);
+    bool rhs_is_columned_as_numeric = isColumnedAsNumber(rhs) || isColumnedAsDecimal(rhs);
+
+    if (lhs_is_columned_as_numeric && rhs_is_columned_as_numeric)
+        return true;
+
+    if (isStringOrFixedString(lhs) && isStringOrFixedString(rhs))
+        return true;
+
+    return false;
+}
+
+std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
+    const IDataType & old_type,
+    const IDataType & new_type,
+    const Settings & new_settings) const
+{
+    auto new_kind = kind;
+    if (new_kind == ISerialization::Kind::SPARSE)
+    {
+        if (!new_type.supportsSparseSerialization()
+            || !preserveDefaultsAfterConversion(old_type, new_type))
+            new_kind = ISerialization::Kind::DEFAULT;
+    }
+
+    return std::make_shared<SerializationInfo>(new_kind, new_settings);
+}
+
 void SerializationInfo::serialializeKindBinary(WriteBuffer & out) const
 {
     writeBinary(static_cast<UInt8>(kind), out);
@@ -211,7 +246,8 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     return writeString(oss.str(), out);
 }
 
-void SerializationInfoByName::readJSON(ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSON(
+    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
 {
     String json_str;
     readString(json_str, in);
@@ -227,8 +263,13 @@ void SerializationInfoByName::readJSON(ReadBuffer & in)
             "Unknown version of serialization infos ({}). Should be less or equal than {}",
             object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION);
 
+    SerializationInfoByName infos;
     if (object->has(KEY_COLUMNS))
     {
+        std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
+        for (const auto & [name, type] : columns)
+            column_type_by_name.emplace(name, type.get());
+
         auto array = object->getArray(KEY_COLUMNS);
         for (const auto & elem : *array)
         {
@@ -236,13 +277,22 @@ void SerializationInfoByName::readJSON(ReadBuffer & in)
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in SerializationInfo of columns", KEY_NAME);
+                    "Missed field '{}' in serialization infos", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
-            if (auto it = find(name); it != end())
-                it->second->fromJSON(*elem_object);
+            auto it = column_type_by_name.find(name);
+
+            if (it == column_type_by_name.end())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Found unexpected column '{}' in serialization infos", name);
+
+            auto info = it->second->createSerializationInfo(settings);
+            info->fromJSON(*elem_object);
+            infos.emplace(name, std::move(info));
         }
     }
+
+    return infos;
 }
 
 }

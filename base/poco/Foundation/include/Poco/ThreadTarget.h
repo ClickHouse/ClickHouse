@@ -22,53 +22,54 @@
 #include "Poco/Runnable.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API ThreadTarget: public Runnable
-	/// This adapter simplifies using static member functions as well as 
-	/// standalone functions as targets for threads.
-	/// Note that it is possible to pass those entities directly to Thread::start().
-	/// This adapter is provided as a convenience for higher abstraction level
-	/// scenarios where Runnable abstract class is used.
-	///
-	/// For using a non-static member function as a thread target, please
-	/// see the RunnableAdapter class.
-	/// 
-	/// Usage:
-	///    class MyObject
-	///    {
-	///        static void doSomething() {}
-	///    };
-	///    ThreadTarget ra(&MyObject::doSomething);
-	///    Thread thr;
-	///    thr.start(ra);
-	///
-	/// or:
-	/// 
-	///    void doSomething() {}
-	/// 
-	///    ThreadTarget ra(doSomething);
-	///    Thread thr;
-	///    thr.start(ra);
+class Foundation_API ThreadTarget : public Runnable
+/// This adapter simplifies using static member functions as well as
+/// standalone functions as targets for threads.
+/// Note that it is possible to pass those entities directly to Thread::start().
+/// This adapter is provided as a convenience for higher abstraction level
+/// scenarios where Runnable abstract class is used.
+///
+/// For using a non-static member function as a thread target, please
+/// see the RunnableAdapter class.
+///
+/// Usage:
+///    class MyObject
+///    {
+///        static void doSomething() {}
+///    };
+///    ThreadTarget ra(&MyObject::doSomething);
+///    Thread thr;
+///    thr.start(ra);
+///
+/// or:
+///
+///    void doSomething() {}
+///
+///    ThreadTarget ra(doSomething);
+///    Thread thr;
+///    thr.start(ra);
 {
 public:
-	typedef void (*Callback)();
-	
-	ThreadTarget(Callback method);
-	
-	ThreadTarget(const ThreadTarget& te);
+    typedef void (*Callback)();
 
-	~ThreadTarget();
+    ThreadTarget(Callback method);
 
-	ThreadTarget& operator = (const ThreadTarget& te);
+    ThreadTarget(const ThreadTarget & te);
 
-	void run();
-	
+    ~ThreadTarget();
+
+    ThreadTarget & operator=(const ThreadTarget & te);
+
+    void run();
+
 private:
-	ThreadTarget();
+    ThreadTarget();
 
-	Callback _method;
+    Callback _method;
 };
 
 
@@ -77,7 +78,7 @@ private:
 //
 inline void ThreadTarget::run()
 {
-	_method();
+    _method();
 }
 
 

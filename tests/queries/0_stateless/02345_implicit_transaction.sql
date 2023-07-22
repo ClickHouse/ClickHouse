@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-fasttest
 
 CREATE TABLE landing (n Int64) engine=MergeTree order by n;
 CREATE TABLE target  (n Int64) engine=MergeTree order by n;
@@ -92,3 +92,13 @@ WHERE
     query LIKE '-- Verify that the transaction_id column is NOT populated without transaction%'
 GROUP BY transaction_id
 FORMAT JSONEachRow;
+
+SET implicit_transaction=1;
+SET throw_on_unsupported_query_inside_transaction=1;
+SELECT * FROM system.one;
+SELECT * FROM cluster('test_cluster_interserver_secret', system, one);  -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM cluster('test_cluster_two_shards', system, one);  -- { serverError NOT_IMPLEMENTED }
+SET throw_on_unsupported_query_inside_transaction=0;
+-- there's not session in the interserver mode
+SELECT * FROM cluster('test_cluster_interserver_secret', system, one) FORMAT Null;  -- { serverError INVALID_TRANSACTION }
+SELECT * FROM cluster('test_cluster_two_shards', system, one);

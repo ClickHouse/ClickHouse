@@ -22,30 +22,33 @@
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 
 
-namespace Poco {
-namespace Net {
-
-
-class NetSSL_API KeyFileHandler: public PrivateKeyPassphraseHandler
-	/// An implementation of PrivateKeyPassphraseHandler that 
-	/// reads the key for a certificate from a configuration file
-	/// under the path "openSSL.privateKeyPassphraseHandler.options.password".
+namespace Poco
 {
-public:
-	KeyFileHandler(bool server);
-		/// Creates the KeyFileHandler.
-
-	virtual ~KeyFileHandler();
-		/// Destroys the KeyFileHandler.
-
-	void onPrivateKeyRequested(const void* pSender, std::string& privateKey);
-
-private:
-	static const std::string CFG_PRIV_KEY_FILE;
-};
+namespace Net
+{
 
 
-} } // namespace Poco::Net
+    class NetSSL_API KeyFileHandler : public PrivateKeyPassphraseHandler
+    /// An implementation of PrivateKeyPassphraseHandler that
+    /// reads the key for a certificate from a configuration file
+    /// under the path "openSSL.privateKeyPassphraseHandler.options.password".
+    {
+    public:
+        KeyFileHandler(bool server);
+        /// Creates the KeyFileHandler.
+
+        virtual ~KeyFileHandler();
+        /// Destroys the KeyFileHandler.
+
+        void onPrivateKeyRequested(const void * pSender, std::string & privateKey);
+
+    private:
+        static const std::string CFG_PRIV_KEY_FILE;
+    };
+
+
+}
+} // namespace Poco::Net
 
 
 #endif // NetSSL_KeyFileHandler_INCLUDED

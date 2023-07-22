@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/MemoryAccessStorage.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <boost/container/flat_set.hpp>
 
 
@@ -81,7 +81,7 @@ private:
     bool failed_to_write_lists TSA_GUARDED_BY(mutex) = false;
 
     /// List files are written in a separate thread.
-    ThreadFromGlobalPool lists_writing_thread;
+    std::unique_ptr<ThreadFromGlobalPool> lists_writing_thread;
 
     /// Signals `lists_writing_thread` to exit.
     std::condition_variable lists_writing_thread_should_exit;

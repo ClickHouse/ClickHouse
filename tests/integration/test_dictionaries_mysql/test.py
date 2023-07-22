@@ -8,9 +8,14 @@ import logging
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
 CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS
+    "instance",
+    main_configs=CONFIG_FILES,
+    user_configs=USER_CONFIGS,
+    with_mysql=True,
+    dictionaries=DICTS,
 )
 
 create_table_mysql_template = """
@@ -302,6 +307,19 @@ def test_predefined_connection_configuration(started_cluster):
     CREATE DICTIONARY dict (id UInt32, value UInt32)
     PRIMARY KEY id
     SOURCE(MYSQL(NAME mysql4 connection_pool_size 1))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    """
+    )
+    result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
+    assert int(result) == 200
+
+    instance.query(
+        """
+    DROP DICTIONARY IF EXISTS dict;
+    CREATE DICTIONARY dict (id UInt32, value UInt32)
+    PRIMARY KEY id
+    SOURCE(MYSQL(NAME mysql4 connection_pool_size 1 close_connection 1 share_connection 1))
         LIFETIME(MIN 1 MAX 2)
         LAYOUT(HASHED());
     """

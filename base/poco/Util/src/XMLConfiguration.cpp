@@ -27,7 +27,7 @@
 #include "Poco/Exception.h"
 #include "Poco/NumberParser.h"
 #include "Poco/NumberFormatter.h"
-#include <set>
+#include <unordered_map>
 
 
 namespace Poco {

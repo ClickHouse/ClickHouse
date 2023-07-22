@@ -1,7 +1,7 @@
 #include "PartMetadataManagerWithCache.h"
 
 #if USE_ROCKSDB
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -117,29 +117,46 @@ void PartMetadataManagerWithCache::updateAll(bool include_projection)
 
     String value;
     String read_value;
-    for (const auto & file_name : file_names)
+
+    /// This is used to remove the keys in case of any exception while caching other keys
+    Strings keys_added_to_cache;
+    keys_added_to_cache.reserve(file_names.size());
+
+    try
     {
-        String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
-        if (!part->getDataPartStorage().exists(file_name))
-            continue;
-        auto in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-        readStringUntilEOF(value, *in);
-
-        String key = getKeyFromFilePath(file_path);
-        auto status = cache->put(key, value);
-        if (!status.ok())
+        for (const auto & file_name : file_names)
         {
-            status = cache->get(key, read_value);
-            if (status.IsNotFound() || read_value == value)
+            String file_path = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
+            if (!part->getDataPartStorage().exists(file_name))
                 continue;
+            auto in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
+            readStringUntilEOF(value, *in);
 
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "updateAll failed include_projection:{} status:{}, file_path:{}",
-                include_projection,
-                status.ToString(),
-                file_path);
+            String key = getKeyFromFilePath(file_path);
+            auto status = cache->put(key, value);
+            if (!status.ok())
+            {
+                status = cache->get(key, read_value);
+                if (status.IsNotFound() || read_value == value)
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "updateAll failed include_projection:{} status:{}, file_path:{}",
+                    include_projection,
+                    status.ToString(),
+                    file_path);
+            }
+            keys_added_to_cache.emplace_back(key);
         }
+    }
+    catch (...)
+    {
+        for (const auto & key : keys_added_to_cache)
+        {
+            cache->del(key);
+        }
+        throw;
     }
 }
 
@@ -233,8 +250,8 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                     ErrorCodes::CORRUPTED_DATA,
                     "Checksums doesn't match in part {} for {}. Expected: {}. Found {}.",
                     part->name, file_path,
-                    getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
-                    getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
+                    getHexUIntUppercase(disk_checksum),
+                    getHexUIntUppercase(cache_checksums[i]));
 
             disk_checksums.push_back(disk_checksum);
             continue;
@@ -270,8 +287,8 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                 ErrorCodes::CORRUPTED_DATA,
                 "Checksums doesn't match in projection part {} {}. Expected: {}. Found {}.",
                 part->name, proj_name,
-                getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
-                getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
+                getHexUIntUppercase(disk_checksum),
+                getHexUIntUppercase(cache_checksums[i]));
         disk_checksums.push_back(disk_checksum);
     }
     return results;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-backward-compatibility-check
+# Tags: no-upgrade-check
 
 set -eu
 

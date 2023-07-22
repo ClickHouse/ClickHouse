@@ -17,9 +17,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
@@ -62,8 +59,6 @@ inline auto checkedDivision(A a, B b)
         return a / b;
 }
 
-
-#pragma GCC diagnostic pop
 
 template <typename A, typename B>
 struct DivideIntegralImpl

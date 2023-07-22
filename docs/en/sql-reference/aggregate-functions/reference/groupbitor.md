@@ -5,7 +5,7 @@ sidebar_position: 126
 
 # groupBitOr
 
-Applies bitwise `OR` for series of numbers.
+Applies bit-wise `OR` for series of numbers.
 
 ``` sql
 groupBitOr(expr)
@@ -13,11 +13,11 @@ groupBitOr(expr)
 
 **Arguments**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` or `Int*` type.
 
 **Returned value**
 
-Value of the `UInt*` type.
+Value of the `UInt*` or `Int*` type.
 
 **Example**
 

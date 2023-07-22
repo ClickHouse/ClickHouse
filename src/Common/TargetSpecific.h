@@ -307,7 +307,7 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_AVX2_SSE42(
+  *     MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
   *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
   *     {
   *          return value;
@@ -315,7 +315,15 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
   *     )
   *
   *     void testFunction(int value) {
-  *         if (isArchSupported(TargetArch::AVX2))
+  *         if (isArchSupported(TargetArch::AVX512BW))
+  *         {
+  *             testFunctionImplAVX512BW(value);
+  *         }
+  *         else if (isArchSupported(TargetArch::AVX512F))
+  *         {
+  *             testFunctionImplAVX512F(value);
+  *         }
+  *         else if (isArchSupported(TargetArch::AVX2))
   *         {
   *             testFunctionImplAVX2(value);
   *         }
@@ -341,7 +349,19 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
 /// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX512BW \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX512F \
+    FUNCTION_BODY \
+    \
     FUNCTION_HEADER \
     \
     AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
@@ -362,7 +382,7 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
 #else
 
 /// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

@@ -6,6 +6,7 @@
 namespace DB
 {
 class Exception;
+enum class UserDefinedSQLObjectType;
 
 /// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
 /// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationRemote.
@@ -17,10 +18,10 @@ public:
     virtual ~IRestoreCoordination() = default;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
-    virtual void setError(const String & current_host, const Exception & exception) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual void setStage(const String & new_stage, const String & message) = 0;
+    virtual void setError(const Exception & exception) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     static constexpr const char * kErrorStatus = "error";
 
@@ -34,6 +35,15 @@ public:
     /// Sets that this replica is going to restore a ReplicatedAccessStorage.
     /// The function returns false if this access storage is being already restored by another replica.
     virtual bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) = 0;
+
+    /// Sets that this replica is going to restore replicated user-defined functions.
+    /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
+    virtual bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) = 0;
+
+    /// This function is used to check if concurrent restores are running
+    /// other than the restore passed to the function
+    virtual bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const = 0;
+
 };
 
 }

@@ -19,6 +19,7 @@ public:
     ~ReplxxLineReader() override;
 
     void enableBracketedPaste() override;
+    void disableBracketedPaste() override;
 
     /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
     /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.

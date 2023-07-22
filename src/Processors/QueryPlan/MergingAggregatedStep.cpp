@@ -24,7 +24,6 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
@@ -62,10 +61,6 @@ MergingAggregatedStep::MergingAggregatedStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
-
     if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
     {
         output_stream->sort_description = group_by_sort_description;
@@ -73,11 +68,17 @@ MergingAggregatedStep::MergingAggregatedStep(
     }
 }
 
-void MergingAggregatedStep::updateInputSortDescription(SortDescription sort_description, DataStream::SortScope sort_scope)
+void MergingAggregatedStep::applyOrder(SortDescription sort_description, DataStream::SortScope sort_scope)
 {
+    is_order_overwritten = true;
+    overwritten_sort_scope = sort_scope;
+
     auto & input_stream = input_streams.front();
     input_stream.sort_scope = sort_scope;
     input_stream.sort_description = sort_description;
+
+    /// Columns might be reordered during optimisation, so we better to update sort description.
+    group_by_sort_description = std::move(sort_description);
 
     if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
     {
@@ -154,10 +155,8 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 void MergingAggregatedStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), params.getHeader(input_streams.front().header, final), getDataStreamTraits());
-
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
+    if (is_order_overwritten)  /// overwrite order again
+        applyOrder(group_by_sort_description, overwritten_sort_scope);
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const

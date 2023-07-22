@@ -18,6 +18,7 @@ public:
         bool optimize_distinct_in_order_);
 
     String getName() const override { return "Distinct"; }
+    const Names & getColumnNames() const { return columns; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -33,7 +34,7 @@ private:
 
     SizeLimits set_size_limits;
     UInt64 limit_hint;
-    Names columns;
+    const Names columns;
     bool pre_distinct;
     bool optimize_distinct_in_order;
 };

@@ -95,7 +95,7 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    instance.query("DROP DATABASE test NO DELAY")
+    instance.query("DROP DATABASE test SYNC")
     instance.query("CREATE DATABASE test")
 
 
@@ -642,7 +642,8 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
             ENGINE = MergeTree
             ORDER BY key
-            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
+            cleanup_thread_preferred_points_per_iteration=0;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT *, _channel_id AS channel_id FROM test.rabbitmq;
     """
@@ -857,7 +858,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
         if len(insert_messages) == 50:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -920,7 +921,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
         if len(insert_messages) == 50:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -1033,8 +1034,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 2,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -1044,8 +1044,6 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
@@ -1086,6 +1084,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
+    for thread in threads:
+        thread.join()
+
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
         expected = messages_num * threads_num
@@ -1096,15 +1097,12 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload;
-        DROP TABLE test.view_overload;
-        DROP TABLE test.rabbitmq_consume;
-        DROP TABLE test.rabbitmq_overload;
+        DROP TABLE test.consumer_overload SYNC;
+        DROP TABLE test.view_overload SYNC;
+        DROP TABLE test.rabbitmq_consume SYNC;
+        DROP TABLE test.rabbitmq_overload SYNC;
     """
     )
-
-    for thread in threads:
-        thread.join()
 
     assert (
         int(result) == messages_num * threads_num
@@ -1118,7 +1116,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         CREATE TABLE test.destination(key UInt64, value UInt64)
         ENGINE = MergeTree()
         ORDER BY key
-        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
+        cleanup_thread_preferred_points_per_iteration=0;
     """
     )
 
@@ -2050,7 +2049,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     )
 
 
-@pytest.mark.skip(reason="Timeout: FIXME")
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
     instance.query(
@@ -2676,7 +2674,7 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
 def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+        CREATE TABLE test.drop_mv (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
@@ -2695,7 +2693,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
+            SELECT * FROM test.drop_mv;
     """
     )
 
@@ -2712,15 +2710,15 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    start = time.time()
-    while time.time() - start < 30:
+    while True:
         res = instance.query("SELECT COUNT(*) FROM test.view")
-        if "20" == res:
+        print(f"Current count (1): {res}")
+        if int(res) == 20:
             break
         else:
             logging.debug(f"Number of rows in test.view: {res}")
 
-    instance.query("DROP VIEW test.consumer")
+    instance.query("DROP VIEW test.consumer SYNC")
     for i in range(20, 40):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
@@ -2729,7 +2727,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
+            SELECT * FROM test.drop_mv;
     """
     )
     for i in range(40, 50):
@@ -2738,14 +2736,16 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         )
 
     while True:
-        result = instance.query("SELECT * FROM test.view ORDER BY key")
-        if rabbitmq_check_result(result):
+        result = instance.query("SELECT count() FROM test.view")
+        print(f"Current count (2): {result}")
+        if int(result) == 50:
             break
         time.sleep(1)
 
+    result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
 
-    instance.query("DROP VIEW test.consumer NO DELAY")
+    instance.query("DROP VIEW test.consumer SYNC")
     time.sleep(10)
     for i in range(50, 60):
         channel.basic_publish(
@@ -2756,10 +2756,11 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     count = 0
     start = time.time()
     while time.time() - start < 30:
-        count = int(instance.query("SELECT count() FROM test.rabbitmq"))
+        count = int(instance.query("SELECT count() FROM test.drop_mv"))
         if count:
             break
 
+    instance.query("DROP TABLE test.drop_mv")
     assert count > 0
 
 
@@ -2866,7 +2867,6 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
 
 
 def test_rabbitmq_msgpack(rabbitmq_cluster):
-
     instance.query(
         """
         drop table if exists rabbit_in;
@@ -2910,7 +2910,6 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
 
 
 def test_rabbitmq_address(rabbitmq_cluster):
-
     instance2.query(
         """
         drop table if exists rabbit_in;
@@ -2952,7 +2951,6 @@ def test_rabbitmq_address(rabbitmq_cluster):
     instance2.query("drop table rabbit_out sync")
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     instance.query(
         """
@@ -2990,7 +2988,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
 
     consumer.start_consuming()
     consumer_connection.close()
@@ -3001,7 +2999,6 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     )
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_max_rows_per_message(rabbitmq_cluster):
     num_rows = 5
 
@@ -3049,7 +3046,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3074,7 +3071,6 @@ def test_max_rows_per_message(rabbitmq_cluster):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_row_based_formats(rabbitmq_cluster):
     num_rows = 10
 
@@ -3147,7 +3143,7 @@ def test_row_based_formats(rabbitmq_cluster):
             if insert_messages == 2:
                 channel.stop_consuming()
 
-        consumer.basic_consume(onReceived, queue_name)
+        consumer.basic_consume(queue_name, onReceived)
         consumer.start_consuming()
         consumer_connection.close()
 
@@ -3171,7 +3167,6 @@ def test_row_based_formats(rabbitmq_cluster):
         assert result == expected
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_1(rabbitmq_cluster):
     instance.query(
         """
@@ -3210,7 +3205,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
         if len(insert_messages) == 3:
             channel.stop_consuming()
 
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3233,7 +3228,6 @@ def test_block_based_formats_1(rabbitmq_cluster):
     ]
 
 
-@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_2(rabbitmq_cluster):
     num_rows = 100
 
@@ -3245,7 +3239,6 @@ def test_block_based_formats_2(rabbitmq_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
-
         print(format_name)
 
         instance.query(
@@ -3296,7 +3289,7 @@ def test_block_based_formats_2(rabbitmq_cluster):
             if insert_messages == 9:
                 channel.stop_consuming()
 
-        consumer.basic_consume(onReceived, queue_name)
+        consumer.basic_consume(queue_name, onReceived)
         consumer.start_consuming()
         consumer_connection.close()
 

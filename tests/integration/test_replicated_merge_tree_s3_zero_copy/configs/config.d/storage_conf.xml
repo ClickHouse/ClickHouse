@@ -12,6 +12,7 @@
                 <disk>s3</disk>
                 <max_size>100000000</max_size>
                 <path>./cache_s3/</path>
+                <cache_on_write_operations>1</cache_on_write_operations>
             </cache_s3>
         </disks>
         <policies>
@@ -53,4 +54,6 @@
         <shard>0</shard>
     </macros>
 
+    <database_atomic_delay_before_drop_table_sec>3</database_atomic_delay_before_drop_table_sec>
+    <database_atomic_drop_error_cooldown_sec>0</database_atomic_drop_error_cooldown_sec>
 </clickhouse>

@@ -40,9 +40,9 @@ namespace MySQLReplication
 
     void EventHeader::dump(WriteBuffer & out) const
     {
-        out << "\n=== " << to_string(this->type) << " ===" << '\n';
+        out << "\n=== " << magic_enum::enum_name(this->type) << " ===" << '\n';
         out << "Timestamp: " << this->timestamp << '\n';
-        out << "Event Type: " << to_string(this->type) << '\n';
+        out << "Event Type: " << magic_enum::enum_name(this->type) << '\n';
         out << "Server ID: " << this->server_id << '\n';
         out << "Event Size: " << this->event_size << '\n';
         out << "Log Pos: " << this->log_pos << '\n';
@@ -120,6 +120,17 @@ namespace MySQLReplication
                  || query.starts_with("RELEASE SAVEPOINT"))
         {
             typ = QUERY_SAVEPOINT;
+        }
+
+        // https://dev.mysql.com/worklog/task/?id=13355
+        // When doing query "CREATE TABLE xx AS SELECT", the binlog will be
+        // "CREATE TABLE ... START TRANSACTION", the DDL will be failed
+        // so, just ignore the "START TRANSACTION" suffix
+        if (query.ends_with("START TRANSACTION"))
+        {
+            auto pos = query.rfind("START TRANSACTION");
+            if (pos > 0)
+                query.resize(pos);
         }
     }
 
@@ -581,9 +592,9 @@ namespace MySQLReplication
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -649,7 +660,7 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read) //-V547
+                                    if (to_read)
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(compressed_decimals));

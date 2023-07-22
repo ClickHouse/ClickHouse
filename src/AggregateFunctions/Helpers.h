@@ -101,6 +101,28 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
 }
 
 template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
+static IAggregateFunction * createWithSignedIntegerType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Int8) return new AggregateFunctionTemplate<Int8, Data<Int8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Int16) return new AggregateFunctionTemplate<Int16, Data<Int16>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Int32) return new AggregateFunctionTemplate<Int32, Data<Int32>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<Int64, Data<Int64>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Int128) return new AggregateFunctionTemplate<Int128, Data<Int128>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Int256) return new AggregateFunctionTemplate<Int256, Data<Int256>>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
+static IAggregateFunction * createWithIntegerType(const IDataType & argument_type, TArgs && ... args)
+{
+    IAggregateFunction * f = createWithUnsignedIntegerType<AggregateFunctionTemplate, Data>(argument_type, std::forward<TArgs>(args)...);
+    if (f)
+        return f;
+    return createWithSignedIntegerType<AggregateFunctionTemplate, Data>(argument_type, std::forward<TArgs>(args)...);
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
 static IAggregateFunction * createWithBasicNumberOrDateOrDateTime(const IDataType & argument_type, TArgs &&... args)
 {
     WhichDataType which(argument_type);
@@ -130,6 +152,8 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 

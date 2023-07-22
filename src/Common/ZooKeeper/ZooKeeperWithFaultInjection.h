@@ -4,7 +4,9 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include "Coordination/KeeperConstants.h"
 
 namespace DB
 {
@@ -17,17 +19,26 @@ namespace ErrorCodes
 class RandomFaultInjection
 {
 public:
+    bool must_fail_after_op = false;
+    bool must_fail_before_op = false;
+
     RandomFaultInjection(double probability, UInt64 seed_) : rndgen(seed_), distribution(probability) { }
 
     void beforeOperation()
     {
-        if (distribution(rndgen))
+        if (distribution(rndgen) || must_fail_before_op)
+        {
+            must_fail_before_op = false;
             throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
+        }
     }
     void afterOperation()
     {
-        if (distribution(rndgen))
+        if (distribution(rndgen) || must_fail_after_op)
+        {
+            must_fail_after_op = false;
             throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
+        }
     }
 
 private:
@@ -40,6 +51,9 @@ private:
 ///
 class ZooKeeperWithFaultInjection
 {
+    template<bool async_insert>
+    friend class ReplicatedMergeTreeSinkImpl;
+
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
@@ -114,6 +128,7 @@ public:
 
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
     bool isNull() const { return keeper.get() == nullptr; }
+    bool expired() { return keeper->expired(); }
 
     ///
     /// mirror ZooKeeper interface
@@ -232,6 +247,11 @@ public:
         return access("exists", path, [&]() { return keeper->exists(path, stat, watch); });
     }
 
+    bool existsNoFailureInjection(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
+    {
+        return access<false, false, false>("exists", path, [&]() { return keeper->exists(path, stat, watch); });
+    }
+
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths)
     {
         return access("exists", !paths.empty() ? paths.front() : "", [&]() { return keeper->exists(paths); });
@@ -239,19 +259,33 @@ public:
 
     std::string create(const std::string & path, const std::string & data, int32_t mode)
     {
-        auto path_created = access(
-            "create",
+        std::string path_created;
+        auto code = tryCreate(path, data, mode, path_created);
+
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperException(code, path);
+
+        return path_created;
+    }
+
+    Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
+    {
+        path_created.clear();
+
+        auto error = access(
+            "tryCreate",
             path,
-            [&]() { return keeper->create(path, data, mode); },
-            [&](std::string const & result_path)
+            [&]() { return keeper->tryCreate(path, data, mode, path_created); },
+            [&](Coordination::Error & code)
             {
                 try
                 {
-                    if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
+                    if (!path_created.empty() && (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral))
                     {
-                        keeper->remove(result_path);
+                        keeper->remove(path_created);
                         if (unlikely(logger))
-                            LOG_TRACE(logger, "ZooKeeperWithFaultInjection cleanup: seed={} func={} path={}", seed, "create", result_path);
+                            LOG_TRACE(logger, "ZooKeeperWithFaultInjection cleanup: seed={} func={} path={} path_created={} code={}",
+                                seed, "tryCreate", path, path_created, code);
                     }
                 }
                 catch (const zkutil::KeeperException & e)
@@ -259,10 +293,11 @@ public:
                     if (unlikely(logger))
                         LOG_TRACE(
                             logger,
-                            "ZooKeeperWithFaultInjection cleanup FAILED: seed={} func={} path={} code={} message={} ",
+                            "ZooKeeperWithFaultInjection cleanup FAILED: seed={} func={} path={} path_created={} code={} message={} ",
                             seed,
-                            "create",
-                            result_path,
+                            "tryCreate",
+                            path,
+                            path_created,
                             e.code,
                             e.message());
                 }
@@ -271,11 +306,28 @@ public:
         /// collect ephemeral nodes when no fault was injected (to clean up later)
         if (unlikely(fault_policy))
         {
-            if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
+            if (!path_created.empty() && (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral))
                 ephemeral_nodes.push_back(path_created);
         }
 
-        return path_created;
+        return error;
+    }
+
+    Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode)
+    {
+        String path_created;
+        return tryCreate(path, data, mode, path_created);
+    }
+
+    void createIfNotExists(const std::string & path, const std::string & data)
+    {
+        std::string path_created;
+        auto code = tryCreate(path, data, zkutil::CreateMode::Persistent, path_created);
+
+        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+            return;
+
+        throw zkutil::KeeperException(code, path);
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
@@ -306,6 +358,31 @@ public:
         return access("tryRemove", path, [&]() { return keeper->tryRemove(path, version); });
     }
 
+    void removeRecursive(const std::string & path)
+    {
+        return access("removeRecursive", path, [&]() { return keeper->removeRecursive(path); });
+    }
+
+    std::string sync(const std::string & path)
+    {
+        return access("sync", path, [&]() { return keeper->sync(path); });
+    }
+
+    Coordination::Error trySet(const std::string & path, const std::string & data, int32_t version = -1, Coordination::Stat * stat = nullptr)
+    {
+        return access("trySet", path, [&]() { return keeper->trySet(path, data, version, stat); });
+    }
+
+    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
+    {
+        return access("checkExistsAndGetCreateAncestorsOps", path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
+    }
+
+    void handleEphemeralNodeExistenceNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
+    {
+        return access<false, false, false>("handleEphemeralNodeExistence", path, [&]() { return keeper->handleEphemeralNodeExistence(path, fast_delete_if_equal_value); });
+    }
+
     void cleanupEphemeralNodes()
     {
         for (const auto & path : ephemeral_nodes)
@@ -323,6 +400,11 @@ public:
         }
 
         ephemeral_nodes.clear();
+    }
+
+    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const
+    {
+        return keeper->isFeatureEnabled(feature_flag);
     }
 
 private:

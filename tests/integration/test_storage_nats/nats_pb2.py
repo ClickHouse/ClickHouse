@@ -31,7 +31,6 @@ ProtoKeyValue = _reflection.GeneratedProtocolMessageType(
 _sym_db.RegisterMessage(ProtoKeyValue)
 
 if _descriptor._USE_C_DESCRIPTORS == False:
-
     DESCRIPTOR._options = None
     _PROTOKEYVALUE._serialized_start = 45
     _PROTOKEYVALUE._serialized_end = 88

@@ -829,7 +829,11 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
 
     if (pos_integer == buffer + size && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
     {
-        if (negative)
+        /// -0 should be still parsed as UInt instead of Int,
+        /// because otherwise it is not preserved during formatting-parsing roundtrip
+        /// (the signedness is lost during formatting)
+
+        if (negative && uint_value != 0)
             res = static_cast<Int64>(-uint_value);
         else
             res = uint_value;
@@ -1429,10 +1433,12 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
+    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
+
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word)
+    if (!has_as_word && !is_quoted)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,
@@ -1474,7 +1480,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
                 if (func->arguments->children.size() != 2)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
@@ -1491,6 +1497,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
                     lambda_arg = *opt_arg_name;
                 else
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
+
+                func->is_lambda_function = true;
             }
             else
             {
@@ -1619,7 +1627,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
-            replacement->expr = std::move(expr);
+            replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
         };
@@ -2149,8 +2157,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set("SET");
     ParserKeyword s_recompress("RECOMPRESS");
     ParserKeyword s_codec("CODEC");
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_eq(TokenType::Equals);
+    ParserKeyword s_materialize("MATERIALIZE");
+    ParserKeyword s_remove("REMOVE");
+    ParserKeyword s_modify("MODIFY");
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
@@ -2158,8 +2167,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    ParserList parser_assignment_list(
-        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+    if (s_materialize.checkWithoutMoving(pos, expected) ||
+        s_remove.checkWithoutMoving(pos, expected) ||
+        s_modify.checkWithoutMoving(pos, expected))
+
+        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -2217,6 +2229,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_set.ignore(pos))
         {
+            ParserList parser_assignment_list(
+                std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
         }

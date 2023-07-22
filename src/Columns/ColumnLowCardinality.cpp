@@ -310,6 +310,18 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
 }
 
+MutableColumnPtr ColumnLowCardinality::cloneNullable() const
+{
+    auto res = cloneFinalized();
+    /* Compact required not to share dictionary.
+     * If `shared` flag is not set `cloneFinalized` will return shallow copy
+     * and `nestedToNullable` will mutate source column.
+     */
+    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
+    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
+    return res;
+}
+
 int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
 {
     const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
@@ -478,13 +490,8 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
-    /// Create column with new indexes and old dictionary.
-    /// Dictionary is shared, but will be recreated after compactInplace call.
-    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
-    /// Will create new dictionary.
-    column->compactInplace();
-
-    return column;
+    auto new_column_unique = Dictionary::compact(dictionary.getColumnUnique(), sub_positions);
+    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_positions));
 }
 
 void ColumnLowCardinality::compactInplace()
@@ -582,7 +589,7 @@ size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, s
                     column.getName());
 }
 
-void ColumnLowCardinality::Index::attachPositions(ColumnPtr positions_)
+void ColumnLowCardinality::Index::attachPositions(MutableColumnPtr positions_)
 {
     positions = std::move(positions_);
     updateSizeOfType();
@@ -813,21 +820,58 @@ void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique
     shared = true;
 }
 
-void ColumnLowCardinality::Dictionary::compact(ColumnPtr & positions)
+void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & positions)
 {
-    auto new_column_unique = column_unique->cloneEmpty();
+    column_unique = compact(getColumnUnique(), positions);
+    shared = false;
+}
 
-    auto & unique = getColumnUnique();
+MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & positions)
+{
+    auto new_column_unique = unique.cloneEmpty();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
-    auto indexes = mapUniqueIndex(positions->assumeMutableRef());
+    auto indexes = mapUniqueIndex(*positions);
     auto sub_keys = unique.getNestedColumn()->index(*indexes, 0);
     auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
 
     positions = IColumn::mutate(new_indexes->index(*positions, 0));
-    column_unique = std::move(new_column_unique);
+    return new_column_unique;
+}
 
-    shared = false;
+ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
+{
+    if (!nestedIsNullable())
+        return getPtr();
+
+    auto res = cloneEmpty();
+    auto & lc_res = assert_cast<ColumnLowCardinality &>(*res);
+    lc_res.nestedRemoveNullable();
+    size_t end = size();
+    size_t start = 0;
+    while (start < end)
+    {
+        size_t next_null_index = start;
+        while (next_null_index < end && !isNullAt(next_null_index))
+            ++next_null_index;
+
+        if (next_null_index != start)
+            lc_res.insertRangeFrom(*this, start, next_null_index - start);
+
+        if (next_null_index < end)
+            lc_res.insertDefault();
+
+        start = next_null_index + 1;
+    }
+
+    return res;
+}
+
+bool isColumnLowCardinalityNullable(const IColumn & column)
+{
+    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(column))
+        return lc_column->nestedIsNullable();
+    return false;
 }
 
 }

@@ -28,6 +28,7 @@ slug: /ru/operations/system-tables/text_log
 -   `revision` (UInt32) — ревизия ClickHouse.
 -   `source_file` (LowCardinality(String)) — исходный файл, из которого была сделана запись.
 -   `source_line` (UInt64) — исходная строка, из которой была сделана запись.
+-   `message_format_string` (LowCardinality(String)) — форматная строка, с помощью которой было отформатировано сообщение.
 
 **Пример**
 
@@ -51,4 +52,5 @@ message:                 Update period 15 seconds
 revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
+message_format_string:   Update period {} seconds
 ```

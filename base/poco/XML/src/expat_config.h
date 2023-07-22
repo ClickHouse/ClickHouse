@@ -17,9 +17,7 @@
 #include "Poco/Platform.h"
 
 
-#if !defined(POCO_VXWORKS)
-#include <memory.h>
-#endif
+#    include <memory.h>
 #include <string.h>
 
 
@@ -27,9 +25,9 @@
 
 
 #if defined POCO_ARCH_LITTLE_ENDIAN
-#define BYTEORDER 1234
+#    define BYTEORDER 1234
 #else
-#define BYTEORDER 4321
+#    define BYTEORDER 4321
 #endif
 
 

@@ -1,6 +1,6 @@
 ---
 slug: /en/development/style
-sidebar_position: 69
+sidebar_position: 70
 sidebar_label: C++ Guide
 description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
@@ -370,8 +370,8 @@ If the file contains a single function, name the file the same way as the functi
 
 **11.** If the name contains an abbreviation, then:
 
--   For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
--   For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
+- For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
+- For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
 
 **12.** Constructor arguments that are used just to initialize the class members should be named the same way as the class members, but with an underscore at the end.
 
@@ -434,9 +434,9 @@ In application code, memory must be freed by the object that owns it.
 
 Examples:
 
--   The easiest way is to place an object on the stack, or make it a member of another class.
--   For a large number of small objects, use containers.
--   For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
+- The easiest way is to place an object on the stack, or make it a member of another class.
+- For a large number of small objects, use containers.
+- For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
 
 **2.** Resource management.
 
@@ -504,10 +504,10 @@ This is not recommended, but it is allowed.
 
 Use the following options:
 
--   Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
--   Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
--   If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
--   In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
+- Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
+- Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
+- If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
+- In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
 
 **6.** Anonymous code blocks.
 
@@ -529,11 +529,11 @@ ready_any.set();
 
 In offline data processing programs:
 
--   Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
+- Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
 
 In server applications:
 
--   Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
+- Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
 
 Fork is not used for parallelization.
 

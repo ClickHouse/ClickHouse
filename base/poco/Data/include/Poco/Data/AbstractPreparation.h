@@ -18,54 +18,57 @@
 #define Data_AbstractPreparation_INCLUDED
 
 
-#include "Poco/Data/Data.h"
-#include "Poco/Data/AbstractPreparator.h"
-#include "Poco/SharedPtr.h"
 #include <cstddef>
+#include "Poco/Data/AbstractPreparator.h"
+#include "Poco/Data/Data.h"
+#include "Poco/SharedPtr.h"
 
 
-namespace Poco {
-namespace Data {
-
-
-class Data_API AbstractPreparation
-	/// Interface for calling the appropriate AbstractPreparator method
+namespace Poco
 {
-public:
-	typedef SharedPtr<AbstractPreparation> Ptr;
-	typedef AbstractPreparator::Ptr PreparatorPtr;
-
-	AbstractPreparation(PreparatorPtr pPreparator);
-		/// Creates the AbstractPreparation.
-
-	virtual ~AbstractPreparation();
-		/// Destroys the AbstractPreparation.
-
-	virtual void prepare() = 0;
-		/// Prepares data.
-
-protected:
-	AbstractPreparation();
-	AbstractPreparation(const AbstractPreparation&);
-	AbstractPreparation& operator = (const AbstractPreparation&);
-
-	PreparatorPtr preparation();
-		/// Returns the preparation object
-
-	PreparatorPtr _pPreparator;
-};
-
-
-//
-// inlines
-//
-inline AbstractPreparation::PreparatorPtr AbstractPreparation::preparation()
+namespace Data
 {
-	return _pPreparator;
+
+
+    class Data_API AbstractPreparation
+    /// Interface for calling the appropriate AbstractPreparator method
+    {
+    public:
+        typedef SharedPtr<AbstractPreparation> Ptr;
+        typedef AbstractPreparator::Ptr PreparatorPtr;
+
+        AbstractPreparation(PreparatorPtr pPreparator);
+        /// Creates the AbstractPreparation.
+
+        virtual ~AbstractPreparation();
+        /// Destroys the AbstractPreparation.
+
+        virtual void prepare() = 0;
+        /// Prepares data.
+
+    protected:
+        AbstractPreparation();
+        AbstractPreparation(const AbstractPreparation &);
+        AbstractPreparation & operator=(const AbstractPreparation &);
+
+        PreparatorPtr preparation();
+        /// Returns the preparation object
+
+        PreparatorPtr _pPreparator;
+    };
+
+
+    //
+    // inlines
+    //
+    inline AbstractPreparation::PreparatorPtr AbstractPreparation::preparation()
+    {
+        return _pPreparator;
+    }
+
+
 }
-
-
-} } // namespace Poco::Data
+} // namespace Poco::Data
 
 
 #endif // Data_AbstractPreparation_INCLUDED

@@ -11,17 +11,29 @@ SET optimize_move_to_prewhere_if_final = 1;
 
 -- order key can be pushed down with final
 select '';
+EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final WHERE x > 100;
+select '';
+EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE x > 100;
+select '';
 EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final WHERE y > 100;
 select '';
 EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE y > 100;
+select '';
+EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final WHERE x + y > 100;
+select '';
+EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE x + y > 100;
 
 -- can not be pushed down
 select '';
 EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE z > 400;
 
--- only y can be pushed down
+-- only condition with x/y can be pushed down
 select '';
 EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE y > 100 and z > 400;
+select '';
+EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE x > 50 and z > 400;
+select '';
+EXPLAIN SYNTAX SELECT * FROM prewhere_move_select_final FINAL WHERE x + y > 50 and z > 400;
 
 select '';
 select 'optimize_move_to_prewhere_if_final = 0';

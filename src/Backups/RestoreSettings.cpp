@@ -161,9 +161,9 @@ namespace
     M(RestoreAccessCreationMode, create_access) \
     M(Bool, allow_unresolved_access_dependencies) \
     M(RestoreUDFCreationMode, create_function) \
+    M(Bool, allow_s3_native_copy) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path) \
     M(OptionalUUID, restore_uuid)
 
 

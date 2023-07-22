@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/ErrorHandler.h>
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 

@@ -264,11 +264,7 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 		{
 			Poco::CountingOutputStream cs;
 			request.write(cs);
-#if POCO_HAVE_INT64
 			_pRequestStream = new HTTPFixedLengthOutputStream(*this, request.getContentLength64() + cs.chars());
-#else
-			_pRequestStream = new HTTPFixedLengthOutputStream(*this, request.getContentLength() + cs.chars());
-#endif
 			request.write(*_pRequestStream);
 		}
 		else if ((method != HTTPRequest::HTTP_PUT && method != HTTPRequest::HTTP_POST && method != HTTPRequest::HTTP_PATCH) || request.has(HTTPRequest::UPGRADE))
@@ -334,11 +330,7 @@ std::istream& HTTPClientSession::receiveResponse(HTTPResponse& response)
 	else if (response.getChunkedTransferEncoding())
 		_pResponseStream = new HTTPChunkedInputStream(*this);
 	else if (response.hasContentLength())
-#if defined(POCO_HAVE_INT64)
 		_pResponseStream = new HTTPFixedLengthInputStream(*this, response.getContentLength64());
-#else
-		_pResponseStream = new HTTPFixedLengthInputStream(*this, response.getContentLength());
-#endif
 	else
 		_pResponseStream = new HTTPInputStream(*this);
 

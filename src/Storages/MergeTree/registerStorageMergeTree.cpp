@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/DDLTask.h>
 
 
 namespace DB
@@ -70,8 +71,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
+    INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
+    INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2]
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -136,7 +137,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
         * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
         * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
-        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
+        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column [, is_deleted_column]])
         * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
         *
         * Alternatively, you can specify:
@@ -227,6 +228,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Replacing:
+            add_optional_param("is_deleted column");
             add_optional_param("version");
             break;
         case MergeTreeData::MergingParams::Collapsing:
@@ -438,11 +440,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
+        // if there is args and number of optional parameter is higher than 1
+        // is_deleted is not allowed with the 'allow_deprecated_syntax_for_merge_tree' settings
+        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && is_extended_storage_def)
+        {
+            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an identifier {}", verbose_help_message);
+            --arg_cnt;
+        }
+
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an unquoted string{}", verbose_help_message);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an identifier {}", verbose_help_message);
             --arg_cnt;
         }
     }
@@ -525,7 +536,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (!args.storage_def->order_by)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()");
+                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY ()");
 
         /// Get sorting key from engine arguments.
         ///
@@ -589,11 +600,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
 
         storage_settings->loadFromQuery(*args.storage_def, context);
-
-        if (storage_settings->disk.changed && storage_settings->storage_policy.changed)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
@@ -679,6 +685,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        bool need_check_table_structure = true;
+        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
+            need_check_table_structure = txn->isInitialQuery();
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
@@ -691,7 +701,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             args.has_force_restore_data_flag,
-            renaming_restrictions);
+            renaming_restrictions,
+            need_check_table_structure);
     }
     else
         return std::make_shared<StorageMergeTree>(

@@ -22,11 +22,13 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import NeedsDataType, PRInfo
 from commit_status_helper import (
+    RerunHelper,
+    format_description,
     get_commit,
+    post_commit_status,
     update_mergeable_check,
 )
 from ci_config import CI_CONFIG
-from rerun_helper import RerunHelper
 
 
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
@@ -72,6 +74,7 @@ def get_failed_report(
         sanitizer="unknown",
         status=message,
         elapsed_seconds=0,
+        comment="",
     )
     return [build_result], [[""]], [GITHUB_RUN_URL]
 
@@ -86,6 +89,7 @@ def process_report(
         sanitizer=build_config["sanitizer"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
+        comment=build_config["comment"],
     )
     build_results = []
     build_urls = []
@@ -136,10 +140,11 @@ def main():
 
     gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
+    commit = get_commit(gh, pr_info.sha)
 
     atexit.register(update_mergeable_check, gh, pr_info, build_check_name)
 
-    rerun_helper = RerunHelper(gh, pr_info, build_check_name)
+    rerun_helper = RerunHelper(commit, build_check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -247,7 +252,7 @@ def main():
         str(pr_info.number) + "/" + pr_info.sha + "/" + context_name_for_path
     )
 
-    url = s3_helper.upload_build_file_to_s3(
+    url = s3_helper.upload_test_report_to_s3(
         report_path, s3_path_prefix + "/report.html"
     )
     logging.info("Report url %s", url)
@@ -265,21 +270,23 @@ def main():
         if build_result.status == "success":
             ok_groups += 1
 
-    if ok_groups == 0 or some_builds_are_missing:
-        summary_status = "error"
+    # Check if there are no builds at all, do not override bad status
+    if summary_status == "success":
+        if some_builds_are_missing:
+            summary_status = "pending"
+        elif ok_groups == 0:
+            summary_status = "error"
 
     addition = ""
     if some_builds_are_missing:
-        addition = f"({len(build_reports)} of {required_builds} builds are OK)"
+        addition = f" ({len(build_reports)} of {required_builds} builds are OK)"
 
-    description = f"{ok_groups}/{total_groups} artifact groups are OK {addition}"
+    description = format_description(
+        f"{ok_groups}/{total_groups} artifact groups are OK{addition}"
+    )
 
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(
-        context=build_check_name,
-        description=description,
-        state=summary_status,
-        target_url=url,
+    post_commit_status(
+        commit, summary_status, url, description, build_check_name, pr_info
     )
 
     if summary_status == "error":

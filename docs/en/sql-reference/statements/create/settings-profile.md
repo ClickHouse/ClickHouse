@@ -5,7 +5,7 @@ sidebar_label: SETTINGS PROFILE
 title: "CREATE SETTINGS PROFILE"
 ---
 
-Creates [settings profiles](../../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
+Creates [settings profiles](../../../guides/sre/user-management/index.md#settings-profiles-management) that can be assigned to a user or a role.
 
 Syntax:
 
@@ -19,8 +19,15 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_n
 
 ## Example
 
+Create a user:
+```sql
+CREATE USER robin IDENTIFIED BY 'password';
+```
+
 Create the `max_memory_usage_profile` settings profile with value and constraints for the `max_memory_usage` setting and assign it to user `robin`:
 
 ``` sql
-CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
+CREATE
+SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000
+TO robin
 ```

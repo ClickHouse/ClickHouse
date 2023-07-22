@@ -23,34 +23,37 @@
 #include "Poco/Exception.h"
 
 
-namespace Poco {
-namespace Crypto {
-
-
-POCO_DECLARE_EXCEPTION(Crypto_API, CryptoException, Poco::Exception)
-
-
-class Crypto_API OpenSSLException : public CryptoException
+namespace Poco
 {
-public:
-	OpenSSLException(int code = 0);
-	OpenSSLException(const std::string& msg, int code = 0);
-	OpenSSLException(const std::string& msg, const std::string& arg, int code = 0);
-	OpenSSLException(const std::string& msg, const Poco::Exception& exc, int code = 0);
-	OpenSSLException(const OpenSSLException& exc);
-	~OpenSSLException() throw();
-	OpenSSLException& operator = (const OpenSSLException& exc);
-	const char* name() const throw();
-	const char* className() const throw();
-	Poco::Exception* clone() const;
-	void rethrow() const;
-
-private:
-	void setExtMessage();
-};
+namespace Crypto
+{
 
 
-} } // namespace Poco::Crypto
+    POCO_DECLARE_EXCEPTION(Crypto_API, CryptoException, Poco::Exception)
+
+
+    class Crypto_API OpenSSLException : public CryptoException
+    {
+    public:
+        OpenSSLException(int code = 0);
+        OpenSSLException(const std::string & msg, int code = 0);
+        OpenSSLException(const std::string & msg, const std::string & arg, int code = 0);
+        OpenSSLException(const std::string & msg, const Poco::Exception & exc, int code = 0);
+        OpenSSLException(const OpenSSLException & exc);
+        ~OpenSSLException() throw();
+        OpenSSLException & operator=(const OpenSSLException & exc);
+        const char * name() const throw();
+        const char * className() const throw();
+        Poco::Exception * clone() const;
+        void rethrow() const;
+
+    private:
+        void setExtMessage();
+    };
+
+
+}
+} // namespace Poco::Crypto
 
 
 #endif // Crypto_CryptoException_INCLUDED

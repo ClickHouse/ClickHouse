@@ -64,6 +64,12 @@ def test_extra_yaml_mix():
             )
             == "64999\n"
         )
+        assert (
+            node.query(
+                "select value from system.server_settings where name = 'mark_cache_size'"
+            )
+            == "8956\n"
+        )
 
     finally:
         cluster.shutdown()

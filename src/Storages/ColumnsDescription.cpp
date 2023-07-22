@@ -130,7 +130,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -425,23 +425,49 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     switch (options.kind)
     {
         case GetColumnsOptions::All:
+        {
             res = getAll();
             break;
+        }
+        case GetColumnsOptions::AllPhysicalAndAliases:
+        {
+            res = getAllPhysical();
+            auto aliases = getAliases();
+            res.insert(res.end(), aliases.begin(), aliases.end());
+            break;
+        }
         case GetColumnsOptions::AllPhysical:
+        {
             res = getAllPhysical();
             break;
+        }
+        case GetColumnsOptions::OrdinaryAndAliases:
+        {
+            res = getOrdinary();
+            auto aliases = getAliases();
+            res.insert(res.end(), aliases.begin(), aliases.end());
+            break;
+        }
         case GetColumnsOptions::Ordinary:
+        {
             res = getOrdinary();
             break;
+        }
         case GetColumnsOptions::Materialized:
+        {
             res = getMaterialized();
             break;
+        }
         case GetColumnsOptions::Aliases:
+        {
             res = getAliases();
             break;
+        }
         case GetColumnsOptions::Ephemeral:
+        {
             res = getEphemeral();
             break;
+        }
     }
 
     if (options.with_subcolumns)
@@ -622,6 +648,12 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
     auto it = columns.get<1>().find(column_name);
     return it != columns.get<1>().end() &&
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
+}
+
+bool ColumnsDescription::hasAlias(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Alias;
 }
 
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const

@@ -1,21 +1,24 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
-#include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
@@ -36,6 +39,8 @@
 namespace CurrentMetrics
 {
     extern const Metric TablesToDropQueueSize;
+    extern const Metric DatabaseCatalogThreads;
+    extern const Metric DatabaseCatalogThreadsActive;
 }
 
 namespace DB
@@ -51,6 +56,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
+    extern const int UNFINISHED;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -105,7 +111,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -121,9 +127,16 @@ TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
     {
-        auto table = getTable();
-        table->flushAndShutdown();
-        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        try
+        {
+            auto table = getTable();
+            table->flushAndShutdown();
+            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TemporaryTableHolder");
+        }
     }
 }
 
@@ -140,32 +153,42 @@ StoragePtr TemporaryTableHolder::getTable() const
     return table;
 }
 
-
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
     unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
     unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
     unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
+    drop_error_cooldown_sec = getContext()->getConfigRef().getInt64("database_catalog_drop_error_cooldown_sec", drop_error_cooldown_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
-void DatabaseCatalog::loadDatabases()
+void DatabaseCatalog::createBackgroundTasks()
 {
+    /// It has to be done before databases are loaded (to avoid a race condition on initialization)
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
+    }
+
+    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
+}
+
+void DatabaseCatalog::startupBackgroundCleanup()
+{
+    /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
+    if (cleanup_task)
+    {
         (*cleanup_task)->activate();
         /// Do not start task immediately on server startup, it's not urgent.
         (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
     }
 
-    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
-    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
     std::lock_guard lock{tables_marked_dropped_mutex};
     if (!tables_marked_dropped.empty())
@@ -174,6 +197,9 @@ void DatabaseCatalog::loadDatabases()
 
 void DatabaseCatalog::shutdownImpl()
 {
+    is_shutting_down = true;
+    wait_table_finally_dropped.notify_all();
+
     if (cleanup_task)
         (*cleanup_task)->deactivate();
 
@@ -194,8 +220,26 @@ void DatabaseCatalog::shutdownImpl()
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
+    /// Delay shutdown of temporary and system databases. They will be shutdown last.
+    /// Because some databases might use them until their shutdown is called, but calling shutdown
+    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
+    std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
+    {
+        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
+        {
+            databases_with_delayed_shutdown.push_back(database.second);
+            continue;
+        }
+        LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
+    }
+
+    LOG_TRACE(log, "Shutting down system databases");
+    for (auto & database : databases_with_delayed_shutdown)
+    {
+        database->shutdown();
+    }
 
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
@@ -318,7 +362,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+
     if (!table)
         database = nullptr;
 
@@ -652,6 +697,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
     , log(&Poco::Logger::get("DatabaseCatalog"))
+    , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
 
@@ -833,7 +879,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive);
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()
@@ -850,6 +896,13 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
            escapeForFileName(table_id.getDatabaseName()) + "." +
            escapeForFileName(table_id.getTableName()) + "." +
            toString(table_id.uuid) + ".sql";
+}
+
+String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
+{
+    return getContext()->getPath() + "metadata/" +
+           escapeForFileName(table_id.getDatabaseName()) + "/" +
+           escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
@@ -907,9 +960,17 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
     std::lock_guard lock(tables_marked_dropped_mutex);
     if (ignore_delay)
-        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, drop_time});
+    {
+        /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
+        /// but the queue will remain fair for multiple sync drop queries.
+        tables_marked_dropped.emplace(first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, dropped_metadata_path, drop_time});
+    }
     else
+    {
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time + drop_delay_sec});
+        if (first_async_drop_in_queue == tables_marked_dropped.end())
+            --first_async_drop_in_queue;
+    }
     tables_marked_dropped_ids.insert(table_id.uuid);
     CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
 
@@ -917,6 +978,81 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     /// If ignore_delay is set, schedule drop task as soon as possible.
     if (drop_task && (tables_marked_dropped.size() == 1 || ignore_delay))
         (*drop_task)->schedule();
+}
+
+void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
+{
+    String latest_metadata_dropped_path;
+    TableMarkedAsDropped dropped_table;
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        time_t latest_drop_time = std::numeric_limits<time_t>::min();
+        auto it_dropped_table = tables_marked_dropped.end();
+        for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
+        {
+            auto storage_ptr = it->table;
+            if (it->table_id.uuid == table_id.uuid)
+            {
+                it_dropped_table = it;
+                dropped_table = *it;
+                break;
+            }
+            /// If table uuid exists, only find tables with equal uuid.
+            if (table_id.uuid != UUIDHelpers::Nil)
+                continue;
+            if (it->table_id.database_name == table_id.database_name &&
+                it->table_id.table_name == table_id.table_name &&
+                it->drop_time >= latest_drop_time)
+            {
+                latest_drop_time = it->drop_time;
+                it_dropped_table = it;
+                dropped_table = *it;
+            }
+        }
+        if (it_dropped_table == tables_marked_dropped.end())
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
+                table_id.getNameForLogs());
+        latest_metadata_dropped_path = it_dropped_table->metadata_path;
+        String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
+
+        /// a table is successfully marked undropped,
+        /// if and only if its metadata file was moved to a database.
+        /// This maybe throw exception.
+        renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
+
+        if (first_async_drop_in_queue == it_dropped_table)
+            ++first_async_drop_in_queue;
+        tables_marked_dropped.erase(it_dropped_table);
+        [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
+        assert(removed);
+        CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
+    }
+
+    LOG_INFO(log, "Attaching undropped table {} (metadata moved from {})",
+             dropped_table.table_id.getNameForLogs(), latest_metadata_dropped_path);
+
+    /// It's unsafe to create another instance while the old one exists
+    /// We cannot wait on shared_ptr's refcount, so it's busy wait
+    while (!dropped_table.table.unique())
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    dropped_table.table.reset();
+
+    auto ast_attach = std::make_shared<ASTCreateQuery>();
+    ast_attach->attach = true;
+    ast_attach->setDatabase(dropped_table.table_id.database_name);
+    ast_attach->setTable(dropped_table.table_id.table_name);
+
+    auto query_context = Context::createCopy(getContext());
+    /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
+    /// and cannot be acquired in the attach table again.
+    InterpreterCreateQuery interpreter(ast_attach, query_context);
+    interpreter.setForceAttach(true);
+    interpreter.setForceRestoreData(true);
+    interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
+    interpreter.execute();
+
+    LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
 }
 
 void DatabaseCatalog::dropTableDataTask()
@@ -931,7 +1067,8 @@ void DatabaseCatalog::dropTableDataTask()
     try
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        assert(!tables_marked_dropped.empty());
+        if (tables_marked_dropped.empty())
+            return;
         time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         time_t min_drop_time = std::numeric_limits<time_t>::max();
         size_t tables_in_use_count = 0;
@@ -948,6 +1085,8 @@ void DatabaseCatalog::dropTableDataTask()
             table = std::move(*it);
             LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {}",
                      tables_marked_dropped.size(), tables_in_use_count, table.table_id.getNameForLogs());
+            if (first_async_drop_in_queue == it)
+                ++first_async_drop_in_queue;
             tables_marked_dropped.erase(it);
             /// Schedule the task as soon as possible, while there are suitable tables to drop.
             schedule_after_ms = 0;
@@ -984,6 +1123,8 @@ void DatabaseCatalog::dropTableDataTask()
                 table.drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
                 std::lock_guard lock(tables_marked_dropped_mutex);
                 tables_marked_dropped.emplace_back(std::move(table));
+                if (first_async_drop_in_queue == tables_marked_dropped.end())
+                    --first_async_drop_in_queue;
                 /// If list of dropped tables was empty, schedule a task to retry deletion.
                 if (tables_marked_dropped.size() == 1)
                 {
@@ -1041,8 +1182,13 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
-        return !tables_marked_dropped_ids.contains(uuid);
+        return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
+
+    /// TSA doesn't support unique_lock
+    if (TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid))
+        throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
+                                                "will finish after restart", uuid);
 }
 
 void DatabaseCatalog::addDependencies(

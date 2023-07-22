@@ -13,7 +13,7 @@ function tx()
     url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
     url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE"
 
-    ${CLICKHOUSE_CURL} -m 60 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
+    ${CLICKHOUSE_CURL} -m 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
 }
 
 # Waits for the last query in session to finish
@@ -63,7 +63,7 @@ function tx_async()
     tmp_file_name="${CLICKHOUSE_TMP}/tmp_tx_${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}"
 
     # run query asynchronously
-    ${CLICKHOUSE_CURL} -m 60 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/" &
+    ${CLICKHOUSE_CURL} -m 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/" &
     query_pid=$!
     echo -e "$query_id\t$query_pid" >> "$tmp_file_name"
 }

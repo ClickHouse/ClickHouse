@@ -15,13 +15,7 @@
 #include "Poco/LogFile.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS) && defined(POCO_WIN32_UTF8)
-#include "LogFile_WIN32U.cpp"
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "LogFile_WIN32.cpp"
-#else
 #include "LogFile_STD.cpp"
-#endif
 
 
 namespace Poco {

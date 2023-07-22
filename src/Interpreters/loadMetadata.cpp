@@ -16,13 +16,23 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Common/escapeForFileName.h>
 
+#include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <filesystem>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
+
+#include <filesystem>
+
+#define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric StartupSystemTablesThreads;
+    extern const Metric StartupSystemTablesThreadsActive;
+}
 
 namespace DB
 {
@@ -117,6 +127,37 @@ static void checkUnsupportedVersion(ContextMutablePtr context, const String & da
                                                      "If so, you should upgrade through intermediate version.", database_name);
 }
 
+static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const std::map<String, String> & databases)
+{
+    if (context->getConfigRef().has("allow_reserved_database_name_tmp_convert"))
+        return;
+
+    auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
+    if (!fs::exists(convert_flag_path))
+        return;
+
+    /// Flag exists. Let's check if we had an unsuccessful conversion attempt previously
+    for (const auto & db : databases)
+    {
+        if (!db.first.starts_with(ORDINARY_TO_ATOMIC_PREFIX))
+            continue;
+        size_t last_dot = db.first.rfind('.');
+        if (last_dot <= strlen(ORDINARY_TO_ATOMIC_PREFIX))
+            continue;
+
+        String actual_name = db.first.substr(strlen(ORDINARY_TO_ATOMIC_PREFIX), last_dot - strlen(ORDINARY_TO_ATOMIC_PREFIX));
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Found a database with special name: {}. "
+                        "Most likely it indicates that conversion of database {} from Ordinary to Atomic "
+                        "was interrupted or failed in the middle. You can add <allow_reserved_database_name_tmp_convert> to config.xml "
+                        "or remove convert_ordinary_to_atomic file from flags/ directory, so the server will start forcefully. "
+                        "After starting the server, you can finish conversion manually by moving rest of the tables from {} to {} "
+                        "(using RENAME TABLE) and executing DROP DATABASE {} and RENAME DATABASE {} TO {}",
+                        backQuote(db.first), backQuote(actual_name), backQuote(actual_name), backQuote(db.first),
+                        backQuote(actual_name), backQuote(db.first), backQuote(actual_name));
+    }
+}
+
 void loadMetadata(ContextMutablePtr context, const String & default_database_name)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
@@ -167,6 +208,8 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
             }
         }
     }
+
+    checkIncompleteOrdinaryToAtomicConversion(context, databases);
 
     /// clickhouse-local creates DatabaseMemory as default database by itself
     /// For clickhouse-server we need create default database
@@ -324,14 +367,14 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
                         database_name, fmt::join(permanently_detached_tables, ", "));
     }
 
-    String tmp_name = fmt::format(".tmp_convert.{}.{}", database_name, thread_local_rng());
+    String tmp_name = fmt::format(ORDINARY_TO_ATOMIC_PREFIX"{}.{}", database_name, thread_local_rng());
 
     try
     {
         if (!tables_started)
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool;
+            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
             DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
@@ -415,16 +458,18 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 
     LOG_INFO(&Poco::Logger::get("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
                                                  "will try to convert all Ordinary databases to Atomic");
-    fs::remove(convert_flag_path);
 
     for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
             maybeConvertOrdinaryDatabaseToAtomic(context, name, /* tables_started */ true);
+
+    LOG_INFO(&Poco::Logger::get("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
+    fs::remove(convert_flag_path);
 }
 
 void startupSystemTables()
 {
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
     DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 

@@ -19,7 +19,6 @@ cluster = ClickHouseCluster(__file__)
 def started_cluster():
     global cluster
     try:
-
         for name in ["first_of_two", "second_of_two"]:
             instance = cluster.add_instance(
                 name,

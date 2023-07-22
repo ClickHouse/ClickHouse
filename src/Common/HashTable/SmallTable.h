@@ -9,6 +9,7 @@ namespace DB
     {
         extern const int NO_AVAILABLE_DATA;
         extern const int INCORRECT_DATA;
+        extern const int TOO_LARGE_ARRAY_SIZE;
     }
 }
 
@@ -279,6 +280,8 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
+        if (new_size > 1000'000)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized small table is suspiciously large: {}", new_size);
 
         if (new_size > capacity)
             throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
@@ -346,4 +349,3 @@ template
     size_t capacity
 >
 using SmallSet = SmallTable<Key, HashTableCell<Key, HashUnused>, capacity>;
-

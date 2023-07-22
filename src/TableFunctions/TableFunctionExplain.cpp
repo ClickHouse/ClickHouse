@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -11,6 +10,9 @@
 #include <TableFunctions/TableFunctionExplain.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -18,6 +20,18 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
+{
+    const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
+    size_t table_function_node_arguments_size = table_function_node_arguments.size();
+
+    if (table_function_node_arguments_size == 3)
+        return {2};
+
+    return {};
 }
 
 void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
@@ -111,7 +125,10 @@ static Block executeMonoBlock(QueryPipeline & pipeline)
 StoragePtr TableFunctionExplain::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    BlockIO blockio = getInterpreter(context).execute();
+    /// To support settings inside explain subquery.
+    auto mutable_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, mutable_context);
+    BlockIO blockio = getInterpreter(mutable_context).execute();
     Block block = executeMonoBlock(blockio.pipeline);
 
     StorageID storage_id(getDatabaseName(), table_name);
@@ -130,20 +147,16 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({.documentation = {R"(
-Returns result of EXPLAIN query.
-
-The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
-
-You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
-
-Example:
-[example:1]
-
-)",
-{{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'"}}
-}});
-
+    factory.registerFunction<TableFunctionExplain>({.documentation = {
+            .description=R"(
+                Returns result of EXPLAIN query.
+                The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
+                You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
+                Example:
+                [example:1]
+                )",
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
+        }});
 }
 
 }

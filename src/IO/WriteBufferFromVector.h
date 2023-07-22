@@ -86,7 +86,10 @@ private:
         size_t old_size = vector.size();
         /// pos may not be equal to vector.data() + old_size, because WriteBuffer::next() can be used to flush data
         size_t pos_offset = pos - reinterpret_cast<Position>(vector.data());
-        vector.resize(old_size * size_multiplier);
+        if (pos_offset == old_size)
+        {
+            vector.resize(old_size * size_multiplier);
+        }
         internal_buffer = Buffer(reinterpret_cast<Position>(vector.data() + pos_offset), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }

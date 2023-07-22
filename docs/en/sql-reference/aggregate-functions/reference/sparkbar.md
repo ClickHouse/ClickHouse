@@ -16,23 +16,23 @@ Otherwise, values outside the interval are ignored.
 **Syntax**
 
 ``` sql
-sparkbar(width[, min_x, max_x])(x, y)
+sparkbar(buckets[, min_x, max_x])(x, y)
 ```
 
 **Parameters**
 
--   `width` — The number of segments. Type: [Integer](../../../sql-reference/data-types/int-uint.md).
--   `min_x` — The interval start. Optional parameter.
--   `max_x` — The interval end. Optional parameter.
+- `buckets` — The number of segments. Type: [Integer](../../../sql-reference/data-types/int-uint.md).
+- `min_x` — The interval start. Optional parameter.
+- `max_x` — The interval end. Optional parameter.
 
 **Arguments**
 
--   `x` — The field with values.
--   `y` — The field with the frequency of values.
+- `x` — The field with values.
+- `y` — The field with the frequency of values.
 
 **Returned value**
 
--   The frequency histogram.
+- The frequency histogram.
 
 **Example**
 

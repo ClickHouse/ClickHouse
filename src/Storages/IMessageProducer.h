@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Core/BackgroundSchedulePool.h>
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -14,6 +16,8 @@ namespace DB
 class IMessageProducer
 {
 public:
+    explicit IMessageProducer(Poco::Logger * log_);
+
     /// Do some preparations.
     virtual void start(const ContextPtr & context) = 0;
 
@@ -24,12 +28,17 @@ public:
     virtual void finish() = 0;
 
     virtual ~IMessageProducer() = default;
+
+protected:
+    Poco::Logger * log;
 };
 
 /// Implements interface for concurrent message producing.
 class AsynchronousMessageProducer : public IMessageProducer
 {
 public:
+    explicit AsynchronousMessageProducer(Poco::Logger * log_) : IMessageProducer(log_) {}
+
     /// Create and schedule task in BackgroundSchedulePool that will produce messages.
     void start(const ContextPtr & context) override;
 
@@ -58,6 +67,8 @@ private:
     std::atomic<bool> finished = false;
 
     BackgroundSchedulePool::TaskHolder producing_task;
+
+    std::atomic<bool> scheduled;
 };
 
 

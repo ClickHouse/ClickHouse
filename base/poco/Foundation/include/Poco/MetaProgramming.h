@@ -21,120 +21,121 @@
 #include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 template <typename T>
 struct IsReference
-	/// Use this struct to determine if a template type is a reference.
+/// Use this struct to determine if a template type is a reference.
 {
-	enum
-	{
-		VALUE = 0
-	};
+    enum
+    {
+        VALUE = 0
+    };
 };
 
 
 template <typename T>
-struct IsReference<T&>
+struct IsReference<T &>
 {
-	enum 
-	{
-		VALUE = 1
-	};
+    enum
+    {
+        VALUE = 1
+    };
 };
 
 
 template <typename T>
-struct IsReference<const T&>
+struct IsReference<const T &>
 {
-	enum 
-	{
-		VALUE = 1
-	};
+    enum
+    {
+        VALUE = 1
+    };
 };
 
 
 template <typename T>
 struct IsConst
-	/// Use this struct to determine if a template type is a const type.
+/// Use this struct to determine if a template type is a const type.
 {
-	enum
-	{
-		VALUE = 0
-	};
+    enum
+    {
+        VALUE = 0
+    };
 };
 
 
 template <typename T>
-struct IsConst<const T&>
+struct IsConst<const T &>
 {
-	enum 
-	{
-		VALUE = 1
-	};
+    enum
+    {
+        VALUE = 1
+    };
 };
 
 
 template <typename T>
 struct IsConst<const T>
 {
-	enum 
-	{
-		VALUE = 1
-	};
+    enum
+    {
+        VALUE = 1
+    };
 };
 
 
 template <typename T, int i>
 struct IsConst<const T[i]>
-	/// Specialization for const char arrays
+/// Specialization for const char arrays
 {
-	enum
-	{
-		VALUE = 1
-	};
+    enum
+    {
+        VALUE = 1
+    };
 };
 
 
 template <typename T>
 struct TypeWrapper
-	/// Use the type wrapper if you want to decouple constness and references from template types.
+/// Use the type wrapper if you want to decouple constness and references from template types.
 {
-	typedef T TYPE;
-	typedef const T CONSTTYPE;
-	typedef T& REFTYPE;
-	typedef const T& CONSTREFTYPE;
+    typedef T TYPE;
+    typedef const T CONSTTYPE;
+    typedef T & REFTYPE;
+    typedef const T & CONSTREFTYPE;
 };
 
 
 template <typename T>
 struct TypeWrapper<const T>
 {
-	typedef T TYPE;
-	typedef const T CONSTTYPE;
-	typedef T& REFTYPE;
-	typedef const T& CONSTREFTYPE;
+    typedef T TYPE;
+    typedef const T CONSTTYPE;
+    typedef T & REFTYPE;
+    typedef const T & CONSTREFTYPE;
 };
 
 
 template <typename T>
-struct TypeWrapper<const T&>
+struct TypeWrapper<const T &>
 {
-	typedef T TYPE;
-	typedef const T CONSTTYPE;
-	typedef T& REFTYPE;
-	typedef const T& CONSTREFTYPE;
+    typedef T TYPE;
+    typedef const T CONSTTYPE;
+    typedef T & REFTYPE;
+    typedef const T & CONSTREFTYPE;
 };
 
 
 template <typename T>
-struct TypeWrapper<T&>
+struct TypeWrapper<T &>
 {
-	typedef T TYPE;
-	typedef const T CONSTTYPE;
-	typedef T& REFTYPE;
-	typedef const T& CONSTREFTYPE;
+    typedef T TYPE;
+    typedef const T CONSTTYPE;
+    typedef T & REFTYPE;
+    typedef const T & CONSTREFTYPE;
 };
 
 

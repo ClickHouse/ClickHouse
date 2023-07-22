@@ -41,35 +41,35 @@ namespace
         return true;
     }
 
-    const std::unordered_map<std::string, ComparisonGraph::CompareResult> & getRelationMap()
+    const std::unordered_map<std::string, ComparisonGraphCompareResult> & getRelationMap()
     {
-        const static std::unordered_map<std::string, ComparisonGraph::CompareResult> relations =
+        const static std::unordered_map<std::string, ComparisonGraphCompareResult> relations =
         {
-            {"equals", ComparisonGraph::CompareResult::EQUAL},
-            {"less", ComparisonGraph::CompareResult::LESS},
-            {"lessOrEquals", ComparisonGraph::CompareResult::LESS_OR_EQUAL},
-            {"greaterOrEquals", ComparisonGraph::CompareResult::GREATER_OR_EQUAL},
-            {"greater", ComparisonGraph::CompareResult::GREATER},
+            {"equals", ComparisonGraphCompareResult::EQUAL},
+            {"less", ComparisonGraphCompareResult::LESS},
+            {"lessOrEquals", ComparisonGraphCompareResult::LESS_OR_EQUAL},
+            {"greaterOrEquals", ComparisonGraphCompareResult::GREATER_OR_EQUAL},
+            {"greater", ComparisonGraphCompareResult::GREATER},
         };
         return relations;
     }
 
-    const std::unordered_map<ComparisonGraph::CompareResult, std::string> & getReverseRelationMap()
+    const std::unordered_map<ComparisonGraphCompareResult, std::string> & getReverseRelationMap()
     {
-        const static std::unordered_map<ComparisonGraph::CompareResult, std::string> relations =
+        const static std::unordered_map<ComparisonGraphCompareResult, std::string> relations =
         {
-            {ComparisonGraph::CompareResult::EQUAL, "equals"},
-            {ComparisonGraph::CompareResult::LESS, "less"},
-            {ComparisonGraph::CompareResult::LESS_OR_EQUAL, "lessOrEquals"},
-            {ComparisonGraph::CompareResult::GREATER_OR_EQUAL, "greaterOrEquals"},
-            {ComparisonGraph::CompareResult::GREATER, "greater"},
+            {ComparisonGraphCompareResult::EQUAL, "equals"},
+            {ComparisonGraphCompareResult::LESS, "less"},
+            {ComparisonGraphCompareResult::LESS_OR_EQUAL, "lessOrEquals"},
+            {ComparisonGraphCompareResult::GREATER_OR_EQUAL, "greaterOrEquals"},
+            {ComparisonGraphCompareResult::GREATER, "greater"},
         };
         return relations;
     }
 
-    bool canBeSequence(const ComparisonGraph::CompareResult left, const ComparisonGraph::CompareResult right)
+    bool canBeSequence(const ComparisonGraphCompareResult left, const ComparisonGraphCompareResult right)
     {
-        using CR = ComparisonGraph::CompareResult;
+        using CR = ComparisonGraphCompareResult;
         if (left == CR::UNKNOWN || right == CR::UNKNOWN || left == CR::NOT_EQUAL || right == CR::NOT_EQUAL)
             return false;
         if ((left == CR::GREATER || left == CR::GREATER_OR_EQUAL) && (right == CR::LESS || right == CR::LESS_OR_EQUAL))
@@ -79,9 +79,9 @@ namespace
         return true;
     }
 
-    ComparisonGraph::CompareResult mostStrict(const ComparisonGraph::CompareResult left, const ComparisonGraph::CompareResult right)
+    ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left, const ComparisonGraphCompareResult right)
     {
-        using CR = ComparisonGraph::CompareResult;
+        using CR = ComparisonGraphCompareResult;
         if (left == CR::LESS || left == CR::GREATER)
             return left;
         if (right == CR::LESS || right == CR::GREATER)
@@ -104,7 +104,7 @@ namespace
     /// we can add to expression 'indexHint(I < A)' condition.
     CNFQuery::OrGroup createIndexHintGroup(
         const CNFQuery::OrGroup & group,
-        const ComparisonGraph & graph,
+        const ComparisonGraph<ASTPtr> & graph,
         const ASTs & primary_key_only_asts)
     {
         CNFQuery::OrGroup result;
@@ -113,14 +113,14 @@ namespace
             const auto * func = atom.ast->as<ASTFunction>();
             if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
-                auto check_and_insert = [&](const size_t index, const ComparisonGraph::CompareResult need_result)
+                auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult need_result)
                 {
                     if (!onlyConstants(func->arguments->children[1 - index]))
                         return false;
 
                     for (const auto & primary_key_ast : primary_key_only_asts)
                     {
-                        ComparisonGraph::CompareResult actual_result;
+                        ComparisonGraphCompareResult actual_result;
                         if (index == 0)
                             actual_result = graph.compare(primary_key_ast, func->arguments->children[index]);
                         else

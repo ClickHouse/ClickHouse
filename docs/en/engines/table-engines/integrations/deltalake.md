@@ -1,5 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/deltalake
+sidebar_position: 40
 sidebar_label: DeltaLake
 ---
 
@@ -18,8 +19,10 @@ CREATE TABLE deltalake
 
 **Engine parameters**
 
--   `url` — Bucket url with path to the existing Delta Lake table.
--   `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
+- `url` — Bucket url with path to the existing Delta Lake table.
+- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
+
+Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
 **Example**
 
@@ -27,7 +30,24 @@ CREATE TABLE deltalake
 CREATE TABLE deltalake ENGINE=DeltaLake('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
 ```
 
+Using named collections:
+
+``` xml
+<clickhouse>
+    <named_collections>
+        <deltalake_conf>
+            <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+            <access_key_id>ABC123<access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </deltalake_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
+```
+
 ## See also
 
--  [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
-
+- [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
