@@ -40,6 +40,7 @@ class TestDockerImageCheck(unittest.TestCase):
             [
                 di.DockerImage("docker/test/base", "clickhouse/test-base", False),
                 di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
+                di.DockerImage("docker/test/sqltest", "clickhouse/sqltest", True),
                 di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
