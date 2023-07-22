@@ -209,10 +209,17 @@ DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 
 UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 {
-    UInt64 res = 0;
+    std::optional<UInt64> res;
     for (const auto & volume : volumes)
-        res = std::max(res, volume->getMaxUnreservedFreeSpace());
-    return res;
+    {
+        auto volume_unreserved_space = volume->getMaxUnreservedFreeSpace();
+        if (!volume_unreserved_space)
+            return -1ULL; /// There is at least one unlimited disk.
+
+        if (!res || *volume_unreserved_space > *res)
+            res = volume_unreserved_space;
+    }
+    return res.value_or(-1ULL);
 }
 
 
@@ -248,22 +255,37 @@ ReservationPtr StoragePolicy::reserveAndCheck(UInt64 bytes) const
 ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 {
     UInt64 max_space = 0;
+    bool found_bottomless_disk = false;
     DiskPtr max_disk;
+
     for (const auto & volume : volumes)
     {
         for (const auto & disk : volume->getDisks())
         {
-            auto avail_space = disk->getAvailableSpace();
-            if (avail_space > max_space)
+            auto available_space = disk->getAvailableSpace();
+
+            if (!available_space)
             {
-                max_space = avail_space;
+                max_disk = disk;
+                found_bottomless_disk = true;
+                break;
+            }
+
+            if (*available_space > max_space)
+            {
+                max_space = *available_space;
                 max_disk = disk;
             }
         }
+
+        if (found_bottomless_disk)
+            break;
     }
+
     if (!max_disk)
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "There is no space on any disk in storage policy: {}. "
             "It's likely all disks are broken", name);
+
     auto reservation = max_disk->reserve(0);
     if (!reservation)
     {

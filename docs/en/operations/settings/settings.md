@@ -17,7 +17,8 @@ Default value: 0.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SELECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -30,7 +31,7 @@ insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```sql
 SELECT *
 FROM table_1
-SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 ```
 ```response
 ┌─x─┬─y────┐
@@ -50,7 +51,8 @@ Default value: `''`.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SElECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -534,6 +536,8 @@ Possible values:
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
+
+ Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 - hash
 
@@ -3535,7 +3539,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -3546,7 +3550,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -4522,6 +4526,7 @@ This setting allows to specify renaming pattern for files processed by `file` ta
 
 ### Placeholders
 
+- `%a` — Full original filename (e.g., "sample.csv").
 - `%f` — Original filename without extension (e.g., "sample").
 - `%e` — Original file extension with dot (e.g., ".csv").
 - `%t` — Timestamp (in microseconds).
