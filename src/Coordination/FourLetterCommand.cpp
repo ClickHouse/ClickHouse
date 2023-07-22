@@ -18,6 +18,20 @@
 #include <unistd.h>
 #include <bit>
 
+namespace
+{
+
+String formatZxid(int64_t zxid)
+{
+    /// ZooKeeper print zxid in hex and
+    String hex = getHexUIntLowercase(zxid);
+    /// without leading zeros
+    trimLeft(hex, '0');
+    return "0x" + hex;
+}
+
+}
+
 
 namespace DB
 {
@@ -348,7 +362,7 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -381,7 +395,7 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
