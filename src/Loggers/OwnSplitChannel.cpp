@@ -135,13 +135,10 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         elem.source_line = msg.getSourceLine();
         elem.message_format_string = msg.getFormatString();
 
-        std::shared_ptr<TextLog> text_log_locked{};
-        {
-            std::lock_guard lock(text_log_mutex);
-            text_log_locked = text_log.lock();
-        }
+        std::shared_ptr<SystemLogQueue<TextLogElement>> text_log_locked{};
+        text_log_locked = text_log.lock();
         if (text_log_locked)
-            text_log_locked->add(elem);
+            text_log_locked->push(elem);
     }
 #endif
 }
@@ -153,10 +150,9 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std
 }
 
 #ifndef WITHOUT_TEXT_LOG
-void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
+void OwnSplitChannel::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>> log_queue, int max_priority)
 {
-    std::lock_guard lock(text_log_mutex);
-    text_log = log;
+    text_log = log_queue;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 #endif
