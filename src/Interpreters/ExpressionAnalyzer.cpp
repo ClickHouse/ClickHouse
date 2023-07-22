@@ -1378,10 +1378,9 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
 void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool /* only_types */)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_window);
+
     for (const auto & expression : syntax->expressions_with_window_function)
-    {
         getRootActionsForWindowFunctions(expression->clone(), true, step.actions());
-    }
 }
 
 void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool /* only_types */)
@@ -1760,9 +1759,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
 
     /** First we compose a chain of actions and remember the necessary steps from it.
-        *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
-        *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
-        */
+      * Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
+      * throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
+      */
 
     const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
     auto context = query_analyzer.getContext();
@@ -1805,7 +1804,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
-            // we evaluate sampling for Merge lazily so we need to get all the columns
+            // we evaluate sampling for Merge lazily, so we need to get all the columns
             if (storage->getName() == "Merge")
             {
                 const auto columns = metadata_snapshot->getColumns().getAll();

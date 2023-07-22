@@ -83,6 +83,8 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
     const Settings & settings = storage_context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
     group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    group->memory_tracker.setSampleMinAllocationSize(settings.memory_profiler_sample_min_allocation_size);
+    group->memory_tracker.setSampleMaxAllocationSize(settings.memory_profiler_sample_max_allocation_size);
     group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
     group->memory_tracker.setParent(&background_memory_tracker);
     if (settings.memory_tracker_fault_probability > 0.0)
@@ -518,7 +520,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q, true);
+    String res = serializeAST(*q);
     if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
