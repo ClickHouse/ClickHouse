@@ -19,7 +19,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 # shellcheck disable=SC1091
-source /usr/share/clickhouse-test/ci/utils.lib
+source /usr/share/clickhouse-test/ci/utils.lib || true # FIXME: to not break old builds, clean on 2023-09-01
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -93,6 +93,22 @@ sleep 5
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
+function fn_exists() {
+    declare -F "$1" > /dev/null;
+}
+
+# FIXME: to not break old builds, clean on 2023-09-01
+function try_run_with_retry() {
+    local total_retries="$1"
+    shift
+
+    if fn_exists run_with_retry; then
+        run_with_retry "$total_retries" "$@"
+    else
+        "$@"
+    fi
+}
+
 function run_tests()
 {
     set -x
@@ -140,7 +156,7 @@ function run_tests()
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
+    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \

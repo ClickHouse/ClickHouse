@@ -2,7 +2,7 @@
 
 
 /// Available metrics. Add something here as you wish.
-#define APPLY_FOR_METRICS(M) \
+#define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
     M(Move, "Number of currently executing moves") \
@@ -93,8 +93,8 @@
     M(ThreadPoolFSReaderThreadsActive, "Number of threads in the thread pool for local_filesystem_read_method=threadpool running a task.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
-    M(DiskObjectStorageAsyncThreads, "Number of threads in the async thread pool for DiskObjectStorage.") \
-    M(DiskObjectStorageAsyncThreadsActive, "Number of threads in the async thread pool for DiskObjectStorage running a task.") \
+    M(DiskObjectStorageAsyncThreads, "Obsolete metric, shows nothing.") \
+    M(DiskObjectStorageAsyncThreadsActive, "Obsolete metric, shows nothing.") \
     M(StorageHiveThreads, "Number of threads in the StorageHive thread pool.") \
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
     M(TablesLoaderThreads, "Number of threads in the tables loader thread pool.") \
@@ -141,6 +141,8 @@
     M(MergeTreeOutdatedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreePartsCleanerThreads, "Number of threads in the MergeTree parts cleaner thread pool.") \
     M(MergeTreePartsCleanerThreadsActive, "Number of threads in the MergeTree parts cleaner thread pool running a task.") \
+    M(IDiskCopierThreads, "Number of threads for copying data between disks of different types.") \
+    M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
@@ -171,8 +173,6 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
-    M(MMappedAllocs, "Total number of mmapped allocations") \
-    M(MMappedAllocBytes, "Sum bytes of mmapped allocations") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \
@@ -188,6 +188,7 @@
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
@@ -199,7 +200,13 @@
     M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
-    M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler")
+    M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
+
+#ifdef APPLY_FOR_EXTERNAL_METRICS
+    #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
+#else
+    #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
+#endif
 
 namespace CurrentMetrics
 {
