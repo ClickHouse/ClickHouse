@@ -992,6 +992,7 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SHOW TABLES FROM db FORMAT TSV", "t\n")
     clickhouse_node.query("SYSTEM STOP MERGES db.t")
+    clickhouse_node.query("DROP VIEW IF EXISTS v")
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
     mysql_node.query("DELETE FROM db.t WHERE a = 2;")
