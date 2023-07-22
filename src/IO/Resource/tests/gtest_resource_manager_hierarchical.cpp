@@ -47,9 +47,18 @@ TEST(IOResourceDynamicResourceManager, Smoke)
 
 TEST(IOResourceDynamicResourceManager, Fairness)
 {
-    constexpr size_t T = 3; // threads per queue
-    int N = 100; // requests per thread
-    ResourceTest t(2 * T + 1);
+    // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
+    // Requests from A use `value = 1` and from B `value = -1` is used.
+    std::atomic<Int64> unfairness = 0;
+    auto fairness_diff = [&] (Int64 value)
+    {
+        Int64 cur_unfairness = unfairness.fetch_add(value, std::memory_order_relaxed) + value;
+        EXPECT_NEAR(cur_unfairness, 0, 1);
+    };
+
+    constexpr size_t threads_per_queue = 3;
+    int requests_per_thread = 100;
+    ResourceTest t(2 * threads_per_queue + 1);
 
     t.update(R"CONFIG(
         <clickhouse>
@@ -70,24 +79,14 @@ TEST(IOResourceDynamicResourceManager, Fairness)
         </clickhouse>
     )CONFIG");
 
-
-    // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
-    // Requests from A use `value = 1` and from B `value = -1` is used.
-    std::atomic<Int64> unfairness = 0;
-    auto fairness_diff = [&] (Int64 value)
-    {
-        Int64 cur_unfairness = unfairness.fetch_add(value, std::memory_order_relaxed) + value;
-        EXPECT_NEAR(cur_unfairness, 0, 1);
-    };
-
-    for (int thr = 0; thr < T; thr++)
+    for (int thread = 0; thread < threads_per_queue; thread++)
     {
         t.threads.emplace_back([&]
         {
             ClassifierPtr c = t.manager->acquire("A");
             ResourceLink link = c->get("res1");
-            t.startBusyPeriod(link, 1, N);
-            for (int req = 0; req < N; req++)
+            t.startBusyPeriod(link, 1, requests_per_thread);
+            for (int request = 0; request < requests_per_thread; request++)
             {
                 TestGuard g(t, link, 1);
                 fairness_diff(1);
@@ -95,14 +94,14 @@ TEST(IOResourceDynamicResourceManager, Fairness)
         });
     }
 
-    for (int thr = 0; thr < T; thr++)
+    for (int thread = 0; thread < threads_per_queue; thread++)
     {
         t.threads.emplace_back([&]
         {
             ClassifierPtr c = t.manager->acquire("B");
             ResourceLink link = c->get("res1");
-            t.startBusyPeriod(link, 1, N);
-            for (int req = 0; req < N; req++)
+            t.startBusyPeriod(link, 1, requests_per_thread);
+            for (int request = 0; request < requests_per_thread; request++)
             {
                 TestGuard g(t, link, 1);
                 fairness_diff(-1);

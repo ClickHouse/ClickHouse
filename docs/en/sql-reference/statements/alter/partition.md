@@ -284,13 +284,17 @@ Manipulates data in the specifies partition matching the specified filtering exp
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
+-- using partition name
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also
@@ -304,13 +308,17 @@ Deletes data in the specifies partition matching the specified filtering express
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
+-- using partition name
 ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also

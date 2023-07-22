@@ -18,6 +18,9 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/Priority.h>
+#include <Common/StackTrace.h>
+#include <Common/Exception.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -59,17 +62,17 @@ public:
     /// If any thread was throw an exception, first exception will be rethrown from this method,
     ///  and exception will be cleared.
     /// Also throws an exception if cannot create thread.
-    /// Priority: greater is higher.
+    /// Priority: lower is higher.
     /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
-    void scheduleOrThrowOnError(Job job, ssize_t priority = 0);
+    void scheduleOrThrowOnError(Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0) noexcept;
+    bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -123,15 +126,26 @@ private:
     struct JobWithPriority
     {
         Job job;
-        ssize_t priority;
+        Priority priority;
         DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
-        JobWithPriority(Job job_, ssize_t priority_, const DB::OpenTelemetry::TracingContextOnThread& thread_trace_context_)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
+        /// Call stacks of all jobs' schedulings leading to this one
+        std::vector<StackTrace::FramePointers> frame_pointers;
+        bool enable_job_stack_trace = false;
 
-        bool operator< (const JobWithPriority & rhs) const
+        JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool capture_frame_pointers = false)
+            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
         {
-            return priority < rhs.priority;
+            if (!capture_frame_pointers)
+                return;
+            /// Save all previous jobs call stacks and append with current
+            frame_pointers = DB::Exception::thread_frame_pointers;
+            frame_pointers.push_back(StackTrace().getFramePointers());
+        }
+
+        bool operator<(const JobWithPriority & rhs) const
+        {
+            return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
         }
     };
 
@@ -141,7 +155,7 @@ private:
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -227,7 +241,7 @@ public:
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
         },
-        0, // default priority
+        {}, // default priority
         0, // default wait_microseconds
         propagate_opentelemetry_context
         );

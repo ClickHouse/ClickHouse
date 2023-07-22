@@ -6,6 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -92,6 +93,7 @@ public:
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
@@ -113,6 +115,8 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
+
+    virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -161,7 +165,7 @@ public:
     void remove();
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
-    /// Load checksums from checksums.txt if exists. Load index if required.
+    /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
@@ -196,9 +200,14 @@ public:
     /// If token is not empty, block id is calculated based on it instead of block data
     String getZeroLevelPartBlockID(std::string_view token) const;
 
+    void setName(const String & new_name);
+
     const MergeTreeData & storage;
 
-    String name;
+private:
+    String mutable_name;
+public:
+    const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
 
     /// Part unique identifier.
@@ -240,12 +249,17 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
-    /// Indicated that the part was marked Outdated because it's broken, not because it's actually outdated
-    /// See outdateBrokenPartAndCloneToDetached(...)
-    mutable bool outdated_because_broken = false;
+    /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
+    mutable bool is_unexpected_local_part = false;
+
+    /// Indicates that the part was detached and marked Outdated because it's broken
+    mutable std::atomic_bool was_removed_as_broken = false;
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
+
+    /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
+    bool old_part_with_no_metadata_version_on_disk = false;
 
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
@@ -339,6 +353,7 @@ public:
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
+    UInt64 getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
@@ -377,6 +392,7 @@ public:
     bool isProjectionPart() const { return parent_part != nullptr; }
 
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
+    String getParentPartName() const { return parent_part_name; }
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
@@ -386,7 +402,7 @@ public:
 
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    void loadProjections(bool require_columns_checksums, bool check_consistency);
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -397,7 +413,8 @@ public:
     /// default will be stored in this file.
     static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
 
-    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+    /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
@@ -472,8 +489,10 @@ public:
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
-    void writeDeleteOnDestroyMarker();
+    /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
+    /// TODO: remove this method after some time.
     void removeDeleteOnDestroyMarker();
+
     /// It may look like a stupid joke. but these two methods are absolutely unrelated.
     /// This one is about removing file with metadata about part version (for transactions)
     void removeVersionMetadata();
@@ -482,7 +501,7 @@ public:
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
-    mutable std::atomic<time_t> last_removal_attemp_time = 0;
+    mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
 protected:
 
@@ -507,6 +526,7 @@ protected:
 
     /// Not null when it's a projection part.
     const IMergeTreeDataPart * parent_part;
+    String parent_part_name;
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
@@ -622,6 +642,9 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    void incrementStateMetric(MergeTreeDataPartState state) const;
+    void decrementStateMetric(MergeTreeDataPartState state) const;
 
     mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 

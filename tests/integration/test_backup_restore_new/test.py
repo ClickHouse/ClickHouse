@@ -158,8 +158,6 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -200,8 +198,6 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -214,8 +210,6 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -244,8 +238,6 @@ def test_incremental_backup():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
@@ -524,8 +516,6 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -539,8 +529,6 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")

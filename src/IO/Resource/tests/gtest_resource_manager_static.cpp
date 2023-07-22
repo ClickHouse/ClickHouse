@@ -44,12 +44,12 @@ TEST(IOResourceStaticResourceManager, Smoke)
 
 TEST(IOResourceStaticResourceManager, Prioritization)
 {
-    std::optional<Int64> last_priority;
-    auto check = [&] (Int64 priority)
+    std::optional<Priority> last_priority;
+    auto check = [&] (Priority priority)
     {
         // Lock is not required here because this is called during request execution and we have max_requests = 1
         if (last_priority)
-            EXPECT_TRUE(priority <= *last_priority); // Should be true if every queue arrived at the same time at busy period start
+            EXPECT_TRUE(priority >= *last_priority); // Should be true if every queue arrived at the same time at busy period start
         last_priority = priority;
     };
 
@@ -63,8 +63,8 @@ TEST(IOResourceStaticResourceManager, Prioritization)
                 <res1>
                     <node path="/">           <type>inflight_limit</type><max_requests>1</max_requests></node>
                     <node path="/prio">       <type>priority</type></node>
-                    <node path="/prio/A">     <priority>-1</priority></node>
-                    <node path="/prio/B">     <priority>1</priority></node>
+                    <node path="/prio/A">     <priority>1</priority></node>
+                    <node path="/prio/B">     <priority>-1</priority></node>
                     <node path="/prio/C">     </node>
                     <node path="/prio/D">     </node>
                     <node path="/prio/leader"></node>

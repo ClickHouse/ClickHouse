@@ -12,6 +12,7 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
+    const AlterConversionsPtr & alter_conversions_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
@@ -32,6 +33,7 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
+    alter_conversions(alter_conversions_),
     sample_block(storage_snapshot_->metadata->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
@@ -44,9 +46,13 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
 
 void MergeTreeSelectAlgorithm::initializeReaders()
 {
+    LoadedMergeTreeDataPartInfoForReader part_info(data_part, alter_conversions);
+
     task_columns = getReadTaskColumns(
-        LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
-        required_columns, virt_column_names, prewhere_info, actions_settings, reader_settings, /*with_subcolumns=*/ true);
+        part_info, storage_snapshot,
+        required_columns, virt_column_names,
+        prewhere_info,
+        actions_settings, reader_settings, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -58,7 +64,8 @@ void MergeTreeSelectAlgorithm::initializeReaders()
     owned_mark_cache = storage.getContext()->getMarkCache();
 
     initializeMergeTreeReadersForPart(
-        data_part, task_columns, storage_snapshot->getMetadataForQuery(), all_mark_ranges, {}, {});
+        data_part, alter_conversions, task_columns,
+        storage_snapshot->getMetadataForQuery(), all_mark_ranges, {}, {});
 }
 
 

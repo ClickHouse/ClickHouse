@@ -9,6 +9,7 @@
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -61,6 +62,7 @@ Chunk ValuesBlockInputFormat::generate()
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
+    size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     for (size_t rows_in_block = 0; rows_in_block < params.max_block_size; ++rows_in_block)
     {
@@ -78,6 +80,8 @@ Chunk ValuesBlockInputFormat::generate()
             throw;
         }
     }
+
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
 
     /// Evaluate expressions, which were parsed using templates, if any
     for (size_t i = 0; i < columns.size(); ++i)
@@ -471,6 +475,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 context,
                 &found_in_cache,
                 delimiter);
+
+            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+                     column_idx, structure->dumpTemplate());
+
             templates[column_idx].emplace(structure);
             if (found_in_cache)
                 ++attempts_to_deduce_template_cached[column_idx];

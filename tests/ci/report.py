@@ -243,6 +243,7 @@ class BuildResult:
     sanitizer: str
     status: str
     elapsed_seconds: int
+    comment: str
 
 
 BuildResults = List[BuildResult]
@@ -348,7 +349,7 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = "<tr>"
-            has_error = test_result.status in ("FAIL", "FLAKY", "NOT_FAILED")
+            has_error = test_result.status in ("FAIL", "NOT_FAILED")
             if has_error and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_result.name + "</td>"
@@ -452,6 +453,7 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Build log</th>
 <th>Build time</th>
 <th class="artifacts">Artifacts</th>
+<th>Comment</th>
 </tr>
 {rows}
 </table>
@@ -518,6 +520,8 @@ def create_build_html_report(
             if links:
                 links = links[: -len(link_separator)]
             row += f"<td>{links}</td>"
+
+        row += f"<td>{build_result.comment}</td>"
 
         row += "</tr>"
         rows += row

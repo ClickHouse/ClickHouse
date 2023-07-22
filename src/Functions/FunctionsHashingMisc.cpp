@@ -21,10 +21,10 @@ REGISTER_FUNCTION(Hashing)
         .categories{"Hash"}
     });
     factory.registerFunction<FunctionSipHash128ReferenceKeyed>(FunctionDocumentation{
-        .description="Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.",
+        .description = "Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument "
+                       "instead of using a fixed key.",
         .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
-        .categories{"Hash"}
-    });
+        .categories{"Hash"}});
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();

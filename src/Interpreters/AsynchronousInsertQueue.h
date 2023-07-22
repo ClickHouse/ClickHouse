@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Core/Settings.h>
+#include <Parsers/IAST_fwd.h>
 #include <Poco/Logger.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/ThreadPool.h>
+
 #include <future>
 
 namespace DB
@@ -60,31 +62,6 @@ private:
         UInt128 calculateHash() const;
     };
 
-    struct UserMemoryTrackerSwitcher
-    {
-        explicit UserMemoryTrackerSwitcher(MemoryTracker * new_tracker)
-        {
-            auto * thread_tracker = CurrentThread::getMemoryTracker();
-            prev_untracked_memory = current_thread->untracked_memory;
-            prev_memory_tracker_parent = thread_tracker->getParent();
-
-            current_thread->untracked_memory = 0;
-            thread_tracker->setParent(new_tracker);
-        }
-
-        ~UserMemoryTrackerSwitcher()
-        {
-            CurrentThread::flushUntrackedMemory();
-            auto * thread_tracker = CurrentThread::getMemoryTracker();
-
-            current_thread->untracked_memory = prev_untracked_memory;
-            thread_tracker->setParent(prev_memory_tracker_parent);
-        }
-
-        MemoryTracker * prev_memory_tracker_parent;
-        Int64 prev_untracked_memory;
-    };
-
     struct InsertData
     {
         struct Entry
@@ -92,10 +69,11 @@ private:
         public:
             String bytes;
             const String query_id;
+            const String async_dedup_token;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_);
+            Entry(String && bytes_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -114,7 +92,7 @@ private:
             // so we need to switch current thread's MemoryTracker parent on each iteration.
             while (it != entries.end())
             {
-                UserMemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
+                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
                 it = entries.erase(it);
             }
         }
