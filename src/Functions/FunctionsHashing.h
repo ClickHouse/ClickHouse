@@ -1567,7 +1567,10 @@ public:
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
         {
             auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
+            const auto & data = col_to->getData();
+            auto & chars = col_to_fixed_string->getChars();
+            chars.resize(data.size() * sizeof(UInt128));
+            memcpy(chars.data(), data.data(), data.size() * sizeof(UInt128));
             return col_to_fixed_string;
         }
 
@@ -1601,12 +1604,12 @@ public:
     {
         selector
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-
+/*
 #if USE_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
         selector
             .registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-#endif
+#endif*/
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
