@@ -141,7 +141,6 @@ function clone_submodules
             contrib/jemalloc
             contrib/replxx
             contrib/wyhash
-            contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
