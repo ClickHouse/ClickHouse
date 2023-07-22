@@ -599,7 +599,9 @@ arrayRemove(array, predicate)
 
 - `array` — Array.
 - `predicate` — The condition that determines which elements to remove from the array.
-Returned value:
+
+
+**Returned values**
 
 An array with elements removed according to the specified condition.
 
