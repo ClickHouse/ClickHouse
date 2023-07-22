@@ -347,7 +347,6 @@ hasAny
 hasColumnInTable
 hasSubstr
 hasThreadFuzzer
-hashid
 hex
 hiveHash
 hop
