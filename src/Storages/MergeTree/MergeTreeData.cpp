@@ -465,9 +465,10 @@ void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
+    bool allow_empty_sorting_key,
     ContextPtr local_context) const
 {
-    if (!new_metadata.sorting_key.definition_ast)
+    if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
 
     KeyDescription new_sorting_key = new_metadata.sorting_key;
@@ -580,6 +581,9 @@ void MergeTreeData::checkProperties(
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
+            /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
+            bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
+            checkProperties(*projection.metadata, *projection.metadata, attach, is_aggregate, local_context);
             projections_names.insert(projection.name);
         }
     }
@@ -593,7 +597,7 @@ void MergeTreeData::setProperties(
     bool attach,
     ContextPtr local_context)
 {
-    checkProperties(new_metadata, old_metadata, attach, local_context);
+    checkProperties(new_metadata, old_metadata, attach, false, local_context);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -2187,7 +2191,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             const DataPartPtr & part = *it;
 
-            part->last_removal_attemp_time.store(time_now, std::memory_order_relaxed);
+            part->last_removal_attempt_time.store(time_now, std::memory_order_relaxed);
 
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
@@ -2651,7 +2655,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
-        LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+        LOG_WARNING(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
         old_name.clear();
     }
 
@@ -3286,7 +3290,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    checkProperties(new_metadata, old_metadata, false, local_context);
+    checkProperties(new_metadata, old_metadata, false, false, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -4023,22 +4027,15 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
 }
 
 
-void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part_to_detach, const String & prefix)
+void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    if (prefix.empty())
-        LOG_INFO(log, "Cloning part {} to {} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    else
-        LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), prefix, part_to_detach->name);
-
-    part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
+    LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
+    part_to_detach->makeCloneInDetached("unexpected", getInMemoryMetadataPtr());
 
     DataPartsLock lock = lockParts();
+    part_to_detach->is_unexpected_local_part = true;
     if (part_to_detach->getState() == DataPartState::Active)
-    {
-        part_to_detach->outdated_because_broken = true;
         removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true, &lock);
-    }
 }
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
@@ -4682,24 +4679,24 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return res;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states) const
 {
     auto lock = lockParts();
     return getPartIfExistsUnlocked(part_info, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states) const
 {
     auto lock = lockParts();
     return getPartIfExistsUnlocked(part_name, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const
 {
     return getPartIfExistsUnlocked(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states, acquired_lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & /* acquired_lock */)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & /* acquired_lock */) const
 {
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -7001,7 +6998,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     ProjectionCandidate * selected_candidate = nullptr;
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
-    if (metadata_snapshot->minmax_count_projection && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
+    if (settings.optimize_use_implicit_projections && metadata_snapshot->minmax_count_projection
+        && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
         add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
     std::optional<ProjectionCandidate> minmax_count_projection_candidate;
     if (!candidates.empty())
@@ -7033,7 +7031,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             max_added_blocks.get(),
             query_context);
 
-        // minmax_count_projection should not be used when there is no data to process.
+        // minmax_count_projection cannot be used used when there is no data to process, because
+        // it will produce incorrect result during constant aggregation.
+        // See https://github.com/ClickHouse/ClickHouse/issues/36728
         if (!query_info.minmax_count_projection_block)
             return;
 
@@ -7470,7 +7470,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
         return;
 
     if (data_part->isProjectionPart())
-        data_part = data_part->getParentPart()->shared_from_this();
+    {
+        String parent_part_name = data_part->getParentPartName();
+        auto parent_part = getPartIfExists(parent_part_name, {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated});
+
+        if (!parent_part)
+        {
+            LOG_WARNING(log, "Did not find parent part {} for potentially broken projection part {}",
+                        parent_part_name, data_part->getDataPartStorage().getFullPath());
+            return;
+        }
+
+        data_part = parent_part;
+    }
 
     if (data_part->getDataPartStorage().isBroken())
     {

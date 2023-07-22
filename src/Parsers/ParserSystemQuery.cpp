@@ -405,15 +405,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral path_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
-            {
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
-                if (ParserKeyword{"KEY"}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
-                {
-                    res->key_to_drop = ast->as<ASTIdentifier>()->name();
-                    if (ParserKeyword{"OFFSET"}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
-                        res->offset_to_drop = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
-                }
-            }
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;

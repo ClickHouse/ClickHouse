@@ -451,11 +451,11 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         auto drop_context = Context::createCopy(global_context);
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-        drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context->getClientInfo().is_replicated_database_internal = true;
+            drop_context->setQueryKindReplicatedDatabaseInternal();
             drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }

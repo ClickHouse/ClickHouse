@@ -42,6 +42,13 @@ def cleanup_environment():
                 logging.debug(f"Docker ps before start:{r.stdout}")
         else:
             logging.debug(f"No running containers")
+
+        logging.debug("Pruning Docker networks")
+        run_and_check(
+            ["docker network prune --force"],
+            shell=True,
+            nothrow=True,
+        )
     except Exception as e:
         logging.exception(f"cleanup_environment:{str(e)}")
         pass
