@@ -171,7 +171,7 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, main_table, &query_info, log);
-    new_context->getClientInfo().distributed_depth += 1;
+    new_context->increaseDistributedDepth();
 
     size_t shards = query_info.getCluster()->getShardCount();
     for (const auto & shard_info : query_info.getCluster()->getShardsInfo())

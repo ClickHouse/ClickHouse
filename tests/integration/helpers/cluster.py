@@ -486,6 +486,8 @@ class ClickHouseCluster:
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
         self._schema_registry_port = 0
+        self.schema_registry_auth_host = "schema-registry-auth"
+        self._schema_registry_auth_port = 0
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
@@ -656,6 +658,13 @@ class ClickHouseCluster:
             return self._schema_registry_port
         self._schema_registry_port = get_free_port()
         return self._schema_registry_port
+
+    @property
+    def schema_registry_auth_port(self):
+        if self._schema_registry_auth_port:
+            return self._schema_registry_auth_port
+        self._schema_registry_auth_port = get_free_port()
+        return self._schema_registry_auth_port
 
     @property
     def kerberized_kafka_port(self):
@@ -1163,8 +1172,11 @@ class ClickHouseCluster:
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
         env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
+        env_variables["SCHEMA_REGISTRY_DIR"] = instance.path + "/"
         env_variables["SCHEMA_REGISTRY_EXTERNAL_PORT"] = str(self.schema_registry_port)
-        env_variables["SCHEMA_REGISTRY_INTERNAL_PORT"] = "8081"
+        env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
+            self.schema_registry_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -1498,6 +1510,7 @@ class ClickHouseCluster:
         with_kafka=False,
         with_kerberized_kafka=False,
         with_kerberos_kdc=False,
+        with_secrets=False,
         with_rabbitmq=False,
         with_nats=False,
         clickhouse_path_dir=None,
@@ -1520,6 +1533,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
+        allow_analyzer=True,
         hostname=None,
         env_variables=None,
         image="clickhouse/integration-test",
@@ -1604,6 +1618,10 @@ class ClickHouseCluster:
             with_nats=with_nats,
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
+            with_secrets=with_secrets
+            or with_kerberized_hdfs
+            or with_kerberos_kdc
+            or with_kerberized_kafka,
             with_mongo=with_mongo or with_mongo_secure,
             with_meili=with_meili,
             with_redis=with_redis,
@@ -1613,6 +1631,7 @@ class ClickHouseCluster:
             with_hive=with_hive,
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
+            allow_analyzer=allow_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -2493,20 +2512,27 @@ class ClickHouseCluster:
         raise Exception("Can't wait Azurite to start")
 
     def wait_schema_registry_to_start(self, timeout=180):
-        sr_client = CachedSchemaRegistryClient(
-            {"url": "http://localhost:{}".format(self.schema_registry_port)}
-        )
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                sr_client._send_request(sr_client.url)
-                logging.debug("Connected to SchemaRegistry")
-                return sr_client
-            except Exception as ex:
-                logging.debug(("Can't connect to SchemaRegistry: %s", str(ex)))
-                time.sleep(1)
+        for port in self.schema_registry_port, self.schema_registry_auth_port:
+            reg_url = "http://localhost:{}".format(port)
+            arg = {"url": reg_url}
+            sr_client = CachedSchemaRegistryClient(arg)
 
-        raise Exception("Can't wait Schema Registry to start")
+            start = time.time()
+            sr_started = False
+            sr_auth_started = False
+            while time.time() - start < timeout:
+                try:
+                    sr_client._send_request(sr_client.url)
+                    logging.debug("Connected to SchemaRegistry")
+                    # don't care about possible auth errors
+                    sr_started = True
+                    break
+                except Exception as ex:
+                    logging.debug(("Can't connect to SchemaRegistry: %s", str(ex)))
+                    time.sleep(1)
+
+            if not sr_started:
+                raise Exception("Can't wait Schema Registry to start")
 
     def wait_cassandra_to_start(self, timeout=180):
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
@@ -3135,6 +3161,7 @@ class ClickHouseInstance:
         with_nats,
         with_nginx,
         with_kerberized_hdfs,
+        with_secrets,
         with_mongo,
         with_meili,
         with_redis,
@@ -3144,6 +3171,7 @@ class ClickHouseInstance:
         with_hive,
         with_coredns,
         with_cassandra,
+        allow_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
         library_bridge_bin_path,
@@ -3197,7 +3225,7 @@ class ClickHouseInstance:
             if clickhouse_path_dir
             else None
         )
-        self.kerberos_secrets_dir = p.abspath(p.join(base_path, "secrets"))
+        self.secrets_dir = p.abspath(p.join(base_path, "secrets"))
         self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
@@ -3220,6 +3248,7 @@ class ClickHouseInstance:
         self.with_nats = with_nats
         self.with_nginx = with_nginx
         self.with_kerberized_hdfs = with_kerberized_hdfs
+        self.with_secrets = with_secrets
         self.with_mongo = with_mongo
         self.with_meili = with_meili
         self.with_redis = with_redis
@@ -3230,6 +3259,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
+        self.allow_analyzer = allow_analyzer
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -3521,6 +3551,24 @@ class ClickHouseInstance:
             )
 
         return error
+
+    def append_hosts(self, name, ip):
+        self.exec_in_container(
+            (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)]),
+            privileged=True,
+            user="root",
+        )
+
+    def set_hosts(self, hosts):
+        entries = ["127.0.0.1 localhost", "::1 localhost"]
+        for host in hosts:
+            entries.append(f"{host[0]} {host[1]}")
+
+        self.exec_in_container(
+            ["bash", "-c", 'echo -e "{}" > /etc/hosts'.format("\\n".join(entries))],
+            privileged=True,
+            user="root",
+        )
 
     # Connects to the instance via HTTP interface, sends a query and returns both the answer and the error message
     # as a tuple (output, error).
@@ -4201,7 +4249,10 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None:
+        if (
+            os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
+            and self.allow_analyzer
+        ):
             write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
@@ -4217,17 +4268,16 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if (
-            self.with_kerberized_kafka
-            or self.with_kerberized_hdfs
-            or self.with_kerberos_kdc
-        ):
+        if self.with_secrets:
             if self.with_kerberos_kdc:
                 base_secrets_dir = self.cluster.instances_dir
             else:
                 base_secrets_dir = self.path
+            from_dir = self.secrets_dir
+            to_dir = p.abspath(p.join(base_secrets_dir, "secrets"))
+            logging.debug(f"Copy secret from {from_dir} to {to_dir}")
             shutil.copytree(
-                self.kerberos_secrets_dir,
+                self.secrets_dir,
                 p.abspath(p.join(base_secrets_dir, "secrets")),
                 dirs_exist_ok=True,
             )
