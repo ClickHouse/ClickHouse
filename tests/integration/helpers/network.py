@@ -219,10 +219,15 @@ class _NetworkManager:
 
     def __init__(
         self,
-        container_expire_timeout=120,
-        container_exit_timeout=120,
+        container_expire_timeout=600,
+        container_exit_timeout=660,
         docker_api_version=os.environ.get("DOCKER_API_VERSION"),
     ):
+        # container should be alive for at least 15 seconds then the expiration
+        # timeout, this is the protection from the case when the container will
+        # be destroyed just when some test will try to use it.
+        assert container_exit_timeout >= container_expire_timeout + 15
+
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 

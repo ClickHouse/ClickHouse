@@ -73,3 +73,9 @@ target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io)
 clickhouse_add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
 target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io)
 
+if (TARGET ch_contrib::hdfs)
+    clickhouse_add_executable (read_buffer_from_hdfs read_buffer_from_hdfs.cpp)
+    target_link_libraries (read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
+endif ()
+
+
