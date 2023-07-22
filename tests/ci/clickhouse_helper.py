@@ -190,27 +190,3 @@ def prepare_tests_results_for_clickhouse(
         result.append(current_row)
 
     return result
-
-
-def mark_flaky_tests(
-    clickhouse_helper: ClickHouseHelper, check_name: str, test_results: TestResults
-) -> None:
-    try:
-        query = f"""SELECT DISTINCT test_name
-FROM checks
-WHERE
-    check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
-    AND check_name = '{check_name}'
-    AND (test_status = 'FAIL' OR test_status = 'FLAKY')
-    AND pull_request_number = 0
-"""
-
-        tests_data = clickhouse_helper.select_json_each_row("default", query)
-        master_failed_tests = {row["test_name"] for row in tests_data}
-        logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
-
-        for test_result in test_results:
-            if test_result.status == "FAIL" and test_result.name in master_failed_tests:
-                test_result.status = "FLAKY"
-    except Exception as ex:
-        logging.error("Exception happened during flaky tests fetch %s", ex)

@@ -1,3 +1,4 @@
+#include <Poco/Timespan.h>
 #include "Common/DNSResolver.h"
 #include "config.h"
 
@@ -138,8 +139,9 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000) /// receive timeout.
-          ))
+          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// receive timeout.
+          Poco::Timespan(client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0),
+          Poco::Timespan(client_configuration.http_keep_alive_timeout_ms * 1000))) /// flag indicating whether keep-alive is enabled is set to each session upon creation
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
@@ -147,6 +149,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , get_request_throttler(client_configuration.get_request_throttler)
     , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
+    , http_connection_pool_size(client_configuration.http_connection_pool_size)
+    , wait_on_pool_size_limit(client_configuration.wait_on_pool_size_limit)
 {
 }
 
@@ -254,9 +258,27 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter ,
+    Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
+{
+    /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
+    const auto request_configuration = per_request_configuration(request);
+    if (http_connection_pool_size && request_configuration.proxy_host.empty())
+        makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
+    else
+        makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);
+}
+
+template <bool pooled>
+void PocoHTTPClient::makeRequestInternalImpl(
+    Aws::Http::HttpRequest & request,
+    const ClientConfigurationPerRequest & request_configuration,
+    std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
+    using SessionPtr = std::conditional_t<pooled, PooledHTTPSessionPtr, HTTPSessionPtr>;
+
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
@@ -303,8 +325,7 @@ void PocoHTTPClient::makeRequestInternal(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            HTTPSessionPtr session;
-            auto request_configuration = per_request_configuration(request);
+            SessionPtr session;
 
             if (!request_configuration.proxy_host.empty())
             {
@@ -313,7 +334,11 @@ void PocoHTTPClient::makeRequestInternal(
 
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
+                if constexpr (pooled)
+                    session = makePooledHTTPSession(
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
+                else
+                    session = makeHTTPSession(target_uri, timeouts);
                 bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
@@ -325,7 +350,11 @@ void PocoHTTPClient::makeRequestInternal(
             }
             else
             {
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
+                if constexpr (pooled)
+                    session = makePooledHTTPSession(
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
+                else
+                    session = makeHTTPSession(target_uri, timeouts);
             }
 
             /// In case of error this address will be written to logs

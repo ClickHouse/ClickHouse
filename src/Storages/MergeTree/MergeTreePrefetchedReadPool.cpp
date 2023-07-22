@@ -1,18 +1,18 @@
-#include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
-#include <IO/Operators.h>
-#include <base/getThreadId.h>
 
 
 namespace ProfileEvents
@@ -296,31 +296,12 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
     return task;
 }
 
-size_t MergeTreePrefetchedReadPool::getApproxSizeOfGranule(const IMergeTreeDataPart & part) const
+size_t getApproximateSizeOfGranule(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
-    const auto & columns = part.getColumns();
-    auto all_columns_are_fixed_size = columns.end() == std::find_if(
-        columns.begin(), columns.end(),
-        [](const auto & col){ return col.type->haveMaximumSizeOfValue() == false; });
-
-    if (all_columns_are_fixed_size)
-    {
-        size_t approx_size = 0;
-        for (const auto & col : columns)
-            approx_size += col.type->getMaximumSizeOfValueInMemory() * fixed_index_granularity;
-
-        if (!index_granularity_bytes)
-            return approx_size;
-
-        return std::min(index_granularity_bytes, approx_size);
-    }
-
-    const size_t approx_size = static_cast<size_t>(std::round(static_cast<double>(part.getBytesOnDisk()) / part.getMarksCount()));
-
-    if (!index_granularity_bytes)
-        return approx_size;
-
-    return std::min(index_granularity_bytes, approx_size);
+    ColumnSize columns_size{};
+    for (const auto & col_name : columns_to_read)
+        columns_size.add(part.getColumnSize(col_name));
+    return columns_size.data_compressed / part.getMarksCount();
 }
 
 MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInfos(
@@ -347,7 +328,7 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         for (const auto & range : part.ranges)
             part_info->sum_marks += range.end - range.begin;
 
-        part_info->approx_size_of_mark = getApproxSizeOfGranule(*part_info->data_part);
+        part_info->approx_size_of_mark = getApproximateSizeOfGranule(*part_info->data_part, column_names);
 
         const auto task_columns = getReadTaskColumns(
             part_reader_info,
@@ -357,7 +338,7 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
             prewhere_info,
             actions_settings,
             reader_settings,
-            /*with_subcolumns=*/ true);
+            /* with_subcolumns */ true);
 
         part_info->size_predictor = !predict_block_size_bytes
             ? nullptr
@@ -421,10 +402,6 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
     }
 
     size_t min_prefetch_step_marks = 0;
-    if (settings.filesystem_prefetches_limit && settings.filesystem_prefetches_limit < sum_marks)
-    {
-        min_prefetch_step_marks = static_cast<size_t>(std::round(static_cast<double>(sum_marks) / settings.filesystem_prefetches_limit));
-    }
 
     for (const auto & part : parts_infos)
     {
@@ -437,12 +414,6 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             part->prefetch_step_marks = std::max<size_t>(
                 1, static_cast<size_t>(std::round(static_cast<double>(settings.filesystem_prefetch_step_bytes) / part->approx_size_of_mark)));
         }
-        else
-        {
-            /// Experimentally derived ratio.
-            part->prefetch_step_marks = static_cast<size_t>(
-                std::round(std::pow(std::max<size_t>(1, static_cast<size_t>(std::round(sum_marks / 1000))), double(1.5))));
-        }
 
         /// This limit is important to avoid spikes of slow aws getObject requests when parallelizing within one file.
         /// (The default is taken from here https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html).
@@ -450,13 +421,13 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             && settings.filesystem_prefetch_min_bytes_for_single_read_task
             && part->approx_size_of_mark < settings.filesystem_prefetch_min_bytes_for_single_read_task)
         {
-
-            const size_t new_min_prefetch_step_marks = static_cast<size_t>(
+            const size_t min_prefetch_step_marks_by_total_cols = static_cast<size_t>(
                 std::ceil(static_cast<double>(settings.filesystem_prefetch_min_bytes_for_single_read_task) / part->approx_size_of_mark));
+            /// At least one task to start working on it right now and another one to prefetch in the meantime.
+            const size_t new_min_prefetch_step_marks = std::min<size_t>(min_prefetch_step_marks_by_total_cols, sum_marks / threads / 2);
             if (min_prefetch_step_marks < new_min_prefetch_step_marks)
             {
-                LOG_TEST(
-                    log, "Increasing min prefetch step from {} to {}", min_prefetch_step_marks, new_min_prefetch_step_marks);
+                LOG_DEBUG(log, "Increasing min prefetch step from {} to {}", min_prefetch_step_marks, new_min_prefetch_step_marks);
 
                 min_prefetch_step_marks = new_min_prefetch_step_marks;
             }
@@ -464,25 +435,33 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
 
         if (part->prefetch_step_marks < min_prefetch_step_marks)
         {
-            LOG_TEST(
-                log, "Increasing prefetch step from {} to {} because of the prefetches limit {}",
-                part->prefetch_step_marks, min_prefetch_step_marks, settings.filesystem_prefetches_limit);
+            LOG_DEBUG(log, "Increasing prefetch step from {} to {}", part->prefetch_step_marks, min_prefetch_step_marks);
 
             part->prefetch_step_marks = min_prefetch_step_marks;
         }
 
-        LOG_TEST(log,
-                 "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
-                 part->data_part->name, part->sum_marks, part->approx_size_of_mark,
-                 settings.filesystem_prefetch_step_bytes, part->prefetch_step_marks, toString(part->ranges));
+        LOG_DEBUG(
+            log,
+            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
+            part->data_part->name,
+            part->sum_marks,
+            part->approx_size_of_mark,
+            settings.filesystem_prefetch_step_bytes,
+            part->prefetch_step_marks,
+            toString(part->ranges));
     }
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 
     LOG_DEBUG(
         log,
-        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, result prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
-        sum_marks, threads, min_marks_per_thread, settings.filesystem_prefetch_step_bytes, settings.filesystem_prefetches_limit, total_size_approx);
+        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, min prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
+        sum_marks,
+        threads,
+        min_marks_per_thread,
+        min_prefetch_step_marks,
+        settings.filesystem_prefetches_limit,
+        total_size_approx);
 
     size_t allowed_memory_usage = settings.filesystem_prefetch_max_memory_usage;
     if (!allowed_memory_usage)
@@ -492,6 +471,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
         : std::nullopt;
 
     ThreadsTasks result_threads_tasks;
+    size_t total_tasks = 0;
     for (size_t i = 0, part_idx = 0; i < threads && part_idx < parts_infos.size(); ++i)
     {
         int64_t need_marks = min_marks_per_thread;
@@ -606,12 +586,11 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             ++priority.value;
 
             result_threads_tasks[i].push_back(std::move(read_task));
+            ++total_tasks;
         }
     }
 
-    LOG_TEST(
-        log, "Result tasks {} for {} threads: {}",
-        result_threads_tasks.size(), threads, dumpTasks(result_threads_tasks));
+    LOG_TEST(log, "Result tasks {} for {} threads: {}", total_tasks, threads, dumpTasks(result_threads_tasks));
 
     return result_threads_tasks;
 }
