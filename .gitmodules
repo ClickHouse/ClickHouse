@@ -258,9 +258,6 @@
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
-[submodule "contrib/hashidsxx"]
-	path = contrib/hashidsxx
-	url = https://github.com/schoentoon/hashidsxx
 [submodule "contrib/nats-io"]
 	path = contrib/nats-io
 	url = https://github.com/ClickHouse/nats.c
