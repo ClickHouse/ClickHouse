@@ -992,6 +992,7 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SHOW TABLES FROM db FORMAT TSV", "t\n")
     clickhouse_node.query("SYSTEM STOP MERGES db.t")
+    clickhouse_node.query("DROP VIEW IF EXISTS v")
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
     mysql_node.query("DELETE FROM db.t WHERE a = 2;")
@@ -2334,5 +2335,34 @@ def named_collections(clickhouse_node, mysql_node, service_name):
         f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
         "1\ta\t1\n2\tb\t2\n",
     )
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def create_table_as_select(clickhouse_node, mysql_node, service_name):
+    db = "create_table_as_select"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1(a INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
+    )
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (1)")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\n",
+    )
+
+    mysql_node.query(f"CREATE TABLE {db}.t2(PRIMARY KEY(a)) AS SELECT * FROM {db}.t1")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\nt2\n",
+    )
+
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
