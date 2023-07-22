@@ -474,7 +474,6 @@ bool HTTPHandler::authenticateUser(
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-    ClientInfo & client_info = session->getClientInfo();
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -482,15 +481,13 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    client_info.http_method = http_method;
-    client_info.http_user_agent = request.get("User-Agent", "");
-    client_info.http_referer = request.get("Referer", "");
-    client_info.forwarded_for = request.get("X-Forwarded-For", "");
-    client_info.quota_key = quota_key;
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
+    session->setForwardedFor(request.get("X-Forwarded-For", ""));
+    session->setQuotaClientKey(quota_key);
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
+    String forwarded_address = session->getClientInfo().getLastForwardedFor();
     try
     {
         if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
@@ -904,10 +901,9 @@ try
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
         {
-            if (used_output.out_maybe_delayed_and_compressed)
-            {
-                used_output.out_maybe_delayed_and_compressed->finalize();
-            }
+            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
+            /// exception is written into used_output.out_maybe_compressed later
+            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
             used_output.out_maybe_delayed_and_compressed.reset();
         }
 
@@ -989,22 +985,22 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         // Parse the OpenTelemetry traceparent header.
-        ClientInfo& client_info = session->getClientInfo();
+        auto & client_trace_context = session->getClientTraceContext();
         if (request.has("traceparent"))
         {
             std::string opentelemetry_traceparent = request.get("traceparent");
             std::string error;
-            if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
             {
                 LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
             }
-            client_info.client_trace_context.tracestate = request.get("tracestate", "");
+            client_trace_context.tracestate = request.get("tracestate", "");
         }
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
-            client_info.client_trace_context,
+            client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
