@@ -112,6 +112,7 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -345,7 +346,6 @@ hasAny
 hasColumnInTable
 hasSubstr
 hasThreadFuzzer
-hashid
 hex
 hiveHash
 hop
@@ -363,6 +363,8 @@ in
 inIgnoreSet
 indexHint
 indexOf
+initcap
+initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
