@@ -2302,7 +2302,7 @@ void Server::createServers(
 void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type
-)
+) const
 {
     Poco::Logger * log = &logger();
 

@@ -120,7 +120,7 @@ private:
     void stopServers(
         std::vector<ProtocolServerAdapter> & servers,
         const ServerType & server_type
-    );
+    ) const;
 };
 
 }
