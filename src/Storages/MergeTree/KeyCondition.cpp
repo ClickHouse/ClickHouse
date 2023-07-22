@@ -564,7 +564,17 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         }
         case (ActionsDAG::ActionType::COLUMN):
         {
-            res = &inverted_dag.addColumn({node.column, node.result_type, node.result_name});
+            String name;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                /// Re-generate column name for constant.
+                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from PK does not use it. This is breakig match by column name sometimes.
+                /// Ideally, we should not compare manes, but DAG subtrees instead.
+                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+            else
+                name = node.result_name;
+
+            res = &inverted_dag.addColumn({node.column, node.result_type, name});
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):

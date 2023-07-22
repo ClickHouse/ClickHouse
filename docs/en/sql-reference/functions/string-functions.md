@@ -1255,3 +1255,48 @@ Result:
 │ A240             │
 └──────────────────┘
 ```
+
+## initcap
+
+Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
+
+## initcapUTF8
+
+Like [initcap](#initcap), assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+
+If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+## firstLine
+
+Returns the first line from a multi-line string.
+
+**Syntax**
+
+```sql
+firstLine(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- The first line of the input value or the whole value if there is no line
+  separators. [String](../data-types/string.md)
+
+**Example**
+
+```sql
+select firstLine('foo\nbar\nbaz');
+```
+
+Result:
+
+```result
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
+```
