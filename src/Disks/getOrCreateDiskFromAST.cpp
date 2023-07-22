@@ -32,7 +32,7 @@ namespace
             /// We need a unique name for a created custom disk, but it needs to be the same
             /// after table is reattached or server is restarted, so take a hash of the disk
             /// configuration serialized ast as a disk name suffix.
-            auto disk_setting_string = serializeAST(function, true);
+            auto disk_setting_string = serializeAST(function);
             disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
                 + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
         }

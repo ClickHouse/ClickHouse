@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -22,6 +23,21 @@ BlockIO InterpreterCreateIndexQuery::execute()
 {
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
+
+    // Noop if allow_create_index_without_type = true. throw otherwise
+    if (!create_index.index_decl->as<ASTIndexDeclaration>()->type)
+    {
+        if (!current_context->getSettingsRef().allow_create_index_without_type)
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE INDEX without TYPE is forbidden."
+                " SET allow_create_index_without_type=1 to ignore this statements.");
+        }
+        else
+        {
+            // Nothing to do
+            return {};
+        }
+    }
 
     AccessRightsElements required_access;
     required_access.emplace_back(AccessType::ALTER_ADD_INDEX, create_index.getDatabase(), create_index.getTable());
