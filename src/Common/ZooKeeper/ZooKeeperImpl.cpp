@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperRemove;
     extern const Event ZooKeeperExists;
     extern const Event ZooKeeperMulti;
+    extern const Event ZooKeeperReconfig;
     extern const Event ZooKeeperGet;
     extern const Event ZooKeeperSet;
     extern const Event ZooKeeperList;
@@ -571,7 +572,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
     if (err != Error::ZOK)
         throw Exception(Error::ZMARSHALLINGERROR, "Error received in reply to auth request. Code: {}. Message: {}",
-                        static_cast<int32_t>(err), errorMessage(err));
+                        static_cast<int32_t>(err), err);
 }
 
 void ZooKeeper::sendThread()
@@ -697,7 +698,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                 {
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms, toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
+                        args.operation_timeout_ms, earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
@@ -738,7 +739,7 @@ void ZooKeeper::receiveEvent()
     if (xid == PING_XID)
     {
         if (err != Error::ZOK)
-            throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received error in heartbeat response: {}", errorMessage(err));
+            throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received error in heartbeat response: {}", err);
 
         response = std::make_shared<ZooKeeperHeartbeatResponse>();
     }
@@ -1195,7 +1196,6 @@ void ZooKeeper::create(
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
 }
 
-
 void ZooKeeper::remove(
     const String & path,
     int32_t version,
@@ -1335,6 +1335,26 @@ void ZooKeeper::sync(
     ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
 
+void ZooKeeper::reconfig(
+    std::string_view joining,
+    std::string_view leaving,
+    std::string_view new_members,
+    int32_t version,
+    ReconfigCallback callback)
+{
+    ZooKeeperReconfigRequest request;
+    request.joining = joining;
+    request.leaving = leaving;
+    request.new_members = new_members;
+    request.version = version;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperReconfigRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ReconfigResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperReconfig);
+}
 
 void ZooKeeper::multi(
     const Requests & requests,

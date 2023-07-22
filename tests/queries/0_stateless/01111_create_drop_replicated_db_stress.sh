@@ -8,7 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function create_db()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         SHARD=$(($RANDOM % 2))
         REPLICA=$(($RANDOM % 2))
         SUFFIX=$(($RANDOM % 16))
@@ -24,7 +25,8 @@ function create_db()
 
 function drop_db()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then continue; fi
         if [ -z "$database" ]; then continue; fi
@@ -36,7 +38,8 @@ function drop_db()
 
 function sync_db()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --receive_timeout=1 -q \
@@ -47,7 +50,8 @@ function sync_db()
 
 function create_table()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
@@ -59,7 +63,8 @@ function create_table()
 
 function alter_table()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
@@ -71,7 +76,8 @@ function alter_table()
 
 function insert()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT -q \
@@ -81,23 +87,16 @@ function insert()
 
 
 
-export -f create_db
-export -f drop_db
-export -f sync_db
-export -f create_table
-export -f alter_table
-export -f insert
-
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c create_db &
-timeout $TIMEOUT bash -c sync_db &
-timeout $TIMEOUT bash -c create_table &
-timeout $TIMEOUT bash -c alter_table &
-timeout $TIMEOUT bash -c insert &
+create_db $TIMEOUT &
+sync_db $TIMEOUT &
+create_table $TIMEOUT &
+alter_table $TIMEOUT &
+insert $TIMEOUT &
 
 sleep 1 # give other queries a head start
-timeout $TIMEOUT bash -c drop_db &
+drop_db $TIMEOUT &
 
 wait
 
