@@ -62,3 +62,5 @@ FROM
     system.query_log
 WHERE
     current_database=currentDatabase() and query = 'SELECT min(id) FROM t FORMAT Null;';
+
+DROP TABLE t;
