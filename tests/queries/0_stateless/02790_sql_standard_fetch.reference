@@ -1,36 +1,36 @@
-┌─id─┬─name───────────┬─department─┬─salary─┐
-│ 25 │ Frank          │ it         │    120 │
-│ 23 │ Henry or Irene │ it         │    104 │
-│ 24 │ Henry or Irene │ it         │    104 │
-│ 33 │ Alice          │ sales      │    100 │
-│ 32 │ Dave or Cindy  │ sales      │     96 │
-└────┴────────────────┴────────────┴────────┘
-┌─id─┬─name───────────┬─department─┬─salary─┐
-│ 25 │ Frank          │ it         │    120 │
-│ 23 │ Henry or Irene │ it         │    104 │
-│ 24 │ Henry or Irene │ it         │    104 │
-│ 33 │ Alice          │ sales      │    100 │
-│ 32 │ Dave or Cindy  │ sales      │     96 │
-└────┴────────────────┴────────────┴────────┘
-┌─id─┬─name───────────┬─department─┬─salary─┐
-│ 25 │ Frank          │ it         │    120 │
-│ 23 │ Henry or Irene │ it         │    104 │
-│ 24 │ Henry or Irene │ it         │    104 │
-│ 33 │ Alice          │ sales      │    100 │
-│ 31 │ Dave or Cindy  │ sales      │     96 │
-│ 32 │ Dave or Cindy  │ sales      │     96 │
-└────┴────────────────┴────────────┴────────┘
-┌─id─┬─name──────────┬─department─┬─salary─┐
-│ 33 │ Alice         │ sales      │    100 │
-│ 31 │ Dave or Cindy │ sales      │     96 │
-│ 32 │ Dave or Cindy │ sales      │     96 │
-│ 22 │ Grace         │ it         │     90 │
-│ 21 │ Emma          │ it         │     84 │
-└────┴───────────────┴────────────┴────────┘
-┌─id─┬─name──────────┬─department─┬─salary─┐
-│ 33 │ Alice         │ sales      │    100 │
-│ 31 │ Dave or Cindy │ sales      │     96 │
-│ 32 │ Dave or Cindy │ sales      │     96 │
-│ 22 │ Grace         │ it         │     90 │
-│ 21 │ Emma          │ it         │     84 │
-└────┴───────────────┴────────────┴────────┘
+┌─name───────────┬─department─┬─salary─┐
+│ Frank          │ it         │    120 │
+│ Henry or Irene │ it         │    104 │
+│ Henry or Irene │ it         │    104 │
+│ Alice          │ sales      │    100 │
+│ Dave or Cindy  │ sales      │     96 │
+└────────────────┴────────────┴────────┘
+┌─name───────────┬─department─┬─salary─┐
+│ Frank          │ it         │    120 │
+│ Henry or Irene │ it         │    104 │
+│ Henry or Irene │ it         │    104 │
+│ Alice          │ sales      │    100 │
+│ Dave or Cindy  │ sales      │     96 │
+└────────────────┴────────────┴────────┘
+┌─name───────────┬─department─┬─salary─┐
+│ Frank          │ it         │    120 │
+│ Henry or Irene │ it         │    104 │
+│ Henry or Irene │ it         │    104 │
+│ Alice          │ sales      │    100 │
+│ Dave or Cindy  │ sales      │     96 │
+│ Dave or Cindy  │ sales      │     96 │
+└────────────────┴────────────┴────────┘
+┌─name──────────┬─department─┬─salary─┐
+│ Alice         │ sales      │    100 │
+│ Dave or Cindy │ sales      │     96 │
+│ Dave or Cindy │ sales      │     96 │
+│ Grace         │ it         │     90 │
+│ Emma          │ it         │     84 │
+└───────────────┴────────────┴────────┘
+┌─name──────────┬─department─┬─salary─┐
+│ Alice         │ sales      │    100 │
+│ Dave or Cindy │ sales      │     96 │
+│ Dave or Cindy │ sales      │     96 │
+│ Grace         │ it         │     90 │
+│ Emma          │ it         │     84 │
+└───────────────┴────────────┴────────┘
