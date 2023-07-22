@@ -344,7 +344,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     DatabasePtr database;
     {
         std::lock_guard lock{databases_mutex};
-        // Callers assume that this method doesn't throw the exceptions, but getDatabaseName() can if there is no database part.
+        // Callers assume that this method doesn't throw exceptions, but getDatabaseName() will throw if there is no database part.
         auto it = table_id.hasDatabase() ? databases.find(table_id.getDatabaseName()) : databases.end();
         if (databases.end() == it)
         {
