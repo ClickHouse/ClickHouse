@@ -151,7 +151,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return serializeAST(list, true);
+    return serializeAST(list);
 }
 
 

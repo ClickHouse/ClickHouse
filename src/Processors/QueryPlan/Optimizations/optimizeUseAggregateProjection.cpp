@@ -287,7 +287,7 @@ ActionsDAGPtr analyzeAggregateProjection(
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
-    MatchedTrees::Matches matches = matchTrees(*info.before_aggregation, *query.dag);
+    MatchedTrees::Matches matches = matchTrees(*info.before_aggregation, *query.dag, false /* check_monotonicity */);
 
     // for (const auto & [node, match] : matches)
     // {
@@ -497,6 +497,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection sample block 2 {}", block.dumpStructure());
 
+            // minmax_count_projection cannot be used used when there is no data to process, because
+            // it will produce incorrect result during constant aggregation.
+            // See https://github.com/ClickHouse/ClickHouse/issues/36728
             if (block)
             {
                 MinMaxProjectionCandidate minmax;
@@ -625,8 +628,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         //           candidates.minmax_projection->block.dumpStructure());
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            std::move(pipe),
+            context,
+            query_info.is_internal
+                ? Context::QualifiedProjectionName{}
+                : Context::QualifiedProjectionName
+                  {
+                      .storage_id = reading->getMergeTreeData().getStorageID(),
+                      .projection_name = candidates.minmax_projection->candidate.projection->name,
+                  });
         has_ordinary_parts = !candidates.minmax_projection->normal_parts.empty();
         if (has_ordinary_parts)
             reading->resetParts(std::move(candidates.minmax_projection->normal_parts));
@@ -658,7 +669,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         {
             auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
-            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            projection_reading = std::make_unique<ReadFromPreparedSource>(
+                std::move(pipe),
+                context,
+                query_info.is_internal
+                    ? Context::QualifiedProjectionName{}
+                    : Context::QualifiedProjectionName
+                      {
+                          .storage_id = reading->getMergeTreeData().getStorageID(),
+                          .projection_name = best_candidate->projection->name,
+                      });
         }
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
