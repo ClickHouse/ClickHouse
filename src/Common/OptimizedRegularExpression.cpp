@@ -433,7 +433,7 @@ try
     for (auto & lit : alternative_literals)
         alternatives.push_back(std::move(lit.literal));
 }
-catch(...)
+catch (...)
 {
     required_substring = "";
     is_trivial = false;
