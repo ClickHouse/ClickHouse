@@ -580,6 +580,7 @@ def test_required_privileges():
     node1.query(
         f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
+    node2.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
 
     assert node2.query("SELECT * FROM tbl2") == "100\n"
 
@@ -593,6 +594,7 @@ def test_required_privileges():
 
     node1.query("GRANT INSERT, CREATE TABLE ON tbl TO u1")
     node1.query(f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1")
+    node2.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     assert node2.query("SELECT * FROM tbl") == "100\n"
 

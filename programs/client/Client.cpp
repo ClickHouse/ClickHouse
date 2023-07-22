@@ -1173,12 +1173,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         String traceparent = options["opentelemetry-traceparent"].as<std::string>();
         String error;
-        if (!global_context->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
+        if (!global_context->getClientTraceContext().parseTraceparentHeader(traceparent, error))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
     if (options.count("opentelemetry-tracestate"))
-        global_context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
+        global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 }
 
 
@@ -1238,10 +1238,9 @@ void Client::processConfig()
             global_context->getSettingsRef().max_insert_block_size);
     }
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.quota_key = config().getString("quota_key", "");
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQuotaClientKey(config().getString("quota_key", ""));
+    global_context->setQueryKind(query_kind);
 }
 
 
@@ -1404,10 +1403,9 @@ void Client::readArguments(
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);
-                /// No password was provided by user. Add '\n' as implicit password,
-                /// which encodes that client should ask user for the password.
-                /// '\n' is used because there is hardly a chance that a user would use '\n' as a password.
-                common_arguments.emplace_back("\n");
+                /// if the value of --password is omitted, the password will be asked before
+                /// connection start
+                common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
                 common_arguments.emplace_back(arg);
