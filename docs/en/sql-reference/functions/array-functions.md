@@ -588,6 +588,42 @@ SELECT arrayPushFront(['b'], 'a') AS res;
 └───────────┘
 ```
 
+## arrayRemove
+
+Removes elements from the array based on the specified conditions.
+
+``` sql
+arrayRemove(array, predicate)
+```
+**Arguments**
+
+- `array` — Array.
+- `predicate` — The condition that determines which elements to remove from the array.
+Returned value:
+
+An array with elements removed according to the specified condition.
+
+**Example**
+
+``` sql
+SELECT arrayRemove([12, 5, 8, 15, 20], value > 10);
+```
+
+``` text
+┌─res───────┐
+│ [5,8]     │
+└───────────┘
+```
+
+``` sql
+SELECT arrayRemove([1, NULL, 5, NULL, 3], value IS NULL);
+```
+
+``` text
+┌─res───────┐
+│ [1,5,3]   │
+└───────────┘
+```
 ## arrayResize
 
 Changes the length of the array.
