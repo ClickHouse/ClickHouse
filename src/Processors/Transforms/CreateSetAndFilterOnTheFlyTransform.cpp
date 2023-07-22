@@ -106,7 +106,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     if (chunk.getNumRows())
     {
         Columns key_columns = getColumnsByIndices(chunk, key_column_indices);
-        bool limit_exceeded = !set->insertFromColumns(key_columns);
+        bool limit_exceeded = !set->insertFromBlock(key_columns);
         if (limit_exceeded)
         {
             auto prev_state = set->state.exchange(SetWithState::State::Suspended);

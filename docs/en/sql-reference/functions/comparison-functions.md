@@ -14,13 +14,13 @@ The following types can be compared:
 - dates
 - dates with times
 
-Only values within the same group can be compared (e.g. UInt16 and UInt64) but not across groups (e.g. UInt16 and DateTime).
+Only values within the same group can be compared (e.g. UInt16 and UInt64) but not accross groups (e.g. UInt16 and DateTime).
 
 Strings are compared byte-by-byte. Note that this may lead to unexpected results if one of the strings contains UTF-8 encoded multi-byte characters.
 
 A string S1 which has another string S2 as prefix is considered longer than S2.
 
-## equals, `=`, `==` operators
+## equals
 
 **Syntax**
 
@@ -32,7 +32,7 @@ Alias:
 - `a = b` (operator)
 - `a == b` (operator)
 
-## notEquals, `!=`, `<>` operators
+## notEquals
 
 **Syntax**
 
@@ -44,7 +44,7 @@ Alias:
 - `a != b` (operator)
 - `a <> b` (operator)
 
-## less, `<` operator
+## less
 
 **Syntax**
 
@@ -55,7 +55,7 @@ less(a, b)
 Alias:
 - `a < b` (operator)
 
-## greater, `>` operator
+## greater
 
 **Syntax**
 
@@ -66,7 +66,7 @@ greater(a, b)
 Alias:
 - `a > b` (operator)
 
-## lessOrEquals, `<=` operator
+## lessOrEquals
 
 **Syntax**
 

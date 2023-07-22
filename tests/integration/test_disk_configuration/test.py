@@ -390,7 +390,7 @@ def test_merge_tree_setting_override(start_cluster):
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        DROP TABLE IF EXISTS {TABLE_NAME} NO DELAY;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -412,7 +412,7 @@ def test_merge_tree_setting_override(start_cluster):
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        DROP TABLE IF EXISTS {TABLE_NAME} NO DELAY;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()

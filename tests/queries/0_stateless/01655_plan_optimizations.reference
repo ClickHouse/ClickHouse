@@ -27,11 +27,6 @@ COLUMN Const(UInt8) -> notEquals(y, 0)
 Aggregating
 Filter
 Filter
-> (analyzer) filter should be pushed down after aggregating, column after aggregation is const
-COLUMN Const(UInt8) -> notEquals(y_1, 0_UInt8)
-Aggregating
-Filter
-Filter
 0	1	1
 1	2	1
 2	3	1
@@ -47,11 +42,6 @@ Filter column
 ALIAS notEquals(s, 4) :: 1 -> and(notEquals(y, 0), notEquals(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
-> (analyzer) one condition of filter should be pushed down after aggregating, other condition is aliased
-Filter column
-ALIAS notEquals(s_0, 4_UInt8) :: 0 -> and(notEquals(y_1, 0_UInt8), notEquals(s_0, 4_UInt8))
-Aggregating
-Filter column: notEquals(y_1, 0_UInt8)
 0	1
 1	2
 2	3
@@ -63,14 +53,9 @@ Filter column: notEquals(y_1, 0_UInt8)
 9	10
 > one condition of filter should be pushed down after aggregating, other condition is casted
 Filter column
-FUNCTION and(minus(s, 4) :: 1, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4)) UInt8 : 2
+FUNCTION _CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
-> (analyzer) one condition of filter should be pushed down after aggregating, other condition is casted
-Filter column
-FUNCTION and(minus(s_0, 4_UInt8) :: 0, 1 :: 3) -> and(notEquals(y_1, 0_UInt8), minus(s_0, 4_UInt8)) UInt8 : 2
-Aggregating
-Filter column: notEquals(y_1, 0_UInt8)
 0	1
 1	2
 2	3
@@ -85,11 +70,6 @@ Filter column
 FUNCTION and(minus(s, 8) :: 1, minus(s, 4) :: 2) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
-> (analyzer) one condition of filter should be pushed down after aggregating, other two conditions are ANDed
-Filter column
-FUNCTION and(minus(s_0, 8_UInt8) :: 0, minus(s_0, 4_UInt8) :: 2) -> and(notEquals(y_1, 0_UInt8), minus(s_0, 8_UInt8), minus(s_0, 4_UInt8))
-Aggregating
-Filter column: notEquals(y_1, 0_UInt8)
 0	1
 1	2
 2	3
@@ -103,11 +83,6 @@ Filter column
 ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))
 Aggregating
 Filter column: and(notEquals(y, 0), minus(y, 4))
-> (analyzer) two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased
-Filter column
-ALIAS notEquals(s_0, 8_UInt8) :: 0 -> and(notEquals(y_1, 0_UInt8), notEquals(s_0, 8_UInt8), minus(y_1, 4_UInt8))
-Aggregating
-Filter column: and(notEquals(y_1, 0_UInt8), minus(y_1, 4_UInt8))
 0	1
 1	2
 2	3
@@ -120,19 +95,11 @@ Filter column: and(notEquals(y_1, 0_UInt8), minus(y_1, 4_UInt8))
 Filter column: and(notEquals(y, 2), notEquals(x, 0))
 ARRAY JOIN x
 Filter column: notEquals(y, 2)
-> (analyzer) filter is split, one part is filtered before ARRAY JOIN
-Filter column: and(notEquals(y_1, 2_UInt8), notEquals(x_0, 0_UInt8))
-ARRAY JOIN x_0
-Filter column: notEquals(y_1, 2_UInt8)
 1	3
 > filter is pushed down before Distinct
 Distinct
 Distinct
 Filter column: notEquals(y, 2)
-> (analyzer) filter is pushed down before Distinct
-Distinct
-Distinct
-Filter column: notEquals(y_1, 2_UInt8)
 0	0
 0	1
 1	0
@@ -141,20 +108,12 @@ Filter column: notEquals(y_1, 2_UInt8)
 Sorting
 Sorting
 Filter column: and(notEquals(x, 0), notEquals(y, 0))
-> (analyzer) filter is pushed down before sorting steps
-Sorting
-Sorting
-Filter column: and(notEquals(x_0, 0_UInt8), notEquals(y_1, 0_UInt8))
 1	2
 1	1
 > filter is pushed down before TOTALS HAVING and aggregating
 TotalsHaving
 Aggregating
 Filter column: notEquals(y, 2)
-> (analyzer) filter is pushed down before TOTALS HAVING and aggregating
-TotalsHaving
-Aggregating
-Filter column: notEquals(y_0, 2_UInt8)
 0	12
 1	15
 3	10
@@ -170,18 +129,12 @@ Filter
 Join
 Filter column: notEquals(number, 1)
 Join
-> (analyzer) one condition of filter is pushed down before LEFT JOIN
-Join
-Filter column: notEquals(number_0, 1_UInt8)
 0	0
 3	3
 > one condition of filter is pushed down before INNER JOIN
 Join
 Filter column: notEquals(number, 1)
 Join
-> (analyzer) one condition of filter is pushed down before INNER JOIN
-Join
-Filter column: notEquals(number_0, 1_UInt8)
 3	3
 > filter is pushed down before UNION
 Union
@@ -195,13 +148,6 @@ Expression ((Projection + Before ORDER BY [lifted up part]))
 FUNCTION sipHash64
 Sorting
 Expression (Before ORDER BY)
-FUNCTION plus
-> (analyzer) function calculation should be done after sorting and limit (if possible)
-> Expression should be divided into two subexpressions and only one of them should be moved after Sorting
-Expression ((Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)) [lifted up part]))
-FUNCTION sipHash64
-Sorting
-Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 FUNCTION plus
 > this query should be executed without throwing an exception
 0

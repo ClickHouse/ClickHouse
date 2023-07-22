@@ -22,29 +22,6 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
             </no_delete_objects_s3>
-            <broken_s3>
-                <type>s3</type>
-                <endpoint>http://resolver:8083/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <skip_access_check>true</skip_access_check>
-                <retry_attempts>0</retry_attempts>
-                <connect_timeout_ms>20000</connect_timeout_ms>
-                <request_timeout_ms>20000</request_timeout_ms>
-                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
-            </broken_s3>
-            <broken_s3_always_multi_part>
-                <type>s3</type>
-                <endpoint>http://resolver:8083/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <skip_access_check>true</skip_access_check>
-                <retry_attempts>0</retry_attempts>
-                <connect_timeout_ms>20000</connect_timeout_ms>
-                <request_timeout_ms>20000</request_timeout_ms>
-                <s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>
-                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
-            </broken_s3_always_multi_part>
             <hdd>
                 <type>local</type>
                 <path>/</path>
@@ -123,30 +100,6 @@
                     </main>
                 </volumes>
             </s3_cache_r>
-            <external_broken_s3>
-                 <volumes>
-                    <main>
-                        <disk>hdd</disk>
-                    </main>
-                    <external>
-                        <disk>broken_s3</disk>
-                    </external>
-                </volumes>
-            </external_broken_s3>
-            <broken_s3>
-                 <volumes>
-                    <main>
-                        <disk>broken_s3</disk>
-                    </main>
-                </volumes>
-            </broken_s3>
-            <broken_s3_always_multi_part>
-                <volumes>
-                    <main>
-                        <disk>broken_s3_always_multi_part</disk>
-                    </main>
-                </volumes>
-            </broken_s3_always_multi_part>
         </policies>
     </storage_configuration>
 

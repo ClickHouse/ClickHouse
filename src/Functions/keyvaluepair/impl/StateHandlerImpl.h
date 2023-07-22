@@ -41,8 +41,7 @@ public:
         NeedleFactory<WITH_ESCAPING> needle_factory;
 
         wait_needles = needle_factory.getWaitNeedles(configuration);
-        read_key_needles = needle_factory.getReadKeyNeedles(configuration);
-        read_value_needles = needle_factory.getReadValueNeedles(configuration);
+        read_needles = needle_factory.getReadNeedles(configuration);
         read_quoted_needles = needle_factory.getReadQuotedNeedles(configuration);
     }
 
@@ -78,7 +77,7 @@ public:
 
         size_t pos = 0;
 
-        while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_key_needles))
+        while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
         {
             auto character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
@@ -192,6 +191,10 @@ public:
             {
                 return {pos + 1u, State::READING_QUOTED_VALUE};
             }
+            else if (isKeyValueDelimiter(current_character))
+            {
+                return {pos, State::WAITING_KEY};
+            }
 
             if constexpr (WITH_ESCAPING)
             {
@@ -215,7 +218,7 @@ public:
 
         size_t pos = 0;
 
-        while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_value_needles))
+        while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
         {
             const size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
@@ -233,6 +236,10 @@ public:
                         return {next_pos, State::FLUSH_PAIR};
                     }
                 }
+            }
+            else if (isKeyValueDelimiter(*p))
+            {
+                return {next_pos, State::WAITING_KEY};
             }
             else if (isPairDelimiter(*p))
             {
@@ -293,8 +300,7 @@ public:
 
 private:
     SearchSymbols wait_needles;
-    SearchSymbols read_key_needles;
-    SearchSymbols read_value_needles;
+    SearchSymbols read_needles;
     SearchSymbols read_quoted_needles;
 
     /*

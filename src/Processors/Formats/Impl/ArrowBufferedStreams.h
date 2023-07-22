@@ -18,6 +18,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 class SeekableReadBuffer;
+class SeekableReadBufferFactory;
 struct FormatSettings;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
@@ -77,17 +78,19 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
 };
 
-class RandomAccessFileFromRandomAccessReadBuffer : public arrow::io::RandomAccessFile
+// Thread-safe.
+// Maintains a pool of SeekableReadBuffer-s. For each ReadAt(), takes a buffer, seeks it, and reads.
+class RandomAccessFileFromManyReadBuffers : public arrow::io::RandomAccessFile
 {
 public:
-    explicit RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_);
+    explicit RandomAccessFileFromManyReadBuffers(SeekableReadBufferFactory & factory);
 
     // These are thread safe.
     arrow::Result<int64_t> GetSize() override;
     arrow::Result<int64_t> ReadAt(int64_t position, int64_t nbytes, void* out) override;
     arrow::Result<std::shared_ptr<arrow::Buffer>> ReadAt(int64_t position, int64_t nbytes) override;
-    arrow::Future<std::shared_ptr<arrow::Buffer>> ReadAsync(
-        const arrow::io::IOContext&, int64_t position, int64_t nbytes) override;
+    arrow::Future<std::shared_ptr<arrow::Buffer>> ReadAsync(const arrow::io::IOContext&, int64_t position,
+                                              int64_t nbytes) override;
 
     // These are not thread safe, and arrow shouldn't call them. Return NotImplemented error.
     arrow::Status Seek(int64_t) override;
@@ -99,11 +102,13 @@ public:
     bool closed() const override { return !is_open; }
 
 private:
-    SeekableReadBuffer & in;
-    size_t file_size;
+    SeekableReadBufferFactory & buf_factory;
     bool is_open = true;
 
-    ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromRandomAccessReadBuffer);
+    std::mutex mutex;
+    std::vector<std::unique_ptr<SeekableReadBuffer>> free_bufs;
+
+    ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromManyReadBuffers);
 };
 
 class ArrowInputStreamFromReadBuffer : public arrow::io::InputStream

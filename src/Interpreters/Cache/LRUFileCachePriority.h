@@ -2,8 +2,6 @@
 
 #include <list>
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -14,63 +12,55 @@ class LRUFileCachePriority : public IFileCachePriority
 {
 private:
     class LRUFileCacheIterator;
-    using LRUQueue = std::list<Entry>;
+    using LRUQueue = std::list<FileCacheRecord>;
     using LRUQueueIterator = typename LRUQueue::iterator;
 
 public:
-    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_) {}
+    LRUFileCachePriority() = default;
 
-    size_t getSize(const CacheGuard::Lock &) const override { return current_size; }
+    WriteIterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &) override;
 
-    size_t getElementsCount(const CacheGuard::Lock &) const override { return current_elements_num; }
+    bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> &) override;
 
-    Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
+    void removeAll(std::lock_guard<std::mutex> &) override;
 
-    void pop(const CacheGuard::Lock &) override;
+    ReadIterator getLowestPriorityReadIterator(std::lock_guard<std::mutex> &) override;
 
-    void removeAll(const CacheGuard::Lock &) override;
+    WriteIterator getLowestPriorityWriteIterator(std::lock_guard<std::mutex> &) override;
 
-    void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
+    size_t getElementsNum(std::lock_guard<std::mutex> &) const override;
 
 private:
-    void updateElementsCount(int64_t num);
-    void updateSize(int64_t size);
-
     LRUQueue queue;
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
-
-    std::atomic<size_t> current_size = 0;
-    /// current_elements_num is not always equal to queue.size()
-    /// because of invalidated entries.
-    std::atomic<size_t> current_elements_num = 0;
-
-    LRUQueueIterator remove(LRUQueueIterator it);
 };
 
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
 {
 public:
-    LRUFileCacheIterator(
-        LRUFileCachePriority * cache_priority_,
-        LRUFileCachePriority::LRUQueueIterator queue_iter_);
+    LRUFileCacheIterator(LRUFileCachePriority * cache_priority_, LRUFileCachePriority::LRUQueueIterator queue_iter_);
 
-    const Entry & getEntry() const override { return *queue_iter; }
+    void next() const override { queue_iter++; }
 
-    Entry & getEntry() override { return *queue_iter; }
+    bool valid() const override { return queue_iter != cache_priority->queue.end(); }
 
-    size_t use(const CacheGuard::Lock &) override;
+    const Key & key() const override { return queue_iter->key; }
 
-    void remove(const CacheGuard::Lock &) override;
+    size_t offset() const override { return queue_iter->offset; }
 
-    void invalidate() override;
+    size_t size() const override { return queue_iter->size; }
 
-    void updateSize(int64_t size) override;
+    size_t hits() const override { return queue_iter->hits; }
+
+    void removeAndGetNext(std::lock_guard<std::mutex> &) override;
+
+    void updateSize(int64_t size, std::lock_guard<std::mutex> &) override;
+
+    void use(std::lock_guard<std::mutex> &) override;
 
 private:
-    void checkUsable() const;
-
     LRUFileCachePriority * cache_priority;
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };
 
-}
+};

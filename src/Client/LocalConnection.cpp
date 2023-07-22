@@ -73,6 +73,9 @@ void LocalConnection::sendQuery(
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
+    if (!query_parameters.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "clickhouse local does not support query parameters");
+
     /// Suggestion comes without client_info.
     if (client_info)
         query_context = session.makeQueryContext(*client_info);
@@ -87,7 +90,6 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
-    query_context->addQueryParameters(query_parameters);
 
     state.reset();
     state.emplace();
@@ -482,7 +484,7 @@ void LocalConnection::setDefaultDatabase(const String & database)
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
 {
-    return DBMS_TCP_PROTOCOL_VERSION;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 const String & LocalConnection::getServerTimezone(const ConnectionTimeouts &)

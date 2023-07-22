@@ -12,7 +12,7 @@ Columns:
 
 - `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of users. Configured in the `access_control_path` parameter.
 
-- `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7)) — Shows the authentication type. There are multiple ways of user identification: with no password, with plain text password, with [SHA256](https://en.wikipedia.org/wiki/SHA-2)-encoded password, with [double SHA-1](https://en.wikipedia.org/wiki/SHA-1)-encoded password or with [bcrypt](https://en.wikipedia.org/wiki/Bcrypt)-encoded password.
+- `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)('no_password' = 0,'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6)) — Shows the authentication type. There are multiple ways of user identification: with no password, with plain text password, with [SHA256](https://ru.wikipedia.org/wiki/SHA-2)-encoded password or with [double SHA-1](https://ru.wikipedia.org/wiki/SHA-1)-encoded password.
 
 - `auth_params` ([String](../../sql-reference/data-types/string.md)) — Authentication parameters in the JSON format depending on the `auth_type`.
 

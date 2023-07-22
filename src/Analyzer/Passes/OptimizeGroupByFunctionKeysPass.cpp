@@ -38,9 +38,6 @@ public:
         if (!query->hasGroupBy())
             return;
 
-        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
-            return;
-
         auto & group_by = query->getGroupBy().getNodes();
         if (query->isGroupByWithGroupingSets())
         {

@@ -127,14 +127,7 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    finalize();
 }
 
 }

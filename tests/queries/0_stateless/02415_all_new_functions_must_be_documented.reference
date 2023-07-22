@@ -97,7 +97,6 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
-arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -112,7 +111,6 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayIntersect
-arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -363,8 +361,6 @@ in
 inIgnoreSet
 indexHint
 indexOf
-initcap
-initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
@@ -657,7 +653,6 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
-space
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -688,6 +683,7 @@ throwIf
 tid
 timeSlot
 timeSlots
+timezone
 timezoneOf
 timezoneOffset
 toBool
@@ -785,7 +781,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
-toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay

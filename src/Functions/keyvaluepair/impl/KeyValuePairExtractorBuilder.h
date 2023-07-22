@@ -20,8 +20,6 @@ public:
 
     KeyValuePairExtractorBuilder & withEscaping();
 
-    KeyValuePairExtractorBuilder & withMaxNumberOfPairs(uint64_t max_number_of_pairs_);
-
     std::shared_ptr<KeyValuePairExtractor> build() const;
 
 private:
@@ -29,7 +27,6 @@ private:
     char key_value_delimiter = ':';
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
-    uint64_t max_number_of_pairs = std::numeric_limits<uint64_t>::max();
 
     std::shared_ptr<KeyValuePairExtractor> buildWithEscaping() const;
 

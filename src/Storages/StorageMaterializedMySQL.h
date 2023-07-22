@@ -32,7 +32,7 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size, size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool) override { throwNotAllowed(); }
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr) override { throwNotAllowed(); }
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;

@@ -60,6 +60,7 @@ public:
 
     ~MergeTreeWriteAheadLog();
 
+    void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
     std::vector<MergeTreeMutableDataPartPtr> restore(
         const StorageMetadataPtr & metadata_snapshot,
@@ -76,6 +77,7 @@ public:
 private:
     void init();
     void rotate(const std::unique_lock<std::mutex> & lock);
+    void sync(std::unique_lock<std::mutex> & lock);
 
     const MergeTreeData & storage;
     DiskPtr disk;

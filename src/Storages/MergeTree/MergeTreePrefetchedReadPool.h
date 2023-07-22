@@ -53,12 +53,12 @@ private:
     using ThreadTasks = std::deque<MergeTreeReadTaskPtr>;
     using ThreadsTasks = std::map<size_t, ThreadTasks>;
 
+    /// smaller `priority` means more priority
     std::future<MergeTreeReaderPtr> createPrefetchedReader(
         const IMergeTreeDataPart & data_part,
         const NamesAndTypesList & columns,
-        const AlterConversionsPtr & alter_conversions,
         const MarkRanges & required_ranges,
-        Priority priority) const;
+        int64_t priority) const;
 
     void createPrefetchedReaderForTask(MergeTreeReadTask & task) const;
 

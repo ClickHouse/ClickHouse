@@ -83,8 +83,7 @@ namespace Protocol
             ProfileEvents = 14,             /// Packet with profile events from server.
             MergeTreeAllRangesAnnounecement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
-            TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
-            MAX = TimezoneUpdate,
+            MAX = MergeTreeReadTaskRequest,
 
         };
 
@@ -112,7 +111,6 @@ namespace Protocol
                 "ProfileEvents",
                 "MergeTreeAllRangesAnnounecement",
                 "MergeTreeReadTaskRequest",
-                "TimezoneUpdate",
             };
             return packet <= MAX
                 ? data[packet]

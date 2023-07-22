@@ -12,7 +12,6 @@
 #include <Storages/StorageS3.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <IO/ReadHelpers.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>

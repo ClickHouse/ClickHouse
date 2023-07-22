@@ -32,7 +32,7 @@
         #define SYS_preadv2 327
     #elif defined(__aarch64__)
         #define SYS_preadv2 286
-    #elif defined(__powerpc64__)
+    #elif defined(__ppc64__)
         #define SYS_preadv2 380
     #elif defined(__riscv)
         #define SYS_preadv2 286

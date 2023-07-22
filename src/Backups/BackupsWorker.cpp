@@ -152,7 +152,8 @@ namespace
         }
         catch (...)
         {
-            sendExceptionToCoordination(coordination, Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
+            if (coordination)
+                coordination->setError(Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
         }
     }
 
@@ -348,7 +349,6 @@ void BackupsWorker::doBackup(
         backup_create_params.backup_coordination = backup_coordination;
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
         backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
-        backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -368,7 +368,6 @@ void BackupsWorker::doBackup(
 
             /// Wait until all the hosts have written their backup entries.
             backup_coordination->waitForStage(Stage::COMPLETED);
-            backup_coordination->setStage(Stage::COMPLETED,"");
         }
         else
         {
@@ -386,7 +385,7 @@ void BackupsWorker::doBackup(
             writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
-            backup_coordination->setStage(Stage::COMPLETED,"");
+            backup_coordination->setStage(Stage::COMPLETED, "");
         }
 
         size_t num_files = 0;
@@ -648,7 +647,6 @@ void BackupsWorker::doRestore(
         backup_open_params.backup_info = backup_info;
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
         backup_open_params.password = restore_settings.password;
-        backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         String current_database = context->getCurrentDatabase();
@@ -656,26 +654,12 @@ void BackupsWorker::doRestore(
         /// (If this isn't ON CLUSTER query RestorerFromBackup will check access rights later.)
         ClusterPtr cluster;
         bool on_cluster = !restore_query->cluster.empty();
-
         if (on_cluster)
         {
             restore_query->cluster = context->getMacros()->expand(restore_query->cluster);
             cluster = context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
-        }
 
-        /// Make a restore coordination.
-        if (!restore_coordination)
-            restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ on_cluster);
-
-        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
-            throw Exception(
-                ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
-                "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
-
-
-        if (on_cluster)
-        {
             /// We cannot just use access checking provided by the function executeDDLQueryOnCluster(): it would be incorrect
             /// because different replicas can contain different set of tables and so the required access rights can differ too.
             /// So the right way is pass through the entire cluster and check access for each host.
@@ -691,6 +675,15 @@ void BackupsWorker::doRestore(
                 dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
             }
         }
+
+        /// Make a restore coordination.
+        if (!restore_coordination)
+            restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ on_cluster);
+
+        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
+            throw Exception(
+                ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
 
         /// Do RESTORE.
         if (on_cluster)
@@ -710,7 +703,6 @@ void BackupsWorker::doRestore(
 
             /// Wait until all the hosts have written their backup entries.
             restore_coordination->waitForStage(Stage::COMPLETED);
-            restore_coordination->setStage(Stage::COMPLETED,"");
         }
         else
         {

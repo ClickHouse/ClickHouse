@@ -31,9 +31,9 @@ encrypt('mode', 'plaintext', 'key' [, iv, aad])
 **Arguments**
 
 - `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
-- `plaintext` — Text that need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
+- `plaintext` — Text thats need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
 - `key` — Encryption key. [String](../../sql-reference/data-types/string.md#string).
-- `iv` — Initialization vector. Required for `-gcm` modes, optional for others. [String](../../sql-reference/data-types/string.md#string).
+- `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
 - `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
@@ -165,7 +165,7 @@ Received exception from server (version 22.6.1):
 Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
 
-While `aes_encrypt_mysql` produces MySQL-compatible output:
+While `aes_encrypt_mysql` produces MySQL-compatitalbe output:
 
 Query:
 
@@ -233,7 +233,7 @@ decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 - `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 - `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
 - `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
-- `iv` — Initialization vector. Required for `-gcm` modes, Optional for others. [String](../../sql-reference/data-types/string.md#string).
+- `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
 - `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
@@ -364,7 +364,7 @@ aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 - `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 - `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
 - `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
-- `iv` — Initialization vector. Optional. [String](../../sql-reference/data-types/string.md#string).
+- `iv` — Initialization vector. Optinal. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 

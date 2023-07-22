@@ -52,7 +52,7 @@ namespace
     }
 
 
-    bool parseValue(IParserBase::Pos & pos, Expected & expected, std::optional<Field> & res)
+    bool parseValue(IParserBase::Pos & pos, Expected & expected, Field & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -69,7 +69,7 @@ namespace
     }
 
 
-    bool parseMinMaxValue(IParserBase::Pos & pos, Expected & expected, std::optional<Field> & min_value, std::optional<Field> & max_value)
+    bool parseMinMaxValue(IParserBase::Pos & pos, Expected & expected, Field & min_value, Field & max_value)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -124,9 +124,9 @@ namespace
         IParserBase::Pos & pos,
         Expected & expected,
         String & setting_name,
-        std::optional<Field> & value,
-        std::optional<Field> & min_value,
-        std::optional<Field> & max_value,
+        Field & value,
+        Field & min_value,
+        Field & max_value,
         std::optional<SettingConstraintWritability> & writability)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -136,9 +136,9 @@ namespace
                 return false;
 
             String res_setting_name = getIdentifierName(name_ast);
-            std::optional<Field> res_value;
-            std::optional<Field> res_min_value;
-            std::optional<Field> res_max_value;
+            Field res_value;
+            Field res_min_value;
+            Field res_max_value;
             std::optional<SettingConstraintWritability> res_writability;
 
             bool has_value_or_constraint = false;
@@ -151,7 +151,7 @@ namespace
             if (!has_value_or_constraint)
                 return false;
 
-            if (boost::iequals(res_setting_name, "PROFILE") && !res_value && !res_min_value && !res_max_value
+            if (boost::iequals(res_setting_name, "PROFILE") && res_value.isNull() && res_min_value.isNull() && res_max_value.isNull()
                 && res_writability == SettingConstraintWritability::CONST)
             {
                 /// Ambiguity: "profile readonly" can be treated either as a profile named "readonly" or
@@ -181,9 +181,9 @@ namespace
         {
             String parent_profile;
             String setting_name;
-            std::optional<Field> value;
-            std::optional<Field> min_value;
-            std::optional<Field> max_value;
+            Field value;
+            Field min_value;
+            Field max_value;
             std::optional<SettingConstraintWritability> writability;
 
             bool ok = parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, writability);

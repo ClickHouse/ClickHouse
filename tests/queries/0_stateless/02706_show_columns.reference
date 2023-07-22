@@ -1,7 +1,3 @@
---- Aliases of SHOW COLUMNS
-int32	Nullable(Int32)	1		\N	
-str	String	0	SOR	\N	
-uint64	UInt64	0	PRI SOR	\N	
 int32	Nullable(Int32)	1		\N	
 str	String	0	SOR	\N	
 uint64	UInt64	0	PRI SOR	\N	
@@ -28,11 +24,6 @@ int32	Nullable(Int32)	1		\N
 uint64	UInt64	0	PRI SOR	\N	
 --- LIMIT
 int32	Nullable(Int32)	1		\N	
---- Check with weird table names
-c	String	0	PRI SOR	\N	
-c	String	0	PRI SOR	\N	
-c	String	0	PRI SOR	\N	
-c	String	0	PRI SOR	\N	
 --- Original table
 int32	Nullable(Int32)	1		\N	
 str	String	0	SOR	\N	

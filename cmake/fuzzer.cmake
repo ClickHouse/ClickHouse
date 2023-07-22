@@ -7,6 +7,10 @@ if (FUZZER)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link")
 
+        if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=fuzzer-no-link")
+        endif()
+
         # NOTE: oss-fuzz can change LIB_FUZZING_ENGINE variable
         if (NOT LIB_FUZZING_ENGINE)
             set (LIB_FUZZING_ENGINE "-fsanitize=fuzzer")

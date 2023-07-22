@@ -185,10 +185,11 @@ void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica &
                 const String & other_replica_name = **other.replica_names.begin();
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Table {} on replica {} has part {} different from the part on replica {} "
-                    "(checksum '{}' on replica {} != checksum '{}' on replica {})",
-                    table_name_for_logs, replica_name, part_name, other_replica_name,
-                    getHexUIntLowercase(checksum), replica_name, getHexUIntLowercase(other.checksum), other_replica_name);
+                    "Table {} on replica {} has part {} which is different from the part on replica {}. Must be the same",
+                    table_name_for_logs,
+                    replica_name,
+                    part_name,
+                    other_replica_name);
             }
         }
 

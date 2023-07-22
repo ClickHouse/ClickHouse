@@ -108,7 +108,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     auto fs_path = fs::path(object_storage.url) / path;
     std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.substr(object_storage.url.size());
-    return {StoredObject(remote_path, object_storage.files.at(path).size, path)};
+    return {StoredObject::create(object_storage, remote_path, object_storage.files.at(path).size, path, true)};
 }
 
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const

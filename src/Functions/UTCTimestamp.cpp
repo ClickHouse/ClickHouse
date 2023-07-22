@@ -107,17 +107,17 @@ public:
 /// UTC_timestamp for MySQL interface support
 REGISTER_FUNCTION(UTCTimestamp)
 {
-    factory.registerFunction<UTCTimestampOverloadResolver>(FunctionDocumentation{
-        .description=R"(
+    factory.registerFunction<UTCTimestampOverloadResolver>({
+        R"(
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 Same as `now('UTC')`. Was added only for MySQL support. `now` is preferred.
 
 Example:
 [example:typical]
 )",
-    .examples{
-        {"typical", "SELECT UTCTimestamp();", ""}},
-    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+    Documentation::Examples{
+        {"typical", "SELECT UTCTimestamp();"}},
+    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::CaseInsensitive);
 }
 

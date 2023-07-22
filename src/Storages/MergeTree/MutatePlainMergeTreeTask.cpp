@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 
-StorageID MutatePlainMergeTreeTask::getStorageID() const
+StorageID MutatePlainMergeTreeTask::getStorageID()
 {
     return storage.getStorageID();
 }
@@ -23,6 +23,7 @@ void MutatePlainMergeTreeTask::onCompleted()
     bool delay = state == State::SUCCESS;
     task_result_callback(delay);
 }
+
 
 void MutatePlainMergeTreeTask::prepare()
 {
@@ -137,7 +138,7 @@ ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContext();
-    auto queryId = getQueryId();
+    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
     context->setCurrentQueryId(queryId);
     return context;
 }

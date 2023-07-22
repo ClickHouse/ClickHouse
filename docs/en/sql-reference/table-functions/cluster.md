@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/cluster
-sidebar_position: 30
+sidebar_position: 50
 sidebar_label: cluster
 title: "cluster, clusterAllReplicas"
 ---
@@ -9,7 +9,7 @@ Allows to access all shards in an existing cluster which configured in `remote_s
 
 `clusterAllReplicas` function — same as `cluster`, but all replicas are queried. Each replica in a cluster is used as a separate shard/connection.
 
-:::note
+:::note    
 All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 :::
 
@@ -23,9 +23,9 @@ clusterAllReplicas('cluster_name', db, table[, sharding_key])
 ```
 **Arguments**
 
-- `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-- `db.table` or `db`, `table` - Name of a database and a table.
-- `sharding_key` - A sharding key. Optional. Needs to be specified if the cluster has more than one shard.
+- `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers. 
+- `db.table` or `db`, `table` - Name of a database and a table.  
+- `sharding_key` - A sharding key. Optional. Needs to be specified if the cluster has more than one shard. 
 
 **Returned value**
 

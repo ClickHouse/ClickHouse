@@ -27,7 +27,6 @@ private:
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;
 
-
     size_t in_available;
     const uint8_t * in_data;
 

@@ -1,6 +1,5 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -13,8 +12,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
 #include <Poco/String.h>
 
@@ -28,7 +25,6 @@ namespace
     /// Used to visits ASTCreateQuery and extracts the names of all tables explicitly referenced in the create query.
     class DDLDependencyVisitorData
     {
-        friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
         DDLDependencyVisitorData(const ContextPtr & context_, const QualifiedTableName & table_name_, const ASTPtr & ast_)
             : create_query(ast_), table_name(table_name_), current_database(context_->getCurrentDatabase()), context(context_)
@@ -110,17 +106,9 @@ namespace
             if (!info || !info->is_local)
                 return;
 
-            if (!info->table_name.table.empty())
-            {
-                if (info->table_name.database.empty())
-                    info->table_name.database = current_database;
-                dependencies.emplace(std::move(info->table_name));
-            }
-            else
-            {
-                /// We don't have a table name, we have a select query instead
-                tryVisitNestedSelect(info->query, *this);
-            }
+            if (info->table_name.database.empty())
+                info->table_name.database = current_database;
+            dependencies.emplace(std::move(info->table_name));
         }
 
         /// ASTTableExpression represents a reference to a table in SELECT query.
@@ -436,25 +424,6 @@ namespace
         static bool needChildVisit(const ASTPtr &, const ASTPtr & child, const Data & data) { return data.needChildVisit(child); }
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
-
-    void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data)
-    {
-        try
-        {
-            ParserSelectWithUnionQuery parser;
-            String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
-            String fixed_query = removeWhereConditionPlaceholder(query);
-            ASTPtr select = parseQuery(parser, fixed_query, description,
-                                       data.context->getSettingsRef().max_query_size, data.context->getSettingsRef().max_parser_depth);
-
-            DDLDependencyVisitor::Visitor visitor{data};
-            visitor.visit(select);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("DDLDependencyVisitor");
-        }
-    }
 }
 
 

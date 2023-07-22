@@ -4,6 +4,7 @@ ReplacingMergeTree: OK
 JSONEachRow: OK
 clusterAllReplicas: OK
 SimpleAggregateFunction: OK
+write_ahead_log_interval_ms_to_fsync: OK
 max_concurrent_queries_for_all_users: OK
 test_shard_localhost: OK
 default_path_test: OK

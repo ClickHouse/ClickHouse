@@ -90,17 +90,15 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 ### is_deleted
 
-`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a “deleted“ row, `0` is a “state“ row.
+`is_deleted` —  Name of the column with the type of row: `1` is a “deleted“ row, `0` is a “state“ row.
 
-  Column data type — `UInt8`.
+    Column data type — `Int8`.
 
-:::note
-`is_deleted` can only be enabled when `ver` is used.
+    Can only be enabled when `ver` is used.
+    The row is deleted when use the `OPTIMIZE ... FINAL CLEANUP`, or `OPTIMIZE ... FINAL` if the engine settings `clean_deleted_rows` has been set to `Always`.
+    No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted one is the one kept.
 
-The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
 
-No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
-:::
 
 ## Query clauses
 

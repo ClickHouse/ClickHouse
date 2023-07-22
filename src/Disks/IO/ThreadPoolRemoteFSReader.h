@@ -8,8 +8,6 @@
 namespace DB
 {
 
-struct AsyncReadCounters;
-
 class ThreadPoolRemoteFSReader : public IAsynchronousReader
 {
 public:
@@ -26,19 +24,12 @@ private:
 class RemoteFSFileDescriptor : public IAsynchronousReader::IFileDescriptor
 {
 public:
-    explicit RemoteFSFileDescriptor(
-        ReadBuffer & reader_,
-        std::shared_ptr<AsyncReadCounters> async_read_counters_)
-        : reader(reader_)
-        , async_read_counters(async_read_counters_) {}
+    explicit RemoteFSFileDescriptor(ReadBuffer & reader_) : reader(reader_) { }
 
     IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
-    std::shared_ptr<AsyncReadCounters> getReadCounters() const { return async_read_counters; }
-
 private:
     ReadBuffer & reader;
-    std::shared_ptr<AsyncReadCounters> async_read_counters;
 };
 
 }

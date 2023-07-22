@@ -24,24 +24,24 @@ expect "\n:) "
 
 send -- "DROP TABLE IF EXISTS t01565;\n"
 # NOTE: this is important for -mn mode, you should send "\r" only after reading echoed command
-expect "\r\n"
+expect "DROP"
 send -- "\r"
 expect "\nOk."
 expect "\n:)"
 
 send -- "CREATE TABLE t01565 (c0 String, c1 Int32) ENGINE = Memory() ;\n"
-expect "\r\n"
+expect "CREATE"
 send -- "\r"
 expect "\nOk."
 expect "\n:) "
 
 send -- "INSERT INTO t01565(c0, c1) VALUES (\"1\",1) ;\n"
-expect "\r\n"
+expect "INSERT"
 send -- "\r"
 expect "\n:) "
 
 send -- "INSERT INTO t01565(c0, c1) VALUES ('1', 1) ;\n"
-expect "\r\n"
+expect "INSERT"
 send -- "\r"
 expect "\nOk."
 expect "\n:) "

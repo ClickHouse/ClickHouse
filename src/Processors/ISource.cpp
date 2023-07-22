@@ -124,7 +124,7 @@ std::optional<Chunk> ISource::tryGenerate()
 {
     auto chunk = generate();
     if (!chunk)
-        return std::nullopt;
+        return {};
 
     return chunk;
 }

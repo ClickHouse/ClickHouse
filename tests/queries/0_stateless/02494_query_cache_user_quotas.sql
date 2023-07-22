@@ -5,6 +5,8 @@
 -- be used in a settings profile, together with a readonly constraint. For simplicity, test both settings stand-alone in a stateless test
 -- instead of an integration test - the relevant logic will still be covered by that.
 
+SET allow_experimental_query_cache = true;
+
 SYSTEM DROP QUERY CACHE;
 
 SET query_cache_max_size_in_bytes = 1;
