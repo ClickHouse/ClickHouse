@@ -489,7 +489,6 @@ TEST_F(FileCacheTest, get)
 
             download(file_segment);
             ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
-            file_segment.completePartAndResetDownloader();
 
             other_1.join();
 
