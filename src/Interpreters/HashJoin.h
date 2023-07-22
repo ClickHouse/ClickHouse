@@ -146,7 +146,8 @@ public:
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    HashJoin(
+        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false, size_t reserve_num = 0);
 
     ~HashJoin() override;
 
@@ -217,6 +218,15 @@ public:
         M(keys256)                     \
         M(hashed)
 
+    /// Only for maps using hash table.
+    #define APPLY_FOR_HASH_JOIN_VARIANTS(M) \
+        M(key32)                            \
+        M(key64)                            \
+        M(key_string)                       \
+        M(key_fixed_string)                 \
+        M(keys128)                          \
+        M(keys256)                          \
+        M(hashed)
 
     /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -262,6 +272,22 @@ public:
             #define M(NAME) \
                 case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
                 APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+        }
+
+        void reserve(Type which, size_t num)
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
+                case Type::key8:             break;
+                case Type::key16:            break;
+
+            #define M(NAME) \
+                case Type::NAME: NAME->reserve(num); break;
+                APPLY_FOR_HASH_JOIN_VARIANTS(M)
             #undef M
             }
         }
@@ -409,7 +435,7 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    void dataMapInit(MapsVariant &);
+    void dataMapInit(MapsVariant &, size_t);
 
     void initRightBlockStructure(Block & saved_block_sample);
 

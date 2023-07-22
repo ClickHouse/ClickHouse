@@ -762,7 +762,7 @@ def test_kafka_formats(kafka_cluster):
                 ),
             ],
             "extra_settings": ", format_avro_schema_registry_url='http://{}:{}'".format(
-                kafka_cluster.schema_registry_host, 8081
+                kafka_cluster.schema_registry_host, kafka_cluster.schema_registry_port
             ),
             "supports_empty_value": True,
         },
@@ -4339,7 +4339,7 @@ def test_row_based_formats(kafka_cluster):
             f"""
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.kafka;
-    
+
             CREATE TABLE test.kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -4347,10 +4347,10 @@ def test_row_based_formats(kafka_cluster):
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
                          kafka_max_rows_per_message = 5;
-    
+
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.kafka;
-                
+
             INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
         """
         )
@@ -4459,17 +4459,17 @@ def test_block_based_formats_2(kafka_cluster):
             f"""
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.kafka;
-    
+
             CREATE TABLE test.kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
                          kafka_topic_list = '{format_name}',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}';
-    
+
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.kafka;
-                
+
             INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
         """
         )

@@ -16,19 +16,15 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
@@ -47,7 +43,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -60,6 +55,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -78,7 +74,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -716,7 +711,7 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
         node->as<ASTExpressionList>())
         return false;
 
-    /// Do not go to FROM, JOIN, UNION.
+    /// Do not go to FROM, JOIN, UNION
     if (child->as<ASTTableExpression>() ||
         child->as<ASTSelectQuery>())
         return false;
@@ -981,7 +976,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.name == "indexHint")
     {
         if (data.only_consts)
+        {
+            /// We need to collect constants inside `indexHint` for index analysis.
+            if (node.arguments)
+            {
+                for (const auto & arg : node.arguments->children)
+                    visit(arg, data);
+            }
             return;
+        }
 
         /// Here we create a separate DAG for indexHint condition.
         /// It will be used only for index analysis.
@@ -1104,12 +1107,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
             throw;
         }
-    }
-
-    /// Normal functions are not parametric for now.
-    if (node.parameters)
-    {
-        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
 
     Names argument_names;
