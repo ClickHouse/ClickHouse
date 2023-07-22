@@ -448,7 +448,7 @@ inline char * find_last_not_symbols_or_null(char * begin, char * end)
 /// See https://github.com/boostorg/algorithm/issues/63
 /// And https://bugs.llvm.org/show_bug.cgi?id=41141
 template <char... symbols, typename To>
-inline void splitInto(To & to, const std::string & what, bool token_compress = false)
+inline To & splitInto(To & to, std::string_view what, bool token_compress = false)
 {
     const char * pos = what.data();
     const char * end = pos + what.size();
@@ -464,4 +464,6 @@ inline void splitInto(To & to, const std::string & what, bool token_compress = f
         else
             pos = delimiter_or_end;
     }
+
+    return to;
 }

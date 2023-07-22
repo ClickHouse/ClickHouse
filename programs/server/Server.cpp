@@ -889,6 +889,7 @@ try
 #endif
 
     global_context->setRemoteHostFilter(config());
+    global_context->setHTTPHeaderFilter(config());
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
@@ -1202,6 +1203,7 @@ try
             }
 
             global_context->setRemoteHostFilter(*config);
+            global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
@@ -1613,13 +1615,7 @@ try
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
-        {
-            String level_str = config().getString("text_log.level", "");
-            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
-            setTextLog(global_context->getTextLog(), level);
-
-            buildLoggers(config(), logger());
-        }
+        buildLoggers(config(), logger());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
