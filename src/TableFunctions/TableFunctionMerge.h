@@ -24,6 +24,7 @@ private:
     using DBToTableSetMap = std::map<String, TableSet>;
     const DBToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
 

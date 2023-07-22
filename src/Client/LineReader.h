@@ -18,14 +18,19 @@ public:
     struct Suggest
     {
         using Words = std::vector<std::string>;
+        using Callback = std::function<Words(const String & prefix, size_t prefix_length)>;
 
         /// Get vector for the matched range of words if any.
         replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length);
         void addWords(Words && new_words);
 
+        void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }
+
     private:
         Words words TSA_GUARDED_BY(mutex);
         Words words_no_case TSA_GUARDED_BY(mutex);
+
+        Callback custom_completions_callback = nullptr;
 
         std::mutex mutex;
     };
@@ -46,7 +51,10 @@ public:
     /// clickhouse-client so that without -m flag, one can still paste multiline queries, and
     /// possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
     /// more details.
+    /// These methods (if implemented) emit the control characters immediately, without waiting
+    /// for the next readLine() call.
     virtual void enableBracketedPaste() {}
+    virtual void disableBracketedPaste() {}
 
 protected:
     enum InputStatus

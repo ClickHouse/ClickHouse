@@ -72,16 +72,17 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
+        MutationsInterpreter::Settings settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }
     else if (table->supportsLightweightDelete())
     {
-        if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
+        if (!getContext()->getSettingsRef().enable_lightweight_delete)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Lightweight delete mutate is experimental. "
-                            "Set `allow_experimental_lightweight_delete` setting to enable it");
+                            "Lightweight delete mutate is disabled. "
+                            "Set `enable_lightweight_delete` setting to enable it");
 
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query =

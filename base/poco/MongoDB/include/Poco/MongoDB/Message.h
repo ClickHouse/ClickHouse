@@ -18,56 +18,59 @@
 #define MongoDB_Message_INCLUDED
 
 
-#include "Poco/Net/Socket.h"
+#include <sstream>
 #include "Poco/BinaryReader.h"
 #include "Poco/BinaryWriter.h"
-#include "Poco/MongoDB/MongoDB.h"
 #include "Poco/MongoDB/MessageHeader.h"
-#include <sstream>
+#include "Poco/MongoDB/MongoDB.h"
+#include "Poco/Net/Socket.h"
 
 
-namespace Poco {
-namespace MongoDB {
-
-
-class MongoDB_API Message
-	/// Base class for all messages send or retrieved from MongoDB server.
+namespace Poco
 {
-public:
-	explicit Message(MessageHeader::OpCode opcode);
-		/// Creates a Message using the given OpCode.
-	
-	virtual ~Message();
-		/// Destructor
-
-	MessageHeader& header();
-		/// Returns the message header
-
-protected:
-	MessageHeader _header;
-
-	void messageLength(Poco::Int32 length);
-		/// Sets the message length in the message header
-};
-
-
-//
-// inlines
-//
-inline MessageHeader& Message::header()
+namespace MongoDB
 {
-	return _header;
+
+
+    class MongoDB_API Message
+    /// Base class for all messages send or retrieved from MongoDB server.
+    {
+    public:
+        explicit Message(MessageHeader::OpCode opcode);
+        /// Creates a Message using the given OpCode.
+
+        virtual ~Message();
+        /// Destructor
+
+        MessageHeader & header();
+        /// Returns the message header
+
+    protected:
+        MessageHeader _header;
+
+        void messageLength(Poco::Int32 length);
+        /// Sets the message length in the message header
+    };
+
+
+    //
+    // inlines
+    //
+    inline MessageHeader & Message::header()
+    {
+        return _header;
+    }
+
+
+    inline void Message::messageLength(Poco::Int32 length)
+    {
+        poco_assert(length > 0);
+        _header.setMessageLength(length);
+    }
+
+
 }
-
-
-inline void Message::messageLength(Poco::Int32 length)
-{
-	poco_assert(length > 0);
-	_header.setMessageLength(length);
-}
-
-
-} } // namespace Poco::MongoDB
+} // namespace Poco::MongoDB
 
 
 #endif // MongoDB_Message_INCLUDED

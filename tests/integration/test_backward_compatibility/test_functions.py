@@ -9,7 +9,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
-upstream = cluster.add_instance("upstream")
+upstream = cluster.add_instance("upstream", allow_analyzer=False)
 backward = cluster.add_instance(
     "backward",
     image="clickhouse/clickhouse-server",
@@ -19,6 +19,7 @@ backward = cluster.add_instance(
     # Affected at least: singleValueOrNull, last_value, min, max, any, anyLast, anyHeavy, first_value, argMin, argMax
     tag="22.6",
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

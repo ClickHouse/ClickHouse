@@ -21,21 +21,22 @@
 #include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API EventArgs
-	/// The purpose of the EventArgs class is to be used as parameter
-	/// when one doesn't want to send any data.
-	///
-	/// One can use EventArgs as a base class for one's own event arguments
-	/// but with the arguments being a template parameter this is not
-	/// necessary.
+/// The purpose of the EventArgs class is to be used as parameter
+/// when one doesn't want to send any data.
+///
+/// One can use EventArgs as a base class for one's own event arguments
+/// but with the arguments being a template parameter this is not
+/// necessary.
 {
 public:
-	EventArgs();
-	
-	virtual ~EventArgs();
+    EventArgs();
+
+    virtual ~EventArgs();
 };
 
 

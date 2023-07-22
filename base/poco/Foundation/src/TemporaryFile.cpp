@@ -15,9 +15,7 @@
 #include "Poco/TemporaryFile.h"
 #include "Poco/Path.h"
 #include "Poco/Exception.h"
-#if !defined(POCO_VXWORKS)
 #include "Poco/Process.h"
-#endif
 #include "Poco/Mutex.h"
 #include <set>
 #include <sstream>
@@ -150,11 +148,7 @@ std::string TemporaryFile::tempName(const std::string& tempDir)
 	{
 		name << Path::separator();
 	}
-#if defined(POCO_VXWORKS)
-	name << "tmp";
-#else
 	name << "tmp" << Process::id();
-#endif
 	for (int i = 0; i < 6; ++i)
 	{
 		name << char('a' + (n % 26));

@@ -165,8 +165,8 @@ namespace DB
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
-            const DataTypePtr & from_type = removeNullable(arguments[0].type);
-            DataTypes argument_types = { from_type };
+            DataTypes argument_types = { arguments[0].type };
+            const DataTypePtr & from_type_not_null = removeNullable(arguments[0].type);
 
             FunctionBasePtr base;
             auto call = [&](const auto & types) -> bool
@@ -178,7 +178,7 @@ namespace DB
                 base = std::make_unique<FunctionBaseFromModifiedJulianDay<Name, FromDataType, nullOnErrors>>(argument_types, return_type);
                 return true;
             };
-            bool built = callOnBasicType<void, true, false, false, false>(from_type->getTypeId(), call);
+            bool built = callOnBasicType<void, true, false, false, false>(from_type_not_null->getTypeId(), call);
             if (built)
                 return base;
 
@@ -188,7 +188,7 @@ namespace DB
                 * here causes a SEGV. So we must somehow create a
                 * dummy implementation and return it.
                 */
-            if (WhichDataType(from_type).isNothing()) // Nullable(Nothing)
+            if (WhichDataType(from_type_not_null).isNothing()) // Nullable(Nothing)
                 return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
             else
                 // Should not happen.

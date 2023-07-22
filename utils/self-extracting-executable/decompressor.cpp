@@ -168,6 +168,10 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
+bool isSudo()
+{
+    return geteuid() == 0;
+}
 
 /// Read data about files and decomrpess them.
 int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
@@ -219,6 +223,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         std::cerr << "Not enough space for decompression. Have " << fs_info.f_blocks * info_in.st_blksize << ", need " << decompressed_full_size << std::endl;
         return 1;
     }
+
+    bool is_sudo = isSudo();
 
     FileData file_info;
     /// Decompress files with appropriate file names
@@ -319,6 +325,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             perror("fsync");
         if (0 != close(output_fd))
             perror("close");
+
+        if (is_sudo)
+            chown(file_name, info_in.st_uid, info_in.st_gid);
     }
 
     if (0 != munmap(input, info_in.st_size))
@@ -353,11 +362,12 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #else
 
-    int read_exe_path(char *exe, size_t/* buf_sz*/)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
-        if (realpath("/proc/self/exe", exe) == nullptr)
-            return 1;
-        return 0;
+        ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
+        if (n > 0)
+            exe[n] = '\0';
+        return n > 0 && n < static_cast<ssize_t>(buf_sz);
     }
 
 #endif
@@ -414,12 +424,19 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path;
 
+    struct stat input_info;
+    if (0 != stat(self, &input_info))
+    {
+        perror("stat");
+        return 1;
+    }
+
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     /// get inode of this executable
     uint64_t inode = getInode(self);
     if (inode == 0)
     {
-        std::cerr << "Unable to obtain inode." << std::endl;
+        std::cerr << "Unable to obtain inode for exe '" << self << "'." << std::endl;
         return 1;
     }
 
@@ -438,13 +455,6 @@ int main(int/* argc*/, char* argv[])
     if (lockf(lock, F_LOCK, 0))
     {
         perror("lockf");
-        return 1;
-    }
-
-    struct stat input_info;
-    if (0 != stat(self, &input_info))
-    {
-        perror("stat");
         return 1;
     }
 
@@ -531,6 +541,9 @@ int main(int/* argc*/, char* argv[])
             perror("unlink");
             return 1;
         }
+
+        if (isSudo())
+            chown(static_cast<char *>(self), input_info.st_uid, input_info.st_gid);
 
         if (has_exec)
         {

@@ -24,54 +24,55 @@
 #define Foundation_SHA1Engine_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/DigestEngine.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API SHA1Engine: public DigestEngine
-	/// This class implements the SHA-1 message digest algorithm.
-	/// (FIPS 180-1, see http://www.itl.nist.gov/fipspubs/fip180-1.htm)
+class Foundation_API SHA1Engine : public DigestEngine
+/// This class implements the SHA-1 message digest algorithm.
+/// (FIPS 180-1, see http://www.itl.nist.gov/fipspubs/fip180-1.htm)
 {
 public:
-	enum
-	{
-		BLOCK_SIZE  = 64,
-		DIGEST_SIZE = 20
-	};
+    enum
+    {
+        BLOCK_SIZE = 64,
+        DIGEST_SIZE = 20
+    };
 
-	SHA1Engine();
-	~SHA1Engine();
-		
-	std::size_t digestLength() const;
-	void reset();
-	const DigestEngine::Digest& digest();
+    SHA1Engine();
+    ~SHA1Engine();
+
+    std::size_t digestLength() const;
+    void reset();
+    const DigestEngine::Digest & digest();
 
 protected:
-	void updateImpl(const void* data, std::size_t length);
+    void updateImpl(const void * data, std::size_t length);
 
 private:
-	void transform();
-	static void byteReverse(UInt32* buffer, int byteCount);
+    void transform();
+    static void byteReverse(UInt32 * buffer, int byteCount);
 
-	typedef UInt8 BYTE;
+    typedef UInt8 BYTE;
 
-	struct Context
-	{
-		UInt32 digest[5]; // Message digest
-		UInt32 countLo;   // 64-bit bit count
-		UInt32 countHi;
-		UInt32 data[16];  // SHA data buffer
-		UInt32 slop;      // # of bytes saved in data[]
-	};
+    struct Context
+    {
+        UInt32 digest[5]; // Message digest
+        UInt32 countLo; // 64-bit bit count
+        UInt32 countHi;
+        UInt32 data[16]; // SHA data buffer
+        UInt32 slop; // # of bytes saved in data[]
+    };
 
-	Context _context;
-	DigestEngine::Digest _digest;
+    Context _context;
+    DigestEngine::Digest _digest;
 
-	SHA1Engine(const SHA1Engine&);
-	SHA1Engine& operator = (const SHA1Engine&);
+    SHA1Engine(const SHA1Engine &);
+    SHA1Engine & operator=(const SHA1Engine &);
 };
 
 

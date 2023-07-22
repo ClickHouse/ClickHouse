@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
-#include <Common/ThreadPool.h>
 #include <Core/Settings.h>
+#include <Parsers/IAST_fwd.h>
 #include <Poco/Logger.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/ThreadPool.h>
+
 #include <future>
 
 namespace DB
@@ -19,7 +22,25 @@ public:
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_);
     ~AsynchronousInsertQueue();
 
-    std::future<void> push(ASTPtr query, ContextPtr query_context);
+    struct PushResult
+    {
+        enum Status
+        {
+            OK,
+            TOO_MUCH_DATA,
+        };
+
+        Status status;
+
+        /// Future that allows to wait until the query is flushed.
+        std::future<void> future;
+
+        /// Read buffer that contains extracted
+        /// from query data in case of too much data.
+        std::unique_ptr<ReadBuffer> insert_data_buffer;
+    };
+
+    PushResult push(ASTPtr query, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
 private:
@@ -46,11 +67,13 @@ private:
         struct Entry
         {
         public:
-            const String bytes;
+            String bytes;
             const String query_id;
+            const String async_dedup_token;
+            MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_);
+            Entry(String && bytes_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -60,6 +83,19 @@ private:
             std::promise<void> promise;
             std::atomic_bool finished = false;
         };
+
+        ~InsertData()
+        {
+            auto it = entries.begin();
+            // Entries must be destroyed in context of user who runs async insert.
+            // Each entry in the list may correspond to a different user,
+            // so we need to switch current thread's MemoryTracker parent on each iteration.
+            while (it != entries.end())
+            {
+                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
+                it = entries.erase(it);
+            }
+        }
 
         using EntryPtr = std::shared_ptr<Entry>;
 

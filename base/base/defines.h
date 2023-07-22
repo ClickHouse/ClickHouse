@@ -28,8 +28,8 @@
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
-#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !(defined(__riscv) && (__riscv_xlen == 64))
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress) and RISC-V 64 (experimental)"
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__riscv) && (__riscv_xlen == 64))
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress) and RISC-V 64 (experimental)"
 #endif
 
 /// Check for presence of address sanitizer
@@ -72,18 +72,6 @@
 #        define UNDEFINED_BEHAVIOR_SANITIZER 1
 #    endif
 #endif
-
-#if defined(ADDRESS_SANITIZER)
-#    define BOOST_USE_ASAN 1
-#    define BOOST_USE_UCONTEXT 1
-#endif
-
-#if defined(THREAD_SANITIZER)
-#    define BOOST_USE_TSAN 1
-#    define BOOST_USE_UCONTEXT 1
-#endif
-
-/// TODO: Strange enough, there is no way to detect UB sanitizer.
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
 /// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.

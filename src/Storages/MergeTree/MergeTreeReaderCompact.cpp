@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -10,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -36,7 +36,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings_,
         avg_value_size_hints_)
     , marks_loader(
-          data_part_info_for_read_->getDataPartStorage(),
+          data_part_info_for_read_,
           mark_cache,
           data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part_info_for_read_->getMarksCount(),
@@ -45,6 +45,12 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           settings.read_settings,
           load_marks_threadpool_,
           data_part_info_for_read_->getColumns().size())
+    , profile_callback(profile_callback_)
+    , clock_type(clock_type_)
+{
+}
+
+void MergeTreeReaderCompact::initialize()
 {
     try
     {
@@ -75,8 +81,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
 
-            if (profile_callback_)
-                buffer->setProfileCallback(profile_callback_, clock_type_);
+            if (profile_callback)
+                buffer->setProfileCallback(profile_callback, clock_type);
 
             if (!settings.checksum_on_read)
                 buffer->disableChecksumming();
@@ -95,8 +101,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                         std::nullopt, std::nullopt),
                     /* allow_different_codecs = */ true);
 
-            if (profile_callback_)
-                buffer->setProfileCallback(profile_callback_, clock_type_);
+            if (profile_callback)
+                buffer->setProfileCallback(profile_callback, clock_type);
 
             if (!settings.checksum_on_read)
                 buffer->disableChecksumming();
@@ -105,6 +111,12 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             data_buffer = non_cached_buffer.get();
             compressed_data_buffer = non_cached_buffer.get();
         }
+    }
+    catch (const Exception & e)
+    {
+        if (!isRetryableException(e))
+            data_part_info_for_read->reportBroken();
+        throw;
     }
     catch (...)
     {
@@ -157,6 +169,12 @@ void MergeTreeReaderCompact::fillColumnPositions()
 size_t MergeTreeReaderCompact::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
+    if (!initialized)
+    {
+        initialize();
+        initialized = true;
+    }
+
     if (continue_reading)
         from_mark = next_mark;
 
@@ -195,11 +213,11 @@ size_t MergeTreeReaderCompact::readRows(
             }
             catch (Exception & e)
             {
-                if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                if (!isRetryableException(e))
                     data_part_info_for_read->reportBroken();
 
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
+                e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
                 throw;
             }
             catch (...)
@@ -302,6 +320,30 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
+void MergeTreeReaderCompact::prefetchBeginOfRange(Priority priority)
+try
+{
+    if (!initialized)
+    {
+        initialize();
+        initialized = true;
+    }
+
+    adjustUpperBound(all_mark_ranges.back().end);
+    seekToMark(all_mark_ranges.front().begin, 0);
+    data_buffer->prefetch(priority);
+}
+catch (const Exception & e)
+{
+    if (!isRetryableException(e))
+        data_part_info_for_read->reportBroken();
+    throw;
+}
+catch (...)
+{
+    data_part_info_for_read->reportBroken();
+    throw;
+}
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {

@@ -15,17 +15,7 @@
 #include "Poco/Mutex.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#if defined(_WIN32_WCE)
-#include "Mutex_WINCE.cpp"
-#else
-#include "Mutex_WIN32.cpp"
-#endif
-#elif defined(POCO_VXWORKS)
-#include "Mutex_VX.cpp"
-#else
 #include "Mutex_POSIX.cpp"
-#endif
 
 
 namespace Poco {

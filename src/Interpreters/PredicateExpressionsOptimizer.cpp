@@ -35,7 +35,8 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!enable_optimize_predicate_expression)
         return false;
 
-    if (select_query.having() && (!select_query.group_by_with_cube && !select_query.group_by_with_rollup && !select_query.group_by_with_totals))
+    const bool has_incompatible_constructs = select_query.group_by_with_cube || select_query.group_by_with_rollup || select_query.group_by_with_totals || select_query.group_by_with_grouping_sets;
+    if (select_query.having() && !has_incompatible_constructs)
         tryMovePredicatesFromHavingToWhere(select_query);
 
     if (!select_query.tables() || select_query.tables()->children.empty())
@@ -117,7 +118,10 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
             if (table_element->table_join && isLeft(table_element->table_join->as<ASTTableJoin>()->kind))
                 continue;  /// Skip right table optimization
 
-            if (table_element->table_join && isFull(table_element->table_join->as<ASTTableJoin>()->kind))
+            if (table_element->table_join && (
+                    isFull(table_element->table_join->as<ASTTableJoin>()->kind)
+                    || table_element->table_join->as<ASTTableJoin>()->strictness == JoinStrictness::Asof
+                    || table_element->table_join->as<ASTTableJoin>()->strictness == JoinStrictness::Anti))
                 break;  /// Skip left and right table optimization
 
             is_rewrite_tables |= tryRewritePredicatesToTable(tables_element[table_pos], tables_predicates[table_pos],

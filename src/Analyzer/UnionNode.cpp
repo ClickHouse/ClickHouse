@@ -140,13 +140,23 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     return result_union_node;
 }
 
-ASTPtr UnionNode::toASTImpl() const
+ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;
-    select_with_union_query->children.push_back(getQueriesNode()->toAST());
+    select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+    if (is_subquery)
+    {
+        auto subquery = std::make_shared<ASTSubquery>();
+
+        subquery->cte_name = cte_name;
+        subquery->children.push_back(std::move(select_with_union_query));
+
+        return subquery;
+    }
 
     return select_with_union_query;
 }

@@ -21,10 +21,6 @@
 #elif defined(POCO_OS_FAMILY_UNIX)
 #include <time.h>
 #include <unistd.h>
-#elif defined(POCO_VXWORKS)
-#include <timers.h>
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "Poco/UnWindows.h"
 #endif
 #include <algorithm>
 #undef min
@@ -93,18 +89,7 @@ void Clock::swap(Clock& timestamp)
 
 void Clock::update()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-
-	LARGE_INTEGER perfCounter;
-	LARGE_INTEGER perfFreq;
-	if (QueryPerformanceCounter(&perfCounter) && QueryPerformanceFrequency(&perfFreq))
-	{
-		_clock = resolution()*(perfCounter.QuadPart/perfFreq.QuadPart);
-		_clock += (perfCounter.QuadPart % perfFreq.QuadPart)*resolution()/perfFreq.QuadPart;
-	}
-	else throw Poco::SystemException("cannot get system clock");
-
-#elif defined(__MACH__)
+#if   defined(__MACH__)
 
 	clock_serv_t cs;
 	mach_timespec_t ts;
@@ -113,18 +98,6 @@ void Clock::update()
 	clock_get_time(cs, &ts);
 	mach_port_deallocate(mach_task_self(), cs);
 	
-	_clock = ClockVal(ts.tv_sec)*resolution() + ts.tv_nsec/1000;
-
-#elif defined(POCO_VXWORKS)
-
-	struct timespec ts;
-#if defined(CLOCK_MONOTONIC) // should be in VxWorks 6.x
-	if (clock_gettime(CLOCK_MONOTONIC, &ts))
-		throw SystemException("cannot get system clock");
-#else
-	if (clock_gettime(CLOCK_REALTIME, &ts))
-		throw SystemException("cannot get system clock");
-#endif
 	_clock = ClockVal(ts.tv_sec)*resolution() + ts.tv_nsec/1000;
 
 #elif defined(POCO_HAVE_CLOCK_GETTIME)
@@ -145,17 +118,7 @@ void Clock::update()
 
 Clock::ClockDiff Clock::accuracy()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-
-	LARGE_INTEGER perfFreq;
-	if (QueryPerformanceFrequency(&perfFreq) && perfFreq.QuadPart > 0)
-	{
-		ClockVal acc = resolution()/perfFreq.QuadPart;
-		return acc > 0 ? acc : 1;
-	}
-	else throw Poco::SystemException("cannot get system clock accuracy");
-
-#elif defined(__MACH__)
+#if   defined(__MACH__)
 
 	clock_serv_t cs;
 	int nanosecs;
@@ -166,19 +129,6 @@ Clock::ClockDiff Clock::accuracy()
 	mach_port_deallocate(mach_task_self(), cs);
 	
 	ClockVal acc = nanosecs/1000;
-	return acc > 0 ? acc : 1;
-
-#elif defined(POCO_VXWORKS)
-
-	struct timespec ts;
-#if defined(CLOCK_MONOTONIC) // should be in VxWorks 6.x
-	if (clock_getres(CLOCK_MONOTONIC, &ts))
-		throw SystemException("cannot get system clock");
-#else
-	if (clock_getres(CLOCK_REALTIME, &ts))
-		throw SystemException("cannot get system clock");
-#endif
-	ClockVal acc = ClockVal(ts.tv_sec)*resolution() + ts.tv_nsec/1000;
 	return acc > 0 ? acc : 1;
 
 #elif defined(_POSIX_TIMERS) && defined(_POSIX_MONOTONIC_CLOCK)
@@ -200,21 +150,9 @@ Clock::ClockDiff Clock::accuracy()
 	
 bool Clock::monotonic()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
+#if   defined(__MACH__)
 
 	return true;
-
-#elif defined(__MACH__)
-
-	return true;
-
-#elif defined(POCO_VXWORKS)
-
-#if defined(CLOCK_MONOTONIC) // should be in VxWorks 6.x
-	return true;
-#else
-	return false;
-#endif
 
 #elif defined(_POSIX_TIMERS) && defined(_POSIX_MONOTONIC_CLOCK)
 

@@ -163,7 +163,6 @@ def test_state_duplicate_restart(started_cluster):
 
 # http://zookeeper-user.578899.n2.nabble.com/Why-are-ephemeral-nodes-written-to-disk-tp7583403p7583418.html
 def test_ephemeral_after_restart(started_cluster):
-
     try:
         node_zk = None
         node_zk2 = None

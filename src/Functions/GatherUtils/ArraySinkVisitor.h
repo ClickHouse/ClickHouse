@@ -4,7 +4,6 @@
 
 namespace DB::GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySink;
@@ -32,5 +31,4 @@ protected:
     ~ArraySinkVisitorImpl() = default;
 };
 
-#pragma GCC visibility pop
 }

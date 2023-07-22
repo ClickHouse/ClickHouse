@@ -1,10 +1,10 @@
 ---
 slug: /en/operations/query-cache
 sidebar_position: 65
-sidebar_label: Query Cache [experimental]
+sidebar_label: Query Cache
 ---
 
-# Query Cache [experimental]
+# Query Cache
 
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
@@ -29,21 +29,10 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-:::warning
-The query cache is an experimental feature that should not be used in production. There are known cases (e.g. in distributed query
-processing) where wrong results are returned.
-:::
-
 ## Configuration Settings and Usage
 
-As long as the result cache is experimental it must be activated using the following configuration setting:
-
-```sql
-SET allow_experimental_query_cache = true;
-```
-
-Afterwards, setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries
-of the current session should utilize the query cache. For example, the first execution of query
+Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
+current session should utilize the query cache. For example, the first execution of query
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -85,8 +74,35 @@ make the matching more natural, all query-level settings related to the query ca
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
-The size of the query cache, the maximum number of cache entries and the maximum size of cache entries (in bytes and in records) can
-be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
+The size of the query cache in bytes, the maximum number of cache entries and the maximum size of individual cache entries (in bytes and in
+records) can be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
+
+It is also possible to limit the cache usage of individual users using [settings profiles](settings/settings-profiles.md) and [settings
+constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
+allocate in the query cache and the the maximum number of stored query results. For that, first provide configurations
+[query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
+[query_cache_max_entries](settings/settings.md#query-cache-size-max-items) in a user profile in `users.xml`, then make both settings
+readonly:
+
+``` xml
+<profiles>
+    <default>
+        <!-- The maximum cache size in bytes for user/profile 'default' -->
+        <query_cache_max_size_in_bytes>10000</query_cache_max_size_in_bytes>
+        <!-- The maximum number of SELECT query results stored in the cache for user/profile 'default' -->
+        <query_cache_max_entries>100</query_cache_max_entries>
+        <!-- Make both settings read-only so the user cannot change them -->
+        <constraints>
+            <query_cache_max_size_in_bytes>
+                <readonly/>
+            </query_cache_max_size_in_bytes>
+            <query_cache_max_entries>
+                <readonly/>
+            <query_cache_max_entries>
+        </constraints>
+    </default>
+</profiles>
+```
 
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](settings/settings.md#query-cache-min-query-duration). For example, the result of query
@@ -103,6 +119,20 @@ cached - for that use setting [query_cache_min_query_runs](settings/settings.md#
 Entries in the query cache become stale after a certain time period (time-to-live). By default, this period is 60 seconds but a different
 value can be specified at session, profile or query level using setting [query_cache_ttl](settings/settings.md#query-cache-ttl).
 
+Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
+from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
+
+ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#settings-max_block_size) rows. Due to filtering, aggregation,
+etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
+[query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results) (enabled by default) controls if result blocks
+are squashed (if they are tiny) or split (if they are large) into blocks of 'max_block_size' size before insertion into the query result
+cache. This reduces performance of writes into the query cache but improves compression rate of cache entries and provides more natural
+block granularity when query results are later served from the query cache.
+
+As a result, the query cache stores for each query multiple (partial)
+result blocks. While this behavior is a good default, it can be suppressed using setting
+[query_cache_squash_partial_query_results](settings/settings.md#query-cache-squash-partial-query-results).
+
 Also, results of queries with non-deterministic functions such as `rand()` and `now()` are not cached. This can be overruled using
 setting [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
@@ -110,3 +140,7 @@ Finally, entries in the query cache are not shared between users due to security
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](settings/settings.md#query-cache-share-between-users).
+
+## Related Content
+
+- Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

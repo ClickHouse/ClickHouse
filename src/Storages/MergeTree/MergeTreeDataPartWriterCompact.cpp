@@ -139,8 +139,8 @@ void writeColumnSingleGranule(
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true; //-V1048
-    serialize_settings.low_cardinality_max_dictionary_size = 0; //-V1048
+    serialize_settings.position_independent_encoding = true;
+    serialize_settings.low_cardinality_max_dictionary_size = 0;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -236,7 +236,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
-            prev_stream->hashing_buf.next(); //-V522
+            prev_stream->hashing_buf.next();
         }
 
         writeIntBinary(granule.rows_to_write, marks_out);
@@ -276,14 +276,23 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
         writeIntBinary(static_cast<UInt64>(0), marks_out);
     }
 
+    for (const auto & [_, stream] : streams_by_codec)
+    {
+        stream->hashing_buf.finalize();
+        stream->compressed_buf.finalize();
+    }
+
+    plain_hashing.finalize();
+
     plain_file->next();
 
     if (marks_source_hashing)
-        marks_source_hashing->next();
+        marks_source_hashing->finalize();
     if (marks_compressor)
-        marks_compressor->next();
+        marks_compressor->finalize();
 
-    marks_file_hashing->next();
+    marks_file_hashing->finalize();
+
     addToChecksums(checksums);
 
     plain_file->preFinalize();
@@ -292,14 +301,14 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
-    plain_file->finalize();
-    marks_file->finalize();
-
     if (sync)
     {
         plain_file->sync();
         marks_file->sync();
     }
+
+    plain_file->finalize();
+    marks_file->finalize();
 }
 
 static void fillIndexGranularityImpl(

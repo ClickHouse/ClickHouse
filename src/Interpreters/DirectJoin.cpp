@@ -1,7 +1,7 @@
 #include <Interpreters/DirectJoin.h>
-
-#include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -103,7 +103,7 @@ DirectKeyValueJoin::DirectKeyValueJoin(
     right_sample_block_with_storage_column_names = right_sample_block_with_storage_column_names_;
 }
 
-bool DirectKeyValueJoin::addJoinedBlock(const Block &, bool)
+bool DirectKeyValueJoin::addBlockToJoin(const Block &, bool)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
 }

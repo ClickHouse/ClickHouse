@@ -143,28 +143,58 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             "If 'engine' is specified for system table, PARTITION BY parameters should "
                             "be specified directly inside 'engine' and 'partition_by' setting doesn't make sense");
         if (config.has(config_prefix + ".ttl"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, TTL parameters should "
+                            "be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
+        if (config.has(config_prefix + ".order_by"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, ORDER BY parameters should "
+                            "be specified directly inside 'engine' and 'order_by' setting doesn't make sense");
         if (config.has(config_prefix + ".storage_policy"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, SETTINGS storage_policy = '...' "
-                            "should be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, SETTINGS storage_policy = '...' should "
+                            "be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
+        if (config.has(config_prefix + ".settings"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, SETTINGS parameters should "
+                            "be specified directly inside 'engine' and 'settings' setting doesn't make sense");
+
         engine = config.getString(config_prefix + ".engine");
     }
     else
     {
-        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+        /// ENGINE expr is necessary.
         engine = "ENGINE = MergeTree";
+
+        /// PARTITION expr is not necessary.
+        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
+
+        /// TTL expr is not necessary.
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
             engine += " TTL " + ttl;
 
-        engine += " ORDER BY ";
-        engine += TSystemLog::getDefaultOrderBy();
+        /// ORDER BY expr is necessary.
+        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        engine += " ORDER BY (" + order_by + ")";
+
+        /// SETTINGS expr is not necessary.
+        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
+        ///
+        /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
-        if (!storage_policy.empty())
-            engine += " SETTINGS storage_policy = " + quoteString(storage_policy);
+        String settings = config.getString(config_prefix + ".settings", "");
+        if (!storage_policy.empty() || !settings.empty())
+        {
+            engine += " SETTINGS";
+            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
+            if (!storage_policy.empty())
+                engine += " storage_policy = " + quoteString(storage_policy);
+            if (!settings.empty())
+                engine += (storage_policy.empty() ? " " : ", ") + settings;
+        }
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
@@ -302,15 +332,16 @@ SystemLog<LogElement>::SystemLog(
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
-    size_t flush_interval_milliseconds_)
-    : WithContext(context_)
+    size_t flush_interval_milliseconds_,
+    std::shared_ptr<SystemLogQueue<LogElement>> queue_)
+    : Base(database_name_ + "." + table_name_, flush_interval_milliseconds_, queue_)
+    , WithContext(context_)
+    , log(&Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")"))
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , create_query(serializeAST(*getCreateTableQuery()))
-    , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 }
 
 template <typename LogElement>
@@ -322,6 +353,26 @@ void SystemLog<LogElement>::shutdown()
     if (table)
         table->flushAndShutdown();
 }
+
+template <typename LogElement>
+void SystemLog<LogElement>::stopFlushThread()
+{
+    {
+        std::lock_guard lock(thread_mutex);
+
+        if (!saving_thread || !saving_thread->joinable())
+            return;
+
+        if (is_shutdown)
+            return;
+
+        is_shutdown = true;
+        queue->shutdown();
+    }
+
+    saving_thread->join();
+}
+
 
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
@@ -340,27 +391,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             // Should we prepare table even if there are no new messages.
             bool should_prepare_tables_anyway = false;
 
-            {
-                std::unique_lock lock(mutex);
-                flush_event.wait_for(lock,
-                    std::chrono::milliseconds(flush_interval_milliseconds),
-                    [&] ()
-                    {
-                        return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
-                    }
-                );
-
-                queue_front_index += queue.size();
-                to_flush_end = queue_front_index;
-                // Swap with existing array from previous flush, to save memory
-                // allocations.
-                to_flush.resize(0);
-                queue.swap(to_flush);
-
-                should_prepare_tables_anyway = is_force_prepare_tables;
-
-                exit_this_thread = is_shutdown;
-            }
+            to_flush_end = queue->pop(to_flush, should_prepare_tables_anyway, exit_this_thread);
 
             if (to_flush.empty())
             {
@@ -369,9 +400,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
 
-                    std::lock_guard lock(mutex);
-                    is_force_prepare_tables = false;
-                    flush_event.notify_all();
+                    queue->confirm(to_flush_end);
                 }
             }
             else
@@ -426,6 +455,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -441,12 +472,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    {
-        std::lock_guard lock(mutex);
-        flushed_up_to = to_flush_end;
-        is_force_prepare_tables = false;
-        flush_event.notify_all();
-    }
+    queue->confirm(to_flush_end);
 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
@@ -476,30 +502,34 @@ void SystemLog<LogElement>::prepareTable()
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
-
-            ASTRenameQuery::Table from;
-            from.database = table_id.database_name;
-            from.table = table_id.table_name;
-
-            ASTRenameQuery::Table to;
-            to.database = table_id.database_name;
-            to.table = table_id.table_name + "_" + toString(suffix);
-
-            ASTRenameQuery::Element elem;
-            elem.from = from;
-            elem.to = to;
-
-            rename->elements.emplace_back(elem);
+            ASTRenameQuery::Element elem
+            {
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name)
+                },
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                }
+            };
 
             LOG_DEBUG(
                 log,
                 "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
                 description,
-                backQuoteIfNeed(to.table),
+                backQuoteIfNeed(elem.to.getTable()),
                 old_create_query,
                 create_query);
 
+            rename->elements.emplace_back(std::move(elem));
+
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
@@ -581,7 +611,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     return create;
 }
-
 
 #define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class SystemLog<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)

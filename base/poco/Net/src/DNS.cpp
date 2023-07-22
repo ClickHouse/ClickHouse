@@ -87,12 +87,6 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned
 	{
 		aierror(rc, hostname);
 	}
-#elif defined(POCO_VXWORKS)
-	int addr = hostGetByName(const_cast<char*>(hostname.c_str()));
-	if (addr != ERROR)
-	{
-		return HostEntry(hostname, IPAddress(&addr, sizeof(addr)));
-	}
 #else
 	struct hostent* he = gethostbyname(hostname.c_str());
 	if (he)
@@ -140,12 +134,6 @@ HostEntry DNS::hostByAddress(const IPAddress& address, unsigned
 	else
 	{
 		aierror(rc, address.toString());
-	}
-#elif defined(POCO_VXWORKS)
-	char name[MAXHOSTNAMELEN + 1];
-	if (hostGetByAddr(*reinterpret_cast<const int*>(address.addr()), name) == OK)
-	{
-		return HostEntry(std::string(name), address);
 	}
 #else
 	struct hostent* he = gethostbyaddr(reinterpret_cast<const char*>(address.addr()), address.length(), address.af());
@@ -330,13 +318,7 @@ std::string DNS::decodeIDNLabel(const std::string& encodedIDN)
 
 int DNS::lastError()
 {
-#if defined(_WIN32)
-	return GetLastError();
-#elif defined(POCO_VXWORKS)
-	return errno;
-#else
 	return h_errno;
-#endif
 }
 
 
@@ -371,11 +353,9 @@ void DNS::aierror(int code, const std::string& arg)
 		throw DNSException("Temporary DNS error while resolving", arg);
 	case EAI_FAIL:
 		throw DNSException("Non recoverable DNS error while resolving", arg);
-#if !defined(_WIN32) // EAI_NODATA and EAI_NONAME have the same value
 #if defined(EAI_NODATA) // deprecated in favor of EAI_NONAME on FreeBSD
 	case EAI_NODATA:
 		throw NoAddressFoundException(arg);
-#endif
 #endif
 	case EAI_NONAME:
 		throw HostNotFoundException(arg);
@@ -383,10 +363,6 @@ void DNS::aierror(int code, const std::string& arg)
 	case EAI_SYSTEM:
 		error(lastError(), arg);
 		break;
-#endif
-#if defined(_WIN32)
-	case WSANO_DATA: // may happen on XP
-		throw HostNotFoundException(arg);
 #endif
 	default:
 		throw DNSException("EAI", gai_strerror(code));

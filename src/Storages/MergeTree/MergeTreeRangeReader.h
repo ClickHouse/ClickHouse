@@ -1,6 +1,5 @@
 #pragma once
 #include <Core/Block.h>
-#include <Common/logger_useful.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -23,18 +22,34 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct PrewhereExprStep
 {
+    enum Type
+    {
+        Filter,
+        Expression,
+    };
+
+    Type type = Type::Filter;
     ExpressionActionsPtr actions;
-    String column_name;
-    bool remove_column = false;
+    String filter_column_name;
+
+    bool remove_filter_column = false;
     bool need_filter = false;
+
+    /// Some PREWHERE steps should be executed without conversions.
+    /// A step without alter conversion cannot be executed after step with alter conversions.
+    bool perform_alter_conversions = false;
 };
+
+using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
+using PrewhereExprSteps = std::vector<PrewhereExprStepPtr>;
 
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
-    std::vector<PrewhereExprStep> steps;
+    PrewhereExprSteps steps;
 
     std::string dump() const;
+    std::string dumpConditions() const;
 };
 
 class FilterWithCachedCount

@@ -59,7 +59,7 @@ public:
     /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     Pipe read(
         const Names & column_names,
@@ -100,12 +100,15 @@ private:
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
     mutable RWLock rwlock = RWLockImpl::create();
+
     mutable std::mutex mutate_mutex;
 
     void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
+    /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
+    static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);
 
     void convertRightBlock(Block & block) const;
 };

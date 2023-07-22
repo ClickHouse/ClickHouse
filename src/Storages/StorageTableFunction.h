@@ -103,9 +103,6 @@ public:
             size_t max_block_size,
             size_t num_streams) override
     {
-        String cnames;
-        for (const auto & c : column_names)
-            cnames += c + " ";
         auto storage = getNested();
         auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
@@ -133,7 +130,8 @@ public:
     SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
-            ContextPtr context) override
+            ContextPtr context,
+            bool async_insert) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
@@ -142,7 +140,7 @@ public:
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
         }
-        return storage->write(query, metadata_snapshot, context);
+        return storage->write(query, metadata_snapshot, context, async_insert);
     }
 
     void renameInMemory(const StorageID & new_table_id) override

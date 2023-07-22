@@ -21,7 +21,7 @@ CREATE TABLE indices_mutaions1
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/indices_mutaions', 'r1')
 PARTITION BY i32
 ORDER BY u64
-SETTINGS index_granularity = 2;
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 CREATE TABLE indices_mutaions2
 (
@@ -32,7 +32,7 @@ CREATE TABLE indices_mutaions2
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/indices_mutaions', 'r2')
 PARTITION BY i32
 ORDER BY u64
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO indices_mutaions1 VALUES

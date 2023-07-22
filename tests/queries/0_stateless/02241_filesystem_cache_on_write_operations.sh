@@ -33,7 +33,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     FORMAT Vertical"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
 
@@ -54,7 +54,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     FORMAT Vertical"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0"
 
@@ -64,7 +64,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02241 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0"
 
-    $CLICKHOUSE_CLIENT --query "SELECT count() size FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) size FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 
@@ -87,24 +87,23 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     FORMAT Vertical;"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100) SETTINGS enable_filesystem_cache_on_write_operations=0"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(300, 10000)"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES test_02241"
 
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --query "OPTIMIZE TABLE test_02241 FINAL"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --mutations_sync=2 --query "ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
-
+    $CLICKHOUSE_CLIENT --query "SELECT count(), sum(size) FROM system.filesystem_cache"
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"

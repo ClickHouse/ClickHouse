@@ -179,7 +179,7 @@ def test_initial_load_from_snapshot(started_cluster):
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -216,7 +216,7 @@ def test_no_connection_at_startup(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -255,7 +255,7 @@ def test_detach_attach_is_ok(started_cluster):
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -309,7 +309,7 @@ def test_replicating_insert_queries(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 @pytest.mark.timeout(320)
@@ -661,13 +661,13 @@ def test_virtual_columns(started_cluster):
         time.sleep(0.5)
         result = instance.query("SELECT count() FROM test.postgresql_replica;")
 
-    # just check that it works, no check with `expected` becuase _version is taken as LSN, which will be different each time.
+    # just check that it works, no check with `expected` because _version is taken as LSN, which will be different each time.
     result = instance.query(
         "SELECT key, value, _sign, _version FROM test.postgresql_replica;"
     )
     print(result)
     cursor.execute("DROP TABLE postgresql_replica;")
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
@@ -702,11 +702,10 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
     result = instance.query("SELECT count() FROM test.postgresql_replica")
     print(result)  # Just debug
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
-
     # FIXME (kssenii) temporary disabled
     if instance.is_built_with_sanitizer():
         pytest.skip("Temporary disabled (FIXME)")
@@ -721,7 +720,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     create_postgres_table(cursor, table_name)
 
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT -1, 1")
-    instance.query(f"DROP TABLE IF EXISTS test.{table_name} NO DELAY")
+    instance.query(f"DROP TABLE IF EXISTS test.{table_name} SYNC")
     create_materialized_table(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -748,7 +747,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
 
     result = instance.query(f"SELECT count() FROM test.{table_name}")
     print(result)  # Just debug
-    instance.query(f"DROP TABLE test.{table_name} NO DELAY")
+    instance.query(f"DROP TABLE test.{table_name} SYNC")
 
 
 def test_drop_table_immediately(started_cluster):
@@ -772,7 +771,7 @@ def test_drop_table_immediately(started_cluster):
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
     check_tables_are_synchronized("postgresql_replica")
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query(f"DROP TABLE test.postgresql_replica SYNC")
 
 
 if __name__ == "__main__":

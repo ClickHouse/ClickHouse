@@ -34,6 +34,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <Common/CurrentMetrics.h>
 #include <filesystem>
 
 
@@ -42,6 +43,12 @@ namespace fs = std::filesystem;
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
   */
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 namespace DB
 {
@@ -103,7 +110,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());

@@ -99,6 +99,9 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) override;
 
+    /// Write a file using a custom function to write an object to the disk's object storage.
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+
     void removeFile(const std::string & path) override;
     void removeFileIfExists(const std::string & path) override;
     void removeDirectory(const std::string & path) override;

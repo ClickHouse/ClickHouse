@@ -22,26 +22,29 @@
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 
 
-namespace Poco {
-namespace Net {
-
-
-class NetSSL_API KeyConsoleHandler: public PrivateKeyPassphraseHandler
-	/// An implementation of PrivateKeyPassphraseHandler that
-	/// reads the key for a certificate from the console.
+namespace Poco
 {
-public:
-	KeyConsoleHandler(bool server);
-		/// Creates the KeyConsoleHandler.
-
-	~KeyConsoleHandler();
-		/// Destroys the KeyConsoleHandler.
-
-	void onPrivateKeyRequested(const void* pSender, std::string& privateKey);
-};
+namespace Net
+{
 
 
-} } // namespace Poco::Net
+    class NetSSL_API KeyConsoleHandler : public PrivateKeyPassphraseHandler
+    /// An implementation of PrivateKeyPassphraseHandler that
+    /// reads the key for a certificate from the console.
+    {
+    public:
+        KeyConsoleHandler(bool server);
+        /// Creates the KeyConsoleHandler.
+
+        ~KeyConsoleHandler();
+        /// Destroys the KeyConsoleHandler.
+
+        void onPrivateKeyRequested(const void * pSender, std::string & privateKey);
+    };
+
+
+}
+} // namespace Poco::Net
 
 
 #endif // NetSSL_KeyConsoleHandler_INCLUDED

@@ -89,11 +89,7 @@ int FileStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
 {
 	if (_fd == -1) return -1;
 
-#if defined(POCO_VXWORKS)
-	int n = write(_fd, const_cast<char*>(buffer), length);
-#else
 	int n = write(_fd, buffer, length);
-#endif
 	if (n == -1)
 		File::handleLastError(_path);
 	_pos += n;

@@ -4,14 +4,19 @@
 
 #if USE_LIBURING
 
-#include <Common/ThreadPool.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool_fwd.h>
 #include <IO/AsynchronousReader.h>
 #include <deque>
 #include <unordered_map>
 #include <liburing.h>
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
+
+class Exception;
 
 /** Perform reads using the io_uring Linux subsystem.
   *
@@ -30,7 +35,7 @@ private:
     uint32_t cq_entries;
 
     std::atomic<bool> cancelled{false};
-    ThreadFromGlobalPool ring_completion_monitor;
+    std::unique_ptr<ThreadFromGlobalPool> ring_completion_monitor;
 
     struct EnqueuedRequest
     {
@@ -74,7 +79,7 @@ public:
 
     void wait() override {}
 
-    virtual ~IOUringReader() override;
+    ~IOUringReader() override;
 };
 
 }

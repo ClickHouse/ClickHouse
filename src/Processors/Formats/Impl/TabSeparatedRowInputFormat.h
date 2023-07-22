@@ -23,6 +23,7 @@ public:
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetParser() override;
 
 private:
     TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
@@ -73,6 +74,8 @@ public:
     }
 
     void setReadBuffer(ReadBuffer & in_) override;
+
+    bool checkForSuffix() override;
 
 private:
     template <bool is_header>

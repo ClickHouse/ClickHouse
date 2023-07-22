@@ -63,6 +63,9 @@ static constexpr const char * getNameByTrait()
 template <typename T>
 struct GroupArraySamplerData
 {
+    /// For easy serialization.
+    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
@@ -97,6 +100,9 @@ struct GroupArrayNumericData;
 template <typename T>
 struct GroupArrayNumericData<T, false>
 {
+    /// For easy serialization.
+    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
@@ -260,19 +266,20 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const auto & value = this->data(place).value;
-        size_t size = value.size();
+        const size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
+        for (const auto & element : value)
+            writeBinaryLittleEndian(element, buf);
 
         if constexpr (Trait::last)
-            DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
+            writeBinaryLittleEndian(this->data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
+            writeBinaryLittleEndian(this->data(place).total_values, buf);
             WriteBufferFromOwnString rng_buf;
             rng_buf << this->data(place).rng;
-            DB::writeStringBinary(rng_buf.str(), buf);
+            writeStringBinary(rng_buf.str(), buf);
         }
     }
 
@@ -282,7 +289,8 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
         if (limit_num_elems && unlikely(size > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
@@ -290,16 +298,17 @@ public:
         auto & value = this->data(place).value;
 
         value.resize_exact(size, arena);
-        buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+        for (auto & element : value)
+            readBinaryLittleEndian(element, buf);
 
         if constexpr (Trait::last)
-            DB::readIntBinary<size_t>(this->data(place).total_values, buf);
+            readBinaryLittleEndian(this->data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            DB::readIntBinary<size_t>(this->data(place).total_values, buf);
+            readBinaryLittleEndian(this->data(place).total_values, buf);
             std::string rng_string;
-            DB::readStringBinary(rng_string, buf);
+            readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
             rng_buf >> this->data(place).rng;
         }
@@ -360,6 +369,9 @@ struct GroupArrayNodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
+        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
@@ -593,14 +605,14 @@ public:
             node->write(buf);
 
         if constexpr (Trait::last)
-            DB::writeIntBinary<size_t>(data(place).total_values, buf);
+            writeBinaryLittleEndian(data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            DB::writeIntBinary<size_t>(data(place).total_values, buf);
+            writeBinaryLittleEndian(data(place).total_values, buf);
             WriteBufferFromOwnString rng_buf;
             rng_buf << data(place).rng;
-            DB::writeStringBinary(rng_buf.str(), buf);
+            writeStringBinary(rng_buf.str(), buf);
         }
     }
 
@@ -613,7 +625,8 @@ public:
             return;
 
         if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
         if (limit_num_elems && unlikely(elems > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
@@ -625,13 +638,13 @@ public:
             value[i] = Node::read(buf, arena);
 
         if constexpr (Trait::last)
-            DB::readIntBinary<size_t>(data(place).total_values, buf);
+            readBinaryLittleEndian(data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            DB::readIntBinary<size_t>(data(place).total_values, buf);
+            readBinaryLittleEndian(data(place).total_values, buf);
             std::string rng_string;
-            DB::readStringBinary(rng_string, buf);
+            readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
             rng_buf >> data(place).rng;
         }

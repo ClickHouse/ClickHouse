@@ -36,11 +36,11 @@ public:
 
     struct ReplicaStatus
     {
-        explicit ReplicaStatus(ConnectionEstablisherAsync connection_stablisher_) : connection_establisher(std::move(connection_stablisher_))
+        explicit ReplicaStatus(std::unique_ptr<ConnectionEstablisherAsync> connection_stablisher_) : connection_establisher(std::move(connection_stablisher_))
         {
         }
 
-        ConnectionEstablisherAsync connection_establisher;
+        std::unique_ptr<ConnectionEstablisherAsync> connection_establisher;
         TimerDescriptor change_replica_timeout;
         bool is_ready = false;
     };
@@ -51,7 +51,7 @@ public:
                         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
 
     /// Create and return active connections according to pool_mode.
-    std::vector<Connection *> getManyConnections(PoolMode pool_mode);
+    std::vector<Connection *> getManyConnections(PoolMode pool_mode, AsyncCallback async_callback = {});
 
     /// Try to get connection to the new replica without blocking. Process all current events in epoll (connections, timeouts),
     /// Returned state might be READY (connection established successfully),
@@ -78,7 +78,7 @@ public:
     ~HedgedConnectionsFactory();
 
 private:
-    State waitForReadyConnectionsImpl(bool blocking, Connection *& connection_out);
+    State waitForReadyConnectionsImpl(bool blocking, Connection *& connection_out, AsyncCallback & async_callback);
 
     /// Try to start establishing connection to the new replica. Return
     /// the index of the new replica or -1 if cannot start new connection.
@@ -88,7 +88,7 @@ private:
     /// Return -1 if there is no free replica.
     int getNextIndex();
 
-    int getReadyFileDescriptor(bool blocking);
+    int getReadyFileDescriptor(bool blocking, AsyncCallback & async_callback);
 
     void processFailedConnection(int index, const std::string & fail_message);
 
@@ -102,7 +102,7 @@ private:
 
     /// Return NOT_READY state if there is no ready events, READY if replica is ready
     /// and CANNOT_CHOOSE if there is no more events in epoll.
-    State processEpollEvents(bool blocking, Connection *& connection_out);
+    State processEpollEvents(bool blocking, Connection *& connection_out, AsyncCallback & async_callback);
 
     State setBestUsableReplica(Connection *& connection_out);
 

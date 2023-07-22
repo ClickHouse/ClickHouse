@@ -43,7 +43,7 @@ struct fmt::formatter<ReadableSize>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -51,6 +51,6 @@ struct fmt::formatter<ReadableSize>
     template <typename FormatContext>
     auto format(const ReadableSize & size, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", formatReadableSizeWithBinarySuffix(size.value));
+        return fmt::format_to(ctx.out(), "{}", formatReadableSizeWithBinarySuffix(size.value));
     }
 };
