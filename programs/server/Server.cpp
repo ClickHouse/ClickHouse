@@ -887,6 +887,7 @@ try
 #endif
 
     global_context->setRemoteHostFilter(config());
+    global_context->setHTTPHeaderFilter(config());
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
@@ -1200,6 +1201,7 @@ try
             }
 
             global_context->setRemoteHostFilter(*config);
+            global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
@@ -1599,13 +1601,7 @@ try
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
-        {
-            String level_str = config().getString("text_log.level", "");
-            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
-            setTextLog(global_context->getTextLog(), level);
-
-            buildLoggers(config(), logger());
-        }
+        buildLoggers(config(), logger());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
@@ -1641,17 +1637,26 @@ try
         global_context->initializeTraceCollector();
 
         /// Set up server-wide memory profiler (for total memory tracker).
-        UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
-        if (total_memory_profiler_step)
+        if (server_settings.total_memory_profiler_step)
         {
-            total_memory_tracker.setProfilerStep(total_memory_profiler_step);
+            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
         }
 
-        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
-        if (total_memory_tracker_sample_probability > 0.0)
+        if (server_settings.total_memory_tracker_sample_probability > 0.0)
         {
-            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
+            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
         }
+
+        if (server_settings.total_memory_profiler_sample_min_allocation_size)
+        {
+            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
+        }
+
+        if (server_settings.total_memory_profiler_sample_max_allocation_size)
+        {
+            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
+        }
+
     }
 #endif
 
