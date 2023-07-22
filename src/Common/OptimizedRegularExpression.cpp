@@ -423,6 +423,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
         bool & is_trivial,
         bool & required_substring_is_prefix,
         std::vector<std::string> & alternatives)
+try
 {
     Literals alternative_literals;
     Literal required_literal;
@@ -432,12 +433,20 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     for (auto & lit : alternative_literals)
         alternatives.push_back(std::move(lit.literal));
 }
+catch(...)
+{
+    required_substring = "";
+    is_trivial = false;
+    required_substring_is_prefix = false;
+    alternatives.clear();
+    std::cerr << "Analyze RegularExpression failed, got error: {}" << DB::getCurrentExceptionMessage(false) << "\n";
+}
 
 template <bool thread_safe>
 OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
-    std::vector<std::string> alternativesDummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternativesDummy);
+    std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
+    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
 
 
     /// Just three following options are supported
