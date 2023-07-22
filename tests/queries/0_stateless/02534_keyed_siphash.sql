@@ -263,10 +263,10 @@ select sipHash128Keyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5, 6, 7, 8,
 select sipHash128Keyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62)) == sipHash128(char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62));
 select sipHash128Keyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63)) == sipHash128(char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63));
 
-select sipHash64Keyed((0, 0), '1'); -- { serverError 48 }
-select sipHash128Keyed((0, 0), '1'); -- { serverError 48 }
-select sipHash64Keyed(toUInt64(0), '1'); -- { serverError 48 }
-select sipHash128Keyed(toUInt64(0), '1'); -- { serverError 48 }
+select sipHash64Keyed((0, 0), '1'); -- { serverError NOT_IMPLEMENTED }
+select sipHash128Keyed((0, 0), '1'); -- { serverError NOT_IMPLEMENTED }
+select sipHash64Keyed(toUInt64(0), '1'); -- { serverError NOT_IMPLEMENTED }
+select sipHash128Keyed(toUInt64(0), '1'); -- { serverError NOT_IMPLEMENTED }
 
 select hex(sipHash64());
 SELECT hex(sipHash128()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128()) = '1CE422FEE7BD8DE20000000000000000';
@@ -280,4 +280,57 @@ INSERT INTO tab VALUES ((2, 2), 4);
 -- these two statements must produce the same result
 SELECT sipHash64Keyed(key, val) FROM tab;
 SELECT sipHash64Keyed(key, 4::UInt64) FROM tab;
+SELECT hex(sipHash128Keyed(key, val)) FROM tab;
+SELECT hex(sipHash128Keyed(key, 4::UInt64)) FROM tab;
 DROP TABLE tab;
+
+SELECT 'Check memsan bug';
+SELECT sipHash64Keyed((2::UInt64, toUInt64(2)), 4) GROUP BY toUInt64(2);
+SELECT hex(sipHash64Keyed((toUInt64(9223372036854775806), toUInt64(-9223372036854775808)), char(2147483646, -2147483648, 1, 3, 4, 7, 2147483647))) GROUP BY toUInt64(257), (toUInt64(9223372036854775806), toUInt64(2147483646));
+SELECT sipHash64Keyed((toUInt64(9223372036854775806), 9223372036854775808::UInt64), char(2)) GROUP BY toUInt64(9223372036854775806);
+
+SELECT 'Check const columns';
+DROP TABLE IF EXISTS sipHashKeyed_test;
+CREATE TABLE sipHashKeyed_test ENGINE = Memory() AS SELECT 1 a, 'test' b;
+SELECT sipHash64Keyed((toUInt64(0), toUInt64(0)), 1, 'test');
+SELECT sipHash64(tuple(*)) FROM sipHashKeyed_test;
+SELECT sipHash64Keyed((toUInt64(0), toUInt64(0)), tuple(*)) FROM sipHashKeyed_test;
+SELECT sipHash64Keyed((toUInt64(0), toUInt64(0)), a, b) FROM sipHashKeyed_test;
+SELECT hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), 1, 'test'));
+SELECT hex(sipHash128(tuple(*))) FROM sipHashKeyed_test;
+SELECT hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), tuple(*))) FROM sipHashKeyed_test;
+SELECT hex(sipHash128Keyed((toUInt64(0), toUInt64(0)), a, b)) FROM sipHashKeyed_test;
+DROP TABLE sipHashKeyed_test;
+
+SELECT 'Check multiple keys as tuple from a table';
+DROP TABLE IF EXISTS sipHashKeyed_keys;
+CREATE TABLE sipHashKeyed_keys (key Tuple(UInt64, UInt64), val UInt64) ENGINE=Memory;
+INSERT INTO sipHashKeyed_keys VALUES ((2, 2), 4);
+INSERT INTO sipHashKeyed_keys VALUES ((4, 4), 4);
+SELECT sipHash64Keyed(key, val) FROM sipHashKeyed_keys ORDER by key;
+SELECT hex(sipHash128Keyed(key, val)) FROM sipHashKeyed_keys ORDER by key;
+DROP TABLE sipHashKeyed_keys;
+
+SELECT 'Check multiple keys as separate ints from a table';
+DROP TABLE IF EXISTS sipHashKeyed_keys;
+CREATE TABLE sipHashKeyed_keys (key0 UInt64, key1 UInt64, val UInt64) ENGINE=Memory;
+INSERT INTO sipHashKeyed_keys VALUES (2, 2, 4);
+INSERT INTO sipHashKeyed_keys VALUES (4, 4, 4);
+SELECT sipHash64Keyed((key0, key1), val) FROM sipHashKeyed_keys ORDER by key0;
+SELECT hex(sipHash128Keyed((key0, key1), val)) FROM sipHashKeyed_keys ORDER by key0;
+SELECT 'Check constant key and data from a table';
+SELECT sipHash64Keyed((2::UInt64, 2::UInt64), val) FROM sipHashKeyed_keys ORDER by val;
+SELECT hex(sipHash128Keyed((2::UInt64, 2::UInt64), val)) FROM sipHashKeyed_keys ORDER by val;
+DROP TABLE sipHashKeyed_keys;
+
+SELECT 'Check multiple keys as separate ints from a table with constant data';
+DROP TABLE IF EXISTS sipHashKeyed_keys;
+CREATE TABLE sipHashKeyed_keys (key0 UInt64, key1 UInt64) ENGINE=Memory;
+INSERT INTO sipHashKeyed_keys VALUES (2, 2);
+INSERT INTO sipHashKeyed_keys VALUES (4, 4);
+SELECT sipHash64Keyed((key0, key1), 4::UInt64) FROM sipHashKeyed_keys ORDER by key0;
+SELECT hex(sipHash128Keyed((key0, key1), 4::UInt64)) FROM sipHashKeyed_keys ORDER by key0;
+DROP TABLE sipHashKeyed_keys;
+
+SELECT 'Check asan bug';
+SELECT sipHash128((toUInt64(9223372036854775806), 1)) = sipHash128(1) GROUP BY sipHash128(1::UInt8), toUInt64(9223372036854775806);

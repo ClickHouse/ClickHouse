@@ -173,6 +173,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             /// This coarse method of synchronization is perfectly ok for fatal signals.
             sleepForSeconds(1);
         }
+
+        /// Wait for all logs flush operations
+        sleepForSeconds(3);
         call_default_signal_handler(sig);
     }
 
@@ -986,7 +989,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    String build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    String build_id_hex = SymbolIndex::instance().getBuildIDHex();
     if (build_id_hex.empty())
         build_id = "";
     else
