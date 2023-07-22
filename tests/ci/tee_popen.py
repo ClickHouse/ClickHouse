@@ -11,7 +11,7 @@ import os
 import sys
 
 
-# Very simple tee logic implementation. You can specify a shell command, output
+# Very simple tee logic implementation. You can specify shell command, output
 # logfile and env variables. After TeePopen is created you can only wait until
 # it finishes. stderr and stdout will be redirected both to specified file and
 # stdout.

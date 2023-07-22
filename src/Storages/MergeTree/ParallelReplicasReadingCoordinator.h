@@ -18,21 +18,15 @@ public:
     explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
     ~ParallelReplicasReadingCoordinator();
 
+    void setMode(CoordinationMode mode);
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement);
     ParallelReadResponse handleRequest(ParallelReadRequest request);
-
-    /// Called when some replica is unavailable and we skipped it.
-    /// This is needed to "finalize" reading state e.g. spread all the marks using
-    /// consistent hashing, because otherwise coordinator will continue working in
-    /// "pending" state waiting for the unavailable replica to send the announcement.
-    void markReplicaAsUnavailable(size_t replica_number);
 
 private:
     void initialize();
 
-    std::mutex mutex;
-    size_t replicas_count{0};
     CoordinationMode mode{CoordinationMode::Default};
+    size_t replicas_count{0};
     std::atomic<bool> initialized{false};
     std::unique_ptr<ImplInterface> pimpl;
 };

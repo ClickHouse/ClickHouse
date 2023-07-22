@@ -108,12 +108,6 @@ true	Bool
 123456789012	UInt64
 0	UInt64
 0	Int8
-{'a':'hello','b':'world'}
-{'a':'hello','b':'world'}
-{'a':('hello',100),'b':('world',200)}
-{'a':[100,200],'b':[-100,200,300]}
-{'a':{'c':'hello'},'b':{'d':'world'}}
-{'c':'hello'}
 --JSONExtractKeysAndValues--
 [('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
@@ -158,7 +152,6 @@ e
 u
 v
 --show error: type should be const string
---show error: key of map type should be String
 --allow_simdjson=0--
 --JSONLength--
 2
@@ -224,12 +217,6 @@ Friday
 (3,0)
 (3,5)
 (3,0)
-{'a':'hello','b':'world'}
-{'a':'hello','b':'world'}
-{'a':('hello',100),'b':('world',200)}
-{'a':[100,200],'b':[-100,200,300]}
-{'a':{'c':'hello'},'b':{'d':'world'}}
-{'c':'hello'}
 --JSONExtractKeysAndValues--
 [('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
@@ -279,4 +266,3 @@ u
 v
 --show error: type should be const string
 --show error: index type should be integer
---show error: key of map type should be String

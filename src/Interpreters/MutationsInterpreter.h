@@ -36,44 +36,30 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 /// to this data.
 class MutationsInterpreter
 {
-private:
     struct Stage;
 
 public:
-    struct Settings
-    {
-        explicit Settings(bool can_execute_) : can_execute(can_execute_) {}
-
-        /// If false only analyze mutation expressions.
-        bool can_execute = false;
-        /// Whether all columns should be returned, not just updated
-        bool return_all_columns = false;
-        /// Whether we should return mutated or all existing rows
-        bool return_mutated_rows = false;
-        /// Where we should filter deleted rows by lightweight DELETE.
-        bool apply_deleted_mask = true;
-        /// Where we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
-        bool recalculate_dependencies_of_updated_columns = true;
-    };
-
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
     MutationsInterpreter(
         StoragePtr storage_,
-        StorageMetadataPtr metadata_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        Settings settings_);
+        bool can_execute_,
+        bool return_all_columns_ = false,
+        bool return_deleted_rows_ = false);
 
-    /// Special case for *MergeTree
+    /// Special case for MergeTree
     MutationsInterpreter(
         MergeTreeData & storage_,
         MergeTreeData::DataPartPtr source_part_,
-        StorageMetadataPtr metadata_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
-        Names available_columns_,
         ContextPtr context_,
-        Settings settings_);
+        bool can_execute_,
+        bool return_all_columns_ = false,
+        bool return_deleted_rows_ = false);
 
     void validate();
     size_t evaluateCommandsSize();
@@ -107,6 +93,8 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
     /// The main idea is to create a dedicated reading from MergeTree part.
@@ -120,7 +108,6 @@ public:
         bool supportsLightweightDelete() const;
         bool hasLightweightDeleteMask() const;
         bool materializeTTLRecalculateOnly() const;
-        bool hasIndexOrProjection(const String & file_name) const;
 
         void read(
             Stage & first_stage,
@@ -136,7 +123,7 @@ public:
     private:
         StoragePtr storage;
 
-        /// Special case for *MergeTree.
+        /// Special case for MergeTree.
         MergeTreeData * data = nullptr;
         MergeTreeData::DataPartPtr part;
     };
@@ -144,11 +131,12 @@ public:
 private:
     MutationsInterpreter(
         Source source_,
-        StorageMetadataPtr metadata_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
-        Names available_columns_,
         ContextPtr context_,
-        Settings settings_);
+        bool can_execute_,
+        bool return_all_columns_,
+        bool return_deleted_rows_);
 
     void prepare(bool dry_run);
 
@@ -163,10 +151,11 @@ private:
     Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
-    Names available_columns;
     ContextPtr context;
-    Settings settings;
+    bool can_execute;
     SelectQueryOptions select_limits;
+
+    bool apply_deleted_mask = true;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
@@ -217,6 +206,12 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
+
+    // whether all columns should be returned, not just updated
+    bool return_all_columns;
+
+    // whether we should return deleted or nondeleted rows on DELETE mutation
+    bool return_deleted_rows;
 };
 
 }

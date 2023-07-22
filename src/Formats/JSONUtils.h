@@ -73,8 +73,7 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name = std::nullopt,
         size_t indent = 0,
-        const char * title_after_delimiter = " ",
-        bool pretty_json = false);
+        const char * title_after_delimiter = " ");
 
     void writeColumns(
         const Columns & columns,

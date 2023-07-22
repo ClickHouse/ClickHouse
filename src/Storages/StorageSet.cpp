@@ -9,9 +9,6 @@
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -106,7 +103,7 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(
@@ -147,7 +144,7 @@ StorageSet::StorageSet(
     const String & comment,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), 0, true))
+    , set(std::make_shared<Set>(SizeLimits(), false, true))
 {
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
@@ -176,7 +173,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), 0, true);
+    set = std::make_shared<Set>(SizeLimits(), false, true);
     set->setHeader(header.getColumnsWithTypeAndName());
 }
 

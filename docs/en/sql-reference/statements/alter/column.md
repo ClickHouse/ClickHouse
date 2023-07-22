@@ -18,14 +18,14 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
-- [ADD COLUMN](#add-column) — Adds a new column to the table.
-- [DROP COLUMN](#drop-column) — Deletes the column.
-- [RENAME COLUMN](#rename-column) — Renames an existing column.
-- [CLEAR COLUMN](#clear-column) — Resets column values.
-- [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
-- [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
-- [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
+-   [ADD COLUMN](#add-column) — Adds a new column to the table.
+-   [DROP COLUMN](#drop-column) — Deletes the column.
+-   [RENAME COLUMN](#rename-column) — Renames an existing column.
+-   [CLEAR COLUMN](#clear-column) — Resets column values.
+-   [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
+-   [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
+-   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.
 
@@ -132,7 +132,7 @@ Comments are stored in the `comment_expression` column returned by the [DESCRIBE
 Example:
 
 ``` sql
-ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
+ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
 ## MODIFY COLUMN
@@ -144,13 +144,13 @@ ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER na
 
 This query changes the `name` column properties:
 
-- Type
+-   Type
 
-- Default expression
+-   Default expression
 
-- Compression Codec
+-   Compression Codec
 
-- TTL
+-   TTL
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#codecs).
 
@@ -232,7 +232,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
 It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
-Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
 

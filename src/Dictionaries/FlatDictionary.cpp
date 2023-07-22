@@ -505,7 +505,7 @@ void FlatDictionary::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.allocatedBytes();
+    bytes_allocated += string_arena.size();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)

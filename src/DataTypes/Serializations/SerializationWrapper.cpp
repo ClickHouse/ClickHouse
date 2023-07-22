@@ -136,11 +136,6 @@ void SerializationWrapper::deserializeTextJSON(IColumn & column, ReadBuffer & is
     nested_serialization->deserializeTextJSON(column, istr, settings);
 }
 
-void SerializationWrapper::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    nested_serialization->serializeTextJSONPretty(column, row_num, ostr, settings, indent);
-}
-
 void SerializationWrapper::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     nested_serialization->serializeTextXML(column, row_num, ostr, settings);

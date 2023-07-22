@@ -17,7 +17,6 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -52,7 +51,6 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
-    , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
 {
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
@@ -176,7 +174,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr context_, bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, bool table_checked) const
 {
     if (!cache_tables || !cached_tables.contains(table_name))
     {
@@ -191,14 +189,10 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, configuration.schema, configuration.on_conflict);
+                ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
-        {
-            LOG_TEST(log, "Cached table `{}`", table_name);
             cached_tables[table_name] = storage;
-        }
 
         return storage;
     }

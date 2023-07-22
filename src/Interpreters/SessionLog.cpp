@@ -87,10 +87,9 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 8);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values

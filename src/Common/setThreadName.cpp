@@ -30,8 +30,10 @@ static thread_local char thread_name[THREAD_NAME_SIZE]{};
 
 void setThreadName(const char * name)
 {
+#ifndef NDEBUG
     if (strlen(name) > THREAD_NAME_SIZE - 1)
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Thread name cannot be longer than 15 bytes");
+#endif
 
 #if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), name);
@@ -43,10 +45,9 @@ void setThreadName(const char * name)
 #else
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
-        if (errno != ENOSYS)    /// It's ok if the syscall is unsupported in some environments.
-            DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
+        DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
 
-    memcpy(thread_name, name, std::min<size_t>(1 + strlen(name), THREAD_NAME_SIZE - 1));
+    memcpy(thread_name, name, 1 + strlen(name));
 }
 
 const char * getThreadName()
@@ -63,8 +64,7 @@ const char * getThreadName()
 //        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_get_name_np()");
 #else
     if (0 != prctl(PR_GET_NAME, thread_name, 0, 0, 0))
-        if (errno != ENOSYS)    /// It's ok if the syscall is unsupported in some environments.
-            DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
+        DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
     return thread_name;

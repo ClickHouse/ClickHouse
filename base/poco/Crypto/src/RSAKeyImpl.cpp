@@ -269,6 +269,103 @@ RSAKeyImpl::ByteVec RSAKeyImpl::decryptionExponent() const
 }
 
 
+void RSAKeyImpl::save(const std::string& publicKeyFile,
+	const std::string& privateKeyFile,
+	const std::string& privateKeyPassphrase) const
+{
+	if (!publicKeyFile.empty())
+	{
+		BIO* bio = BIO_new(BIO_s_file());
+		if (!bio) throw Poco::IOException("Cannot create BIO for writing public key file", publicKeyFile);
+		try
+		{
+			if (BIO_write_filename(bio, const_cast<char*>(publicKeyFile.c_str())))
+			{
+				if (!PEM_write_bio_RSAPublicKey(bio, _pRSA))
+					throw Poco::WriteFileException("Failed to write public key to file", publicKeyFile);
+			}
+			else throw Poco::CreateFileException("Cannot create public key file");
+		}
+		catch (...)
+		{
+			BIO_free(bio);
+			throw;
+		}
+		BIO_free(bio);
+	}
+	
+	if (!privateKeyFile.empty())
+	{
+		BIO* bio = BIO_new(BIO_s_file());
+		if (!bio) throw Poco::IOException("Cannot create BIO for writing private key file", privateKeyFile);
+		try
+		{
+			if (BIO_write_filename(bio, const_cast<char*>(privateKeyFile.c_str())))
+			{
+				int rc = 0;
+				if (privateKeyPassphrase.empty())
+					rc = PEM_write_bio_RSAPrivateKey(bio, _pRSA, 0, 0, 0, 0, 0);
+				else
+					rc = PEM_write_bio_RSAPrivateKey(bio, _pRSA, EVP_des_ede3_cbc(), 
+						reinterpret_cast<unsigned char*>(const_cast<char*>(privateKeyPassphrase.c_str())), 
+						static_cast<int>(privateKeyPassphrase.length()), 0, 0);
+				if (!rc) throw Poco::FileException("Failed to write private key to file", privateKeyFile);
+			}
+			else throw Poco::CreateFileException("Cannot create private key file", privateKeyFile);
+		}
+		catch (...)
+		{
+			BIO_free(bio);
+			throw;
+		}
+		BIO_free(bio);
+	}
+}
+
+
+void RSAKeyImpl::save(std::ostream* pPublicKeyStream,
+	std::ostream* pPrivateKeyStream,
+	const std::string& privateKeyPassphrase) const
+{
+	if (pPublicKeyStream)
+	{
+		BIO* bio = BIO_new(BIO_s_mem());
+		if (!bio) throw Poco::IOException("Cannot create BIO for writing public key");
+		if (!PEM_write_bio_RSAPublicKey(bio, _pRSA))
+		{
+			BIO_free(bio);
+			throw Poco::WriteFileException("Failed to write public key to stream");
+		}
+		char* pData;
+		long size = BIO_get_mem_data(bio, &pData);
+		pPublicKeyStream->write(pData, static_cast<std::streamsize>(size));
+		BIO_free(bio);
+	}
+
+	if (pPrivateKeyStream)
+	{
+		BIO* bio = BIO_new(BIO_s_mem());
+		if (!bio) throw Poco::IOException("Cannot create BIO for writing public key");
+		int rc = 0;
+		if (privateKeyPassphrase.empty())
+			rc = PEM_write_bio_RSAPrivateKey(bio, _pRSA, 0, 0, 0, 0, 0);
+		else
+			rc = PEM_write_bio_RSAPrivateKey(bio, _pRSA, EVP_des_ede3_cbc(), 
+				reinterpret_cast<unsigned char*>(const_cast<char*>(privateKeyPassphrase.c_str())), 
+				static_cast<int>(privateKeyPassphrase.length()), 0, 0);
+		if (!rc) 
+		{
+			BIO_free(bio);
+			throw Poco::FileException("Failed to write private key to stream");
+		}
+		char* pData;
+		long size = BIO_get_mem_data(bio, &pData);
+		pPrivateKeyStream->write(pData, static_cast<std::streamsize>(size));
+		BIO_free(bio);
+	}
+}
+
+
 RSAKeyImpl::ByteVec RSAKeyImpl::convertToByteVec(const BIGNUM* bn)
 {
 	int numBytes = BN_num_bytes(bn);

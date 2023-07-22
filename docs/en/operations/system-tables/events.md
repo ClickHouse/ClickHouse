@@ -7,9 +7,9 @@ Contains information about the number of events that have occurred in the system
 
 Columns:
 
-- `event` ([String](../../sql-reference/data-types/string.md)) — Event name.
-- `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of events occurred.
-- `description` ([String](../../sql-reference/data-types/string.md)) — Event description.
+-   `event` ([String](../../sql-reference/data-types/string.md)) — Event name.
+-   `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of events occurred.
+-   `description` ([String](../../sql-reference/data-types/string.md)) — Event description.
 
 **Example**
 
@@ -29,7 +29,7 @@ SELECT * FROM system.events LIMIT 5
 
 **See Also**
 
-- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
-- [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
-- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
-- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
+-   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

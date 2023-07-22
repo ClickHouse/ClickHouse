@@ -81,6 +81,7 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
+        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
@@ -103,6 +104,11 @@ public:
     void shutdown() override;
 
     void startup() override;
+
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
 
     String getObjectsNamespace() const override { return ""; }
 

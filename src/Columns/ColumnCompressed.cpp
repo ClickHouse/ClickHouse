@@ -1,6 +1,6 @@
 #include <Columns/ColumnCompressed.h>
 
-#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 #include <lz4.h>
 
@@ -24,7 +24,7 @@ std::shared_ptr<Memory<>> ColumnCompressed::compressBuffer(const void * data, si
 
     Memory<> compressed(max_dest_size);
 
-    int compressed_size = LZ4_compress_default(
+    auto compressed_size = LZ4_compress_default(
         reinterpret_cast<const char *>(data),
         compressed.data(),
         static_cast<int>(data_size),

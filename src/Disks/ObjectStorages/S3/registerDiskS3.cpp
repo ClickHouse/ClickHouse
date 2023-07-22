@@ -8,6 +8,7 @@
 
 #if USE_AWS_S3
 
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 
 #include <Disks/DiskLocal.h>
@@ -18,7 +19,9 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include <IO/S3Common.h>
 
+#include <Storages/StorageS3Settings.h>
 #include <Core/ServerUUID.h>
 #include <Common/Macros.h>
 
@@ -84,10 +87,10 @@ public:
 private:
     static String getServerUUID()
     {
-        UUID server_uuid = ServerUUID::get();
-        if (server_uuid == UUIDHelpers::Nil)
+        DB::UUID server_uuid = DB::ServerUUID::get();
+        if (server_uuid == DB::UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-        return toString(server_uuid);
+        return DB::toString(server_uuid);
     }
 };
 
@@ -122,14 +125,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         auto client = getClient(config, config_prefix, context, *settings);
         if (type == "s3_plain")
         {
-            /// send_metadata changes the filenames (includes revision), while
-            /// s3_plain do not care about this, and expect that the file name
-            /// will not be changed.
-            ///
-            /// And besides, send_metadata does not make sense for s3_plain.
-            if (config.getBool(config_prefix + ".send_metadata", false))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
-
             s3_storage = std::make_shared<S3PlainObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
             metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(s3_storage, uri.key);
         }
@@ -158,14 +153,17 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             }
         }
 
+        bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
+        uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
+
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,
             uri.key,
             type == "s3" ? "DiskS3" : "DiskS3Plain",
             std::move(metadata_storage),
             std::move(s3_storage),
-            config,
-            config_prefix);
+            send_metadata,
+            copy_thread_pool_size);
 
         s3disk->startup(context, skip_access_check);
 
@@ -179,6 +177,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
 #else
 
-void registerDiskS3(DB::DiskFactory &, bool /* global_skip_access_check */) {}
+void registerDiskS3(DiskFactory &, bool /* global_skip_access_check */) {}
 
 #endif

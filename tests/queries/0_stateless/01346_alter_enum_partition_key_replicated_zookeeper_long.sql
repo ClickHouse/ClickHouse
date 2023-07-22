@@ -13,17 +13,16 @@ INSERT INTO test VALUES ('hello', 'test');
 SELECT * FROM test;
 SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2;
-SELECT min_block_number, max_block_number, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
-SELECT min_block_number, max_block_number, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
+SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
+SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
 
 ALTER TABLE test MODIFY COLUMN x Enum('hello' = 1, 'world' = 2, 'goodbye' = 3);
 INSERT INTO test VALUES ('goodbye', 'test');
 OPTIMIZE TABLE test FINAL;
 SELECT * FROM test ORDER BY x;
-SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2 ORDER BY x;
-SELECT min_block_number, max_block_number, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
-SELECT min_block_number, max_block_number, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
+SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
+SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
 
 ALTER TABLE test MODIFY COLUMN x Enum('hello' = 1, 'world' = 2); -- { serverError 524 }
 ALTER TABLE test MODIFY COLUMN x Enum('hello' = 1, 'world' = 2, 'test' = 3);
@@ -34,10 +33,9 @@ ALTER TABLE test MODIFY COLUMN x Int8;
 INSERT INTO test VALUES (111, 'abc');
 OPTIMIZE TABLE test FINAL;
 SELECT * FROM test ORDER BY x;
-SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2 ORDER BY x;
-SELECT min_block_number, max_block_number, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
-SELECT min_block_number, max_block_number, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
+SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
+SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
 
 ALTER TABLE test MODIFY COLUMN x Enum8('' = 1); -- { serverError 524 }
 ALTER TABLE test MODIFY COLUMN x Enum16('' = 1); -- { serverError 524 }

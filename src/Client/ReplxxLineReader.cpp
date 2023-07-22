@@ -335,7 +335,6 @@ ReplxxLineReader::ReplxxLineReader(
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
-    rx.set_indent_multiline(false);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -518,12 +517,6 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
-}
-
-void ReplxxLineReader::disableBracketedPaste()
-{
-    bracketed_paste_enabled = false;
-    rx.disable_bracketed_paste();
 }
 
 }

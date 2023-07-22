@@ -30,32 +30,27 @@ struct StorageSnapshot
 
     StorageSnapshot(
         const IStorage & storage_,
-        StorageMetadataPtr metadata_)
-        : storage(storage_), metadata(std::move(metadata_))
+        const StorageMetadataPtr & metadata_)
+        : storage(storage_), metadata(metadata_)
     {
         init();
     }
 
     StorageSnapshot(
         const IStorage & storage_,
-        StorageMetadataPtr metadata_,
-        ColumnsDescription object_columns_)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
+        const StorageMetadataPtr & metadata_,
+        const ColumnsDescription & object_columns_)
+        : storage(storage_), metadata(metadata_), object_columns(object_columns_)
     {
         init();
     }
 
     StorageSnapshot(
         const IStorage & storage_,
-        StorageMetadataPtr metadata_,
-        ColumnsDescription object_columns_,
+        const StorageMetadataPtr & metadata_,
+        const ColumnsDescription & object_columns_,
         DataPtr data_)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
-        , data(std::move(data_))
+        : storage(storage_), metadata(metadata_), object_columns(object_columns_), data(std::move(data_))
     {
         init();
     }

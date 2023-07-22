@@ -1,10 +1,12 @@
 ---
 slug: /en/sql-reference/functions/uuid-functions
-sidebar_position: 205
-sidebar_label: UUIDs
+sidebar_position: 53
+sidebar_label: UUID
 ---
 
-# Functions for Working with UUIDs
+# Functions for Working with UUID
+
+The functions for working with UUID are listed below.
 
 ## generateUUIDv4
 
@@ -18,7 +20,7 @@ generateUUIDv4([x])
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+-   `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
@@ -67,11 +69,11 @@ The function also works for [arrays](array-functions.md#function-empty) or [stri
 
 **Arguments**
 
-- `x` — Input UUID. [UUID](../data-types/uuid.md).
+-   `x` — Input UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
-- Returns `1` for an empty UUID or `0` for a non-empty UUID. 
+-   Returns `1` for an empty UUID or `0` for a non-empty UUID. 
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -109,11 +111,11 @@ The function also works for [arrays](array-functions.md#function-notempty) or [s
 
 **Arguments**
 
-- `x` — Input UUID. [UUID](../data-types/uuid.md).
+-   `x` — Input UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
-- Returns `1` for a non-empty UUID or `0` for an empty UUID. 
+-   Returns `1` for a non-empty UUID or `0` for an empty UUID. 
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -163,8 +165,8 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 
 **Arguments**
 
-- `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#string).
-- `default` — UUID to be used as the default if the first argument cannot be converted to a UUID type. [UUID](/docs/en/sql-reference/data-types/uuid.md).
+-   `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#string).
+-   `default` — UUID to be used as the default if the first argument cannot be converted to a UUID type. [UUID](/docs/en/sql-reference/data-types/uuid.md).
 
 **Returned value**
 
@@ -263,8 +265,8 @@ UUIDStringToNum(string[, variant = 1])
 
 **Arguments**
 
-- `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
+-   `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -308,8 +310,8 @@ UUIDNumToString(binary[, variant = 1])
 
 **Arguments**
 
-- `binary` — [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as a binary representation of a UUID.
-- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
+-   `binary` — [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as a binary representation of a UUID.
+-   `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -353,10 +355,10 @@ serverUUID()
 
 **Returned value**
 
-- The UUID of the server. 
+-   The UUID of the server. 
 
 Type: [UUID](../data-types/uuid.md).
 
 ## See Also
 
-- [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
+-   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)

@@ -7,18 +7,6 @@ title: "EXPLAIN Statement"
 
 Shows the execution plan of a statement.
 
-<div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/hP6G2Nlz_cA"
-    width="640"
-    height="360"
-    frameborder="0"
-    allow="autoplay;
-    fullscreen;
-    picture-in-picture"
-    allowfullscreen>
-  </iframe>
-</div>
-
 Syntax:
 
 ```sql
@@ -57,11 +45,11 @@ Union
 
 ## EXPLAIN Types
 
-- `AST` — Abstract syntax tree.
-- `SYNTAX` — Query text after AST-level optimizations.
-- `QUERY TREE` — Query tree after Query Tree level optimizations.
-- `PLAN` — Query execution plan.
-- `PIPELINE` — Query execution pipeline.
+-  `AST` — Abstract syntax tree.
+-  `SYNTAX` — Query text after AST-level optimizations.
+-  `QUERY TREE` — Query tree after Query Tree level optimizations.
+-  `PLAN` — Query execution plan.
+-  `PIPELINE` — Query execution pipeline.
 
 ### EXPLAIN AST
 
@@ -127,9 +115,9 @@ CROSS JOIN system.numbers AS c
 
 Settings:
 
-- `run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
-- `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
-- `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+-   `run_passes` — Run all query tree passes before dumping the query tree. Defaul: `1`.
+-   `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
+-   `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
 
 Example:
 ```sql
@@ -155,11 +143,11 @@ Dump query plan steps.
 
 Settings:
 
-- `header` — Prints output header for step. Default: 0.
-- `description` — Prints step description. Default: 1.
-- `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 0.
-- `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
+-   `header` — Prints output header for step. Default: 0.
+-   `description` — Prints step description. Default: 1.
+-   `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+-   `actions` — Prints detailed information about step actions. Default: 0.
+-   `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
 Example:
 
@@ -288,12 +276,12 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
-- `Name` — The index name (currently only used for `Skip` indexes).
-- `Keys` — The array of columns used by the index.
-- `Condition` —  The used condition.
-- `Description` — The index description (currently only used for `Skip` indexes).
-- `Parts` — The number of parts before/after the index is applied.
-- `Granules` — The number of granules before/after the index is applied.
+-   `Name` — The index name (currently only used for `Skip` indexes).
+-   `Keys` — The array of columns used by the index.
+-   `Condition` —  The used condition.
+-   `Description` — The index description (currently only used for `Skip` indexes).
+-   `Parts` — The number of parts before/after the index is applied.
+-   `Granules` — The number of granules before/after the index is applied.
 
 Example:
 
@@ -392,9 +380,9 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 
 Settings:
 
-- `header` — Prints header for each output port. Default: 0.
-- `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
-- `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
+-   `header` — Prints header for each output port. Default: 0.
+-   `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
+-   `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
 
 Example:
 
@@ -475,5 +463,5 @@ Result:
 ```
 
 :::note    
-The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
+The validation is not complete, so a successfull query does not guarantee that the override would not cause issues.
 :::

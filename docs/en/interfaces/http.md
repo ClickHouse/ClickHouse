@@ -293,11 +293,11 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 
 Possible header fields:
 
-- `read_rows` — Number of rows read.
-- `read_bytes` — Volume of data read in bytes.
-- `total_rows_to_read` — Total number of rows to be read.
-- `written_rows` — Number of rows written.
-- `written_bytes` — Volume of data written in bytes.
+-   `read_rows` — Number of rows read.
+-   `read_bytes` — Volume of data read in bytes.
+-   `total_rows_to_read` — Total number of rows to be read.
+-   `written_rows` — Number of rows written.
+-   `written_bytes` — Volume of data written in bytes.
 
 Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 The optional ‘query_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace_running_query”.
@@ -333,35 +333,6 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-### Tabs in URL Parameters
-
-Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
-
-```bash
-curl -sS "http://localhost:8123" -d "SELECT splitByChar('\t', 'abc      123')"
-```
-
-```response
-['abc','123']
-```
-
-However, if you try to encode an actual tab using `%09` in a URL parameter, it won't get parsed properly:
-
-```bash
-curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
-Code: 457. DB::Exception: Value abc	123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
-```
-
-If you are using URL parameters, you will need to encode the `\t` as `%5C%09`. For example:
-
-```bash
-curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar('\t', {arg1:String})"
-```
-
-```response
-['abc','123']
-```
-
 ## Predefined HTTP Interface {#predefined_http_interface}
 
 ClickHouse supports specific queries through the HTTP interface. For example, you can write data to a table as follows:
@@ -374,7 +345,7 @@ ClickHouse also supports Predefined HTTP Interface which can help you more easil
 
 Example:
 
-- First of all, add this section to server configuration file:
+-   First of all, add this section to server configuration file:
 
 <!-- -->
 
@@ -393,7 +364,7 @@ Example:
 </http_handlers>
 ```
 
-- You can now request the URL directly for data in the Prometheus format:
+-   You can now request the URL directly for data in the Prometheus format:
 
 <!-- -->
 
@@ -448,22 +419,22 @@ As you can see from the example if `http_handlers` is configured in the config.x
 Now `rule` can configure `method`, `headers`, `url`, `handler`:
 - `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the configuration file, it does not match the method portion of the HTTP request.
 
-- `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
+-   `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
 
-- `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
+-   `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
+-   `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
     `type` currently supports three types: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
 
-    - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
+    -   `query` — use with `predefined_query_handler` type, executes query when the handler is called.
 
-    - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request parameters.
+    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request parameters.
 
-    - `status` — use with `static` type, response status code.
+    -   `status` — use with `static` type, response status code.
 
-    - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    -   `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
+    -   `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
 Next are the configuration methods for different `type`.
 

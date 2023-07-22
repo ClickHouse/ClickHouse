@@ -1,12 +1,9 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
-#include <Poco/Logger.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadPool.h>
-
+#include <Core/Settings.h>
+#include <Poco/Logger.h>
 #include <future>
 
 namespace DB
@@ -67,13 +64,11 @@ private:
         struct Entry
         {
         public:
-            String bytes;
+            const String bytes;
             const String query_id;
-            const String async_dedup_token;
-            MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
+            Entry(String && bytes_, String && query_id_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -83,19 +78,6 @@ private:
             std::promise<void> promise;
             std::atomic_bool finished = false;
         };
-
-        ~InsertData()
-        {
-            auto it = entries.begin();
-            // Entries must be destroyed in context of user who runs async insert.
-            // Each entry in the list may correspond to a different user,
-            // so we need to switch current thread's MemoryTracker parent on each iteration.
-            while (it != entries.end())
-            {
-                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
-                it = entries.erase(it);
-            }
-        }
 
         using EntryPtr = std::shared_ptr<Entry>;
 

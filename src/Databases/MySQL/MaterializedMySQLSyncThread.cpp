@@ -3,7 +3,6 @@
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#include <Databases/MySQL/tryParseTableIDFromDDL.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -60,7 +59,7 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
     query_context->setSettings(new_query_settings);
     query_context->setInternalQuery(true);
 
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
 }
@@ -152,6 +151,61 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     }
 }
 
+static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
+{
+    String table_name;
+    String database_name;
+    if (ddl.empty()) return std::make_tuple(database_name, table_name);
+
+    bool parse_failed = false;
+    Tokens tokens(ddl.data(), ddl.data() + ddl.size());
+    IParser::Pos pos(tokens, 0);
+    Expected expected;
+    ASTPtr res;
+    ASTPtr table;
+    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
+    {
+        ParserKeyword("TABLE").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else
+    {
+        parse_failed = true;
+    }
+    if (!parse_failed)
+    {
+        if (auto table_id = table->as<ASTTableIdentifier>()->getTableId())
+        {
+            database_name = table_id.database_name;
+            table_name = table_id.table_name;
+        }
+    }
+    return std::make_tuple(database_name, table_name);
+}
+
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     ContextPtr context_,
     const String & database_name_,
@@ -208,13 +262,9 @@ void MaterializedMySQLSyncThread::synchronization()
 
             try
             {
-                UInt64 elapsed_ms = watch.elapsedMilliseconds();
-                if (elapsed_ms < max_flush_time)
-                {
-                    BinlogEventPtr binlog_event = client.readOneBinlogEvent(max_flush_time - elapsed_ms);
-                    if (binlog_event)
-                        onEvent(buffers, binlog_event, metadata);
-                }
+                BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
+                if (binlog_event)
+                    onEvent(buffers, binlog_event, metadata);
             }
             catch (const Exception & e)
             {
@@ -814,12 +864,14 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         String query = query_event.query;
         if (!materialized_tables_list.empty())
         {
-            auto table_id = tryParseTableIDFromDDL(query, query_event.schema);
-            if (!table_id.table_name.empty())
+             auto [ddl_database_name, ddl_table_name] = tryExtractTableNameFromDDL(query_event.query);
+
+            if (!ddl_table_name.empty())
             {
-                if (table_id.database_name != mysql_database_name || !materialized_tables_list.contains(table_id.table_name))
+                ddl_database_name =  ddl_database_name.empty() ? query_event.schema: ddl_database_name;
+                if (ddl_database_name != mysql_database_name || !materialized_tables_list.contains(ddl_table_name))
                 {
-                    LOG_DEBUG(log, "Skip MySQL DDL for {}.{}:\n{}", table_id.database_name, table_id.table_name, query);
+                    LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
                     return;
                 }
             }

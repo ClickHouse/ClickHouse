@@ -148,8 +148,6 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
     EXPECT_EQ(lut.addYears(time, 10), 1884270011 /*time_t*/);
     EXPECT_EQ(lut.timeToString(time), "2019-09-16 19:20:11" /*std::string*/);
     EXPECT_EQ(lut.dateToString(time), "2019-09-16" /*std::string*/);
-    EXPECT_EQ(lut.toLastDayOfWeek(time), 1569099600 /*time_t*/);
-    EXPECT_EQ(lut.toLastDayNumOfWeek(time), DayNum(18161) /*DayNum*/);
     EXPECT_EQ(lut.toLastDayOfMonth(time), 1569790800 /*time_t*/);
     EXPECT_EQ(lut.toLastDayNumOfMonth(time), DayNum(18169) /*DayNum*/);
 }
@@ -213,8 +211,6 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.addYears(time, 10), 315532800 /*time_t*/);
     EXPECT_EQ(lut.timeToString(time), "1970-01-01 00:00:00" /*std::string*/);
     EXPECT_EQ(lut.dateToString(time), "1970-01-01" /*std::string*/);
-    EXPECT_EQ(lut.toLastDayOfWeek(time), 259200 /*time_t*/);
-    EXPECT_EQ(lut.toLastDayNumOfWeek(time), DayNum(3) /*DayNum*/);
     EXPECT_EQ(lut.toLastDayOfMonth(time), 2592000 /*time_t*/);
     EXPECT_EQ(lut.toLastDayNumOfMonth(time), DayNum(30) /*DayNum*/);
 }
@@ -280,8 +276,6 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
 
     EXPECT_EQ(lut.timeToString(time), "2106-01-31 01:17:53" /*std::string*/);
     EXPECT_EQ(lut.dateToString(time), "2106-01-31" /*std::string*/);
-    EXPECT_EQ(lut.toLastDayOfWeek(time), 4294339200 /*time_t*/);
-    EXPECT_EQ(lut.toLastDayNumOfWeek(time), DayNum(49703) /*DayNum*/);
     EXPECT_EQ(lut.toLastDayOfMonth(time), 4294339200 /*time_t*/); // 2106-01-01
     EXPECT_EQ(lut.toLastDayNumOfMonth(time), DayNum(49703));
 }

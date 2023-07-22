@@ -11,10 +11,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -44,10 +44,11 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
-#include <re2/re2.h>
-
 #include <chrono>
 #include <sstream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -291,15 +292,14 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        if (!write_buf)
-            continue;
+        IReadableWriteBuffer * write_buf_concrete;
+        ReadBufferPtr reread_buf;
 
-        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
-        if (write_buf_concrete)
+        if (write_buf
+            && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+            && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
         {
-            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
-            if (reread_buf)
-                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
+            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
@@ -442,10 +442,10 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
@@ -474,6 +474,7 @@ bool HTTPHandler::authenticateUser(
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
+    ClientInfo & client_info = session->getClientInfo();
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -481,13 +482,15 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
-    session->setForwardedFor(request.get("X-Forwarded-For", ""));
-    session->setQuotaClientKey(quota_key);
+    client_info.http_method = http_method;
+    client_info.http_user_agent = request.get("User-Agent", "");
+    client_info.http_referer = request.get("Referer", "");
+    client_info.forwarded_for = request.get("X-Forwarded-For", "");
+    client_info.quota_key = quota_key;
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = session->getClientInfo().getLastForwardedFor();
+    String forwarded_address = client_info.getLastForwardedFor();
     try
     {
         if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
@@ -620,11 +623,12 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
+            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
 
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
+            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
-                return tmp_data->createRawStream();
+                return WriteBufferFromTemporaryFile::create(tmp_path_template);
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
@@ -800,11 +804,11 @@ void HTTPHandler::processQuery(
     if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out->addHeaderCORS(true);
 
-    auto append_callback = [my_context = context] (ProgressCallback callback)
+    auto append_callback = [context = context] (ProgressCallback callback)
     {
-        auto prev = my_context->getProgressCallback();
+        auto prev = context->getProgressCallback();
 
-        my_context->setProgressCallback([prev, callback] (const Progress & progress)
+        context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -900,12 +904,7 @@ try
     {
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
-        {
-            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
-            /// exception is written into used_output.out_maybe_compressed later
-            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
             used_output.out_maybe_delayed_and_compressed.reset();
-        }
 
         /// Send the error message into already used (and possibly compressed) stream.
         /// Note that the error message will possibly be sent after some data.
@@ -985,22 +984,22 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         // Parse the OpenTelemetry traceparent header.
-        auto & client_trace_context = session->getClientTraceContext();
+        ClientInfo& client_info = session->getClientInfo();
         if (request.has("traceparent"))
         {
             std::string opentelemetry_traceparent = request.get("traceparent");
             std::string error;
-            if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
             {
                 LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
             }
-            client_trace_context.tracestate = request.get("tracestate", "");
+            client_info.client_trace_context.tracestate = request.get("tracestate", "");
         }
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
-            client_trace_context,
+            client_info.client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
@@ -1161,8 +1160,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        std::string_view matches[num_captures];
-        std::string_view input(begin, end - begin);
+        re2::StringPiece matches[num_captures];
+        re2::StringPiece input(begin, end - begin);
         if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())

@@ -6,7 +6,6 @@ import socket
 import struct
 
 from kazoo.client import KazooClient
-from kazoo.exceptions import NoNodeError
 
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
@@ -163,40 +162,16 @@ def test_session_timeout(started_cluster):
 def test_session_close_shutdown(started_cluster):
     wait_nodes()
 
-    node1_zk = None
-    node2_zk = None
-    for i in range(20):
-        node1_zk = get_fake_zk(node1.name)
-        node2_zk = get_fake_zk(node2.name)
+    node1_zk = get_fake_zk(node1.name)
+    node2_zk = get_fake_zk(node2.name)
 
-        eph_node = "/test_node"
-        node2_zk.create(eph_node, ephemeral=True)
-        node1_zk.sync(eph_node)
+    eph_node = "/test_node"
+    node2_zk.create(eph_node, ephemeral=True)
+    assert node1_zk.exists(eph_node) != None
 
-        node1_zk.exists(eph_node) != None
+    # shutdown while session is active
+    node2.stop_clickhouse()
 
-        # restart while session is active so it's closed during shutdown
-        node2.restart_clickhouse()
+    assert node1_zk.exists(eph_node) == None
 
-        if node1_zk.exists(eph_node) == None:
-            break
-
-        assert node2.contains_in_log(
-            "Sessions cannot be closed during shutdown because there is no active leader"
-        )
-
-        try:
-            node1_zk.delete(eph_node)
-        except NoNodeError:
-            pass
-
-        assert node1_zk.exists(eph_node) == None
-
-        destroy_zk_client(node1_zk)
-        node1_zk = None
-        destroy_zk_client(node2_zk)
-        node2_zk = None
-
-        time.sleep(1)
-    else:
-        assert False, "Session wasn't properly cleaned up on shutdown"
+    node2.start_clickhouse()

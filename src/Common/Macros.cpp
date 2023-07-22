@@ -1,9 +1,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Core/ServerUUID.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -12,8 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, Poco::Logger * log)
@@ -98,7 +95,7 @@ String Macros::expand(const String & s,
         else if (macro_name == "uuid" && !info.expand_special_macros_only)
         {
             if (info.table_id.uuid == UUIDHelpers::Nil)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Macro 'uuid' and empty arguments of ReplicatedMergeTree "
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Macro 'uuid' and empty arguments of ReplicatedMergeTree "
                                 "are supported only for ON CLUSTER queries with Atomic database engine");
             /// For ON CLUSTER queries we don't want to require all macros definitions in initiator's config.
             /// However, initiator must check that for cross-replication cluster zookeeper_path does not contain {uuid} macro.
@@ -107,15 +104,6 @@ String Macros::expand(const String & s,
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Macro 'uuid' should not be inside another macro");
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
-        }
-        else if (macro_name == "server_uuid")
-        {
-            auto uuid = ServerUUID::get();
-            if (UUIDHelpers::Nil == uuid)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Macro {server_uuid} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
-            res += toString(uuid);
-            info.expanded_other = true;
         }
         else if (info.shard && macro_name == "shard")
         {
@@ -137,7 +125,7 @@ String Macros::expand(const String & s,
             info.has_unknown = true;
         }
         else
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro '{}' in config while processing substitutions in "
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "No macro '{}' in config while processing substitutions in "
                             "'{}' at '{}' or macro is not supported here", macro_name, s, toString(begin));
 
         pos = end + 1;
@@ -154,7 +142,7 @@ String Macros::getValue(const String & key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
-    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro {} in config", key);
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "No macro {} in config", key);
 }
 
 

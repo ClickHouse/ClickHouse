@@ -8,6 +8,9 @@
 #endif
 
 #include <base/sort.h>
+#include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
+#include <Common/formatReadable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -18,18 +21,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
-#include <AggregateFunctions/AggregateFunctionArray.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
-#include <IO/Operators.h>
-#include <Interpreters/JIT/compileFunction.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Core/ProtocolDefines.h>
-#include <Disks/TemporaryFileOnDisk.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 #include <Common/CacheBase.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
@@ -38,6 +29,14 @@
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
 #include <Common/filesystemHelpers.h>
+#include <AggregateFunctions/AggregateFunctionArray.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <IO/Operators.h>
+#include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Core/ProtocolDefines.h>
+#include <Disks/TemporaryFileOnDisk.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Parsers/ASTSelectQuery.h>
@@ -2041,7 +2040,7 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
              */
             if (data.hasNullKeyData())
             {
-                has_null_key_data = true;
+                has_null_key_data = Method::one_key_nullable_optimization;
                 out_cols->key_columns[0]->insertDefault();
                 insertAggregatesIntoColumns(data.getNullKeyData(), out_cols->final_aggregate_columns, arena);
                 data.hasNullKeyData() = false;
@@ -2076,7 +2075,6 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
                     res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
                     places.clear();
                     out_cols.reset();
-                    has_null_key_data = false;
                 }
             }
         });
@@ -2103,7 +2101,6 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
-    size_t rows_in_current_block = 0;
 
     auto init_out_cols = [&]()
     {
@@ -2118,7 +2115,6 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 for (size_t i = 0; i < params.aggregates_size; ++i)
                     out_cols->aggregate_columns_data[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
 
-                ++rows_in_current_block;
                 data.getNullKeyData() = nullptr;
                 data.hasNullKeyData() = false;
             }
@@ -2129,6 +2125,8 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
+
+    size_t rows_in_current_block = 0;
 
     data.forEachValue(
         [&](const auto & key, auto & mapped)
@@ -2317,7 +2315,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
 
-    auto converter = [&](size_t thread_id, ThreadGroupPtr thread_group)
+    auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
@@ -3045,7 +3043,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupPtr thread_group)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)

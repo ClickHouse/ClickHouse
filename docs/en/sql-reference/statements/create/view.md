@@ -97,7 +97,7 @@ This is an experimental feature that may change in backwards-incompatible ways i
 :::
 
 ```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH REFRESH [value_in_sec]] AS SELECT ...
+CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
 ```
 
 Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
@@ -235,7 +235,7 @@ Most common uses of live view tables include:
 - Watching metrics from system tables using periodic refresh.
 
 **See Also**
-- [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
+-   [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
 
 ## Window View [Experimental]
 
@@ -364,4 +364,3 @@ The window view is useful in the following scenarios:
 ## Related Content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-- Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
