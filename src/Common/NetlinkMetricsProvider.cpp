@@ -1,4 +1,4 @@
-#include "TaskStatsInfoGetter.h"
+#include "NetlinkMetricsProvider.h"
 #include <Common/Exception.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -200,7 +200,7 @@ bool checkPermissionsImpl()
     if (!res)
         return false;
 
-    /// Check that we can successfully initialize TaskStatsInfoGetter.
+    /// Check that we can successfully initialize NetlinkMetricsProvider.
     /// It will ask about family id through Netlink.
     /// On some LXC containers we have capability but we still cannot use Netlink.
     /// There is an evidence that Linux fedora-riscv 6.1.22 gives something strange instead of the expected result.
@@ -208,7 +208,7 @@ bool checkPermissionsImpl()
     try
     {
         ::taskstats stats{};
-        TaskStatsInfoGetter().getStat(stats, static_cast<pid_t>(getThreadId()));
+        NetlinkMetricsProvider().getStat(stats, static_cast<pid_t>(getThreadId()));
     }
     catch (const Exception & e)
     {
@@ -244,14 +244,14 @@ UInt16 getFamilyId(int fd)
 }
 
 
-bool TaskStatsInfoGetter::checkPermissions()
+bool NetlinkMetricsProvider::checkPermissions()
 {
     static bool res = checkPermissionsImpl();
     return res;
 }
 
 
-TaskStatsInfoGetter::TaskStatsInfoGetter()
+NetlinkMetricsProvider::NetlinkMetricsProvider()
 {
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
@@ -293,7 +293,7 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
 }
 
 
-void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
+void NetlinkMetricsProvider::getStat(::taskstats & out_stats, pid_t tid) const
 {
     NetlinkMessage answer = query(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(tid));
 
@@ -318,7 +318,7 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 }
 
 
-TaskStatsInfoGetter::~TaskStatsInfoGetter()
+NetlinkMetricsProvider::~NetlinkMetricsProvider()
 {
     if (netlink_socket_fd >= 0)
     {
@@ -335,15 +335,15 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 namespace DB
 {
 
-bool TaskStatsInfoGetter::checkPermissions()
+bool NetlinkMetricsProvider::checkPermissions()
 {
     return false;
 }
 
-TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
-TaskStatsInfoGetter::~TaskStatsInfoGetter() = default;
+NetlinkMetricsProvider::NetlinkMetricsProvider() = default;
+NetlinkMetricsProvider::~NetlinkMetricsProvider() = default;
 
-void TaskStatsInfoGetter::getStat(::taskstats &, pid_t) const
+void NetlinkMetricsProvider::getStat(::taskstats &, pid_t) const
 {
 }
 
