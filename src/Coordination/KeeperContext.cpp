@@ -32,8 +32,9 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
-void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
+void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
 {
+    dispatcher = dispatcher_;
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
@@ -41,9 +42,38 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
     initializeDisks(config);
 }
 
+namespace
+{
+
+bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix)
+{
+    const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
+
+    using namespace std::literals;
+    static constexpr std::array supported_disk_types
+    {
+        "s3"sv,
+        "s3_plain"sv,
+        "local"sv
+    };
+
+    if (std::all_of(
+            supported_disk_types.begin(),
+            supported_disk_types.end(),
+            [&](const auto supported_type) { return disk_type != supported_type; }))
+    {
+        LOG_INFO(&Poco::Logger::get("KeeperContext"), "Disk type '{}' is not supported for Keeper", disk_type);
+        return false;
+    }
+
+    return true;
+}
+
+}
+
 void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & config)
 {
-    disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance());
+    disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
     log_storage = getLogsPathFromConfig(config);
 
@@ -220,7 +250,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalLogDisk", path, 0);
+        return std::make_shared<DiskLocal>("LocalLogDisk", path);
     };
 
     /// the most specialized path
@@ -246,7 +276,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalSnapshotDisk", path, 0);
+        return std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
     };
 
     /// the most specialized path
@@ -272,7 +302,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalStateFileDisk", path, 0);
+        return std::make_shared<DiskLocal>("LocalStateFileDisk", path);
     };
 
     if (config.has("keeper_server.state_storage_disk"))

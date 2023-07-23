@@ -13,5 +13,5 @@ std::string_view getResource(std::string_view name)
     boost::replace_all(name_replaced, "+", "_PLUS_");
 
     /// If static linking is used, we cannot use dlsym and have to parse ELF symbol table by ourself.
-    return DB::SymbolIndex::instance()->getResource(name_replaced);
+    return DB::SymbolIndex::instance().getResource(name_replaced);
 }
