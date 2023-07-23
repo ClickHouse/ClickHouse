@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_NLP
+
 #include <base/StringRef.h>
 #include <Common/logger_useful.h>
 
@@ -81,3 +85,5 @@ private:
     EncodingContainer encodings_freq;
 };
 }
+
+#endif
