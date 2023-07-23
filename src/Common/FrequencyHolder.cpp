@@ -1,5 +1,7 @@
 #include <Common/FrequencyHolder.h>
 
+#if USE_NLP
+
 #include <incbin.h>
 
 /// Embedded SQL definitions
@@ -179,3 +181,5 @@ void FrequencyHolder::loadProgrammingFrequency()
 }
 
 }
+
+#endif
