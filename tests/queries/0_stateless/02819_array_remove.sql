@@ -1,2 +1,0 @@
-SELECT SUM(LENGTH(arr)) FROM (SELECT arrayMap(x -> toString(x), range(number % 10)) AS arr FROM (SELECT * FROM system.numbers LIMIT 1000));
-SELECT SUM(LENGTH(arr)) FROM (SELECT range(number % 10) AS arr FROM (SELECT * FROM system.numbers LIMIT 1000));
