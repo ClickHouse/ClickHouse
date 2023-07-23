@@ -1,7 +1,5 @@
 #include <Common/FrequencyHolder.h>
 
-#include "config.h"
-
 #if USE_NLP
 
 #include <Functions/FunctionFactory.h>
