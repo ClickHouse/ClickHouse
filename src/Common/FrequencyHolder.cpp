@@ -5,9 +5,9 @@
 #include <incbin.h>
 
 /// Embedded SQL definitions
-INCBIN(resource_charset_zst, "charset.zst");
-INCBIN(resource_tonality_ru_zst, "tonality_ru.zst");
-INCBIN(resource_programming_zst, "programming.zst");
+INCBIN(resource_charset_zst, SOURCE_DIR "/contrib/nlp-data/charset.zst");
+INCBIN(resource_tonality_ru_zst, SOURCE_DIR "/contrib/nlp-data/tonality_ru.zst");
+INCBIN(resource_programming_zst, SOURCE_DIR "/contrib/nlp-data/programming.zst");
 
 
 namespace DB

@@ -44,7 +44,7 @@ file(APPEND ${TIMEZONES_FILE} "#include <incbin.h>\n")
 
 set (COUNTER 1)
 foreach(TIMEZONE ${TIMEZONES})
-    file(APPEND ${TIMEZONES_FILE} "INCBIN(resource_timezone${COUNTER}, \"${TIMEZONE}\");\n")
+    file(APPEND ${TIMEZONES_FILE} "INCBIN(resource_timezone${COUNTER}, \"${TZDIR}/${TIMEZONE}\");\n")
     MATH(EXPR COUNTER "${COUNTER}+1")
 endforeach(TIMEZONE)
 
@@ -71,7 +71,6 @@ file(APPEND ${TIMEZONES_FILE} "}\n")
 
 add_library (tzdata ${TIMEZONES_FILE})
 target_link_libraries(tzdata ch_contrib::incbin)
-target_include_directories(tzdata PRIVATE ${TZDIR})
 target_link_libraries(_cctz tzdata)
 
 add_library(ch_contrib::cctz ALIAS _cctz)
