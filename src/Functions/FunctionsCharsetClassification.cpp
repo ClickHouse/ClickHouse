@@ -49,7 +49,7 @@ namespace
         return res;
     }
 
-    /// Сount how many times each bigram occurs in the text.
+    /// Count how many times each bigram occurs in the text.
     template <typename ModelMap>
     ALWAYS_INLINE inline void calculateStats(
         const UInt8 * data,
