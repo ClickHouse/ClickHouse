@@ -48,17 +48,26 @@ foreach(TIMEZONE ${TIMEZONES})
     MATH(EXPR COUNTER "${COUNTER}+1")
 endforeach(TIMEZONE)
 
-file(APPEND ${TIMEZONES_FILE} "#include <cstddef>\n")
-file(APPEND ${TIMEZONES_FILE} "struct TimeZone { const char * name; const unsigned char * data; size_t size; };\n")
-file(APPEND ${TIMEZONES_FILE} "TimeZone auto_time_zones[] {\n" )
+file(APPEND ${TIMEZONES_FILE} "const char * auto_time_zones[] {\n" )
 
-set (COUNTER 1)
 foreach(TIMEZONE ${TIMEZONES})
-    file(APPEND ${TIMEZONES_FILE} "    {\"${TIMEZONE}\", gresource_timezone${COUNTER}Data, gresource_timezone${COUNTER}Size},\n")
+    file(APPEND ${TIMEZONES_FILE} "    \"${TIMEZONE}\",\n")
     MATH(EXPR COUNTER "${COUNTER}+1")
 endforeach(TIMEZONE)
 
-file(APPEND ${TIMEZONES_FILE} "    {nullptr, nullptr, 0}};\n")
+file(APPEND ${TIMEZONES_FILE} "};\n\n")
+
+file(APPEND ${TIMEZONES_FILE} "#include <string_view>\n\n")
+file(APPEND ${TIMEZONES_FILE} "std::string_view getTimeZone(const char * name)\n{\n" )
+
+set (COUNTER 1)
+foreach(TIMEZONE ${TIMEZONES})
+    file(APPEND ${TIMEZONES_FILE} "    if (std::string_view(\"${TIMEZONE}\") == name) return { reinterpret_cast<const char *>(gresource_timezone${COUNTER}Data), gresource_timezone${COUNTER}Size };\n")
+    MATH(EXPR COUNTER "${COUNTER}+1")
+endforeach(TIMEZONE)
+
+file(APPEND ${TIMEZONES_FILE} "    return {};\n")
+file(APPEND ${TIMEZONES_FILE} "}\n")
 
 add_library (tzdata ${TIMEZONES_FILE})
 target_link_libraries(tzdata ch_contrib::incbin)
