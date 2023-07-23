@@ -45,7 +45,7 @@ def cleanup_environment():
 
         logging.debug("Pruning Docker networks")
         run_and_check(
-            ["docker network prune"],
+            ["docker network prune --force"],
             shell=True,
             nothrow=True,
         )
