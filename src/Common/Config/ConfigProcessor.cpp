@@ -83,6 +83,13 @@ ConfigProcessor::~ConfigProcessor()
         Poco::Logger::destroy("ConfigProcessor");
 }
 
+static std::unordered_map<std::string, std::string_view> embedded_configs;
+
+void ConfigProcessor::registerEmbeddedConfig(std::string name, std::string_view content)
+{
+    embedded_configs[name] = content;
+}
+
 
 /// Vector containing the name of the element and a sorted list of attribute names and values
 /// (except "remove" and "replace" attributes).
@@ -281,15 +288,15 @@ void ConfigProcessor::doIncludesRecursive(
         {
             std::string value = node->nodeValue();
 
-            bool replace_occured = false;
+            bool replace_occurred = false;
             size_t pos;
             while ((pos = value.find(substitution.first)) != std::string::npos)
             {
                 value.replace(pos, substitution.first.length(), substitution.second);
-                replace_occured = true;
+                replace_occurred = true;
             }
 
-            if (replace_occured)
+            if (replace_occurred)
                 node->setNodeValue(value);
         }
     }
@@ -528,26 +535,14 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     }
     else
     {
-        /// These embedded files added during build with some cmake magic.
-        /// Look at the end of programs/server/CMakeLists.txt.
-        std::string embedded_name;
-        if (path == "config.xml")
-            embedded_name = "embedded.xml";
-
-        if (path == "keeper_config.xml")
-            embedded_name = "keeper_embedded.xml";
-
-        /// When we can use config embedded in binary.
-        if (!embedded_name.empty())
+        /// When we can use a config embedded in the binary.
+        if (auto it = embedded_configs.find(path); it != embedded_configs.end())
         {
-            auto resource = getResource(embedded_name);
-            if (resource.empty())
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
-            config = dom_parser.parseMemory(resource.data(), resource.size());
+            config = dom_parser.parseMemory(it->second.data(), it->second.size());
         }
         else
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
     }
 
     std::vector<std::string> contributing_files;
