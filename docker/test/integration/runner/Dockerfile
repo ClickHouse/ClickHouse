@@ -135,4 +135,5 @@ ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
+CMD ["sh", "-c", "pytest"]
