@@ -81,6 +81,7 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     , glob_iterator(std::make_unique<StorageS3QueueSource::DisclosedGlobIterator>(
           client_, globbed_uri_, query, virtual_header, context, read_keys_, request_settings_))
 {
+    /// todo(kssenii): remove this loop, it should not be here
     while (true)
     {
         KeyWithInfo val = glob_iterator->next();
@@ -321,6 +322,7 @@ void StorageS3QueueSource::deleteProcessedObject(const String & file_path)
 {
     LOG_WARNING(log, "Delete processed file {} from bucket {}", file_path, bucket);
     S3::DeleteObjectRequest request;
+    /// todo(kssenii): looks incorrect
     String delete_key = file_path.substr(bucket.length() + 1);
 
     request.WithKey(delete_key).WithBucket(bucket);

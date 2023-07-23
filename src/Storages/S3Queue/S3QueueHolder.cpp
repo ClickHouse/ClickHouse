@@ -49,6 +49,7 @@ void S3QueueHolder::S3QueueCollection::write(WriteBuffer & out) const
         out << processed_file.timestamp << "\n";
         out << processed_file.retries_count << "\n";
     }
+    /// todo(kssenii): use a more flexible format?
 }
 
 String S3QueueHolder::S3QueueCollection::toString() const
@@ -104,6 +105,7 @@ void S3QueueHolder::S3QueueProcessedCollection::add(const String & file_name)
     {
         files.erase(files.begin(), files.begin() + (files.size() - max_size));
     }
+    /// todo(kssenii): use deque here
 }
 
 
@@ -177,6 +179,7 @@ S3QueueHolder::S3QueueHolder(
 
 zkutil::ZooKeeperPtr S3QueueHolder::getZooKeeper() const
 {
+    /// todo(kssenii): current_zookeeper is not updated at all apart from in constructor, remove the lock?
     std::lock_guard lock(current_zookeeper_mutex);
     return current_zookeeper;
 }
