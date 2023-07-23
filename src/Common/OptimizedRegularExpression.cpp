@@ -1,5 +1,6 @@
 #include <limits>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/PODArray.h>
 #include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -439,7 +440,7 @@ catch (...)
     is_trivial = false;
     required_substring_is_prefix = false;
     alternatives.clear();
-    std::cerr << "Analyze RegularExpression failed, got error: {}" << DB::getCurrentExceptionMessage(false) << "\n";
+    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
 }
 
 template <bool thread_safe>
