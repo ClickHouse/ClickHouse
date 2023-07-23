@@ -782,6 +782,8 @@ Pipe StorageHDFS::read(
 
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
+    const size_t table_function_max_readers = context_->getSettingsRef().table_function_max_readers;
+    num_streams = std::min(num_streams, table_function_max_readers);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<HDFSSource>(

@@ -1100,6 +1100,8 @@ Pipe StorageS3::read(
     }
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
+    const size_t table_function_max_readers = local_context->getSettingsRef().table_function_max_readers;
+    num_streams = std::min(num_streams, table_function_max_readers);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(

@@ -781,6 +781,8 @@ Pipe IStorageURLBase::read(
     pipes.reserve(num_streams);
 
     size_t download_threads = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
+    const size_t table_function_max_readers = local_context->getSettingsRef().table_function_max_readers;
+    num_streams = std::min(num_streams, table_function_max_readers);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageURLSource>(
