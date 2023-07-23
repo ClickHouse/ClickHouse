@@ -5,4 +5,4 @@ add_library(ch_contrib::incbin ALIAS _incbin)
 
 # Warning "incbin is incompatible with bitcode. Using the library will break upload to App Store if you have bitcode enabled.
 # Add `#define INCBIN_SILENCE_BITCODE_WARNING` before including this header to silence this warning."
-target_compile_definitions(_inclin PUBLIC INCBIN_SILENCE_BITCODE_WARNING)
+target_compile_definitions(_incbin INTERFACE INCBIN_SILENCE_BITCODE_WARNING)
