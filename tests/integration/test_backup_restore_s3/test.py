@@ -352,9 +352,7 @@ def test_backup_with_fs_cache(
     }
 
     backup_settings = {
-        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": int(
-            allow_backup_read_cache
-        ),
+        "read_from_filesystem_cache": int(allow_backup_read_cache),
         "allow_s3_native_copy": int(allow_s3_native_copy),
     }
 
@@ -370,8 +368,8 @@ def test_backup_with_fs_cache(
         restore_settings=restore_settings,
     )
 
-    #print(f"backup_events = {backup_events}")
-    #print(f"restore_events = {restore_events}")
+    # print(f"backup_events = {backup_events}")
+    # print(f"restore_events = {restore_events}")
 
     # BACKUP never updates the filesystem cache but it may read it if `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` allows that.
     if allow_backup_read_cache and in_cache_initially:
