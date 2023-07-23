@@ -1414,7 +1414,15 @@ try
         /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
         /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
         /// communicate with zookeeper, execute merges, etc.
-        createInterserverServers(config(), interserver_listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ false);
+        createInterserverServers(
+            config(),
+            interserver_listen_hosts,
+            listen_try,
+            server_pool,
+            async_metrics,
+            servers_to_start_before_tables,
+            /* start_servers= */ false);
+
 
         for (auto & server : servers_to_start_before_tables)
         {
@@ -2304,6 +2312,7 @@ void Server::updateServers(
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
     Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
+
     std::vector<ProtocolServerAdapter *> all_servers;
     all_servers.reserve(servers.size() + servers_to_start_before_tables.size());
     for (auto & server : servers)
