@@ -136,8 +136,6 @@ public:
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
-    PlanFragmentPtrs buildFragments();
-
 private:
     InterpreterSelectQueryFragments(
         const ASTPtr & query_ptr_,

@@ -430,78 +430,12 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        RewriteDistributedTableVisitor visitor(context);
-        visitor.visit(query_ptr);
-
-        if (visitor.has_local_table && visitor.has_distributed_table)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support distributed table and local table mix query");
-
-        String cluster_name;
-        if (visitor.has_distributed_table)
-        {
-            cluster_name = visitor.clusters[0]->getName();
-            for (const auto & cluster : visitor.clusters)
-            {
-                if (cluster_name != cluster->getName())
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query");
-                }
-            }
-
-            std::vector<StorageID> storages;
-            for (const auto & visitor_storage : visitor.storages)
-            {
-                storages.emplace_back(visitor_storage->getStorageID());
-            }
-
-            if (context->addQueryCoordinationMetaInfo(cluster_name, storages, visitor.sharding_key_columns))
-                context->setDistributed(true);
-            else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query"); /// maybe union query
-        }
-
-        if (visitor.has_local_table)
-            context->setDistributed(false);
-    }
-    else
-    {
-        context->setDistributed(true);
-    }
-
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
     if (!has_input && !storage)
     {
         storage = joined_tables.getLeftTableStorage();
-        /// TODO POC test distributed to local. execute on 127.0.0.1:9000 : select * from dis(127.0.0.1:9100) join local_table
-        if (auto * distributed_storage = dynamic_cast<StorageDistributed *>(storage.get()))
-        {
-            auto database_name = distributed_storage->getRemoteDatabaseName();
-            auto table_name = distributed_storage->getRemoteTableName();
-            distributed_storage->getCluster();
-
-            StorageID local_table_id  = context->resolveStorageID(StorageID(database_name, table_name, UUIDHelpers::Nil));
-
-            storage = DatabaseCatalog::instance().getTable(local_table_id, context);
-
-            if (!storage)
-            {
-                /// create StorageNull
-                LOG_DEBUG(log, "This node no associated local table, may remote cluster query");
-                auto res = std::make_shared<StorageNull>(StorageID(database_name, table_name), distributed_storage->getInMemoryMetadata().getColumns(), ConstraintsDescription(), String{});
-                res->startup();
-                storage = res;
-            }
-        }
-        else /// local storage
-        {
-            /// TODO may already exception from getLeftTableStorage() DatabaseCatalog::instance().getTable(table_id, context)
-            if (!storage)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "may cross cluster query, not support");
-        }
 
         // Mark uses_view_source if the returned storage is the same as the one saved in viewSource
         uses_view_source |= storage && storage == context->getViewSource();
@@ -926,61 +860,6 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
     sanitizeBlock(result_header, true);
 }
 
-static String formattedAST(const ASTPtr & ast)
-{
-    if (!ast)
-        return {};
-
-    WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-    ast_format_settings.hilite = false;
-    ast_format_settings.always_quote_identifiers = true;
-    ast->format(ast_format_settings);
-    return buf.str();
-}
-
-PlanFragmentPtrs InterpreterSelectQueryFragments::buildFragments()
-{
-    QueryPlan query_plan;
-    buildQueryPlan(query_plan);
-    query_plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
-
-    const auto & resources = query_plan.getResources();
-
-    PlanFragmentBuilder builder(storage_limits, context, query_plan);
-    const auto & res_fragments = builder.build();
-
-    /// query_plan resources move to fragments
-    /// Extend lifetime of context, table lock, storage.
-    /// TODO every fragment need context, table lock, storage ?
-    for (const auto & fragment : res_fragments)
-    {
-        fragment->addInterpreterContext(context);
-        if (table_lock)
-            fragment->addTableLock(table_lock);
-        if (storage)
-            fragment->addStorageHolder(storage);
-
-        for (const auto & context_ : resources.interpreter_context)
-        {
-            fragment->addInterpreterContext(context_);
-        }
-
-        for (const auto & storage_holder : resources.storage_holders)
-        {
-            fragment->addStorageHolder(storage_holder);
-        }
-
-        for (const auto & table_lock_ : resources.table_locks)
-        {
-            fragment->addTableLock(table_lock_);
-        }
-    }
-
-    return res_fragments;
-}
-
-
 void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
 {
     executeSinglePlan(query_plan, std::move(input_pipe));
@@ -1011,34 +890,7 @@ void InterpreterSelectQueryFragments::buildQueryPlan(QueryPlan & query_plan)
 
 BlockIO InterpreterSelectQueryFragments::execute()
 {
-    BlockIO res;
-
-    const auto & fragments = buildFragments();
-
-    WriteBufferFromOwnString buffer;
-    fragments.back()->dump(buffer);
-    LOG_INFO(log, "Fragment dump: {}", buffer.str());
-
-    /// save fragments wait for be scheduled
-    res.query_coord_state.fragments = fragments;
-
-    /// schedule fragments
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        Coordinator coord(fragments, context, formattedAST(query_ptr));
-        coord.schedulePrepareDistributedPipelines();
-
-        /// local already be scheduled
-        res.query_coord_state.pipelines = std::move(coord.pipelines);
-        res.query_coord_state.remote_host_connection = coord.getRemoteHostConnection();
-        res.query_coord_state.storage_limits = storage_limits;
-        res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
-
-        /// TODO quota only use to root pipeline?
-        setQuota(res.pipeline);
-    }
-
-    return res;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "InterpreterSelectQueryFragments not support execute");
 }
 
 Block InterpreterSelectQueryFragments::getSampleBlockImpl()

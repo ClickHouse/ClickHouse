@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <QueryCoordination/Interpreters/InDepthPlanNodeVisitor.h>
 
 namespace DB
 {
@@ -182,6 +183,11 @@ UnionStep (DB)
  * */
 PlanFragmentPtr PlanFragmentBuilder::createPlanFragments(const QueryPlan & single_plan, Node & root_node)
 {
+
+    /// TODO test
+    PlanFragmentVisitor visitor;
+    visitor.visit(root_node);
+
     PlanFragmentPtrs child_fragments;
     for (Node * child : root_node.children)
     {

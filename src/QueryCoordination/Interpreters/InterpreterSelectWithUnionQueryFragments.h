@@ -55,8 +55,6 @@ public:
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 
-//    PlanFragmentPtrs fragments;
-
     static Block getCommonHeaderForUnion(const Blocks & headers);
 
     Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);

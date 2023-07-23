@@ -64,6 +64,46 @@ InterpreterSelectWithUnionQueryFragments::InterpreterSelectWithUnionQueryFragmen
     if (!num_children)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no children in ASTSelectWithUnionQuery");
 
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        RewriteDistributedTableVisitor visitor(context);
+        visitor.visit(query_ptr);
+
+        if (visitor.has_local_table && visitor.has_distributed_table)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support distributed table and local table mix query");
+
+        String cluster_name;
+        if (visitor.has_distributed_table)
+        {
+            cluster_name = visitor.clusters[0]->getName();
+            for (const auto & cluster : visitor.clusters)
+            {
+                if (cluster_name != cluster->getName())
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query");
+                }
+            }
+
+            std::vector<StorageID> storages;
+            for (const auto & visitor_storage : visitor.storages)
+            {
+                storages.emplace_back(visitor_storage->getStorageID());
+            }
+
+            if (context->addQueryCoordinationMetaInfo(cluster_name, storages, visitor.sharding_key_columns))
+                context->setDistributed(true);
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query"); /// maybe union query
+        }
+
+        if (visitor.has_local_table)
+            context->setDistributed(false);
+    }
+    else
+    {
+        context->setDistributed(true);
+    }
+
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
     ///  because names could be different.
@@ -454,30 +494,42 @@ BlockIO InterpreterSelectWithUnionQueryFragments::execute()
 {
     BlockIO res;
 
-    const auto & fragments = buildFragments();
-
-    WriteBufferFromOwnString buffer;
-    fragments.back()->dump(buffer);
-    LOG_INFO(&Poco::Logger::get("InterpreterSelectWithUnionQueryFragments"), "Fragment dump: {}", buffer.str());
-
-    /// save fragments wait for be scheduled
-    res.query_coord_state.fragments = fragments;
-
-    /// schedule fragments
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (context->isDistributed())
     {
-        RewriteDistributedTableVisitor visitor(context);
-        visitor.visit(query_ptr);
+        const auto & fragments = buildFragments();
 
-        Coordinator coord(fragments, context, formattedAST(query_ptr));
-        coord.schedulePrepareDistributedPipelines();
+        WriteBufferFromOwnString buffer;
+        fragments.back()->dump(buffer);
+        LOG_INFO(&Poco::Logger::get("InterpreterSelectWithUnionQueryFragments"), "Fragment dump: {}", buffer.str());
 
-        /// local already be scheduled
-        res.query_coord_state.pipelines = std::move(coord.pipelines);
-        res.query_coord_state.remote_host_connection = coord.getRemoteHostConnection();
-        res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
+        /// save fragments wait for be scheduled
+        res.query_coord_state.fragments = fragments;
 
-        /// TODO quota only use to root pipeline?
+        /// schedule fragments
+        if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+            Coordinator coord(fragments, context, formattedAST(query_ptr));
+            coord.schedulePrepareDistributedPipelines();
+
+            /// local already be scheduled
+            res.query_coord_state.pipelines = std::move(coord.pipelines);
+            res.query_coord_state.remote_host_connection = coord.getRemoteHostConnection();
+            res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
+
+            /// TODO quota only use to root pipeline?
+            setQuota(res.pipeline);
+        }
+    }
+    else
+    {
+        QueryPlan query_plan;
+        buildQueryPlan(query_plan);
+
+        auto builder = query_plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(context),
+            BuildQueryPipelineSettings::fromContext(context));
+
+        res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         setQuota(res.pipeline);
     }
 
