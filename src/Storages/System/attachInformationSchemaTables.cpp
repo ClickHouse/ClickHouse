@@ -5,11 +5,13 @@
 #include <Parsers/parseQuery.h>
 #include <incbin.h>
 
+#include "config.h"
+
 /// Embedded SQL definitions
-INCBIN(resource_schemata_sql, "schemata.sql");
-INCBIN(resource_tables_sql, "tables.sql");
-INCBIN(resource_views_sql, "views.sql");
-INCBIN(resource_columns_sql, "columns.sql");
+INCBIN(resource_schemata_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/schemata.sql");
+INCBIN(resource_tables_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/tables.sql");
+INCBIN(resource_views_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/views.sql");
+INCBIN(resource_columns_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/columns.sql");
 
 
 namespace DB

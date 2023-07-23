@@ -34,9 +34,11 @@
 
 #include <incbin.h>
 
+#include "config.h"
+
 /// Embedded configuration files used inside the install program
-INCBIN(resource_config_xml, "config.xml");
-INCBIN(resource_users_xml, "users.xml");
+INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
+INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.

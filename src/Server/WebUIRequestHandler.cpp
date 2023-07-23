@@ -11,10 +11,12 @@
 
 #include <incbin.h>
 
+#include "config.h"
+
 /// Embedded HTML pages
-INCBIN(resource_play_html, "play.html");
-INCBIN(resource_dashboard_html, "dashboard.html");
-INCBIN(resource_uplot_js, "js/uplot.js");
+INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
+INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
+INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
 
 
 namespace DB
