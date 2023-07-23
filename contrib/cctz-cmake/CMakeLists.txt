@@ -55,7 +55,7 @@ foreach(TIMEZONE ${TIMEZONES})
     MATH(EXPR COUNTER "${COUNTER}+1")
 endforeach(TIMEZONE)
 
-file(APPEND ${TIMEZONES_FILE} "};\n\n")
+file(APPEND ${TIMEZONES_FILE} "    nullptr\n};\n\n")
 
 file(APPEND ${TIMEZONES_FILE} "#include <string_view>\n\n")
 file(APPEND ${TIMEZONES_FILE} "std::string_view getTimeZone(const char * name)\n{\n" )
