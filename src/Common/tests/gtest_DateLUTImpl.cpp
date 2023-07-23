@@ -15,7 +15,8 @@
 #endif
 
 // All timezones present at build time and embedded into ClickHouse binary.
-extern const char * auto_time_zones[];
+struct TimeZone { const char * name; const unsigned char * data; size_t size; };
+extern TimeZone auto_time_zones[];
 
 namespace
 {
@@ -32,14 +33,14 @@ std::vector<const char*> allTimezones(bool with_weird_offsets = true)
 {
     std::vector<const char*> result;
 
-    const auto * timezone_name = auto_time_zones;
-    while (*timezone_name)
+    const TimeZone * timezone = auto_time_zones;
+    while (timezone->name)
     {
-        bool weird_offsets = (std::string_view(*timezone_name) == "Africa/Monrovia");
+        bool weird_offsets = (std::string_view(timezone->name) == "Africa/Monrovia");
 
         if (!weird_offsets || with_weird_offsets)
-            result.push_back(*timezone_name);
-        ++timezone_name;
+            result.push_back(timezone->name);
+        ++timezone;
     }
 
     return result;
@@ -548,4 +549,3 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
 //            {0, 0 + 11 * 3600 * 24 + 12, 11},
         }))
 );
-

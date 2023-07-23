@@ -3,7 +3,6 @@
 #include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
 #include <cctz/zone_info_source.h>
-#include <Common/getResource.h>
 #include <Poco/Exception.h>
 
 #include <algorithm>
@@ -12,6 +11,10 @@
 #include <cstring>
 #include <memory>
 
+
+/// Embedded timezones.
+struct TimeZone { const char * name; const unsigned char * data; size_t size; };
+extern TimeZone auto_time_zones[];
 
 namespace
 {
@@ -249,9 +252,15 @@ namespace cctz_extension
             const std::string & name,
             const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
         {
-            std::string_view resource = getResource(name);
-            if (!resource.empty())
-                return std::make_unique<Source>(resource.data(), resource.size());
+            const TimeZone * timezone = auto_time_zones;
+            while (timezone->name != nullptr)
+            {
+                if (timezone->name == name)
+                    break;
+                ++timezone;
+            }
+            if (timezone->size)
+                return std::make_unique<Source>(reinterpret_cast<const char *>(timezone->data), timezone->size);
 
             return fallback(name);
         }
