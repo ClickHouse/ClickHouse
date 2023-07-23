@@ -33,7 +33,6 @@ RUN apt-get update -y \
             qemu-user-static \
             sqlite3 \
             sudo \
-            telnet \
             tree \
             unixodbc \
             wget \

@@ -66,5 +66,11 @@
   "test_server_reload/test.py::test_remove_http_port",
   "test_server_reload/test.py::test_remove_mysql_port",
   "test_server_reload/test.py::test_remove_postgresql_port",
-  "test_server_reload/test.py::test_remove_tcp_port"
+  "test_server_reload/test.py::test_remove_tcp_port",
+
+  "test_keeper_map/test.py::test_keeper_map_without_zk",
+  
+  "test_http_failover/test.py::test_url_destination_host_with_multiple_addrs",
+  "test_http_failover/test.py::test_url_invalid_hostname",
+  "test_http_failover/test.py::test_url_ip_change"
 ]

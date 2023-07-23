@@ -805,7 +805,7 @@
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
-        <test_shard_localhost>
+        <default>
             <!-- Inter-server per-cluster secret for Distributed queries
                  default: no secret (no authentication will be performed)
 
@@ -838,158 +838,11 @@
                     <port>9000</port>
                     <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
                     <!-- <priority>1</priority> -->
+                    <!-- Use SSL? Default: no -->
+                    <!-- <secure>0</secure> -->
                 </replica>
             </shard>
-        </test_shard_localhost>
-        <test_cluster_one_shard_three_replicas_localhost>
-            <shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <!--shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard-->
-        </test_cluster_one_shard_three_replicas_localhost>
-	<parallel_replicas>
-		<shard>
-            <internal_replication>false</internal_replication>
-            <replica>
-                <host>127.0.0.1</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.2</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.3</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.4</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.5</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.6</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.7</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.8</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.9</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>127.0.0.10</host>
-                <port>9000</port>
-            </replica>
-            <!-- Unavailable replica -->
-            <replica>
-                <host>127.0.0.11</host>
-                <port>1234</port>
-            </replica>
-        </shard>
-	</parallel_replicas>
-        <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-        </test_cluster_two_shards_localhost>
-        <test_cluster_two_shards>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards>
-        <test_cluster_two_shards_internal_replication>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_internal_replication>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
+        </default>
     </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
@@ -1012,6 +865,14 @@
             (forgetting to do so is a common source of error).
         -->
     <!--</remote_url_allow_hosts>-->
+
+    <!-- The list of HTTP headers forbidden to use in HTTP-related storage engines and table functions.
+        If this section is not present in configuration, all headers are allowed.
+    -->
+    <!-- <http_forbid_headers>
+        <header>exact_header</header>
+        <header_regexp>(?i)(case_insensitive_header)</header_regexp>
+    </http_forbid_headers> -->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
