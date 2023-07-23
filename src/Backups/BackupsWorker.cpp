@@ -186,7 +186,7 @@ namespace
         auto read_settings = context->getReadSettings();
         read_settings.remote_throttler = context->getBackupsThrottler();
         read_settings.local_throttler = context->getBackupsThrottler();
-        read_settings.enable_filesystem_cache = false;
+        read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
         return read_settings;
     }
@@ -416,7 +416,7 @@ void BackupsWorker::doBackup(
             /// Prepare backup entries.
             BackupEntries backup_entries;
             {
-                BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context};
+                BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, backup_create_params.read_settings, context};
                 backup_entries = backup_entries_collector.run();
             }
 
