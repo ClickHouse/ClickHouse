@@ -19,7 +19,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <Common/getResource.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
