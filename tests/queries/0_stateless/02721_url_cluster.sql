@@ -38,3 +38,4 @@ insert into test select * from urlCluster('test_cluster_one_shard_three_replicas
 select * from test;
 drop table test;
 
+select * from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv') ORDER BY c1, c2, c3 settings table_function_max_readers = 2;

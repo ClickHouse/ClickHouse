@@ -24,3 +24,5 @@ desc hdfsCluster('test_cluster_two_shards_localhost', 'hdfs://localhost:12222/te
 desc hdfsCluster('test_cluster_two_shards_localhost', 'hdfs://localhost:12222/test_{1,2,3}.tsv', 'TSV');
 desc hdfsCluster('test_cluster_two_shards_localhost', 'hdfs://localhost:12222/test_{1,2,3}.tsv', 'TSV', 'c1 UInt32, c2 UInt32, c3 UInt32');
 desc hdfsCluster('test_cluster_two_shards_localhost', 'hdfs://localhost:12222/test_{1,2,3}.tsv', 'TSV', 'c1 UInt32, c2 UInt32, c3 UInt32', 'auto');
+
+select * from hdfs('hdfs://localhost:12222/test_{1,2,3}.tsv') order by c1, c2, c3 settings table_function_max_readers = 2;

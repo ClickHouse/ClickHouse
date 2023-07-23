@@ -20,3 +20,4 @@ select * from s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:1
 select * from s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'test', 'testtest', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64') ORDER BY c1, c2, c3;
 select * from s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'test', 'testtest', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64', 'auto') ORDER BY c1, c2, c3;
 
+select * from s3('http://localhost:11111/test/{a,b,c}.tsv') ORDER BY c1, c2, c3 settings table_function_max_readers = 2;
