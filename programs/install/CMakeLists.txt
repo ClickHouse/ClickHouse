@@ -10,3 +10,6 @@ set (CLICKHOUSE_INSTALL_LINK
 )
 
 clickhouse_program_add_library(install)
+
+# For incbin
+target_include_directories(clickhouse-install-lib PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../server")
