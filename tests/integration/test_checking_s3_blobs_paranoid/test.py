@@ -307,8 +307,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
     assert "Code: 1000" in error, error
     assert (
         "DB::Exception: Connection reset by peer." in error
-        or
-        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
+        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
     ), error
 
 
@@ -386,6 +385,5 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
     assert "Code: 1000" in error, error
     assert (
         "DB::Exception: Connection reset by peer." in error
-        or
-        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
+        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
     ), error
