@@ -37,7 +37,9 @@ class MockControl:
         )
         assert response == "OK", response
 
-    def setup_action(self, when, count=None, after=None, action="error_500", action_args=None):
+    def setup_action(
+        self, when, count=None, after=None, action="error_500", action_args=None
+    ):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
 
         if count is not None:
@@ -175,7 +177,7 @@ class _ServerRuntime:
     class ConnectionResetByPeerAction:
         def __init__(self, with_partial_data=None):
             self.partial_data = ""
-            if with_partial_data is not None:
+            if with_partial_data is not None and with_partial_data == "1":
                 self.partial_data = (
                     '<?xml version="1.0" encoding="UTF-8"?>\n'
                     "<InitiateMultipartUploadResult>\n"
@@ -193,9 +195,7 @@ class _ServerRuntime:
 
             time.sleep(1)
             request_handler.connection.setsockopt(
-                socket.SOL_SOCKET,
-                socket.SO_LINGER,
-                struct.pack('ii', 1, 0)
+                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
             request_handler.connection.close()
 
@@ -211,7 +211,9 @@ class _ServerRuntime:
             if self.action == "connection_refused":
                 self.error_handler = _ServerRuntime.ConnectionRefusedAction()
             elif self.action == "connection_reset_by_peer":
-                self.error_handler = _ServerRuntime.ConnectionResetByPeerAction(*self.action_args)
+                self.error_handler = _ServerRuntime.ConnectionResetByPeerAction(
+                    *self.action_args
+                )
             elif self.action == "redirect_to":
                 self.error_handler = _ServerRuntime.RedirectAction(*self.action_args)
             else:
@@ -311,9 +313,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.read_all_input()
 
         self.send_response(307)
-        url = (
-            f"http://{host}:{port}{self.path}"
-        )
+        url = f"http://{host}:{port}{self.path}"
         self.log_message("redirect to %s", url)
         self.send_header("Location", url)
         self.end_headers()
@@ -403,7 +403,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path[1] == "at_object_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_object_upload = _ServerRuntime.CountAfter.from_cgi_params(params)
+            _runtime.at_object_upload = _ServerRuntime.CountAfter.from_cgi_params(
+                params
+            )
             self.log_message("set at_object_upload %s", _runtime.at_object_upload)
             return self._ok()
 
@@ -433,8 +435,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path[1] == "at_create_multi_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_create_multi_part_upload = _ServerRuntime.CountAfter.from_cgi_params(params)
-            self.log_message("set at_create_multi_part_upload %s", _runtime.at_create_multi_part_upload)
+            _runtime.at_create_multi_part_upload = (
+                _ServerRuntime.CountAfter.from_cgi_params(params)
+            )
+            self.log_message(
+                "set at_create_multi_part_upload %s",
+                _runtime.at_create_multi_part_upload,
+            )
             return self._ok()
 
         if path[1] == "reset":

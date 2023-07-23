@@ -172,9 +172,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     assert count_s3_errors >= 2
 
 
-def test_when_s3_connection_refused_at_write_retried(
-    cluster, broken_s3
-):
+def test_when_s3_connection_refused_is_retried(cluster, broken_s3):
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()
@@ -231,11 +229,14 @@ def test_when_s3_connection_refused_at_write_retried(
     )
 
     assert "Code: 499" in error, error
-    assert "Poco::Exception. Code: 1000, e.code() = 111, Connection refused" in error, error
+    assert (
+        "Poco::Exception. Code: 1000, e.code() = 111, Connection refused" in error
+    ), error
 
 
-def test_when_s3_connection_reset_by_peer_at_write_retried(
-    cluster, broken_s3
+@pytest.mark.parametrize("send_something", [True, False])
+def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
+    cluster, broken_s3, send_something
 ):
     node = cluster.instances["node"]
 
@@ -244,14 +245,15 @@ def test_when_s3_connection_reset_by_peer_at_write_retried(
         count=3,
         after=2,
         action="connection_reset_by_peer",
+        action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_RETRIED"
+    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD"
     node.query(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_write_retried',
+                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_upload_is_retried',
                 'minio', 'minio123',
                 'CSV', auto, 'none'
             )
@@ -279,13 +281,14 @@ def test_when_s3_connection_reset_by_peer_at_write_retried(
         count=1000,
         after=2,
         action="connection_reset_by_peer",
+        action_args=["1"] if send_something else ["0"],
     )
-    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_RETRIED_1"
+    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_1"
     error = node.query_and_get_error(
         f"""
                INSERT INTO
                    TABLE FUNCTION s3(
-                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_write_retried',
+                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_upload_is_retried',
                        'minio', 'minio123',
                        'CSV', auto, 'none'
                    )
@@ -301,12 +304,17 @@ def test_when_s3_connection_reset_by_peer_at_write_retried(
         query_id=insert_query_id,
     )
 
-    assert "Code: 499" in error, error
-    assert "Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error, error
+    assert "Code: 1000" in error, error
+    assert (
+        "DB::Exception: Connection reset by peer." in error
+        or
+        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
+    ), error
 
 
-def test_when_s3_connection_reset_by_peer_at_read_retried(
-    cluster, broken_s3
+@pytest.mark.parametrize("send_something", [True, False])
+def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
+    cluster, broken_s3, send_something
 ):
     node = cluster.instances["node"]
 
@@ -315,14 +323,15 @@ def test_when_s3_connection_reset_by_peer_at_read_retried(
         count=3,
         after=0,
         action="connection_reset_by_peer",
+        action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_READ_RETRIED"
+    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD"
     node.query(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_read_retried',
+                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
                 'minio', 'minio123',
                 'CSV', auto, 'none'
             )
@@ -350,14 +359,15 @@ def test_when_s3_connection_reset_by_peer_at_read_retried(
         count=1000,
         after=0,
         action="connection_reset_by_peer",
+        action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_RESET_BY_PEER_READ_RETRIED_1"
+    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_1"
     error = node.query_and_get_error(
         f"""
                INSERT INTO
                    TABLE FUNCTION s3(
-                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_read_retried',
+                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
                        'minio', 'minio123',
                        'CSV', auto, 'none'
                    )
@@ -373,5 +383,9 @@ def test_when_s3_connection_reset_by_peer_at_read_retried(
         query_id=insert_query_id,
     )
 
-    assert "Code: 499" in error, error
-    assert "Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error, error
+    assert "Code: 1000" in error, error
+    assert (
+        "DB::Exception: Connection reset by peer." in error
+        or
+        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
+    ), error
