@@ -953,6 +953,11 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     {
         auto remainder = value % 10;
         value /= 10;
+
+        if (remainder != 0 && last_nonzero_pos == 0)
+            last_nonzero_pos = pos;
+
+        buf[pos] += static_cast<char>(remainder);
     }
 
     writeChar('.', ostr);
