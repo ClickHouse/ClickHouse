@@ -61,7 +61,7 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
         {
             /// Syntax error is ignored, so we need to convert the error code for parsing failure
 
-            if(ParserKeyword("CREATE DATABASE").ignore(pos))
+            if (ParserKeyword("CREATE DATABASE").ignore(pos))
                 throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "CREATE DATABASE queries are not supported");
 
             if (ParserKeyword("ALTER TABLE").ignore(pos))
