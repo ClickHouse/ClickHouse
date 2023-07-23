@@ -46,7 +46,7 @@ struct BackupSettings
 
     /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
     /// but don't put more entries into the cache.
-    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    bool read_from_filesystem_cache = true;
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.

@@ -186,8 +186,8 @@ namespace
         auto read_settings = context->getReadSettings();
         read_settings.remote_throttler = context->getBackupsThrottler();
         read_settings.local_throttler = context->getBackupsThrottler();
-        read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+        read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
     }
 
