@@ -10,11 +10,12 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <iostream>
 
 
 /// Embedded timezones.
-struct TimeZone { const char * name; const unsigned char * data; size_t size; };
-extern TimeZone auto_time_zones[];
+std::string_view getTimeZone(const char * name);
+
 
 namespace
 {
@@ -252,15 +253,10 @@ namespace cctz_extension
             const std::string & name,
             const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
         {
-            const TimeZone * timezone = auto_time_zones;
-            while (timezone->name != nullptr)
-            {
-                if (timezone->name == name)
-                    break;
-                ++timezone;
-            }
-            if (timezone->size)
-                return std::make_unique<Source>(reinterpret_cast<const char *>(timezone->data), timezone->size);
+            std::string_view tz_file = getTimeZone(name.data());
+
+            if (!tz_file.empty())
+                return std::make_unique<Source>(tz_file.data(), tz_file.size());
 
             return fallback(name);
         }
