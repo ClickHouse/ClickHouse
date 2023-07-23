@@ -15,6 +15,7 @@
 #include <base/sort.h>
 #include <base/getFQDNOrHostName.h>
 #include "Common/ZooKeeper/IKeeper.h"
+#include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -81,6 +82,9 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
+
+                /// We want to resolve all hosts without DNS cache for keeper connection.
+                Coordination::DNSResolver::instance().removeHostFromCache(host_string);
 
                 const Poco::Net::SocketAddress host_socket_addr{host_string};
                 LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
