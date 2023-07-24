@@ -34,6 +34,8 @@ add_dependencies(clickhouse-keeper-lib clickhouse_keeper_configs)
 if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperReconfiguration.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/RaftServerConfig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/ACLMap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Changelog.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/CoordinationSettings.cpp
@@ -73,6 +75,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/TCPServer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/NotFoundHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/ProtocolServerAdapter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/CertificateReloader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusRequestHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusMetricsWriter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/waitServersToFinish.cpp
