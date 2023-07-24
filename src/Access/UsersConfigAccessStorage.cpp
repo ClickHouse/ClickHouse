@@ -49,7 +49,7 @@ namespace
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
-        UUIDHelpers::changeUnderlyingUUID(result);
+        UUIDHelpers::toCompatibleFormat(result);
         return result;
     }
 

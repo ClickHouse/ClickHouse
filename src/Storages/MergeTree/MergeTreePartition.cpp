@@ -87,7 +87,7 @@ namespace
         {
             // Take a copy to modify the underlying components.
             auto uuid = x;
-            UUIDHelpers::changeUnderlyingUUID(uuid);
+            UUIDHelpers::toCompatibleFormat(uuid);
             operator()(uuid.toUnderType());
         }
         void operator() (const IPv4 & x) const

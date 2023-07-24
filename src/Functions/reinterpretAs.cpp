@@ -201,7 +201,7 @@ public:
 
                     if constexpr (std::is_same_v<ToType, DataTypeUUID>)
                     {
-                        std::ranges::for_each(col_res->getData(), UUIDHelpers::changeUnderlyingUUID);
+                        std::ranges::for_each(col_res->getData(), UUIDHelpers::toCompatibleFormat);
                     }
 
                     result = std::move(col_res);
@@ -242,7 +242,7 @@ public:
 
                     if constexpr (std::is_same_v<ToType, DataTypeUUID>)
                     {
-                        std::ranges::for_each(col_res->getData(), UUIDHelpers::changeUnderlyingUUID);
+                        std::ranges::for_each(col_res->getData(), UUIDHelpers::toCompatibleFormat);
                     }
 
                     result = std::move(col_res);
@@ -306,7 +306,7 @@ public:
 
                     if constexpr (std::is_same_v<ToType, DataTypeUUID>)
                     {
-                        std::ranges::for_each(column_to->getData(), UUIDHelpers::changeUnderlyingUUID);
+                        std::ranges::for_each(column_to->getData(), UUIDHelpers::toCompatibleFormat);
                     }
 
                     result = std::move(column_to);
@@ -350,7 +350,7 @@ private:
         [](auto value)
         {
             transformEndianness<std::endian::little>(value);
-            UUIDHelpers::changeUnderlyingUUID(value);
+            UUIDHelpers::toCompatibleFormat(value);
             return value;
         });
 

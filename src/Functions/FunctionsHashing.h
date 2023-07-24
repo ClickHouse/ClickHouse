@@ -1132,7 +1132,7 @@ private:
 
                 if constexpr (std::is_same_v<FromType, UUID>)
                 {
-                    UUIDHelpers::changeUnderlyingUUID(value);
+                    UUIDHelpers::toCompatibleFormat(value);
                 }
 
                 const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
@@ -1150,7 +1150,7 @@ private:
 
             if constexpr (std::is_same_v<FromType, UUID>)
             {
-                UUIDHelpers::changeUnderlyingUUID(value);
+                UUIDHelpers::toCompatibleFormat(value);
             }
 
             const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));

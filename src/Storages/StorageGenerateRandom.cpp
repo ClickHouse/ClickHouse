@@ -366,7 +366,7 @@ ColumnPtr fillColumnWithRandomData(
                 [&](auto & value)
                 {
                     transformEndianness<std::endian::little>(value);
-                    UUIDHelpers::changeUnderlyingUUID(value);
+                    UUIDHelpers::toCompatibleFormat(value);
                 });
             return column;
         }

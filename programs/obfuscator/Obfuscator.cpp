@@ -395,7 +395,7 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
     auto src_copy = src_uuid;
     transformEndianness<std::endian::little>(src_copy);
-    UUIDHelpers::changeUnderlyingUUID(src_copy);
+    UUIDHelpers::toCompatibleFormat(src_copy);
 
     const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
@@ -416,7 +416,7 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace.items[1])) | (src_uuid.toUnderType().items[0] & trace.items[1]);
     dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace.items[0])) | (src_uuid.toUnderType().items[1] & trace.items[0]);
 #endif
-    UUIDHelpers::changeUnderlyingUUID(dst_uuid);
+    UUIDHelpers::toCompatibleFormat(dst_uuid);
 }
 
 class FixedStringModel : public IModel
