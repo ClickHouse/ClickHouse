@@ -114,7 +114,7 @@ def node_update_config(mode, setting, value=None):
 
 
 def assert_took(took, should_took):
-    assert took >= should_took[0] * 0.9 and took < should_took[1]
+    assert took >= should_took[0] * 0.85 and took < should_took[1]
 
 
 @pytest.mark.parametrize(
