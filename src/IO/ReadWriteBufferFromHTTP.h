@@ -38,7 +38,7 @@ public:
 
     explicit UpdatableSession(const Poco::URI & uri, UInt64 max_redirects_, std::shared_ptr<TSessionFactory> session_factory_);
 
-    SessionPtr getSession();
+    SessionPtr & getSession();
 
     void updateSession(const Poco::URI & uri);
 
@@ -48,11 +48,11 @@ public:
     std::shared_ptr<UpdatableSession<TSessionFactory>> clone(const Poco::URI & uri);
 
 private:
+    std::shared_ptr<TSessionFactory> session_factory;
     SessionPtr session;
     UInt64 redirects{0};
     UInt64 max_redirects;
     Poco::URI initial_uri;
-    std::shared_ptr<TSessionFactory> session_factory;
 };
 
 
@@ -63,6 +63,9 @@ struct HTTPFileInfo
     std::optional<size_t> file_size;
     std::optional<time_t> last_modified;
     bool seekable = false;
+
+    /// If we got a non-retriable error, we cache that information and don't try HEAD requests again.
+    std::optional<HTTPException> exception;
 };
 
 
@@ -106,8 +109,6 @@ namespace detail
         /// In case of redirects, save result uri to use it if we retry the request.
         std::optional<Poco::URI> saved_uri_redirect;
 
-        bool http_skip_not_found_url;
-
         ReadSettings settings;
         Poco::Logger * log;
 
@@ -132,8 +133,6 @@ namespace detail
             RETRYABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
             NON_RETRYABLE_ERROR,
-            /// Allows to skip not found urls for globs
-            SKIP_NOT_FOUND_URL,
             NONE,
         };
 
@@ -160,7 +159,6 @@ namespace detail
             const RemoteHostFilter * remote_host_filter_ = nullptr,
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
-            bool http_skip_not_found_url_ = false,
             std::optional<HTTPFileInfo> file_info_ = std::nullopt);
 
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false, bool for_object_info = false);
@@ -169,8 +167,7 @@ namespace detail
 
         /**
          * Throws if error is retryable, otherwise sets initialization_error = NON_RETRYABLE_ERROR and
-         * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
-         * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
+         * saves exception into `exception` variable.
          */
         void initialize();
 
@@ -203,35 +200,80 @@ namespace detail
 
         std::optional<time_t> getLastModificationTime();
 
-        HTTPFileInfo getFileInfo();
+        HTTPFileInfo getFileInfo(bool use_cache = true);
 
         HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
     };
 }
 
-class SessionFactory
+
+/// A short-lived HTTP session pool for one endpoint.
+/// Keeps an unlimited number of sessions for one URI.
+/// If URI changes (redirect), clears the pool.
+/// If method is not GET or HEAD, we avoid pooling altogether, just in case.
+/// The pool must outlive all session pointers created by it.
+///
+/// Session is only reused if it has HTTPSessionReuseTag attached, see comment in HTTPCommon.h
+class LocallyPooledSessionFactory
 {
 public:
-    explicit SessionFactory(const ConnectionTimeouts & timeouts_);
+    using Session = Poco::Net::HTTPClientSession;
 
-    using SessionType = HTTPSessionPtr;
+    explicit LocallyPooledSessionFactory(const ConnectionTimeouts & timeouts_);
 
+    struct Entry
+    {
+        Entry(LocallyPooledSessionFactory * pool_, Poco::URI uri_, HTTPSessionPtr session_) : pool(pool_), uri(uri_), session(session_) {}
+
+        ~Entry()
+        {
+            if (pool)
+                pool->returnSessionToPool(std::move(session), uri);
+        }
+
+        LocallyPooledSessionFactory * pool = nullptr;
+        Poco::URI uri;
+        HTTPSessionPtr session;
+    };
+
+    struct EntryPtr
+    {
+        std::shared_ptr<Entry> e;
+
+        Session & operator*() { return *e->session; }
+        Session * operator->() { return &*e->session; }
+    };
+
+    using SessionType = EntryPtr;
+
+    /// Thread safe.
     SessionType buildNewSession(const Poco::URI & uri);
+
 private:
+    friend struct Entry;
+
     ConnectionTimeouts timeouts;
+
+    std::mutex mutex;
+
+    Poco::URI current_uri;
+    std::vector<HTTPSessionPtr> available;
+
+    void returnSessionToPool(HTTPSessionPtr s, Poco::URI uri);
 };
 
-class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<SessionFactory>>>
+/// Reuses HTTP sessions within the returned ReadBuffer (when doing seeks, retries, or random reads),
+/// but doesn't share sessions with other buffers.
+class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<LocallyPooledSessionFactory>>>
 {
-    using SessionType = UpdatableSession<SessionFactory>;
-    using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<SessionType>>;
+    using SessionType = UpdatableSession<LocallyPooledSessionFactory>;
 
 public:
-    ReadWriteBufferFromHTTP(
+    explicit ReadWriteBufferFromHTTP(
         Poco::URI uri_,
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
-        const ConnectionTimeouts & timeouts,
+        const ConnectionTimeouts & timeouts_,
         const Poco::Net::HTTPBasicCredentials & credentials_,
         const UInt64 max_redirects = 0,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
@@ -239,18 +281,20 @@ public:
         const HTTPHeaderEntries & http_header_entries_ = {},
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
-        bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false,
-        std::optional<HTTPFileInfo> file_info_ = std::nullopt);
+        bool use_external_buffer_ = false);
 };
 
+
+/// Uses a global pool of sessions.
+/// Currently not widely used because the eviction mechanism seems a little questionable: there's
+/// no limit on number of endpoints in the pool, only a limit on number of sessions per endpoint.
 class PooledSessionFactory
 {
 public:
+    using SessionType = PooledHTTPSessionPtr;
+
     explicit PooledSessionFactory(
         const ConnectionTimeouts & timeouts_, size_t per_endpoint_pool_size_);
-
-    using SessionType = PooledHTTPSessionPtr;
 
     /// Thread safe.
     SessionType buildNewSession(const Poco::URI & uri);
@@ -278,9 +322,9 @@ public:
 };
 
 
-extern template class UpdatableSession<SessionFactory>;
+extern template class UpdatableSession<LocallyPooledSessionFactory>;
 extern template class UpdatableSession<PooledSessionFactory>;
-extern template class detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<SessionFactory>>>;
+extern template class detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<LocallyPooledSessionFactory>>>;
 extern template class detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<PooledSessionFactory>>>;
 
 }

@@ -240,10 +240,11 @@ StorageURLSource::StorageURLSource(
     auto headers = getHeaders(headers_);
 
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
-    initialize = [=, this]()
+    initialize = [=, this]() -> bool
     {
         std::vector<String> current_uri_options;
         std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
+        bool skip_if_not_found = glob_url && context->getReadSettings().http_skip_not_found_url_for_globs;
         do
         {
             current_uri_options = (*uri_iterator)();
@@ -261,12 +262,10 @@ StorageURLSource::StorageURLSource(
                 timeouts,
                 credentials,
                 headers,
-                glob_url,
-                current_uri_options.size() == 1);
-
-            /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
+                skip_if_not_found);
         }
-        while (context->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof());
+        while ((skip_if_not_found && !uri_and_buf.second) ||
+                (context->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof()));
 
         curr_uri = uri_and_buf.first;
         read_buf = std::move(uri_and_buf.second);
@@ -378,17 +377,23 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     const ConnectionTimeouts & timeouts,
     Poco::Net::HTTPBasicCredentials & credentials,
     const HTTPHeaderEntries & headers,
-    bool glob_url,
-    bool delay_initialization)
+    bool skip_if_not_found)
 {
     String first_exception_message;
     ReadSettings read_settings = context->getReadSettings();
+
+    /// Iterate over failover options. Used in 2 ways:
+    ///  + For glob like "x|y|z" we need to read from only one of x, y, z.
+    ///    These are failover options, iterated by this loop here.
+    ///  - For glob like "{1..10}" we need to read from all 10 URLs.
+    ///    These are iterated in generate(), not here.
+    ///  + But for schema inference, "{1..10}" globs are treated as failover options and are
+    ///    subject to this loop.
 
     size_t options = std::distance(option, end);
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
-        bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option);
 
         for (const auto & [param, value] : params)
@@ -397,6 +402,24 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         setCredentials(credentials, request_uri);
 
         const auto settings = context->getSettings();
+
+        /// There's a bit of a tradeoff here. Consider two situations:
+        ///  (1) Suppose the URL contains failover options
+        ///      (or globs & http_skip_not_found_url_for_globs).
+        ///      Then we want to send an HTTP request right here to determine availability.
+        ///      Suppose also that the web server doesn't support ranges or HEAD requests
+        ///      (e.g. webhdfs). Then the HTTP request we send should be the actual GET
+        ///      for the whole file.
+        ///      So, delay_initialization = false is required.
+        ///  (2) Suppose HTTP server supports ranges.
+        ///      Then we want to read in parallel, in shorter chunks.
+        ///      It would be better to not send a big GET request here, it will just be
+        ///      cancelled later.
+        ///      So, delay_initialization = true is preferred.
+        ///
+        /// So we opportunistically set delay_initialization to true when there's only one
+        /// URL, and to false in other cases to make (1) work.
+        bool delay_initialization = options == 1 && !skip_if_not_found;
 
         try
         {
@@ -411,9 +434,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 read_settings,
                 headers,
                 &context->getRemoteHostFilter(),
-                delay_initialization,
-                /* use_external_buffer */ false,
-                /* skip_url_not_found_error */ skip_url_not_found_error);
+                delay_initialization);
 
             if (context->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {
@@ -425,7 +446,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
         catch (...)
         {
-            if (options == 1)
+            if (options == 1 && !skip_if_not_found && !last_skipped_empty_res.second)
                 throw;
 
             if (first_exception_message.empty())
@@ -441,6 +462,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     /// return last empty result. It will be skipped later.
     if (last_skipped_empty_res.second)
         return last_skipped_empty_res;
+
+    if (skip_if_not_found)
+        return {Poco::URI(), nullptr};
 
     throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
 }
@@ -662,7 +686,6 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
                 getHTTPTimeouts(context),
                 credentials,
                 headers,
-                false,
                 false);
 
             ++it;
@@ -976,10 +999,7 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             settings.max_read_buffer_size,
             context->getReadSettings(),
             headers,
-            &context->getRemoteHostFilter(),
-            true,
-            false,
-            false);
+            &context->getRemoteHostFilter());
 
         return buf.getLastModificationTime();
     }
