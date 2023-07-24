@@ -3,14 +3,23 @@
 #include <Storages/System/attachSystemTablesImpl.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Common/getResource.h>
+#include <incbin.h>
+
+#include "config.h"
+
+/// Embedded SQL definitions
+INCBIN(resource_schemata_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/schemata.sql");
+INCBIN(resource_tables_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/tables.sql");
+INCBIN(resource_views_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/views.sql");
+INCBIN(resource_columns_sql, SOURCE_DIR "/src/Storages/System/InformationSchema/columns.sql");
+
 
 namespace DB
 {
 
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
-static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name)
+static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query)
 {
     try
     {
@@ -21,12 +30,11 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         bool is_uppercase = database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE;
 
         String metadata_resource_name = view_name + ".sql";
-        auto attach_query = getResource(metadata_resource_name);
-        if (attach_query.empty())
+        if (query.empty())
             return;
 
         ParserCreateQuery parser;
-        ASTPtr ast = parseQuery(parser, attach_query.data(), attach_query.data() + attach_query.size(),
+        ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(),
                                 "Attach query from embedded resource " + metadata_resource_name,
                                 DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
@@ -50,10 +58,10 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 
 void attachInformationSchema(ContextMutablePtr context, IDatabase & information_schema_database)
 {
-    createInformationSchemaView(context, information_schema_database, "schemata");
-    createInformationSchemaView(context, information_schema_database, "tables");
-    createInformationSchemaView(context, information_schema_database, "views");
-    createInformationSchemaView(context, information_schema_database, "columns");
+    createInformationSchemaView(context, information_schema_database, "schemata", std::string_view(reinterpret_cast<const char *>(gresource_schemata_sqlData), gresource_schemata_sqlSize));
+    createInformationSchemaView(context, information_schema_database, "tables", std::string_view(reinterpret_cast<const char *>(gresource_tables_sqlData), gresource_tables_sqlSize));
+    createInformationSchemaView(context, information_schema_database, "views", std::string_view(reinterpret_cast<const char *>(gresource_views_sqlData), gresource_views_sqlSize));
+    createInformationSchemaView(context, information_schema_database, "columns", std::string_view(reinterpret_cast<const char *>(gresource_columns_sqlData), gresource_columns_sqlSize));
 }
 
 }
