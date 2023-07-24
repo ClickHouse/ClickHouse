@@ -422,6 +422,12 @@ def test_materialized_with_column_comments(
     )
 
 
+def test_double_quoted_comment(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.double_quoted_comment(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
 def test_materialized_with_enum(
     started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node
 ):
