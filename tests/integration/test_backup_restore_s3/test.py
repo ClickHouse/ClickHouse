@@ -198,7 +198,6 @@ def test_backup_to_s3_multipart():
         storage_policy,
         backup_destination,
         size=1000000,
-        backup_name=backup_name,
     )
     assert node.contains_in_log(
         f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
