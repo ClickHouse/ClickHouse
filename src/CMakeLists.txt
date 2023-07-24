@@ -296,7 +296,7 @@ macro (dbms_target_include_directories)
     endforeach ()
 endmacro ()
 
-dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src" "${ClickHouse_SOURCE_DIR}/programs/server")
+dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (TARGET ch_contrib::llvm)
@@ -561,7 +561,6 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
-    target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_SOURCE_DIR}/contrib/nlp-data)
 endif()
 
 if (TARGET ch_contrib::ulid)
