@@ -89,7 +89,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             if (read_until_position < file_offset)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", file_offset, read_until_position - 1);
 
-            num_bytes_to_read = read_until_position - file_offset;
+            num_bytes_to_read = std::min<size_t>(read_until_position - file_offset, internal_buffer.size());
         }
         else
         {
