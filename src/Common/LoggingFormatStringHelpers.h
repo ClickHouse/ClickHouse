@@ -142,26 +142,19 @@ consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs)
         functionThatFailsCompilationOfConstevalFunctions("unexpected number of arguments in a format string");
 }
 
-template <typename... Args>
-struct CheckArgsNumHelperImpl
+template<typename T>
+consteval void formatStringCheckArgsNum(T && str, size_t nargs)
 {
-    template<typename T>
-    consteval CheckArgsNumHelperImpl(T && str)
-    {
-        formatStringCheckArgsNumImpl(tryGetStaticFormatString(str), sizeof...(Args));
-    }
+    formatStringCheckArgsNumImpl(tryGetStaticFormatString(str), nargs);
+}
+template<typename T> inline void formatStringCheckArgsNum(fmt::basic_runtime<T> &&, size_t) {}
+template<> inline void formatStringCheckArgsNum(PreformattedMessage &, size_t) {}
+template<> inline void formatStringCheckArgsNum(const PreformattedMessage &, size_t) {}
+template<> inline void formatStringCheckArgsNum(PreformattedMessage &&, size_t) {}
 
-    /// No checks for fmt::runtime and PreformattedMessage
-    template<typename T> CheckArgsNumHelperImpl(fmt::basic_runtime<T> &&) {}
-    template<> CheckArgsNumHelperImpl(PreformattedMessage &) {}
-    template<> CheckArgsNumHelperImpl(const PreformattedMessage &) {}
-    template<> CheckArgsNumHelperImpl(PreformattedMessage &&) {}
-
-};
-
-template <typename... Args> using CheckArgsNumHelper = CheckArgsNumHelperImpl<std::type_identity_t<Args>...>;
-template <typename... Args> void formatStringCheckArgsNum(CheckArgsNumHelper<Args...>, Args &&...) {}
-
+template<typename T> struct NeedCheckNumberOfFormatArgs { static constexpr bool v = true; };
+template<typename T> struct NeedCheckNumberOfFormatArgs<fmt::basic_runtime<T>> { static constexpr bool v = false; };
+template<> struct NeedCheckNumberOfFormatArgs<PreformattedMessage> { static constexpr bool v = false; };
 
 /// This wrapper helps to avoid too frequent and noisy log messages.
 /// For each pair (logger_name, format_string) it remembers when such a message was logged the last time.
