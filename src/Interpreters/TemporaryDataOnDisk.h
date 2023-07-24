@@ -173,4 +173,35 @@ private:
     std::unique_ptr<InputReader> in_reader;
 };
 
+/**
+ * It's thread-safe to call write/read concurrently.
+ * It minimizes the lock scope and improve the performance under concurrent execution.
+ */
+class ThreadSafeTemporaryFileStream : public boost::noncopyable
+{
+public:
+    explicit ThreadSafeTemporaryFileStream(const Block & header_, WriteBufferPtr file_buf_, size_t max_block_size_);
+    ~ThreadSafeTemporaryFileStream() = default;
+
+    void finishWriting();
+    bool isWriteFinished() const;
+    bool isEof() const;
+    void write(const Block & block);
+    Block read();
+
+private:
+    Block header;
+    WriteBufferPtr file_out_buf;
+    ReadBufferPtr file_in_buf;
+    size_t max_block_size;
+    mutable std::mutex file_mutex;
+    std::atomic<bool> write_finished = false;
+
+    std::vector<Block> pending_blocks;
+    size_t pending_rows = 0;
+    std::mutex pending_blocks_mutex;
+
+    void flushPendingBlocks();
+};
+
 }

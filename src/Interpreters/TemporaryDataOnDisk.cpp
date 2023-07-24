@@ -1,7 +1,9 @@
+#include <mutex>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Formats/NativeWriter.h>
@@ -395,4 +397,105 @@ TemporaryFileStream::~TemporaryFileStream()
     }
 }
 
+ThreadSafeTemporaryFileStream::ThreadSafeTemporaryFileStream(const Block & header_, WriteBufferPtr file_buf_, size_t max_block_size_)
+    : header(header_)
+    , file_out_buf(file_buf_)
+    , file_in_buf(nullptr)
+    , max_block_size(max_block_size_)
+{
+}
+
+void ThreadSafeTemporaryFileStream::finishWriting()
+{
+    flushPendingBlocks();
+    std::lock_guard lock(file_mutex);
+    if (write_finished)
+    {
+        return;
+    }
+    write_finished = true;
+    file_out_buf->finalize();
+}
+
+bool ThreadSafeTemporaryFileStream::isWriteFinished() const
+{
+    return write_finished;
+}
+
+bool ThreadSafeTemporaryFileStream::isEof() const
+{
+    std::lock_guard lock(file_mutex);
+    return write_finished && file_in_buf && file_in_buf->eof();
+}
+
+void ThreadSafeTemporaryFileStream::write(const Block & block)
+{
+    if (write_finished) [[unlikely]]
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing a finished file");
+    if (!block.rows())
+        return;
+    bool need_flush = false;
+    {
+        std::lock_guard pending_blocks_lock(pending_blocks_mutex);
+        pending_rows += block.rows();
+        pending_blocks.push_back(block);
+        if (pending_rows >= max_block_size)
+        {
+            need_flush = true;
+        }
+    }
+
+    if (need_flush)
+        flushPendingBlocks();
+}
+
+Block ThreadSafeTemporaryFileStream::read()
+{
+    if (!write_finished) [[unlikely]]
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading a unfinished file");
+    Block res_block;
+    String in_buf;
+    {
+        std::lock_guard lock(file_mutex);
+        if (!file_in_buf)
+        {
+            file_in_buf = dynamic_cast<IReadableWriteBuffer *>(file_out_buf.get())->tryGetReadBuffer();
+        }
+        if (file_in_buf->eof())
+        {
+            return {};
+        }
+        readBinary(in_buf, *file_in_buf);
+    }
+    ReadBufferFromString bin_block_buf(in_buf);
+    CompressedReadBuffer compress_buf(bin_block_buf);
+    NativeReader native_reader(compress_buf, header, DBMS_TCP_PROTOCOL_VERSION);
+    return native_reader.read();
+}
+
+void ThreadSafeTemporaryFileStream::flushPendingBlocks()
+{
+    Block merged_block;
+    Blocks tmp_blocks;
+    std::string out_buf;
+    {
+        std::lock_guard pending_blocks_lock(pending_blocks_mutex);
+        if (!pending_rows)
+            return;
+        tmp_blocks.swap(pending_blocks);
+        pending_rows = 0;
+    }
+    merged_block = concatenateBlocks(tmp_blocks);
+    WriteBufferFromString bin_block_buf(out_buf);
+    CompressedWriteBuffer compress_buf(bin_block_buf);
+    NativeWriter native_writer(compress_buf, DBMS_TCP_PROTOCOL_VERSION, header);
+    native_writer.write(merged_block);
+    native_writer.flush();
+    compress_buf.finalize();
+    bin_block_buf.finalize();
+    {
+        std::lock_guard lock(file_mutex);
+        writeBinary(out_buf, *file_out_buf);
+    }
+}
 }
