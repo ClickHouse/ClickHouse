@@ -393,7 +393,11 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
+    auto src_copy = src_uuid;
+    transformEndianness<std::endian::little>(src_copy);
+    UUIDHelpers::changeUnderlyingUUID(src_copy);
+
+    const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
 
     SipHash hash;
@@ -403,8 +407,16 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(&dst));
 
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    UInt128 trace = {0x000000000000f000ull, 0xe000000000000000ull};
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace.items[1])) | (src.items[1] & trace.items[1]);
+    dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace.items[0])) | (src.items[0] & trace.items[0]);
+#else
+    // Need to use the original src for getting the correct bytes to fall through.
+    dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace.items[1])) | (src_uuid.toUnderType().items[0] & trace.items[1]);
+    dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace.items[0])) | (src_uuid.toUnderType().items[1] & trace.items[0]);
+#endif
+    UUIDHelpers::changeUnderlyingUUID(dst_uuid);
 }
 
 class FixedStringModel : public IModel
@@ -468,12 +480,7 @@ public:
 
         res_data.resize(src_data.size());
         for (size_t i = 0; i < src_column.size(); ++i)
-        {
-            auto src_copy = src_data[i];
-            UUIDHelpers::changeUnderlyingUUID(src_copy);
-            transformUUID(src_copy, res_data[i], seed);
-            UUIDHelpers::changeUnderlyingUUID(res_data[i]);
-        }
+            transformUUID(src_data[i], res_data[i], seed);
 
         return res_column;
     }
