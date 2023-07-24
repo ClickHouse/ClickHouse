@@ -29,4 +29,4 @@ endif()
 
 clickhouse_program_add(server)
 
-target_include_directories(clickhouse-server-lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
