@@ -5693,7 +5693,8 @@ bool MergeTreeData::supportsLightweightDelete() const
     auto lock = lockParts();
     for (const auto & part : data_parts_by_info)
     {
-        if (!part->supportLightweightDeleteMutate())
+        if (part->getState() == MergeTreeDataPartState::Active
+            && !part->supportLightweightDeleteMutate())
             return false;
     }
     return true;
