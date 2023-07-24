@@ -11,7 +11,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function insert1()
 {
     url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
-    while true; do
+
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 1,"a"
 2,"b"
@@ -22,7 +24,9 @@ function insert1()
 function insert2()
 {
     url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
-    while true; do
+
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT JSONEachRow {"id": 5, "s": "e"} {"id": 6, "s": "f"}'
     done
 }
@@ -30,28 +34,33 @@ function insert2()
 function insert3()
 {
     url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
-    while true; do
+
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO FUNCTION remote('127.0.0.1', $CLICKHOUSE_DATABASE, async_inserts) VALUES (7, 'g') (8, 'h')"
     done
 }
 
 function select1()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts FORMAT Null"
     done
 }
 
 function select2()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.asynchronous_inserts FORMAT Null"
     done
 }
 
 function flush1()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         sleep 0.2
         ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
     done
@@ -70,14 +79,14 @@ export -f select2
 export -f flush1
 
 for _ in {1..5}; do
-    timeout $TIMEOUT bash -c insert1 &
-    timeout $TIMEOUT bash -c insert2 &
-    timeout $TIMEOUT bash -c insert3 &
+    insert1 $TIMEOUT &
+    insert2 $TIMEOUT &
+    insert3 $TIMEOUT &
 done
 
-timeout $TIMEOUT bash -c select1 &
-timeout $TIMEOUT bash -c select2 &
-timeout $TIMEOUT bash -c flush1 &
+select1 $TIMEOUT &
+select2 $TIMEOUT &
+flush1 $TIMEOUT &
 
 wait
 
