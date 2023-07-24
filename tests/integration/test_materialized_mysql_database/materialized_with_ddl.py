@@ -980,6 +980,89 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_node.query("DROP DATABASE test_database_event")
 
 
+def text_blob_with_charset_test(clickhouse_node, mysql_node, service_name):
+    db = "text_blob_with_charset_test"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db} DEFAULT CHARACTER SET 'utf8'")
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_1 (a INT NOT NULL PRIMARY KEY, b text CHARACTER SET gbk, c tinytext CHARSET big5, d longtext, e varchar(256), f char(4)) ENGINE = InnoDB DEFAULT CHARSET=gbk"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_2 (a INT NOT NULL PRIMARY KEY, b blob, c longblob) ENGINE = InnoDB DEFAULT CHARSET=gbk"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_3 (a INT NOT NULL PRIMARY KEY, b text CHARACTER SET gbk, c tinytext CHARSET gbk, d tinytext CHARSET big5, e varchar(256), f char(4)) ENGINE = InnoDB"
+    )
+
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_1 VALUES (1, '你好', '世界', '哈罗', '您Hi您', '您Hi您')"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_2 VALUES (1, '你好', 0xFAAA00000000000DDCC)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_3 VALUES (1, '你好', '世界', 'hello', '您Hi您', '您Hi您')"
+    )
+
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    assert db in clickhouse_node.query("SHOW DATABASES")
+
+    # from full replication
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "test_table_1\ntest_table_2\ntest_table_3\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_1 WHERE a = 1 FORMAT TSV",
+        "你好\t世界\t哈罗\t您Hi您\t您Hi您\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT hex(b), hex(c) FROM {db}.test_table_2 WHERE a = 1 FORMAT TSV",
+        "E4BDA0E5A5BD\t0FAAA00000000000DDCC\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_3 WHERE a = 1 FORMAT TSV",
+        "你好\t世界\thello\t您Hi您\t您Hi您\n",
+    )
+
+    # from increment replication
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_1 VALUES (2, '你好', '世界', '哈罗', '您Hi您', '您Hi您')"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_2 VALUES (2, '你好', 0xFAAA00000000000DDCC)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_3 VALUES (2, '你好', '世界', 'hello', '您Hi您', '您Hi您')"
+    )
+
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_1 WHERE a = 2 FORMAT TSV",
+        "你好\t世界\t哈罗\t您Hi您\t您Hi您\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT hex(b), hex(c) FROM {db}.test_table_2 WHERE a = 2 FORMAT TSV",
+        "E4BDA0E5A5BD\t0FAAA00000000000DDCC\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_3 WHERE a = 2 FORMAT TSV",
+        "你好\t世界\thello\t您Hi您\t您Hi您\n",
+    )
+    clickhouse_node.query(f"DROP DATABASE {db}")
+    mysql_node.query(f"DROP DATABASE {db}")
+
+
 def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS db")
     clickhouse_node.query("DROP DATABASE IF EXISTS db")
@@ -992,6 +1075,7 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SHOW TABLES FROM db FORMAT TSV", "t\n")
     clickhouse_node.query("SYSTEM STOP MERGES db.t")
+    clickhouse_node.query("DROP VIEW IF EXISTS v")
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
     mysql_node.query("DELETE FROM db.t WHERE a = 2;")
