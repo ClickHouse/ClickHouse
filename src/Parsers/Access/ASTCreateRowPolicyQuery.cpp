@@ -172,7 +172,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "")
                     << " IN " << (settings.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
-    
+
     formatOnCluster(settings);
     assert(names->cluster.empty());
 
