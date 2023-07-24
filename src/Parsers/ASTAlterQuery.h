@@ -194,6 +194,10 @@ public:
     String from_table;
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
+
+    /// to distinguish REPLACE PARTITION AND trigger materialized view of alter table
+    bool trigger_view = false;
+
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
@@ -226,6 +230,8 @@ public:
     };
 
     AlterObjectType alter_object = AlterObjectType::UNKNOWN;
+
+    bool need_trigger_view{false}; /// true for ALTER TABLE REPLACE PARTITION AND TRIGGER MATERIALIZED VIEW
 
     ASTExpressionList * command_list = nullptr;
 

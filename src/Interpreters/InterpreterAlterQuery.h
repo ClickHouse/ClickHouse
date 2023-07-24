@@ -10,7 +10,7 @@ namespace DB
 class AccessRightsElements;
 class ASTAlterCommand;
 class ASTAlterQuery;
-
+struct PartitionCommand;
 
 /** Allows you add or remove a column in the table.
   * It also allows you to manipulate the partitions of the MergeTree family tables.
@@ -36,6 +36,8 @@ private:
     BlockIO executeToDatabase(const ASTAlterQuery & alter);
 
     ASTPtr query_ptr;
+
+    void triggerViewInsert(const PartitionCommand & command, const StorageID & table_id);
 };
 
 }
