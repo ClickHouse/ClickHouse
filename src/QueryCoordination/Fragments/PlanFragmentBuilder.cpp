@@ -185,7 +185,8 @@ PlanFragmentPtr PlanFragmentBuilder::createPlanFragments(const QueryPlan & singl
 {
 
     /// TODO test
-    PlanFragmentVisitor visitor;
+    PlanFragmentVisitor::Data data({.context = context, .all_fragments = all_fragments});
+    PlanFragmentVisitor visitor(data);
     visitor.visit(root_node);
 
     PlanFragmentPtrs child_fragments;
@@ -322,7 +323,7 @@ PlanFragmentPtr PlanFragmentBuilder::createScanFragment(QueryPlanStepPtr step)
 
     auto fragment = std::make_shared<PlanFragment>(context->getFragmentID(), partition, context);
     fragment->addStep(std::move(step));
-//    fragment->setFragmentInPlanTree(fragment->getRootNode());
+
     fragment->setCluster(context->getCluster("test_two_shards"));
 
     all_fragments.emplace_back(fragment);
@@ -377,8 +378,8 @@ PlanFragmentPtr PlanFragmentBuilder::createParentFragment(PlanFragmentPtr child_
     std::shared_ptr<ExchangeDataStep> exchange_step
         = std::make_shared<ExchangeDataStep>(parent_fragment->getFragmentID(), child_fragment->getCurrentDataStream(), storage_limits);
     parent_fragment->addStep(exchange_step);
-    auto * exchange_node = parent_fragment->getRootNode(); /// exchange node
-//    parent_fragment->setFragmentInPlanTree(exchange_node);
+    auto * exchange_node = parent_fragment->getRootNode();
+
     parent_fragment->setCluster(context->getCluster("test_two_shards"));
 
     exchange_step->setPlanID(exchange_node->plan_id);

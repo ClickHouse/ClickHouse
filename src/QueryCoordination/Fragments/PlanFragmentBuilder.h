@@ -3,11 +3,15 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/PlanNode.h>
 #include <QueryCoordination/DataPartition.h>
+#include <QueryCoordination/Fragments/StepMatcherBase.h>
+#include <QueryCoordination/Interpreters/InDepthPlanNodeVisitor.h>
 
 namespace DB
 {
 
 using Node = QueryPlan::Node;
+
+using PlanFragmentVisitor = InDepthPlanNodeVisitor<PlanFragmentPtr, StepMatcherBase>;
 
 class PlanFragmentBuilder
 {
