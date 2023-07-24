@@ -1112,6 +1112,11 @@ private:
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
 
+        /// This is a paranoid check to protect from a broken query analysis.
+        if (c0->isNullable() != c1->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
+
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
