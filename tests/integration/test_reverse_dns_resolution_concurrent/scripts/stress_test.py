@@ -25,15 +25,19 @@ address_dict = {
     "199.199.199.199": ns_something_res,
     "255.255.255.254": empty_res,
     "::ffff:118.193.34.65": empty_res,
-    "::ffff:118.213.213.213": empty_res
+    "::ffff:118.213.213.213": empty_res,
 }
+
 
 def perform_request(ip_address, expected_response):
     buffer = BytesIO()
     crl = pycurl.Curl()
     crl.setopt(pycurl.INTERFACE, client_ip)
     crl.setopt(crl.WRITEDATA, buffer)
-    crl.setopt(crl.URL, f"http://{server_ip}:8123/?query=select+reverseDNSQuery('{ip_address}')")
+    crl.setopt(
+        crl.URL,
+        f"http://{server_ip}:8123/?query=select+reverseDNSQuery('{ip_address}')"
+    )
 
     crl.perform()
 

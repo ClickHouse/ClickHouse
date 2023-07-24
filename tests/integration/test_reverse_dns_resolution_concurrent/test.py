@@ -17,6 +17,7 @@ client = cluster.add_instance(
     "clickhouse-client",
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     global cluster
