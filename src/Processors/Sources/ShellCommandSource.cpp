@@ -1,5 +1,7 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
+#include <poll.h>
+
 #include <Common/Epoll.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -24,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_FCNTL;
+    extern const int CANNOT_POLL;
 }
 
 static bool tryMakeFdNonBlocking(int fd)
@@ -63,6 +66,39 @@ static void makeFdBlocking(int fd)
         throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
+static bool pollFd(int fd, size_t timeout_milliseconds, int events)
+{
+    pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = events;
+    pfd.revents = 0;
+
+    int res;
+
+    while (true)
+    {
+        Stopwatch watch;
+        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
+
+        if (res < 0)
+        {
+            if (errno != EINTR)
+                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
+
+            const auto elapsed = watch.elapsedMilliseconds();
+            if (timeout_milliseconds <= elapsed)
+                break;
+            timeout_milliseconds -= elapsed;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    return res > 0;
+}
+
 class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
@@ -76,15 +112,19 @@ public:
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
 
+#if defined(OS_LINUX)
         epoll.add(stdout_fd);
         if (stderr_reaction != ExternalCommandStderrReaction::NONE)
             epoll.add(stderr_fd);
+#endif
     }
 
     bool nextImpl() override
     {
-        static constexpr size_t STDERR_BUFFER_SIZE = 16_KiB;
         size_t bytes_read = 0;
+
+#if defined(OS_LINUX)
+        static constexpr size_t STDERR_BUFFER_SIZE = 16_KiB;
 
         while (!bytes_read)
         {
@@ -134,6 +174,24 @@ public:
                     bytes_read += res;
             }
         }
+#else
+        while (!bytes_read)
+        {
+            if (!pollFd(stdout_fd, timeout_milliseconds, POLLIN))
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
+
+            ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
+
+            if (-1 == res && errno != EINTR)
+                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+
+            if (res == 0)
+                break;
+
+            if (res > 0)
+                bytes_read += res;
+        }
+#endif
 
         if (bytes_read > 0)
         {
@@ -164,9 +222,12 @@ private:
     int stdout_fd;
     int stderr_fd;
     size_t timeout_milliseconds;
-    ExternalCommandStderrReaction stderr_reaction;
+    [[maybe_unused]] ExternalCommandStderrReaction stderr_reaction;
+
+#if defined(OS_LINUX)
     Epoll epoll;
     String stderr_buf;
+#endif
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
@@ -176,7 +237,6 @@ public:
         : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
     {
         makeFdNonBlocking(fd);
-        epoll.add(fd, nullptr, EPOLLOUT);
     }
 
     void nextImpl() override
@@ -188,13 +248,10 @@ public:
 
         while (bytes_written != offset())
         {
-            epoll_event events[1];
-            events[0].data.fd = -1;
-            size_t num_events = epoll.getManyReady(1, events, static_cast<int>(timeout_milliseconds));
-            if (0 == num_events)
+            if (!pollFd(fd, timeout_milliseconds, POLLOUT))
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe write timeout exceeded {} milliseconds", timeout_milliseconds);
 
-            ssize_t res = ::write(events[0].data.fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+            ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
                 throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
@@ -217,7 +274,6 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
-    Epoll epoll;
 };
 
 class ShellCommandHolder
