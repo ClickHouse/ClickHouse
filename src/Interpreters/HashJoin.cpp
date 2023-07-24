@@ -1104,7 +1104,7 @@ struct JoinFeatures
 
     static constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
     static constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
-    static constexpr bool add_missing = (left || full) && !is_semi_join;
+    static constexpr bool add_missing = (left || full) && !(is_semi_join || is_anti_join);
 
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS>::flagged;
 };
