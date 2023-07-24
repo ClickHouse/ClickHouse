@@ -1459,7 +1459,6 @@ try
         createServers(
             config(),
             listen_hosts,
-            interserver_listen_hosts,
             listen_try,
             server_pool,
             async_metrics,
@@ -2265,7 +2264,8 @@ void Server::createInterserverServers(
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
-    bool start_servers)
+    bool start_servers,
+    const ServerType & server_type)
 {
     const Settings & settings = global_context->getSettingsRef();
 
