@@ -15,11 +15,11 @@ namespace DB
 ///
 ///   [1]: https://elixir.bootlin.com/linux/v5.18-rc4/source/kernel/tsacct.c#L101
 ///
-class TaskStatsInfoGetter : private boost::noncopyable
+class NetlinkMetricsProvider : private boost::noncopyable
 {
 public:
-    TaskStatsInfoGetter();
-    ~TaskStatsInfoGetter();
+    NetlinkMetricsProvider();
+    ~NetlinkMetricsProvider();
 
     void getStat(::taskstats & out_stats, pid_t tid) const;
 
