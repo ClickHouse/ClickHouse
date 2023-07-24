@@ -658,6 +658,14 @@ public:
         const String & view_name = {});
     void addQueryAccessInfo(const Names & partition_names);
 
+    struct QualifiedProjectionName
+    {
+        StorageID storage_id = StorageID::createEmpty();
+        String projection_name;
+        explicit operator bool() const { return !projection_name.empty(); }
+    };
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
+
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
