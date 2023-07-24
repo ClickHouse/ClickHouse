@@ -82,9 +82,9 @@ TEST(Logger, SideEffects)
 
     /// Ensure that parameters are evaluated only once
     global_counter = 0;
-    LOG_TEST(log, fmt::runtime(getLogMessage()));
+    LOG_TRACE(log, fmt::runtime(getLogMessage()));
     EXPECT_EQ(global_counter, 1);
-    LOG_TEST(log, "test {}", getLogMessageParam());
+    LOG_TRACE(log, "test {}", getLogMessageParam());
     EXPECT_EQ(global_counter, 2);
 
     LOG_TEST(log, "test no throw {}", getLogMessageParamOrThrow());
