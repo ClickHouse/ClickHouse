@@ -26,7 +26,7 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/) override;
 
     void createTable(
         ContextPtr context,

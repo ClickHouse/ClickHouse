@@ -210,7 +210,7 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -561,7 +561,6 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
-    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::ulid)
