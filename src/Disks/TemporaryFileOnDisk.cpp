@@ -23,10 +23,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
-    : TemporaryFileOnDisk(disk_, "")
-{}
-
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope)
     : TemporaryFileOnDisk(disk_)
 {
