@@ -32,6 +32,12 @@ auto operator<=>(const Interval<IntervalStorageType> & lhs, const Interval<Inter
     return std::tie(lhs.left, lhs.right) <=> std::tie(rhs.left, rhs.right);
 }
 
+template <typename IntervalStorageType>
+bool operator==(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) == std::tie(rhs.left, rhs.right);
+}
+
 struct IntervalTreeVoidValue
 {
 };
