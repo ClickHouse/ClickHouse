@@ -24,7 +24,7 @@ void collectGroupByNodes(const QueryNode * query_node, QueryTreeNodes & group_by
     if (query_node->hasGroupBy())
     {
         const auto & group_by = query_node->getGroupBy().getNodes();
-        for (auto & group_by_ele : group_by)
+        for (const auto & group_by_ele : group_by)
             /// For grouping set
             if (auto * list = group_by_ele->as<ListNode>())
             {
@@ -62,9 +62,20 @@ public:
     /// Group by nodes for the query.
     const QueryTreeNodes & group_by_nodes;
 
-    explicit MonotonousFunctionsChecker(const QueryTreeNodes & group_by_nodes_) : group_by_nodes(group_by_nodes_) { }
+    /// Where previous order by nodes match table sorting keys.
+    /// If is true and current node or sub node match current sorting_key, skip removing.
+    /// For example: sorting_key = 'm(x)'
+    ///     1. node = m(x), remove nothing and monotonous_function_num = 0
+    ///     2. node = f(m(n(x))) remove f() and monotonous_function_num = 1
+    bool is_sorting_key_prefix;
+    const String & sorting_key;
 
-    bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
+    explicit MonotonousFunctionsChecker(const QueryTreeNodes & group_by_nodes_, bool is_sorting_key_prefix_, const String & sorting_key_)
+        : group_by_nodes(group_by_nodes_), is_sorting_key_prefix(is_sorting_key_prefix_), sorting_key(sorting_key_)
+    {
+    }
+
+    bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &) const
     {
         return is_monotonic;
     }
@@ -95,6 +106,7 @@ public:
                 return;
             }
 
+            /// Skip if node exists in group by nodes
             for (const auto & group_by_node : group_by_nodes)
             {
                 if (group_by_node->isEqual(*node))
@@ -102,6 +114,14 @@ public:
                     is_monotonic = false;
                     return;
                 }
+            }
+
+            /// If order by expression matches the sorting key, do not remove
+            /// functions to allow execute reading in order of key.
+            if (is_sorting_key_prefix && sorting_key == function_node->toAST()->getColumnName())
+            {
+                is_monotonic = false;
+                return;
             }
 
             auto argument_type = function_node->getArguments().getNodes()[0]->getResultType();
@@ -174,15 +194,11 @@ public:
             if (!expr_function)
                 continue;
 
-            if (i >= sorting_key_columns.size() || expr_function->toAST()->getColumnName() != sorting_key_columns[i])
-                is_sorting_key_prefix = false;
+            MonotonousFunctionsChecker checker(
+                group_by_nodes,
+                is_sorting_key_prefix && i >= sorting_key_columns.size(),
+                sorting_key_columns[i]);
 
-            /// If order by expression matches the sorting key, do not remove
-            /// functions to allow execute reading in order of key.
-            if (is_sorting_key_prefix)
-                continue;
-
-            MonotonousFunctionsChecker checker(group_by_nodes);
             checker.visit(expr_node);
 
             /// Replace function with its first argument
@@ -192,7 +208,7 @@ public:
                 expr_function = expr_node->as<FunctionNode>();
             }
 
-            /// Change sort direction
+            /// Update sort direction.
             if (!checker.is_positive)
             {
                 auto * sort_node = order_by_nodes[i]->as<SortNode>();
@@ -205,6 +221,10 @@ public:
                     sort_node->getCollator(),
                     sort_node->withFill());
             }
+
+            /// We should update is_sorting_key_prefix at last, for node may changed.
+            if (i >= sorting_key_columns.size() || expr_function->toAST()->getColumnName() != sorting_key_columns[i])
+                is_sorting_key_prefix = false;
         }
 
     }
