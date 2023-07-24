@@ -156,14 +156,18 @@ namespace
         {
             initialize(arguments, result_type);
 
-            if (isColumnConst(*arguments[0].column))
+            const auto * in = arguments[0].column.get();
+
+            if (isColumnConst(*in))
                 return executeConst(arguments, result_type, input_rows_count);
 
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
                 default_non_const = castColumn(arguments[3], result_type);
 
-            ColumnPtr in = cache.default_column ? arguments[0].column : castColumn(arguments[0], result_type);
+            ColumnPtr in_casted = arguments[0].column;
+            if (arguments.size() == 3)
+                in_casted = castColumn(arguments[0], result_type);
 
             auto column_result = result_type->createColumn();
             if (cache.is_empty)
@@ -174,30 +178,30 @@ namespace
             }
             else if (cache.table_num_to_idx)
             {
-                if (!executeNum<ColumnVector<UInt8>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt16>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt32>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt64>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int8>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int16>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int32>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int64>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Float32>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Float64>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnDecimal<Decimal32>>(in.get(), *column_result, default_non_const)
-                    && !executeNum<ColumnDecimal<Decimal64>>(in.get(), *column_result, default_non_const))
+                if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<UInt32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<UInt64>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int8>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int16>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const, *in_casted))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
                 }
             }
             else if (cache.table_string_to_idx)
             {
-                if (!executeString(in.get(), *column_result, default_non_const))
-                    executeContiguous(in.get(), *column_result, default_non_const);
+                if (!executeString(in, *column_result, default_non_const, *in_casted))
+                    executeContiguous(in, *column_result, default_non_const, *in_casted);
             }
             else if (cache.table_anything_to_idx)
             {
-                executeAnything(in.get(), *column_result, default_non_const);
+                executeAnything(in, *column_result, default_non_const, *in_casted);
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "State of the function `transform` is not initialized");
@@ -218,7 +222,7 @@ namespace
             return impl->execute(args, result_type, input_rows_count);
         }
 
-        void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const) const
+        void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const size_t size = in->size();
             const auto & table = *cache.table_anything_to_idx;
@@ -236,11 +240,11 @@ namespace
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
-                    column_result.insertFrom(*in, i);
+                    column_result.insertFrom(in_casted, i);
             }
         }
 
-        void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const) const
+        void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const size_t size = in->size();
             const auto & table = *cache.table_string_to_idx;
@@ -255,12 +259,12 @@ namespace
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
-                    column_result.insertFrom(*in, i);
+                    column_result.insertFrom(in_casted, i);
             }
         }
 
         template <typename T>
-        bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
+        bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const auto * const in = checkAndGetColumn<T>(in_untyped);
             if (!in)
@@ -297,7 +301,7 @@ namespace
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, i);
                     else
-                        column_result.insertFrom(*in, i);
+                        column_result.insertFrom(in_casted, i);
                 }
             }
             return true;
@@ -451,7 +455,7 @@ namespace
             }
         }
 
-        bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
+        bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const auto * const in = checkAndGetColumn<ColumnString>(in_untyped);
             if (!in)
@@ -488,7 +492,7 @@ namespace
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, 0);
                     else
-                        column_result.insertFrom(*in, i);
+                        column_result.insertFrom(in_casted, i);
                 }
             }
             return true;
@@ -810,6 +814,7 @@ namespace
             cache.initialized = true;
         }
     };
+
 }
 
 REGISTER_FUNCTION(Transform)
