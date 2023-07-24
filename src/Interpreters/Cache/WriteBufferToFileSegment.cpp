@@ -71,16 +71,4 @@ std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     return std::make_shared<ReadBufferFromFile>(file_segment->getPathInLocalCache());
 }
 
-WriteBufferToFileSegment::~WriteBufferToFileSegment()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 }

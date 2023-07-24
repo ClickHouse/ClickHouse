@@ -30,8 +30,6 @@
 #include <Dictionaries/RegExpTreeDictionary.h>
 #include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
-#include <re2_st/stringpiece.h>
-
 #include "config.h"
 
 #if USE_VECTORSCAN
@@ -127,17 +125,6 @@ struct RegExpTreeDictionary::RegexTreeNode
     bool match(const char * haystack, size_t size) const
     {
         return searcher.Match(haystack, 0, size, re2_st::RE2::Anchor::UNANCHORED, nullptr, 0);
-    }
-
-    /// check if this node can cover all the attributes from the query.
-    bool containsAll(const std::unordered_map<String, const DictionaryAttribute &> & matching_attributes) const
-    {
-        for (const auto & [key, value] : matching_attributes)
-        {
-            if (!attributes.contains(key))
-                return false;
-        }
-        return true;
     }
 
     struct AttributeValue
@@ -480,17 +467,16 @@ public:
 
 std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
 {
-    re2_st::StringPiece haystack(data.data(), data.size());
-    re2_st::StringPiece matches[10];
+    std::string_view matches[10];
     String result;
-    searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
+    searcher.Match({data.data(), data.size()}, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
     /// if the pattern is a single '$1' but fails to match, we would use the default value.
     if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 10 && matches[pieces[0].ref_num].empty())
         return std::make_pair(result, true);
     for (const auto & item : pieces)
     {
         if (item.ref_num >= 0 && item.ref_num < 10)
-            result += matches[item.ref_num].ToString();
+            result += String{matches[item.ref_num]};
         else
             result += item.literal;
     }
@@ -691,9 +677,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
             if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
             {
                 match_result.insertNodeID(node_ptr->id);
-                /// When this node is leaf and contains all the required attributes, it means a match.
-                if (node_ptr->containsAll(attributes) && node_ptr->children.empty())
-                    break;
             }
         }
 

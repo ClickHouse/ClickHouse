@@ -283,6 +283,7 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
+    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -376,10 +377,11 @@ private:
     /// even when the storage returned only one stream of data for reading?
     /// It is beneficial, for example, when you read from a file quickly,
     /// but then do heavy computations on returned blocks.
-    /// This is enabled by default, but in some cases shouldn't be done.
-    /// For example, when you read from system.numbers instead of system.numbers_mt,
-    /// you still expect the data to be processed sequentially.
-    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return true; }
+    ///
+    /// This is enabled by default, but in some cases shouldn't be done (for
+    /// example it is disabled for all system tables, since it is pretty
+    /// useless).
+    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
     /// Other version of read which adds reading step to query plan.
@@ -402,11 +404,14 @@ public:
       * passed in all parts of the returned streams. Storage metadata can be
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
+      *
+      * async_insert - set to true if the write is part of async insert flushing
       */
     virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/)
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }

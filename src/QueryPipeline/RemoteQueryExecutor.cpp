@@ -434,11 +434,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
-            processMergeTreeReadTaskRequest(packet.request);
+            chassert(packet.request.has_value());
+            processMergeTreeReadTaskRequest(packet.request.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
-            processMergeTreeInitialReadAnnounecement(packet.announcement);
+            chassert(packet.announcement.has_value());
+            processMergeTreeInitialReadAnnounecement(packet.announcement.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
@@ -510,6 +512,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
+
+        case Protocol::Server::TimezoneUpdate:
             break;
 
         default:
@@ -614,6 +619,9 @@ void RemoteQueryExecutor::finish()
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
+
+        case Protocol::Server::TimezoneUpdate:
             break;
 
         default:
