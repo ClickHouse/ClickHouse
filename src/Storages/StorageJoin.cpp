@@ -89,10 +89,10 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -146,7 +146,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addJoinedBlock(block, true);
+            new_data->addBlockToJoin(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -257,7 +257,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addJoinedBlock(block_to_insert, true);
+    join->addBlockToJoin(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const

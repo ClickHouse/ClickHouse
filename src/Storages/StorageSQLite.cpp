@@ -169,7 +169,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);

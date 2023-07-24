@@ -564,7 +564,17 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         }
         case (ActionsDAG::ActionType::COLUMN):
         {
-            res = &inverted_dag.addColumn({node.column, node.result_type, node.result_name});
+            String name;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                /// Re-generate column name for constant.
+                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from PK does not use it. This is breakig match by column name sometimes.
+                /// Ideally, we should not compare manes, but DAG subtrees instead.
+                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+            else
+                name = node.result_name;
+
+            res = &inverted_dag.addColumn({node.column, node.result_type, name});
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -1241,7 +1251,11 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto prepared_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    auto future_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
         return false;
 
@@ -1254,7 +1268,6 @@ bool KeyCondition::tryPrepareSetIndex(
         prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
-
     return true;
 }
 

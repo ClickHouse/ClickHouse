@@ -52,6 +52,8 @@
 #include <Poco/Buffer.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPCredentials.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
@@ -184,8 +186,14 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
                 field_type_size,
                 tmp.size());
         else if (tmp.size() != field_type_size)
-            /// Add padding with 0-bytes.
-            tmp = std::string(field_type_size - tmp.size(), '\0') + tmp;
+        {
+            /// Extent value to required size by adding padding.
+            /// Check if value is negative or positive.
+            if (tmp[0] & 128)
+                tmp = std::string(field_type_size - tmp.size(), 0xff) + tmp;
+            else
+                tmp = std::string(field_type_size - tmp.size(), 0) + tmp;
+        }
 
         typename DecimalType::FieldType field;
         ReadBufferFromString buf(tmp);
@@ -928,24 +936,39 @@ private:
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                 request.setHost(url.getHost());
 
-                auto session = makePooledHTTPSession(url, timeouts, 1);
-                std::istream * response_body{};
-                try
+                if (!url.getUserInfo().empty())
                 {
-                    session->sendRequest(request);
+                    Poco::Net::HTTPCredentials http_credentials;
+                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
 
-                    Poco::Net::HTTPResponse response;
-                    response_body = receiveResponse(*session, request, response, false);
+                    http_credentials.fromUserInfo(url.getUserInfo());
+
+                    std::string decoded_username;
+                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                    http_basic_credentials.setUsername(decoded_username);
+
+                    if (!http_credentials.getPassword().empty())
+                    {
+                        std::string decoded_password;
+                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
+                        http_basic_credentials.setPassword(decoded_password);
+                    }
+
+                    http_basic_credentials.authenticate(request);
                 }
-                catch (const Poco::Exception & e)
-                {
-                    /// We use session data storage as storage for exception text
-                    /// Depend on it we can deduce to reconnect session or reresolve session host
-                    session->attachSessionData(e.message());
-                    throw;
-                }
+
+                auto session = makePooledHTTPSession(url, timeouts, 1);
+                session->sendRequest(request);
+
+                Poco::Net::HTTPResponse response;
+                std::istream * response_body = receiveResponse(*session, request, response, false);
+
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
+
+                /// Response was fully read.
+                markSessionForReuse(session);
+
                 auto schema = json_body->getValue<std::string>("schema");
                 LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);

@@ -21,8 +21,11 @@ struct AsynchronousInsertLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    ASTPtr query;
     String query_id;
+    String query_for_logging;
+    String database;
+    String table;
+    String format;
     UInt64 bytes{};
     UInt64 rows{};
     String exception;
