@@ -481,6 +481,9 @@ private:
     std::atomic<bool> shutdown_prepared_called {false};
     std::optional<ShutdownDeadline> shutdown_deadline;
 
+    /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
+    mutable std::mutex flush_and_shutdown_mutex;
+
 
     mutable std::mutex last_sent_parts_mutex;
     std::condition_variable last_sent_parts_cv;
