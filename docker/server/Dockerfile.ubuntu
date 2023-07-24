@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:20.04
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
@@ -11,18 +11,19 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && apt-get update \
     && apt-get upgrade -yq \
     && apt-get install --yes --no-install-recommends \
-        apt-transport-https \
         ca-certificates \
-        dirmngr \
-        gnupg2 \
-        wget \
         locales \
         tzdata \
-    && apt-get clean
+        wget \
+    && apt-get clean \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/*
 
 ARG REPO_CHANNEL="stable"
-ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="23.5.3.24"
+ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
+ARG VERSION="23.6.2.18"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -43,49 +44,68 @@ ARG single_binary_location_url=""
 
 ARG TARGETARCH
 
-RUN arch=${TARGETARCH:-amd64} \
+# install from a web location with deb packages
+RUN arch="${TARGETARCH:-amd64}" \
     && if [ -n "${deb_location_url}" ]; then \
         echo "installing from custom url with deb packages: ${deb_location_url}" \
-        rm -rf /tmp/clickhouse_debs \
+        && rm -rf /tmp/clickhouse_debs \
         && mkdir -p /tmp/clickhouse_debs \
         && for package in ${PACKAGES}; do \
             { wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_${arch}.deb" -P /tmp/clickhouse_debs || \
                 wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_all.deb" -P /tmp/clickhouse_debs ; } \
             || exit 1 \
         ; done \
-        && dpkg -i /tmp/clickhouse_debs/*.deb ; \
-    elif [ -n "${single_binary_location_url}" ]; then \
+        && dpkg -i /tmp/clickhouse_debs/*.deb \
+        && rm -rf /tmp/* ; \
+    fi
+
+# install from a single binary
+RUN if [ -n "${single_binary_location_url}" ]; then \
         echo "installing from single binary url: ${single_binary_location_url}" \
         && rm -rf /tmp/clickhouse_binary \
         && mkdir -p /tmp/clickhouse_binary \
         && wget --progress=bar:force:noscroll "${single_binary_location_url}" -O /tmp/clickhouse_binary/clickhouse \
         && chmod +x /tmp/clickhouse_binary/clickhouse \
-        && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" ; \
-    else \
-        mkdir -p /etc/apt/sources.list.d \
-        && apt-key adv --keyserver keyserver.ubuntu.com --recv 8919F6BD2B48D754 \
-        && echo ${REPOSITORY} > /etc/apt/sources.list.d/clickhouse.list \
+        && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" \
+        && rm -rf /tmp/* ; \
+    fi
+
+# A fallback to installation from ClickHouse repository
+RUN if ! clickhouse local -q "SELECT ''" > /dev/null 2>&1; then \
+        apt-get update \
+        && apt-get install --yes --no-install-recommends \
+            apt-transport-https \
+            ca-certificates \
+            dirmngr \
+            gnupg2 \
+        && mkdir -p /etc/apt/sources.list.d \
+        && GNUPGHOME=$(mktemp -d) \
+        && GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754 \
+        && rm -r "$GNUPGHOME" \
+        && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
+        && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
         && echo "installing from repository: ${REPOSITORY}" \
         && apt-get update \
-        && apt-get --yes -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" upgrade \
         && for package in ${PACKAGES}; do \
             packages="${packages} ${package}=${VERSION}" \
         ; done \
         && apt-get install --allow-unauthenticated --yes --no-install-recommends ${packages} || exit 1 \
-    ; fi \
-    && clickhouse-local -q 'SELECT * FROM system.build_options' \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
-    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+        && rm -rf \
+            /var/lib/apt/lists/* \
+            /var/cache/debconf \
+            /tmp/* \
+        && apt-get autoremove --purge -yq libksba8 \
+        && apt-get autoremove -yq \
+    ; fi
 
-RUN apt-get autoremove --purge -yq libksba8 && \
-    apt-get autoremove -yq
-
+# post install
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
+RUN clickhouse-local -q 'SELECT * FROM system.build_options' \
+    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
+    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8

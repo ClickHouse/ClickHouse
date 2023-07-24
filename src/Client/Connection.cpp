@@ -105,6 +105,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         for (auto it = addresses.begin(); it != addresses.end();)
         {
+            have_more_addresses_to_connect = it != std::prev(addresses.end());
+
             if (connected)
                 disconnect();
 
@@ -1175,16 +1177,12 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    ParallelReadRequest request;
-    request.deserialize(*in);
-    return request;
+    return ParallelReadRequest::deserialize(*in);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
+    return InitialAllRangesAnnouncement::deserialize(*in);
 }
 
 
