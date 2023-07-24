@@ -1701,6 +1701,41 @@ def materialized_with_column_comments_test(clickhouse_node, mysql_node, service_
     mysql_node.query("DROP DATABASE materialized_with_column_comments_test")
 
 
+def double_quoted_comment(clickhouse_node, mysql_node, service_name):
+    db = "comment_db"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(
+        f'CREATE TABLE {db}.t1 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT "ID")'
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t2 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT 'ID')"
+    )
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\nt2\n",
+    )
+
+    # incremental
+    mysql_node.query(
+        f'CREATE TABLE {db}.t3 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT "ID")'
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t4 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT 'ID')"
+    )
+    check_query(
+        clickhouse_node, f"SHOW TABLES FROM {db} FORMAT TSV", "t1\nt2\nt3\nt4\n"
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
 def materialized_with_enum8_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS materialized_with_enum8_test")
     clickhouse_node.query("DROP DATABASE IF EXISTS materialized_with_enum8_test")
