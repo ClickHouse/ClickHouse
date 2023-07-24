@@ -953,10 +953,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (storage && !options.only_analyze)
     {
-        query_analyzer->makeSetsForIndex(select_query.where());
-        query_analyzer->makeSetsForIndex(select_query.prewhere());
         query_info.prepared_sets = query_analyzer->getPreparedSets();
-
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
     }
 
@@ -3151,7 +3148,17 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan)
 {
-    addCreatingSetsStep(query_plan, prepared_sets, context);
+    auto subqueries = prepared_sets->getSubqueries();
+
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+                query_plan.getCurrentDataStream(),
+                std::move(subqueries),
+                context);
+
+        query_plan.addStep(std::move(step));
+    }
 }
 
 
@@ -3174,9 +3181,9 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
-        InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
+        InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
     auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
     auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 

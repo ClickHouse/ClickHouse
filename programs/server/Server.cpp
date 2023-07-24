@@ -88,7 +88,6 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -109,6 +108,7 @@
 
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
+#    include <Server/CertificateReloader.h>
 #endif
 
 #if USE_GRPC
@@ -739,11 +739,12 @@ try
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
-            metrics.reserve(servers_to_start_before_tables.size());
+
+            std::lock_guard lock(servers_lock);
+            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
             for (const auto & server : servers_to_start_before_tables)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
 
-            std::lock_guard lock(servers_lock);
             for (const auto & server : servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
             return metrics;
@@ -887,6 +888,7 @@ try
 #endif
 
     global_context->setRemoteHostFilter(config());
+    global_context->setHTTPHeaderFilter(config());
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
@@ -1100,9 +1102,16 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+
+    std::vector<std::string> extra_paths = {include_from_path};
+    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
+    if (!key_path.empty()) extra_paths.emplace_back(key_path);
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        include_from_path,
+        extra_paths,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
@@ -1146,7 +1155,16 @@ try
             size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
 
             size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
-            if (merges_mutations_memory_usage_soft_limit == 0 || merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+            if (merges_mutations_memory_usage_soft_limit == 0)
+            {
+                merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+                LOG_INFO(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            }
+            else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
                 merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
                 LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
@@ -1184,6 +1202,7 @@ try
             }
 
             global_context->setRemoteHostFilter(*config);
+            global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
@@ -1286,7 +1305,7 @@ try
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
-                updateServers(*config, server_pool, async_metrics, servers);
+                updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
 
             global_context->updateStorageConfiguration(*config);
@@ -1388,10 +1407,27 @@ try
 
     }
 
-    for (auto & server : servers_to_start_before_tables)
     {
-        server.start();
-        LOG_INFO(log, "Listening for {}", server.getDescription());
+        std::lock_guard lock(servers_lock);
+        /// We should start interserver communications before (and more imporant shutdown after) tables.
+        /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
+        /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
+        /// communicate with zookeeper, execute merges, etc.
+        createInterserverServers(
+            config(),
+            interserver_listen_hosts,
+            listen_try,
+            server_pool,
+            async_metrics,
+            servers_to_start_before_tables,
+            /* start_servers= */ false);
+
+
+        for (auto & server : servers_to_start_before_tables)
+        {
+            server.start();
+            LOG_INFO(log, "Listening for {}", server.getDescription());
+        }
     }
 
     /// Initialize access storages.
@@ -1511,10 +1547,13 @@ try
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
             size_t current_connections = 0;
-            for (auto & server : servers_to_start_before_tables)
             {
-                server.stop();
-                current_connections += server.currentConnections();
+                std::lock_guard lock(servers_lock);
+                for (auto & server : servers_to_start_before_tables)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
             }
 
             if (current_connections)
@@ -1523,7 +1562,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
@@ -1581,6 +1620,9 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        /// Build loggers before tables startup to make log messages from tables
+        /// attach available in system.text_log
+        buildLoggers(config(), logger());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
@@ -1609,7 +1651,7 @@ try
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+#if !WITH_COVERAGE
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1631,10 +1673,6 @@ try
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
-
-#if !USE_UNWIND
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
-#endif
 
 #if WITH_COVERAGE
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
@@ -1688,7 +1726,7 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers);
+            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
@@ -1706,14 +1744,6 @@ try
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
-
-        {
-            String level_str = config().getString("text_log.level", "");
-            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
-            setTextLog(global_context->getTextLog(), level);
-        }
-
-        buildLoggers(config(), logger());
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -1827,7 +1857,7 @@ try
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-                current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
@@ -1954,7 +1984,6 @@ HTTPContextPtr Server::httpContext() const
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
     const Strings & listen_hosts,
-    const Strings & interserver_listen_hosts,
     bool listen_try,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
@@ -2176,6 +2205,23 @@ void Server::createServers(
                     httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
+}
+
+void Server::createInterserverServers(
+    Poco::Util::AbstractConfiguration & config,
+    const Strings & interserver_listen_hosts,
+    bool listen_try,
+    Poco::ThreadPool & server_pool,
+    AsynchronousMetrics & async_metrics,
+    std::vector<ProtocolServerAdapter> & servers,
+    bool start_servers)
+{
+    const Settings & settings = global_context->getSettingsRef();
+
+    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
@@ -2224,14 +2270,14 @@ void Server::createServers(
 #endif
         });
     }
-
 }
 
 void Server::updateServers(
     Poco::Util::AbstractConfiguration & config,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
-    std::vector<ProtocolServerAdapter> & servers)
+    std::vector<ProtocolServerAdapter> & servers,
+    std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
     Poco::Logger * log = &logger();
 
@@ -2257,11 +2303,19 @@ void Server::updateServers(
 
     Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
 
+    std::vector<ProtocolServerAdapter *> all_servers;
+    all_servers.reserve(servers.size() + servers_to_start_before_tables.size());
     for (auto & server : servers)
+        all_servers.push_back(&server);
+
+    for (auto & server : servers_to_start_before_tables)
+        all_servers.push_back(&server);
+
+    for (auto * server : all_servers)
     {
-        if (!server.isStopping())
+        if (!server->isStopping())
         {
-            std::string port_name = server.getPortName();
+            std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
             if (port_name.starts_with("protocols."))
@@ -2299,27 +2353,29 @@ void Server::updateServers(
                 /// NOTE: better to compare using getPortName() over using
                 /// dynamic_cast<> since HTTPServer is also used for prometheus and
                 /// internal replication communications.
-                is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+                is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
             }
 
             if (!has_host)
-                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
+                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
             bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
             if (force_restart)
-                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());
+                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server->getDescription());
 
-            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber() || force_restart)
+            if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {
-                server.stop();
-                LOG_INFO(log, "Stopped listening for {}", server.getDescription());
+                server->stop();
+                LOG_INFO(log, "Stopped listening for {}", server->getDescription());
             }
         }
     }
 
-    createServers(config, listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    createInterserverServers(config, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ true);
 
     std::erase_if(servers, std::bind_front(check_server, ""));
+    std::erase_if(servers_to_start_before_tables, std::bind_front(check_server, ""));
 }
 
 }

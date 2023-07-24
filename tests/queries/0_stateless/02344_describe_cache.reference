@@ -1,2 +1,1 @@
-134217728	10000000	8388608	1	0	0	0	/var/lib/clickhouse/caches/s3_cache/
-134217728	10000000	104857600	0	0	0	0	/var/lib/clickhouse/caches/s3_cache_2/
+134217728	10000000	33554432	4194304	1	0	0	0	/var/lib/clickhouse/caches/s3_cache/	100	2	0
