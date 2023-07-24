@@ -156,14 +156,14 @@ namespace
         {
             initialize(arguments, result_type);
 
-            const auto * in = arguments.front().column.get();
-
-            if (isColumnConst(*in))
+            if (isColumnConst(*arguments[0].column))
                 return executeConst(arguments, result_type, input_rows_count);
 
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
                 default_non_const = castColumn(arguments[3], result_type);
+
+            ColumnPtr in = cache.default_column ? arguments[0].column : castColumn(arguments[0], result_type);
 
             auto column_result = result_type->createColumn();
             if (cache.is_empty)
@@ -174,30 +174,30 @@ namespace
             }
             else if (cache.table_num_to_idx)
             {
-                if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt64>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int8>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int16>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const))
+                if (!executeNum<ColumnVector<UInt8>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<UInt16>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<UInt32>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<UInt64>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<Int8>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<Int16>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<Int32>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<Int64>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<Float32>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnVector<Float64>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnDecimal<Decimal32>>(in.get(), *column_result, default_non_const)
+                    && !executeNum<ColumnDecimal<Decimal64>>(in.get(), *column_result, default_non_const))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
                 }
             }
             else if (cache.table_string_to_idx)
             {
-                if (!executeString(in, *column_result, default_non_const))
-                    executeContiguous(in, *column_result, default_non_const);
+                if (!executeString(in.get(), *column_result, default_non_const))
+                    executeContiguous(in.get(), *column_result, default_non_const);
             }
             else if (cache.table_anything_to_idx)
             {
-                executeAnything(in, *column_result, default_non_const);
+                executeAnything(in.get(), *column_result, default_non_const);
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "State of the function `transform` is not initialized");
@@ -810,7 +810,6 @@ namespace
             cache.initialized = true;
         }
     };
-
 }
 
 REGISTER_FUNCTION(Transform)
