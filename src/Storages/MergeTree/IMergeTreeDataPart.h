@@ -501,7 +501,7 @@ public:
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
-    mutable std::atomic<time_t> last_removal_attemp_time = 0;
+    mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
 protected:
 

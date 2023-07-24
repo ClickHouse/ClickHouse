@@ -45,21 +45,11 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
 }
 
 #ifndef WITHOUT_TEXT_LOG
-void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
-{
-    text_log = log;
-    text_log_max_priority = max_priority;
-}
+constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 #endif
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-#ifndef WITHOUT_TEXT_LOG
-    if (split)
-        if (auto log = text_log.lock())
-            split->addTextLog(log, text_log_max_priority);
-#endif
-
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value() && *config_logger == current_logger)
         return;
@@ -276,6 +266,16 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
+#ifndef WITHOUT_TEXT_LOG
+    if (config.has("text_log"))
+    {
+        String text_log_level_str = config.getString("text_log.level", "trace");
+        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
+        size_t flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
+            DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+        split->addTextLog(DB::TextLog::getLogQueue(flush_interval_milliseconds), text_log_level);
+    }
+#endif
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)
