@@ -8,8 +8,8 @@ client_ip = sys.argv[1]
 server_ip = sys.argv[2]
 
 success_counter = 0
-number_of_threads = 1
-number_of_iterations = 1
+number_of_threads = 100
+number_of_iterations = 100
 
 dns_google_res = "['dns.google']"
 empty_res = "[]"
