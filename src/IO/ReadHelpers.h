@@ -1398,6 +1398,7 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
+    assertEOF(buf);
     return res;
 }
 
@@ -1405,7 +1406,9 @@ template <typename T>
 inline bool tryParse(T & res, const char * data, size_t size)
 {
     ReadBufferFromMemory buf(data, size);
-    return tryReadText(res, buf);
+    if (!tryReadText(res, buf))
+        return false;
+    return buf.eof();
 }
 
 template <typename T>
