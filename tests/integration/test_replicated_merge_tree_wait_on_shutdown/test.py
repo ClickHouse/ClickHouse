@@ -49,25 +49,28 @@ def test_shutdown_and_wait(start_cluster):
         node.stop_clickhouse(kill=False, stop_wait_sec=60)
 
     p = Pool(50)
-    pm = PartitionManager()
-
-    pm.partition_instances(node1, node2)
 
     def insert(value):
         node1.query(f"INSERT INTO test_table VALUES ({value})")
 
-    p.map(insert, range(1, 50))
+    with PartitionManager() as pm:
+        pm.partition_instances(node1, node2)
+        # iptables rules must be applied immediately, but looks like sometimes they are not...
+        time.sleep(3)
 
-    # Start shutdown async
-    waiter = p.apply_async(soft_shutdown, (node1,))
-    # to be sure that shutdown started
-    time.sleep(5)
+        p.map(insert, range(1, 50))
 
-    # node 2 partitioned and don't see any data
-    assert node2.query("SELECT * FROM test_table") == "0\n"
+        # Start shutdown async
+        waiter = p.apply_async(soft_shutdown, (node1,))
+        # to be sure that shutdown started
+        time.sleep(5)
 
-    # Restore network
-    pm.heal_all()
+        # node 2 partitioned and don't see any data
+        assert node2.query("SELECT * FROM test_table") == "0\n"
+
+        # Restore network
+        pm.heal_all()
+
     # wait for shutdown to finish
     waiter.get()
 
