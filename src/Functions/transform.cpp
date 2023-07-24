@@ -658,13 +658,13 @@ namespace
             std::unique_ptr<StringToIdx> table_string_to_idx;
             std::unique_ptr<AnythingToIdx> table_anything_to_idx;
 
-            bool is_empty = false;
-
             ColumnPtr from_column;
             ColumnPtr to_column;
             ColumnPtr default_column;
 
-            std::atomic<bool> initialized{false};
+            bool is_empty = false;
+            bool initialized = false;
+
             std::mutex mutex;
         };
 
@@ -697,12 +697,11 @@ namespace
         /// Can be called from different threads. It works only on the first call.
         void initialize(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
         {
+            std::lock_guard lock(cache.mutex);
             if (cache.initialized)
                 return;
 
             const DataTypePtr & from_type = arguments[0].type;
-
-            std::lock_guard lock(cache.mutex);
 
             if (from_type->onlyNull())
             {
