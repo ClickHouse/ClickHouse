@@ -41,8 +41,8 @@ struct TreeRewriterResult
 
     Aliases aliases;
 
-    std::vector<const ASTFunction *> aggregates;
-    std::vector<const ASTFunction *> window_function_asts;
+    ASTs aggregates;
+    ASTs window_function_asts;
     ASTs expressions_with_window_function;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
