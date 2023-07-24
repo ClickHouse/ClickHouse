@@ -173,8 +173,6 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
-    M(MMappedAllocs, "Total number of mmapped allocations") \
-    M(MMappedAllocBytes, "Sum bytes of mmapped allocations") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \
@@ -189,6 +187,7 @@
     M(CacheFileSegments, "Number of existing cache file segments") \
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
+    M(FilesystemCacheSizeLimit, "Filesystem cache size limit in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
