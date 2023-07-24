@@ -47,8 +47,17 @@ namespace ErrorCodes
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
 {
+    /// init settings from alter sql
+    initSettings();
 }
 
+void InterpreterAlterQuery::initSettings()
+{
+    auto & alter_query = query_ptr->as<ASTAlterQuery &>();
+    if (alter_query.settings_ast) {
+        InterpreterSetQuery(alter_query.settings_ast, *context).executeForCurrentContext();
+    }
+}
 
 BlockIO InterpreterAlterQuery::execute()
 {
