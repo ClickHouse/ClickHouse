@@ -28,6 +28,11 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 
+#if USE_SSL
+#include <Poco/Net/SSLManager.h>
+#include <Poco/Net/Context.h>
+#endif
+
 namespace DB
 {
 
@@ -44,32 +49,47 @@ namespace
 {
 
 #if USE_SSL
-void setSSLParams(nuraft::asio_service::options & asio_opts)
-{
-    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-    String certificate_file_property = "openSSL.server.certificateFile";
-    String private_key_file_property = "openSSL.server.privateKeyFile";
-    String root_ca_file_property = "openSSL.server.caConfig";
+    enum class SSLContext
+    {
+        Server,
+        Client
+    };
 
-    if (!config.has(certificate_file_property))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
+    template <SSLContext contextType>
+    SSL_CTX* getSslContext()
+    {
+        // Boring SSL states that it is Ok to use context from different threads,
+        // OpenSSL discourages that.
+#if !defined(OPENSSL_IS_BORINGSSL) || !defined(BORINGSSL_API_VERSION)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsafe to share SSL_CTX with non-BoringSSL builds");
+#endif
 
-    if (!config.has(private_key_file_property))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
+        auto & ssl_manager = Poco::Net::SSLManager::instance();
+        const auto & ssl_ctx = contextType == SSLContext::Server ? ssl_manager.defaultServerContext() : ssl_manager.defaultClientContext();
 
-    asio_opts.enable_ssl_ = true;
-    asio_opts.server_cert_file_ = config.getString(certificate_file_property);
-    asio_opts.server_key_file_ = config.getString(private_key_file_property);
+        auto raw_ssl_ctx = ssl_ctx->sslContext();
+        assert(raw_ssl_ctx);
 
-    if (config.has(root_ca_file_property))
-        asio_opts.root_cert_file_ = config.getString(root_ca_file_property);
+        // asio will SSL_CTX_free context in desctructor,
+        // so we need to make sure that that wouldn't actually destroy a context.
+        SSL_CTX_up_ref(raw_ssl_ctx);
 
-    if (config.getBool("openSSL.server.loadDefaultCAFile", false))
-        asio_opts.load_default_ca_file_ = true;
+        return raw_ssl_ctx;
+    }
 
-    if (config.getString("openSSL.server.verificationMode", "none") == "none")
-        asio_opts.skip_verification_ = true;
-}
+    void setSSLParams(nuraft::asio_service::options & asio_opts)
+    {
+        // In order to maintain uniformity with CH on how SSL is used by Keeper,
+        // we need to use same SSL_CTX configuration as rest of ClickHouse does.
+        // Since copying configuration from one SSL_CTX to another is hard, we are using same
+        // SSL_CTX as rest of CH does (via Poco).
+        //
+        // OpenSSL explicitly prohibts sharing SSL_CTX by multiple threads, but BoringSSL allows it
+        // and states that SSL_CTX is thread-safe.
+        asio_opts.enable_ssl_ = true;
+        asio_opts.ssl_context_provider_server_ = getSslContext<SSLContext::Server>;
+        asio_opts.ssl_context_provider_client_ = getSslContext<SSLContext::Client>;
+    }
 #endif
 
 std::string checkAndGetSuperdigest(const String & user_and_digest)
