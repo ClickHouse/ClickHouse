@@ -599,6 +599,10 @@ void KeeperDispatcher::sessionCleanerTask()
 
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
+    /// shutdown() method will cleanup sessions if needed
+    if (shutdown_called)
+        return;
+
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
