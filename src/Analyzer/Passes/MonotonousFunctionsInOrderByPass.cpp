@@ -56,22 +56,23 @@ public:
 
     /// For the monotonous functions we found, whether they provide positive direction.
     /// For example: function chains f(m(x)), f is positive and m is not, then is_positive = false.
-    /// It is used to determine whether we should change the sort direction if we remove the founctions.
+    /// It is used to determine whether we should change the sort direction if we remove the functions.
     bool is_positive = true;
 
     /// Group by nodes for the query.
     const QueryTreeNodes & group_by_nodes;
 
-    /// Where previous order by nodes match table sorting keys.
-    /// If is true and current node or sub node match current sorting_key, skip removing.
-    /// For example: sorting_key = 'm(x)'
-    ///     1. node = m(x), remove nothing and monotonous_function_num = 0
-    ///     2. node = f(m(n(x))) remove f() and monotonous_function_num = 1
-    bool is_sorting_key_prefix;
+    /// If order by expression matches the sorting key, do not remove
+    /// functions to allow execute reading in order of key.
+    ///
+    /// For example: sorting_key = 'm(x)' and
+    ///     1. order by node = m(x): remove nothing
+    ///     2. order by node = f(m(n(x))): remove f()
+    bool should_checking_sorting_key;
     const String & sorting_key;
 
-    explicit MonotonousFunctionsChecker(const QueryTreeNodes & group_by_nodes_, bool is_sorting_key_prefix_, const String & sorting_key_)
-        : group_by_nodes(group_by_nodes_), is_sorting_key_prefix(is_sorting_key_prefix_), sorting_key(sorting_key_)
+    explicit MonotonousFunctionsChecker(const QueryTreeNodes & group_by_nodes_, bool should_checking_sorting_key_, const String & sorting_key_)
+        : group_by_nodes(group_by_nodes_), should_checking_sorting_key(should_checking_sorting_key_), sorting_key(sorting_key_)
     {
     }
 
@@ -118,7 +119,7 @@ public:
 
             /// If order by expression matches the sorting key, do not remove
             /// functions to allow execute reading in order of key.
-            if (is_sorting_key_prefix && sorting_key == function_node->toAST()->getColumnName())
+            if (should_checking_sorting_key && sorting_key == function_node->toAST()->getColumnName())
             {
                 is_monotonic = false;
                 return;
@@ -197,7 +198,7 @@ public:
             MonotonousFunctionsChecker checker(
                 group_by_nodes,
                 is_sorting_key_prefix && i >= sorting_key_columns.size(),
-                sorting_key_columns[i]);
+                i >= sorting_key_columns.size() ? "" : sorting_key_columns[i]);
 
             checker.visit(expr_node);
 
