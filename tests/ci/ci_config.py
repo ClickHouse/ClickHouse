@@ -173,6 +173,16 @@ CI_CONFIG = {
             "with_coverage": False,
             "comment": "SSE2-only build",
         },
+        "binary_riscv64": {
+            "compiler": "clang-16-riscv64",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "binary",
+            "static_binary_name": "riscv64",
+            "tidy": "disable",
+            "with_coverage": False,
+            "comment": "",
+        },
     },
     "builds_report_config": {
         "ClickHouse build check": [
@@ -194,6 +204,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_riscv64",
             "binary_amd64_compat",
         ],
     },
@@ -323,6 +334,9 @@ CI_CONFIG = {
             "required_build": "package_debug",
         },
         "Integration tests (asan)": {
+            "required_build": "package_asan",
+        },
+        "Integration tests (asan, analyzer)": {
             "required_build": "package_asan",
         },
         "Integration tests (tsan)": {

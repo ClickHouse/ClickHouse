@@ -982,6 +982,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts lonely_parts;
     size_t sum_marks_in_lonely_parts = 0;
 
+    auto sorting_expr = std::make_shared<ExpressionActions>(metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         Pipes pipes;
@@ -1025,25 +1027,26 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
                 pipes = buildPipesForReadingByPKRanges(
-                    metadata_for_reading->getPrimaryKey(), std::move(new_parts), num_streams, context, std::move(reading_step_getter));
+                    metadata_for_reading->getPrimaryKey(),
+                    sorting_expr,
+                    std::move(new_parts),
+                    num_streams,
+                    context,
+                    std::move(reading_step_getter));
             }
             else
             {
                 pipes.emplace_back(read(
                     std::move(new_parts), column_names, ReadFromMergeTree::ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+
+                pipes.back().addSimpleTransform([sorting_expr](const Block & header)
+                                                { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
             }
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
                 out_projection = createProjection(pipes.front().getHeader());
         }
-
-        auto sorting_expr = std::make_shared<ExpressionActions>(
-            metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
-
-        for (auto & pipe : pipes)
-            pipe.addSimpleTransform([sorting_expr](const Block & header)
-                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't postprocess this part
@@ -1100,9 +1103,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
             out_projection = createProjection(pipe.getHeader());
-
-        auto sorting_expr = std::make_shared<ExpressionActions>(
-            metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
         pipe.addSimpleTransform([sorting_expr](const Block & header)
         {
@@ -1761,6 +1761,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
         }
         context->getQueryContext()->addQueryAccessInfo(partition_names);
+
+        if (storage_snapshot->projection)
+            context->getQueryContext()->addQueryAccessInfo(
+                Context::QualifiedProjectionName{.storage_id = data.getStorageID(), .projection_name = storage_snapshot->projection->name});
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
