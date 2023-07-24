@@ -1718,7 +1718,7 @@ def test_freeze(start_cluster):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false
+            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1
         """
         )
 
