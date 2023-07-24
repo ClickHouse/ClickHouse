@@ -20,10 +20,10 @@
 
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperDispatcher.h>
 
-#include <sstream>
-#include <iomanip>
 #include <mutex>
 #include <functional>
 #include <base/defines.h>
@@ -53,7 +53,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 String getSHA1(const String & userdata)
 {
     Poco::SHA1Engine engine;
@@ -128,7 +127,7 @@ KeeperStorage::ResponsesForSessions processWatchesImpl(
         watches.erase(watch_it);
     }
 
-    auto parent_path = parentPath(path);
+    auto parent_path = parentNodePath(path);
 
     Strings paths_to_check_for_list_watches;
     if (event_type == Coordination::Event::CREATED)
@@ -276,23 +275,23 @@ void KeeperStorage::initializeSystemNodes()
             [](auto & node)
             {
                 ++node.stat.numChildren;
-                node.addChild(getBaseName(keeper_system_path));
+                node.addChild(getBaseNodeName(keeper_system_path));
             }
         );
         addDigest(updated_root_it->value, "/");
     }
 
     // insert child system nodes
-    for (const auto & [path, data] : child_system_paths_with_data)
+    for (const auto & [path, data] : keeper_context->getSystemNodesWithData())
     {
-        assert(keeper_api_version_path.starts_with(keeper_system_path));
+        assert(path.starts_with(keeper_system_path));
         Node child_system_node;
         child_system_node.setData(data);
         auto [map_key, _] = container.insert(std::string{path}, child_system_node);
         /// Take child path from key owned by map.
-        auto child_path = getBaseName(map_key->getKey());
+        auto child_path = getBaseNodeName(map_key->getKey());
         container.updateValue(
-            parentPath(StringRef(path)),
+            parentNodePath(StringRef(path)),
             [child_path](auto & parent)
             {
                 // don't update stats so digest is okay
@@ -728,7 +727,7 @@ bool KeeperStorage::createNode(
     bool is_sequental,
     Coordination::ACLs node_acls)
 {
-    auto parent_path = parentPath(path);
+    auto parent_path = parentNodePath(path);
     auto node_it = container.find(parent_path);
 
     if (node_it == container.end())
@@ -751,7 +750,7 @@ bool KeeperStorage::createNode(
     created_node.is_sequental = is_sequental;
     auto [map_key, _] = container.insert(path, created_node);
     /// Take child path from key owned by map.
-    auto child_path = getBaseName(map_key->getKey());
+    auto child_path = getBaseNodeName(map_key->getKey());
     container.updateValue(
             parent_path,
             [child_path](KeeperStorage::Node & parent)
@@ -781,8 +780,8 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
     acl_map.removeUsage(prev_node.acl_id);
 
     container.updateValue(
-        parentPath(path),
-        [child_basename = getBaseName(node_it->key)](KeeperStorage::Node & parent)
+        parentNodePath(path),
+        [child_basename = getBaseNodeName(node_it->key)](KeeperStorage::Node & parent)
         {
             parent.removeChild(child_basename);
             chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
@@ -866,7 +865,7 @@ Coordination::ACLs getNodeACLs(KeeperStorage & storage, StringRef path, bool is_
 
 void handleSystemNodeModification(const KeeperContext & keeper_context, std::string_view error_msg)
 {
-    if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
+    if (keeper_context.getServerState() == KeeperContext::Phase::INIT && !keeper_context.ignoreSystemPathOnStartup())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "{}. Ignoring it can lead to data loss. "
@@ -929,7 +928,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
         auto path = zk_request->getPath();
-        return storage.checkACL(parentPath(path), Coordination::ACL::Create, session_id, is_local);
+        return storage.checkACL(parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
     }
 
     std::vector<KeeperStorage::Delta>
@@ -940,7 +939,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
-        auto parent_path = parentPath(request.path);
+        auto parent_path = parentNodePath(request.path);
         auto parent_node = storage.uncommitted_state.getNode(parent_path);
         if (parent_node == nullptr)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
@@ -971,7 +970,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         if (storage.uncommitted_state.getNode(path_created))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
 
-        if (getBaseName(path_created).size == 0)
+        if (getBaseNodeName(path_created).size == 0)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
         Coordination::ACLs node_acls;
@@ -1060,7 +1059,8 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
-        if (request.path == Coordination::keeper_api_version_path)
+        if (request.path == Coordination::keeper_api_feature_flags_path
+            || request.path == Coordination::keeper_config_path)
             return {};
 
         if (!storage.uncommitted_state.getNode(request.path))
@@ -1083,6 +1083,14 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
                 response.error = result;
                 return response_ptr;
             }
+        }
+
+        if (request.path == Coordination::keeper_config_path)
+        {
+            response.data = serializeClusterConfig(
+                storage.keeper_context->getDispatcher()->getStateMachine().getClusterConfig());
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
         }
 
         auto & container = storage.container;
@@ -1121,7 +1129,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        return storage.checkACL(parentPath(zk_request->getPath()), Coordination::ACL::Delete, session_id, is_local);
+        return storage.checkACL(parentNodePath(zk_request->getPath()), Coordination::ACL::Delete, session_id, is_local);
     }
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
@@ -1143,7 +1151,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
         const auto update_parent_pzxid = [&]()
         {
-            auto parent_path = parentPath(request.path);
+            auto parent_path = parentNodePath(request.path);
             if (!storage.uncommitted_state.getNode(parent_path))
                 return;
 
@@ -1178,7 +1186,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             update_parent_pzxid();
 
         new_deltas.emplace_back(
-            std::string{parentPath(request.path)},
+            std::string{parentNodePath(request.path)},
             zxid,
             KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & parent)
                                            {
@@ -1321,7 +1329,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 request.version});
 
         new_deltas.emplace_back(
-                parentPath(request.path).toString(),
+                parentNodePath(request.path).toString(),
                 zxid,
                 KeeperStorage::UpdateNodeDelta
                 {
@@ -1481,7 +1489,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
         auto path = zk_request->getPath();
-        return storage.checkACL(check_not_exists ? parentPath(path) : path, Coordination::ACL::Read, session_id, is_local);
+        return storage.checkACL(check_not_exists ? parentNodePath(path) : path, Coordination::ACL::Read, session_id, is_local);
     }
 
     std::vector<KeeperStorage::Delta>
@@ -1784,7 +1792,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     throw DB::Exception(
                                         ErrorCodes::BAD_ARGUMENTS,
                                         "Illegal command as part of multi ZooKeeper request {}",
-                                        Coordination::toString(sub_zk_request->getOpNum()));
+                                        sub_zk_request->getOpNum());
             }
         }
 
@@ -1975,7 +1983,7 @@ public:
     {
         auto request_it = op_num_to_request.find(zk_request->getOpNum());
         if (request_it == op_num_to_request.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", toString(zk_request->getOpNum()));
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", zk_request->getOpNum());
 
         return request_it->second(zk_request);
     }
@@ -2024,7 +2032,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 
 UInt64 KeeperStorage::calculateNodesDigest(UInt64 current_digest, const std::vector<Delta> & new_deltas) const
 {
-    if (!keeper_context->digest_enabled)
+    if (!keeper_context->digestEnabled())
         return current_digest;
 
     std::unordered_map<std::string_view, std::shared_ptr<Node>> updated_nodes;
@@ -2122,7 +2130,7 @@ void KeeperStorage::preprocessRequest(
     TransactionInfo transaction{.zxid = new_last_zxid};
     uint64_t new_digest = getNodesDigest(false).value;
     SCOPE_EXIT({
-        if (keeper_context->digest_enabled)
+        if (keeper_context->digestEnabled())
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -2145,7 +2153,7 @@ void KeeperStorage::preprocessRequest(
             {
                 new_deltas.emplace_back
                 (
-                    parentPath(ephemeral_path).toString(),
+                    parentNodePath(ephemeral_path).toString(),
                     new_last_zxid,
                     UpdateNodeDelta
                     {
@@ -2338,7 +2346,7 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
 
 KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 {
-    if (!keeper_context->digest_enabled)
+    if (!keeper_context->digestEnabled())
         return {.version = DigestVersion::NO_DIGEST};
 
     if (committed || uncommitted_transactions.empty())
@@ -2349,13 +2357,13 @@ KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 
 void KeeperStorage::removeDigest(const Node & node, const std::string_view path)
 {
-    if (keeper_context->digest_enabled)
+    if (keeper_context->digestEnabled())
         nodes_digest -= node.getDigest(path);
 }
 
 void KeeperStorage::addDigest(const Node & node, const std::string_view path)
 {
-    if (keeper_context->digest_enabled)
+    if (keeper_context->digestEnabled())
     {
         node.invalidateDigestCache();
         nodes_digest += node.getDigest(path);

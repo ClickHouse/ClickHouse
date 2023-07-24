@@ -790,7 +790,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
                 WriteBufferFromOStream cerr_buf(std::cerr, 4096);
                 fuzz_base->dumpTree(cerr_buf);
-                cerr_buf.next();
+                cerr_buf.finalize();
 
                 fmt::print(
                     stderr,
@@ -928,7 +928,7 @@ bool Client::processWithFuzzing(const String & full_query)
         std::cout << std::endl;
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
-        ast_buf.next();
+        ast_buf.finalize();
         if (const auto * insert = query->as<ASTInsertQuery>())
         {
             /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
@@ -1173,12 +1173,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         String traceparent = options["opentelemetry-traceparent"].as<std::string>();
         String error;
-        if (!global_context->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
+        if (!global_context->getClientTraceContext().parseTraceparentHeader(traceparent, error))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
     if (options.count("opentelemetry-tracestate"))
-        global_context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
+        global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 }
 
 
@@ -1238,10 +1238,9 @@ void Client::processConfig()
             global_context->getSettingsRef().max_insert_block_size);
     }
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.quota_key = config().getString("quota_key", "");
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQuotaClientKey(config().getString("quota_key", ""));
+    global_context->setQueryKind(query_kind);
 }
 
 
@@ -1404,10 +1403,9 @@ void Client::readArguments(
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);
-                /// No password was provided by user. Add '\n' as implicit password,
-                /// which encodes that client should ask user for the password.
-                /// '\n' is used because there is hardly a chance that a user would use '\n' as a password.
-                common_arguments.emplace_back("\n");
+                /// if the value of --password is omitted, the password will be asked before
+                /// connection start
+                common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
                 common_arguments.emplace_back(arg);

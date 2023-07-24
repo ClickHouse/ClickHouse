@@ -97,7 +97,7 @@ public:
             const auto id = S2CellId(data_id[row]);
 
             if (!id.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "CellId is invalid.");
 
             S2Point point = id.ToPoint();
             S2LatLng ll(point);

@@ -495,11 +495,10 @@ void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, Lo
     tryConnectToZooKeeperAndInitDatabase(mode);
 }
 
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     beforeLoadingMetadata(local_context, mode);
-    DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
+    DatabaseAtomic::loadStoredObjects(local_context, mode);
 }
 
 UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
@@ -814,8 +813,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        query_context->getClientInfo().is_replicated_database_internal = true;
+        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
@@ -1291,6 +1290,16 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
     assert(checkDigestValid(query_context));
+}
+
+
+bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
+{
+    /// ReplicatedMergeTree may call commitAlterTable from its background threads when executing ALTER_METADATA entries.
+    /// It may update the metadata digest (both locally and in ZooKeeper)
+    /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
+    /// We should not update metadata until the database is initialized.
+    return ddl_worker && ddl_worker->isCurrentlyActive();
 }
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)

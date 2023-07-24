@@ -1,6 +1,7 @@
 #include <limits>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
@@ -50,6 +51,8 @@ const char * analyzeImpl(
     bool & is_trivial,
     Literals & global_alternatives)
 {
+    checkStackSize();
+
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
       *  a string outside parentheses,
@@ -540,7 +543,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
             }
         }
 
-        return re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
+        return re2->Match({subject, subject_size}, 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
     }
 }
 
@@ -585,9 +588,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
                 return false;
         }
 
-        StringPieceType piece;
+        std::string_view piece;
 
-        if (!RegexType::PartialMatch(StringPieceType(subject, subject_size), *re2, &piece))
+        if (!RegexType::PartialMatch({subject, subject_size}, *re2, &piece))
             return false;
         else
         {
@@ -652,10 +655,10 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
                 return 0;
         }
 
-        DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
+        DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
 
         if (!re2->Match(
-            StringPieceType(subject, subject_size),
+            {subject, subject_size},
             0,
             subject_size,
             RegexType::UNANCHORED,
@@ -669,15 +672,15 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
             matches.resize(limit);
             for (size_t i = 0; i < limit; ++i)
             {
-                if (pieces[i] != nullptr)
-                {
-                    matches[i].offset = pieces[i].data() - subject;
-                    matches[i].length = pieces[i].length();
-                }
-                else
+                if (pieces[i].empty())
                 {
                     matches[i].offset = std::string::npos;
                     matches[i].length = 0;
+                }
+                else
+                {
+                    matches[i].offset = pieces[i].data() - subject;
+                    matches[i].length = pieces[i].length();
                 }
             }
             return limit;
