@@ -2059,7 +2059,7 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
     } hash_value;
     hash.get128(hash_value.bytes);
 
-    return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+    return info.partition_id + "_" + toString(hash_value.words[1]) + "_" + toString(hash_value.words[0]);
 }
 
 IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_name) const
