@@ -55,7 +55,7 @@ expect eof
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_for_all_queries=123 --history_file=$history_file"
 expect "Warnings:"
-expect " * Some obsolete setting is changed."
+expect " * Obsolete setting"
 expect ":) "
 send -- "q\r"
 expect eof
