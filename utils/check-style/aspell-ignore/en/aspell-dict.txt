@@ -1539,6 +1539,10 @@ hadoop
 halfMD
 halfday
 hardlinks
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF
+hasSubsequenceUTF
 hasAll
 hasAny
 hasColumnInTable
@@ -2247,6 +2251,7 @@ subquery
 subranges
 subreddits
 subseconds
+subsequence
 substring
 substringUTF
 substrings

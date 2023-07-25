@@ -1900,6 +1900,39 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 }
 
 
+bool ParserMySQLComment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::QuotedIdentifier && pos->type != TokenType::StringLiteral)
+        return false;
+    String s;
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    try
+    {
+        if (pos->type == TokenType::StringLiteral)
+            readQuotedStringWithSQLStyle(s, in);
+        else
+            readDoubleQuotedStringWithSQLStyle(s, in);
+    }
+    catch (const Exception &)
+    {
+        expected.add(pos, "string literal or double quoted string");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal or double quoted string");
+        return false;
+    }
+
+    auto literal = std::make_shared<ASTLiteral>(s);
+    literal->begin = pos;
+    literal->end = ++pos;
+    node = literal;
+    return true;
+}
+
+
 bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (pos->type != TokenType::DoubleAt)
