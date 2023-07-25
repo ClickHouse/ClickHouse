@@ -8,6 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -458,16 +459,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
-        case Type::RELOAD_SYMBOLS:
-        {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
-            break;
-#else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
-#endif
-        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -580,6 +571,18 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
             /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
+            break;
+        }
+        case Type::ENABLE_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::enableFailPoint(query.fail_point_name);
+            break;
+        }
+        case Type::DISABLE_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
         default:
@@ -1032,11 +1035,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            break;
-        }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
@@ -1170,6 +1168,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
         case Type::UNKNOWN:
         case Type::END: break;
     }

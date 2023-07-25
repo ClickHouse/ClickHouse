@@ -12,7 +12,6 @@ SYSTEM STOP MERGES t_cache_sparse;
 INSERT INTO t_cache_sparse SELECT number, number FROM numbers(10000);
 INSERT INTO t_cache_sparse SELECT number, 0 FROM numbers(10000);
 
-SET allow_experimental_query_cache = 1;
 SET use_query_cache = 1;
 SET max_threads = 1;
 

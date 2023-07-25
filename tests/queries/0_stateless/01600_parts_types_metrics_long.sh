@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --
 # InMemory - [0..5]
 # Compact  - (5..10]
 # Wide     - >10
-$CLICKHOUSE_CLIENT --query="CREATE TABLE data_01600 (part_type String, key Int) ENGINE = MergeTree PARTITION BY part_type ORDER BY key SETTINGS min_bytes_for_wide_part=0, min_bytes_for_compact_part=0, min_rows_for_wide_part=10, min_rows_for_compact_part=5"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE data_01600 (part_type String, key Int) ENGINE = MergeTree PARTITION BY part_type ORDER BY key SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=10"
 
 # InMemory
 $CLICKHOUSE_CLIENT --query="INSERT INTO data_01600 SELECT 'InMemory', number FROM system.numbers LIMIT 1"
