@@ -5,7 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+# NOTE: dictionaries will be updated according to server TZ, not session, so prohibit it's randomization
+$CLICKHOUSE_CLIENT --session_timezone '' -q "
     CREATE TABLE table_for_update_field_dictionary
     (
         key UInt64,

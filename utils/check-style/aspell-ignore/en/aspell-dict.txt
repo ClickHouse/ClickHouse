@@ -762,6 +762,7 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -1428,6 +1429,7 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
+firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
@@ -1537,6 +1539,10 @@ hadoop
 halfMD
 halfday
 hardlinks
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF
+hasSubsequenceUTF
 hasAll
 hasAny
 hasColumnInTable
@@ -2124,6 +2130,7 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
+rowbinarywithdefaults
 rsync
 rsyslog
 runnable
@@ -2244,6 +2251,7 @@ subquery
 subranges
 subreddits
 subseconds
+subsequence
 substring
 substringUTF
 substrings
@@ -2545,3 +2553,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+curdate
