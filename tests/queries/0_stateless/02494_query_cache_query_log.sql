@@ -17,7 +17,8 @@ SELECT type, query, query_cache_usage
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND query = 'SELECT 124437993;'
-ORDER BY type;
+    AND type = 'QueryFinish'
+ORDER BY type, query_cache_usage;
 
 
 
@@ -31,7 +32,8 @@ SELECT type, query, query_cache_usage
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND query = 'SELECT 124437994 SETTINGS use_query_cache = 1;'
-ORDER BY type;
+    AND type = 'QueryFinish'
+ORDER BY type, query_cache_usage;
 
 
 
@@ -45,7 +47,8 @@ SELECT type, query, query_cache_usage
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND query = 'SELECT 124437994 SETTINGS use_query_cache = 1;'
-ORDER BY type;
+    AND type = 'QueryFinish'
+ORDER BY type, query_cache_usage;
 
 
 
