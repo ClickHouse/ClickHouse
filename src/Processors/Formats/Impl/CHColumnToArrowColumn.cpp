@@ -208,7 +208,7 @@ namespace DB
         const String & column_name,
         ColumnPtr & column,
         const DataTypePtr & column_type,
-        const PaddedPODArray<UInt8> * null_bytemap,
+        const PaddedPODArray<UInt8> *,
         arrow::ArrayBuilder * array_builder,
         String format_name,
         size_t start,
@@ -231,7 +231,9 @@ namespace DB
             /// Start new array.
             components_status = builder.Append();
             checkStatus(components_status, nested_column->getName(), format_name);
-            fillArrowArray(column_name, nested_column, nested_type, null_bytemap, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+
+            /// Pass null null_map, because fillArrowArray will decide whether nested_type is nullable, if nullable, it will create a new null_map from nested_column
+            fillArrowArray(column_name, nested_column, nested_type, nullptr, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
         }
     }
 
