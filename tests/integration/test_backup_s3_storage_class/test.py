@@ -48,4 +48,6 @@ def test_backup_s3_storage_class(started_cluster):
         """
     )
 
-    assert True
+    minio = cluster.minio_client
+    lst = list(minio.list_objects(cluster.minio_bucket, "data/.backup"))
+    assert lst[0].storage_class == "STANDARD"
