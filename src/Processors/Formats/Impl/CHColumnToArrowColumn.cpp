@@ -208,7 +208,7 @@ namespace DB
         const String & column_name,
         ColumnPtr & column,
         const DataTypePtr & column_type,
-        const PaddedPODArray<UInt8> *,
+        const PaddedPODArray<UInt8> *null_bytemap,
         arrow::ArrayBuilder * array_builder,
         String format_name,
         size_t start,
@@ -228,14 +228,23 @@ namespace DB
 
         for (size_t array_idx = start; array_idx < end; ++array_idx)
         {
-            /// Start new array.
-            components_status = builder.Append();
-            checkStatus(components_status, nested_column->getName(), format_name);
+            if (!null_bytemap || !(*null_bytemap)[array_idx])
+            {
+                /// Start new array.
+                components_status = builder.Append();
+                checkStatus(components_status, nested_column->getName(), format_name);
 
-            /// Pass null null_map, because fillArrowArray will decide whether nested_type is nullable, if nullable, it will create a new null_map from nested_column
-            /// Note that it is only needed by gluten(https://github.com/oap-project/gluten), because array type in gluten is by default nullable.
-            /// And it does not influence the original ClickHouse logic, because null_map passed to fillArrowArrayWithArrayColumnData is always nullptr for ClickHouse doesn't allow nullable complex types including array type.
-            fillArrowArray(column_name, nested_column, nested_type, nullptr, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+                /// Pass null null_map, because fillArrowArray will decide whether nested_type is nullable, if nullable, it will create a new null_map from nested_column
+                /// Note that it is only needed by gluten(https://github.com/oap-project/gluten), because array type in gluten is by default nullable.
+                /// And it does not influence the original ClickHouse logic, because null_map passed to fillArrowArrayWithArrayColumnData is always nullptr for ClickHouse doesn't allow nullable complex types including array type.
+                fillArrowArray(column_name, nested_column, nested_type, nullptr, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+            }
+            else
+            {
+                /// Append null array.
+                components_status = builder.AppendNull();
+                checkStatus(components_status, nested_column->getName(), format_name);
+            }
         }
     }
 
@@ -275,7 +284,7 @@ namespace DB
 
         for (size_t i = start; i != end; ++i)
         {
-            auto status = builder.Append();
+            auto status = builder.Append(null_bytemap ? !(*null_bytemap)[i] : true);
             checkStatus(status, column->getName(), format_name);
         }
     }
