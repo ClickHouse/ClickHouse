@@ -214,7 +214,7 @@ private:
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * precision_col = checkAndGetColumn<ColumnVector<UInt8>>(arguments[1].column.get());
-        const auto * precision_col_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
+        const auto * precision_col_const = checkAndGetColumnConst<ColumnVector<UInt8>>(arguments[1].column.get());
 
         auto result_col = ColumnString::create();
         auto * result_col_string = assert_cast<ColumnString *>(result_col.get());
