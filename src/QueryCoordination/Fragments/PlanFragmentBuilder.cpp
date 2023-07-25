@@ -185,9 +185,9 @@ PlanFragmentPtr PlanFragmentBuilder::createPlanFragments(const QueryPlan & singl
 {
 
     /// TODO test
-    PlanFragmentVisitor::Data data({.context = context, .all_fragments = all_fragments});
-    PlanFragmentVisitor visitor(data);
-    visitor.visit(root_node);
+//    PlanFragmentVisitor::Data data({.context = context, .all_fragments = all_fragments});
+//    PlanFragmentVisitor visitor(data);
+//    visitor.visit(root_node);
 
     PlanFragmentPtrs child_fragments;
     for (Node * child : root_node.children)
