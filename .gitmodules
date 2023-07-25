@@ -340,3 +340,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/c-ares/c-ares.git
+[submodule "contrib/incbin"]
+	path = contrib/incbin
+	url = https://github.com/graphitemaster/incbin.git
