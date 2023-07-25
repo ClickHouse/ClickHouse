@@ -38,7 +38,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args = {
-            {"Value", nullptr, nullptr, nullptr},
+            {"Value", &isNumber<IDataType>, nullptr, "Number"},
             {"precision", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"}
         };
 
@@ -230,8 +230,10 @@ private:
             {
                 if (precision_col_const)
                     vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets, from_scale);
-                else
+                else if (precision_col)
                     vectorVector(from_col->getData(), precision_col->getData(), result_chars, result_offsets, from_scale);
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function formatDecimal", arguments[1].column->getName());
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
@@ -243,8 +245,11 @@ private:
             {
                 if (precision_col_const)
                     vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets);
-                else
+                else if (precision_col)
                     vectorVector(from_col->getData(), precision_col->getData(), result_chars, result_offsets);
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function formatDecimal", arguments[1].column->getName());
+
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
