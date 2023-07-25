@@ -651,6 +651,10 @@ void writeColumnImpl(
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
+/// Workaround for clang bug: https://github.com/llvm/llvm-project/issues/63630
+#ifdef MEMORY_SANITIZER
+#pragma clang loop vectorize(disable)
+#endif
                 for (size_t i = 0; i < data_count; ++i)
                     page_statistics.add(converted[i]);
 
