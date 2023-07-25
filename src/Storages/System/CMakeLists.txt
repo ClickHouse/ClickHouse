@@ -30,7 +30,6 @@ endif()
 add_dependencies(generate-source generate-contributors)
 
 set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.generated.cpp")
-set(GENERATED_TIMEZONES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemTimeZones.generated.cpp")
 
 add_custom_command(
     OUTPUT StorageSystemLicenses.generated.cpp
@@ -38,22 +37,12 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
-list (APPEND storages_system_sources ${GENERATED_TIMEZONES_SRC})
 
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 
-include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
-clickhouse_embed_binaries(
-        TARGET information_schema_metadata
-        RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/InformationSchema/"
-        RESOURCES schemata.sql tables.sql views.sql columns.sql
-)
-
 list (SORT storages_system_sources) # Reproducible build
 add_library(clickhouse_storages_system ${storages_system_sources})
-
-add_dependencies(clickhouse_storages_system information_schema_metadata)
 
 target_link_libraries(clickhouse_storages_system PRIVATE
     dbms
@@ -62,5 +51,6 @@ target_link_libraries(clickhouse_storages_system PRIVATE
     clickhouse_common_zookeeper
     clickhouse_parsers
     Poco::JSON
-    INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:information_schema_metadata> -Wl,${NO_WHOLE_ARCHIVE}"
 )
+
+target_include_directories(clickhouse_storages_system PRIVATE InformationSchema)
