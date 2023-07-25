@@ -693,6 +693,22 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
+## endsWithUTF8
+
+Returns whether string `str` ends with `suffix`, assuming that both strings contain svalid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+endsWithUTF8(str, suffix)
+```
+
+**Example**
+
+``` sql
+SELECT endsWithUTF8('中国', '国');
+```
+
 ## startsWith
 
 Returns whether string `str` starts with `prefix`.
@@ -708,6 +724,18 @@ startsWith(str, prefix)
 ``` sql
 SELECT startsWith('Spider-Man', 'Spi');
 ```
+
+## startsWithUTF8
+
+Returns whether string `str` starts with `prefix`, assuming that both string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+
+**Example**
+
+``` sql
+SELECT startsWithUTF8('中国', '中');
+```
+
 
 ## trim
 
