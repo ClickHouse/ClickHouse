@@ -41,6 +41,7 @@ struct NameStartsWithUTF8
     static constexpr auto name = "startsWithUTF8";
     static constexpr auto is_utf8 = true;
 };
+
 struct NameEndsWithUTF8
 {
     static constexpr auto name = "endsWithUTF8";
