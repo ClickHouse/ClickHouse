@@ -248,7 +248,9 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD"
+    insert_query_id = (
+        f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_{send_something}"
+    )
     node.query(
         f"""
         INSERT INTO
@@ -283,7 +285,9 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         action="connection_reset_by_peer",
         action_args=["1"] if send_something else ["0"],
     )
-    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_1"
+    insert_query_id = (
+        f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_{send_something}_1"
+    )
     error = node.query_and_get_error(
         f"""
                INSERT INTO
@@ -307,7 +311,8 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
     assert "Code: 1000" in error, error
     assert (
         "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
+        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        in error
     ), error
 
 
@@ -325,7 +330,9 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD"
+    insert_query_id = (
+        f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_{send_something}"
+    )
     node.query(
         f"""
         INSERT INTO
@@ -361,7 +368,9 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_1"
+    insert_query_id = (
+        f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_{send_something}_1"
+    )
     error = node.query_and_get_error(
         f"""
                INSERT INTO
@@ -385,5 +394,6 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
     assert "Code: 1000" in error, error
     assert (
         "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer" in error
+        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        in error
     ), error
