@@ -6569,7 +6569,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         try
         {
-            /// part name , metadata, part_path , true, 0, zookeeper
+            /// part name, metadata, part_path, true, 0, zookeeper
             if (!fetchPart(part_name, metadata_snapshot, from_zookeeper_name, part_path, true, 0, zookeeper, /* try_fetch_shared = */ false))
                 throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
         }
