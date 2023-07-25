@@ -278,4 +278,17 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
+{
+    const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
+    return fmt::format(
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
+        data_part_storage->getFullPath(),
+        data_part_info_for_read->getTableName(),
+        data_part_storage->getDiskName(),
+        data_part_storage->getDiskType(),
+        from_mark,
+        max_rows_to_read);
+}
+
 }

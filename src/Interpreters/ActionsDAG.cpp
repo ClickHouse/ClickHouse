@@ -465,7 +465,11 @@ void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
 {
     std::unordered_set<const Node *> visited_nodes;
+    std::unordered_set<const Node *> used_inputs;
     std::stack<Node *> stack;
+
+    for (const auto * input : inputs)
+        used_inputs.insert(input);
 
     for (const auto * node : outputs)
     {
@@ -484,7 +488,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
             stack.push(&node);
         }
 
-        if (node.type == ActionType::INPUT && !allow_remove_inputs)
+        if (node.type == ActionType::INPUT && !allow_remove_inputs && used_inputs.contains(&node))
             visited_nodes.insert(&node);
     }
 
@@ -1365,8 +1369,8 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     first.mergeInplace(std::move(second));
 
-    /// Drop unused inputs and, probably, some actions.
-    first.removeUnusedActions();
+    /// Some actions could become unused. Do not drop inputs to preserve the header.
+    first.removeUnusedActions(false);
 
     return std::make_shared<ActionsDAG>(std::move(first));
 }
@@ -1876,10 +1880,10 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
-/// Take a node which result is predicate.
+/// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
-/// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
+/// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjunctionNodes conjunction;
@@ -2113,9 +2117,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
-                filter_name,
-                dumpDAG());
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
 
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
@@ -2142,18 +2146,29 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.rejected.size() == 1 && !conjunction.rejected.front()->result_type->equals(*predicate->result_type)
-        && conjunction.allowed.front()->type == ActionType::COLUMN)
-    {
-        // No further optimization can be done
+
+    if (conjunction.allowed.empty())
         return nullptr;
+
+    chassert(predicate->result_type);
+
+    if (conjunction.rejected.size() == 1)
+    {
+        chassert(conjunction.rejected.front()->result_type);
+
+        if (conjunction.allowed.front()->type == ActionType::COLUMN
+            && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
+        {
+            /// No further optimization can be done
+            return nullptr;
+        }
     }
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 
-    /// Now, when actions are created, update current DAG.
+    /// Now, when actions are created, update the current DAG.
 
     if (conjunction.rejected.empty())
     {
@@ -2500,11 +2515,21 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr
         /// find input node which refers to the output node
         /// consider only aliases on the path
         const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        while (node)
         {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
+            if (node->type == ActionsDAG::ActionType::ALIAS)
+            {
+                node = node->children.front();
+            }
+            /// materiailze() function can occur when dealing with views
+            /// TODO: not sure if it should be done here, looks too generic place
+            else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize")
+            {
+                chassert(node->children.size() == 1);
+                node = node->children.front();
+            }
+            else
+                break;
         }
         if (node && node->type == ActionsDAG::ActionType::INPUT)
             index.emplace(output_node->result_name, node);

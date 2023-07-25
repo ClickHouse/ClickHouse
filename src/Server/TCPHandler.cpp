@@ -350,6 +350,7 @@ void TCPHandler::runImpl()
                 /// Send block to the client - input storage structure.
                 state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
+                sendTimezone();
             });
 
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
@@ -588,7 +589,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ true));
+                LOG_ERROR(log, getExceptionMessageAndPattern(e, send_exception_with_stack_trace));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -763,7 +764,6 @@ void TCPHandler::processInsertQuery()
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
-
         sendLogs();
 
         while (readDataNext())
@@ -1063,6 +1063,20 @@ void TCPHandler::sendInsertProfileEvents()
     sendProfileEvents();
 }
 
+void TCPHandler::sendTimezone()
+{
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
+        return;
+
+    const String & tz = query_context->getSettingsRef().session_timezone.value;
+
+    LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
+    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+    writeStringBinary(tz, *out);
+    out->next();
+}
+
+
 bool TCPHandler::receiveProxyHeader()
 {
     if (in->eof())
@@ -1163,21 +1177,12 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 
     auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
 
-    auto & client_info = res->getClientInfo();
-    client_info.forwarded_for = forwarded_for;
-    client_info.client_name = client_name;
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
-
-    client_info.connection_client_version_major = client_version_major;
-    client_info.connection_client_version_minor = client_version_minor;
-    client_info.connection_client_version_patch = client_version_patch;
-    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
-
-    client_info.quota_key = quota_key;
-    client_info.interface = interface;
+    res->setForwardedFor(forwarded_for);
+    res->setClientName(client_name);
+    res->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    res->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    res->setQuotaClientKey(quota_key);
+    res->setClientInterface(interface);
 
     return res;
 }
@@ -1239,7 +1244,7 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    auto & client_info = session->getClientInfo();
+    const auto & client_info = session->getClientInfo();
 
 #if USE_SSL
     /// Authentication with SSL user certificate
@@ -1272,7 +1277,7 @@ void TCPHandler::receiveAddendum()
     {
         readStringBinary(quota_key, *in);
         if (!is_interserver_mode)
-            session->getClientInfo().quota_key = quota_key;
+            session->setQuotaClientKey(quota_key);
     }
 }
 
@@ -1891,17 +1896,18 @@ void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
 
-    auto prev_bytes_written_out = out->count();
-    auto prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
 
     try
     {
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
+            constexpr UInt64 marker = (1ULL<<63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(VAR_UINT_MAX, *out);
+                writeVarUInt(marker, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
