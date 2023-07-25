@@ -10,7 +10,7 @@ set -e
 
 $CLICKHOUSE_CLIENT -nm -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by tuple() settings disk='s3_common_disk';
+    create table data (key Int) engine=MergeTree() order by tuple() settings disk='s3_disk';
     insert into data select * from numbers(10);
 "
 
