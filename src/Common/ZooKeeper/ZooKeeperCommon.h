@@ -117,6 +117,35 @@ struct ZooKeeperSyncResponse final : SyncResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Sync; }
 };
 
+struct ZooKeeperReconfigRequest final : ZooKeeperRequest
+{
+    String joining;
+    String leaving;
+    String new_members;
+    int64_t version; // kazoo sends a 64bit integer in this request
+
+    String getPath() const override { return keeper_config_path; }
+    OpNum getOpNum() const override { return OpNum::Reconfig; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl() const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
+
+    size_t bytesSize() const override
+    {
+        return ZooKeeperRequest::bytesSize() + joining.size() + leaving.size() + new_members.size()
+            + sizeof(version);
+    }
+};
+
+struct ZooKeeperReconfigResponse final : ReconfigResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    OpNum getOpNum() const override { return OpNum::Reconfig; }
+};
+
 struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}

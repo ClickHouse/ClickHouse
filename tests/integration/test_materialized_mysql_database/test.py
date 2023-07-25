@@ -262,6 +262,12 @@ def test_materialized_database_ddl_with_empty_transaction_8_0(
     )
 
 
+def test_text_blob_charset(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.text_blob_with_charset_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
 def test_select_without_columns_5_7(
     started_cluster, started_mysql_5_7, clickhouse_node
 ):
@@ -375,6 +381,12 @@ def test_utf8mb4(
 ):
     materialized_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_5_7, "mysql57")
     materialized_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_8_0, "mysql80")
+    materialized_with_ddl.utf8mb4_column_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+    materialized_with_ddl.utf8mb4_name_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
 
 
 def test_system_parts_table(started_cluster, started_mysql_8_0, clickhouse_node):
@@ -412,6 +424,12 @@ def test_materialized_with_column_comments(
         clickhouse_node, started_mysql_5_7, "mysql57"
     )
     materialized_with_ddl.materialized_with_column_comments_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
+def test_double_quoted_comment(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.double_quoted_comment(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )
 
@@ -527,5 +545,11 @@ def test_materialized_database_mysql_drop_ddl(
 
 def test_named_collections(started_cluster, started_mysql_8_0, clickhouse_node):
     materialized_with_ddl.named_collections(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
+def test_create_table_as_select(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.create_table_as_select(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )
