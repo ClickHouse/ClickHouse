@@ -695,7 +695,7 @@ endsWith(str, suffix)
 
 ## endsWithUTF8
 
-Returns whether string `str` ends with `suffix`, assuming that both strings contain svalid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns whether string `str` ends with `suffix`, assuming that both strings contain valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 **Syntax**
 

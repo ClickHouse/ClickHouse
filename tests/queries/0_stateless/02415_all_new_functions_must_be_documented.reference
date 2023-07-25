@@ -263,6 +263,7 @@ encodeURLComponent
 encodeURLFormComponent
 encodeXMLComponent
 endsWith
+endsWithUTF8
 equals
 erf
 erfc
@@ -665,6 +666,7 @@ splitByString
 splitByWhitespace
 sqrt
 startsWith
+startsWithUTF8
 subBitmap
 substring
 substringUTF8
