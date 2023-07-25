@@ -976,7 +976,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.name == "indexHint")
     {
         if (data.only_consts)
+        {
+            /// We need to collect constants inside `indexHint` for index analysis.
+            if (node.arguments)
+            {
+                for (const auto & arg : node.arguments->children)
+                    visit(arg, data);
+            }
             return;
+        }
 
         /// Here we create a separate DAG for indexHint condition.
         /// It will be used only for index analysis.
