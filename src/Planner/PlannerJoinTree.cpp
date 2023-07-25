@@ -338,7 +338,30 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         checkAccessRights(*table_node, column_names_with_aliases, query_context);
     }
 
-    if (columns_names.empty())
+    bool has_explicit_columns = columns_names.empty();
+    Names virtual_columns{
+        "_part",
+        "_partition_id",
+        "_part_uuid",
+        "_partition_value",
+    };
+    if (table_node || table_function_node)
+    {
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        if (auto storage_virtual_columns = storage->getVirtuals().getNames(); !storage_virtual_columns.empty())
+            virtual_columns = storage_virtual_columns;
+
+        /// Do not take into account virtual columns
+        /// (see also getSmallestColumn() in ReadFromMergeTree)
+        {
+            NameSet columns_without_virtual(columns_names.begin(), columns_names.end());
+            for (const auto & virtual_column : virtual_columns)
+                columns_without_virtual.erase(virtual_column);
+            has_explicit_columns = !columns_without_virtual.empty();
+        }
+    }
+
+    if (!has_explicit_columns)
     {
         NameAndTypePair additional_column_to_read;
 
