@@ -4861,9 +4861,13 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
                 LOG_TRACE(log, "Waiting for RestartingThread to startup table");
         }
 
-        std::lock_guard lock{flush_and_shutdown_mutex};
-        if (shutdown_prepared_called.load() || shutdown_called.load())
-            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot startup table because it is dropped");
+        auto lock = std::unique_lock<std::mutex>(flush_and_shutdown_mutex, std::defer_lock);
+        do
+        {
+            if (shutdown_prepared_called.load() || shutdown_called.load())
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot startup table because it is dropped");
+        }
+        while (!lock.try_lock());
 
         /// And this is just a callback
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()

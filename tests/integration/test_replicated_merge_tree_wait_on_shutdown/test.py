@@ -3,6 +3,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 from multiprocessing.dummy import Pool
 import time
 
@@ -54,9 +55,10 @@ def test_shutdown_and_wait(start_cluster):
         node1.query(f"INSERT INTO test_table VALUES ({value})")
 
     with PartitionManager() as pm:
+        assert node2.query("SELECT * FROM test_table") == "0\n"
         pm.partition_instances(node1, node2)
         # iptables rules must be applied immediately, but looks like sometimes they are not...
-        time.sleep(3)
+        assert_eq_with_retry(node1, "select count() from remote('node1,node2', 'system.one')", "1\n", settings={"skip_unavailable_shards": 1})
 
         p.map(insert, range(1, 50))
 
