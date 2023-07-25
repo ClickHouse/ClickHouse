@@ -41,7 +41,7 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args = {
             {"Value", nullptr, nullptr, nullptr},
-            {"precision", &isNativeInteger<IDataType>, &isColumnConst, "const Integer [0-77]"}
+            {"precision", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, {});
