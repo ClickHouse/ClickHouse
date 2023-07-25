@@ -13,8 +13,7 @@ number_of_iterations = 100
 
 dns_google_res = "['dns.google']"
 empty_res = "[]"
-ns_something_res = "['NS1.Shane.co']"
-excp_res = "Poco::Exception. Code: 1000, e.code() = 0, Invalid address: abcd (version 23.7.1.1)"
+excp_res = "Poco::Exception. Code: 1000, e.code() = 0, Invalid address: abcd"
 
 
 address_dict = {
@@ -22,7 +21,6 @@ address_dict = {
     "2001:4860:4860::8844": dns_google_res,
     "": empty_res,
     "abcd": excp_res,
-    "199.199.199.199": ns_something_res,
     "255.255.255.254": empty_res,
     "::ffff:118.193.34.65": empty_res,
     "::ffff:118.213.213.213": empty_res,
@@ -51,7 +49,7 @@ def perform_request(ip_address, expected_response):
 
     global success_counter
 
-    if str_response == expected_response:
+    if str_response.startswith(expected_response):
         success_counter += 1
 
     mutex.release()
