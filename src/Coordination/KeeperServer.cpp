@@ -39,7 +39,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
-    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
@@ -70,7 +69,7 @@ namespace
         auto raw_ssl_ctx = ssl_ctx->sslContext();
         assert(raw_ssl_ctx);
 
-        // asio will SSL_CTX_free context in desctructor,
+        // asio will SSL_CTX_free context in destructor,
         // so we need to make sure that that wouldn't actually destroy a context.
         SSL_CTX_up_ref(raw_ssl_ctx);
 
@@ -80,11 +79,11 @@ namespace
     void setSSLParams(nuraft::asio_service::options & asio_opts)
     {
         // In order to maintain uniformity with CH on how SSL is used by Keeper,
-        // we need to use same SSL_CTX configuration as rest of ClickHouse does.
-        // Since copying configuration from one SSL_CTX to another is hard, we are using same
-        // SSL_CTX as rest of CH does (via Poco).
+        // we need to use the same SSL_CTX configuration as the rest of ClickHouse does.
+        // Since copying the configuration from one SSL_CTX to another is hard,
+        // we are using the same SSL_CTX instance as the rest of CH does (via Poco).
         //
-        // OpenSSL explicitly prohibts sharing SSL_CTX by multiple threads, but BoringSSL allows it
+        // OpenSSL explicitly prohibits sharing SSL_CTX by multiple threads, but BoringSSL allows it
         // and states that SSL_CTX is thread-safe.
         asio_opts.enable_ssl_ = true;
         asio_opts.ssl_context_provider_server_ = getSslContext<SSLContext::Server>;
