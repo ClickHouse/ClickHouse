@@ -58,6 +58,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("backslash", "add a backslash at the end of each line of the formatted query")
             ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
+            ("hide-secrets", "nothing interesting")
         ;
 
         Settings cmd_settings;
