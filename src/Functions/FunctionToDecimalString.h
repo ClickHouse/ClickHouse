@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionToDecimalString : public IFunction
@@ -36,17 +37,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isNumber(*arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal first argument for formatDecimal function: got {}, expected numeric type",
-                            arguments[0]->getName());
+        FunctionArgumentDescriptors mandatory_args = {
+            {"Value", nullptr, nullptr, nullptr},
+            {"precision", &isNativeInteger<IDataType>, &isColumnConst, "const Integer [0-77]"}
+        };
 
-        if (!isUInt8(*arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal second argument for formatDecimal function: got {}, expected UInt8",
-                            arguments[1]->getName());
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, {});
 
         return std::make_shared<DataTypeString>();
     }
@@ -98,29 +96,6 @@ private:
         buf_to.finalize();
     }
 
-    template <typename FirstArgType>
-    void constantVector(const FirstArgType & value_from, const ColumnVector<UInt8>::Container & vec_precision,
-                        ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets) const
-    {
-        size_t input_rows_count = vec_precision.size();
-        result_offsets.resize(input_rows_count);
-
-        WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
-
-        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            if (vec_precision[i] > max_digits)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                    "Too many fractional digits requested, shall not be more than {}", max_digits);
-            format(value_from, buf_to, vec_precision[i]);
-            result_offsets[i] = buf_to.count();
-        }
-
-        buf_to.finalize();
-    }
-
     /// For operations with Decimal
     template <typename FirstArgVectorType>
     void vectorConstant(const FirstArgVectorType & vec_from, UInt8 precision,
@@ -162,29 +137,6 @@ private:
                 throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
                                     "Too many fractional digits requested for Decimal, must not be more than {}", max_digits);
             writeText(vec_from[i], from_scale, buf_to, true, true, vec_precision[i]);
-            writeChar(0, buf_to);
-            result_offsets[i] = buf_to.count();
-        }
-        buf_to.finalize();
-    }
-
-    template <typename FirstArgType>
-    void constantVector(const FirstArgType & value_from, const ColumnVector<UInt8>::Container & vec_precision,
-                        ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets, UInt8 from_scale) const
-    {
-        size_t input_rows_count = vec_precision.size();
-        result_offsets.resize(input_rows_count);
-
-        WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
-
-        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            if (vec_precision[i] > max_digits)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                    "Too many fractional digits requested for Decimal, must not be more than {}", max_digits);
-            writeText(value_from, from_scale, buf_to, true, true, vec_precision[i]);
             writeChar(0, buf_to);
             result_offsets[i] = buf_to.count();
         }
@@ -263,7 +215,6 @@ private:
     template <typename T>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
-        const auto * from_col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * precision_col = checkAndGetColumn<ColumnVector<UInt8>>(arguments[1].column.get());
         const auto * precision_col_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
 
@@ -284,8 +235,6 @@ private:
                 else
                     vectorVector(from_col->getData(), precision_col->getData(), result_chars, result_offsets, from_scale);
             }
-            else if (from_col_const)
-                constantVector(from_col_const->template getValue<T>(), precision_col->getData(), result_chars, result_offsets, from_scale);
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
         }
@@ -299,8 +248,6 @@ private:
                 else
                     vectorVector(from_col->getData(), precision_col->getData(), result_chars, result_offsets);
             }
-            else if (from_col_const)
-                constantVector(from_col_const->template getValue<T>(), precision_col->getData(), result_chars, result_offsets);
             else
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
         }
