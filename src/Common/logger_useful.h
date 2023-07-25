@@ -52,7 +52,7 @@ namespace
 #define LINE_NUM_AS_STRING_IMPL2(x) #x
 #define LINE_NUM_AS_STRING_IMPL(x) LINE_NUM_AS_STRING_IMPL2(x)
 #define LINE_NUM_AS_STRING LINE_NUM_AS_STRING_IMPL(__LINE__)
-#define MESSAGE_FOR_EXCEPTION_ON_LOGGING "Failed to write a log message: " __FILE__ ":" LINE_NUM_AS_STRING
+#define MESSAGE_FOR_EXCEPTION_ON_LOGGING "Failed to write a log message: " __FILE__ ":" LINE_NUM_AS_STRING "\n"
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
@@ -65,34 +65,48 @@ namespace
     auto _logger = ::getLogger(logger);                                                                             \
     const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&                                      \
         (DB::CurrentThread::get().getClientLogsLevel() >= (priority));                                              \
-    if (_is_clients_log || _logger->is((PRIORITY)))                                                                 \
-    {                                                                                                               \
-        try                                                                                                         \
-        {                                                                                                           \
-            constexpr size_t nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                 \
-            constexpr bool looks_like_format_string =                                                               \
-                    NeedCheckNumberOfFormatArgs<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>::v;        \
-            if constexpr (looks_like_format_string)                                                                 \
-                formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), nargs - 1);                               \
+    if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
+        break;                                                                                                      \
                                                                                                                     \
-            std::string formatted_message = nargs == 1 ? firstArg(__VA_ARGS__) : fmt::format(__VA_ARGS__);          \
-            if (auto _channel = _logger->getChannel())                                                              \
-            {                                                                                                       \
-                std::string_view format_string;                                                                     \
-                if constexpr (looks_like_format_string)                                                             \
-                    format_string = tryGetStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__));                      \
-                std::string file_function = __FILE__ "; ";                                                          \
-                file_function += __PRETTY_FUNCTION__;                                                               \
-                Poco::Message poco_message(_logger->name(), formatted_message,                                      \
-                    (PRIORITY), file_function.c_str(), __LINE__, format_string);                                    \
-                _channel->log(poco_message);                                                                        \
-            }                                                                                                       \
-            ProfileEvents::incrementForLogMessage(PRIORITY);                                                        \
-        }                                                                                                           \
-        catch (...)                                                                                                 \
+    try                                                                                                             \
+    {                                                                                                               \
+        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
+        auto _channel = _logger->getChannel();                                                                      \
+        if (!_channel)                                                                                              \
+            break;                                                                                                  \
+                                                                                                                    \
+        constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
+        using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
+                                                                                                                    \
+        std::string_view _format_string;                                                                            \
+        std::string _formatted_message;                                                                             \
+                                                                                                                    \
+        if constexpr (LogTypeInfo::is_static)                                                                       \
         {                                                                                                           \
-            ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+            formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
+            _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
         }                                                                                                           \
+                                                                                                                    \
+        constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                \
+        if constexpr (is_preformatted_message)                                                                      \
+        {                                                                                                           \
+            static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
+            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string);  \
+        }                                                                                                           \
+        else                                                                                                        \
+        {                                                                                                           \
+             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : fmt::format(__VA_ARGS__);                   \
+        }                                                                                                           \
+                                                                                                                    \
+        std::string _file_function = __FILE__ "; ";                                                                 \
+        _file_function += __PRETTY_FUNCTION__;                                                                      \
+        Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
+            (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
+        _channel->log(_poco_message);                                                                               \
+    }                                                                                                               \
+    catch (...)                                                                                                     \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
     }                                                                                                               \
 } while (false)
 
