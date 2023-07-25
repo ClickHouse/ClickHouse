@@ -58,7 +58,12 @@ def test_shutdown_and_wait(start_cluster):
         assert node2.query("SELECT * FROM test_table") == "0\n"
         pm.partition_instances(node1, node2)
         # iptables rules must be applied immediately, but looks like sometimes they are not...
-        assert_eq_with_retry(node1, "select count() from remote('node1,node2', 'system.one')", "1\n", settings={"skip_unavailable_shards": 1})
+        assert_eq_with_retry(
+            node1,
+            "select count() from remote('node1,node2', 'system.one')",
+            "1\n",
+            settings={"skip_unavailable_shards": 1},
+        )
 
         p.map(insert, range(1, 50))
 
