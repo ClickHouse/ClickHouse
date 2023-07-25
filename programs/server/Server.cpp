@@ -128,6 +128,10 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+#include <incbin.h>
+/// A minimal file used when the server is run without installation
+INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -393,6 +397,7 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
+    ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -1106,8 +1111,10 @@ try
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
-    if (!key_path.empty()) extra_paths.emplace_back(key_path);
+    if (!cert_path.empty())
+        extra_paths.emplace_back(cert_path);
+    if (!key_path.empty())
+        extra_paths.emplace_back(key_path);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
@@ -1487,16 +1494,18 @@ try
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
-    const Settings & settings = global_context->getSettingsRef();
 
     /// Initialize background executors after we load default_profile config.
     /// This is needed to load proper values of background_pool_size etc.
     global_context->initializeBackgroundExecutorsIfNeeded();
 
-    if (settings.async_insert_threads)
+    if (server_settings.async_insert_threads)
+    {
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            settings.async_insert_threads));
+            server_settings.async_insert_threads,
+            server_settings.async_insert_queue_flush_on_shutdown));
+    }
 
     size_t mark_cache_size = server_settings.mark_cache_size;
     String mark_cache_policy = server_settings.mark_cache_policy;
