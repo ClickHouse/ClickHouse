@@ -1037,7 +1037,7 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         code = zookeeper->tryMulti(ops, res);
         if (code != Coordination::Error::ZOK)
             LOG_WARNING(logger, "Cannot quickly remove nodes without children: {} (replica: {}). Will remove recursively.",
-                        Coordination::errorMessage(code), remote_replica_path);
+                        code, remote_replica_path);
 
         /// And finally remove everything else recursively
         /// It may left some garbage if replica_path subtree is concurrently modified
@@ -1145,7 +1145,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     auto code = zookeeper->tryMulti(ops, res);
     if (code != Coordination::Error::ZOK)
         LOG_WARNING(logger, "Cannot quickly remove nodes without children: {} (table: {}). Will remove recursively.",
-                    Coordination::errorMessage(code), zookeeper_path);
+                    code, zookeeper_path);
 
     Strings children;
     code = zookeeper->tryGetChildren(zookeeper_path, children);
@@ -1896,7 +1896,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         else if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
                         {
                             LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part {} as failed. Code: {}",
-                                      entry.new_part_name, Coordination::errorMessage(code));
+                                      entry.new_part_name, code);
                         }
                         else
                             throw Coordination::Exception(code);
@@ -3104,7 +3104,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
         if (get_is_lost.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", source_replica_name, Coordination::errorMessage(get_is_lost.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", source_replica_name, get_is_lost.error);
             continue;
         }
         else if (get_is_lost.data != "0")
@@ -3115,12 +3115,12 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
         if (get_log_pointer.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", source_replica_name, Coordination::errorMessage(get_log_pointer.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", source_replica_name, get_log_pointer.error);
             continue;
         }
         if (get_queue.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", source_replica_name, Coordination::errorMessage(get_queue.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", source_replica_name, get_queue.error);
             continue;
         }
 
@@ -3467,9 +3467,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merge_pred.emplace(queue.getMergePredicate(zookeeper, partitions_to_merge_in));
         }
 
+        String out_reason;
         if (can_assign_merge &&
             merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, *merge_pred,
-                                              merge_with_ttl_allowed, NO_TRANSACTION_PTR, nullptr, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
+                merge_with_ttl_allowed, NO_TRANSACTION_PTR, out_reason, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
         {
             create_result = createLogEntryToMergeParts(
                 zookeeper,
@@ -4901,67 +4902,102 @@ void StorageReplicatedMergeTree::read(
         snapshot_data.alter_conversions = {};
     });
 
-    /** The `select_sequential_consistency` setting has two meanings:
-    * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
-    * 2. Do not read parts that have not yet been written to the quorum of the replicas.
-    * For this you have to synchronously go to ZooKeeper.
-    */
-    if (local_context->getSettingsRef().select_sequential_consistency)
-    {
-        auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
-        if (auto plan = reader.read(
-                column_names, storage_snapshot, query_info, local_context,
-                max_block_size, num_streams, processed_stage, std::move(max_added_blocks), /*enable_parallel_reading*/false))
-            query_plan = std::move(*plan);
-        return;
-    }
+    const auto & settings = local_context->getSettingsRef();
+
+    /// The `select_sequential_consistency` setting has two meanings:
+    /// 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
+    /// 2. Do not read parts that have not yet been written to the quorum of the replicas.
+    /// For this you have to synchronously go to ZooKeeper.
+    if (settings.select_sequential_consistency)
+        return readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 
     if (local_context->canUseParallelReplicasOnInitiator())
+        return readParallelReplicasImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+
+    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+}
+
+void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
+    auto plan = reader.read(column_names, storage_snapshot, query_info, local_context,
+            max_block_size, num_streams, processed_stage, std::move(max_added_blocks),
+            /* enable_parallel_reading= */false);
+    if (plan)
+        query_plan = std::move(*plan);
+}
+
+void StorageReplicatedMergeTree::readParallelReplicasImpl(
+    QueryPlan & query_plan,
+    const Names & /*column_names*/,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t /*max_block_size*/,
+    const size_t /*num_streams*/)
+{
+    auto table_id = getStorageID();
+
+    auto parallel_replicas_cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+
+    ASTPtr modified_query_ast;
+    Block header;
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        auto table_id = getStorageID();
+        auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
 
-        ASTPtr modified_query_ast;
-
-        Block header;
-
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
-        {
-            auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
-
-            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
-            modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
-        }
-        else
-        {
-            modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
-                table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
-            header
-                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-        }
-
-        auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
-
-        ClusterProxy::SelectStreamFactory select_stream_factory =
-            ClusterProxy::SelectStreamFactory(
-                header,
-                {},
-                storage_snapshot,
-                processed_stage);
-
-        ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,
-            select_stream_factory, modified_query_ast,
-            local_context, query_info, cluster);
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+            modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+        modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
     }
     else
     {
-        if (auto plan = reader.read(
-            column_names, storage_snapshot, query_info,
-            local_context, max_block_size, num_streams,
-            processed_stage, nullptr, /*enable_parallel_reading*/local_context->canUseParallelReplicasOnFollower()))
-            query_plan = std::move(*plan);
+        modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
+            table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+        header
+            = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
+
+    ClusterProxy::SelectStreamFactory select_stream_factory = ClusterProxy::SelectStreamFactory(
+        header,
+        {},
+        storage_snapshot,
+        processed_stage);
+
+    ClusterProxy::executeQueryWithParallelReplicas(
+        query_plan, getStorageID(),
+        /* table_func_ptr= */ nullptr,
+        select_stream_factory, modified_query_ast,
+        local_context, query_info, parallel_replicas_cluster);
+}
+
+void StorageReplicatedMergeTree::readLocalImpl(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const size_t num_streams)
+{
+    auto plan = reader.read(
+        column_names, storage_snapshot, query_info,
+        local_context, max_block_size, num_streams,
+        processed_stage,
+        /* max_block_numbers_to_read= */ nullptr,
+        /* enable_parallel_reading= */ local_context->canUseParallelReplicasOnFollower());
+    if (plan)
+        query_plan = std::move(*plan);
 }
 
 template <class Func>
@@ -5074,8 +5110,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     String query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-        ast_format_settings.always_quote_identifiers = true;
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
         query.IAST::format(ast_format_settings);
         query_str = buf.str();
     }
@@ -5233,13 +5268,13 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 select_decision = merger_mutator.selectPartsToMerge(
                     future_merged_part, /* aggressive */ true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool,
-                    can_merge, /* merge_with_ttl_allowed */ false, NO_TRANSACTION_PTR, &disable_reason);
+                    can_merge, /* merge_with_ttl_allowed */ false, NO_TRANSACTION_PTR, disable_reason);
             }
             else
             {
                 select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, can_merge, partition_id, final, metadata_snapshot, NO_TRANSACTION_PTR,
-                    &disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
+                    disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
             }
 
             /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
@@ -7252,7 +7287,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     {
         for (size_t i = 0; i < delete_requests.size(); ++i)
             if (delete_responses[i]->error != Coordination::Error::ZOK)
-                LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), Coordination::errorMessage(delete_responses[i]->error));
+                LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), delete_responses[i]->error);
     }
 
     LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {}", delete_requests.size(), partition_id);
@@ -7778,7 +7813,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
         String out_reason;
-        if (!merge_pred.canMergeSinglePart(part, &out_reason))
+        if (!merge_pred.canMergeSinglePart(part, out_reason))
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason);
     }
 
@@ -8026,14 +8061,14 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
         /// finished the merge.
         String out_reason;
-        if (!merge_pred.canMergeSinglePart(part, &out_reason))
+        if (!merge_pred.canMergeSinglePart(part, out_reason))
         {
             if (throw_if_noop)
                 throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 
-        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
+        if (merge_pred.partParticipatesInReplaceRange(part, out_reason))
         {
             if (throw_if_noop)
                 throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
@@ -8768,7 +8803,7 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
             zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
             if (code != Coordination::Error::ZOK)
             {
-                LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+                LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), code);
                 return {true, std::nullopt};
             }
 

@@ -495,11 +495,10 @@ void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, Lo
     tryConnectToZooKeeperAndInitDatabase(mode);
 }
 
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     beforeLoadingMetadata(local_context, mode);
-    DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
+    DatabaseAtomic::loadStoredObjects(local_context, mode);
 }
 
 UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const

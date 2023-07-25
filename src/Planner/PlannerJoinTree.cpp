@@ -182,6 +182,9 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node.getStorage();
+    if (!storage->supportsTrivialCountOptimization())
+        return false;
+
     auto storage_id = storage->getStorageID();
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(),
         storage_id.getTableName(),
