@@ -250,7 +250,7 @@ private:
     std::invoke_result_t<RequestFn, RequestType>
     doRequest(const RequestType & request, RequestFn request_fn) const;
 
-    template <typename RequestType, typename RequestFn>
+    template <bool IsReadMethod, typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
     doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const;
 
