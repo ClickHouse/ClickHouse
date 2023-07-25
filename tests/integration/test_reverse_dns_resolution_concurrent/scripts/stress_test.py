@@ -36,7 +36,7 @@ def perform_request(ip_address, expected_response):
     crl.setopt(crl.WRITEDATA, buffer)
     crl.setopt(
         crl.URL,
-        f"http://{server_ip}:8123/?query=select+reverseDNSQuery('{ip_address}')"
+        f"http://{server_ip}:8123/?query=select+reverseDNSQuery('{ip_address}')",
     )
 
     crl.perform()
