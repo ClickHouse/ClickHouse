@@ -5,7 +5,7 @@ slug: /en/guides/developer/transactional
 
 ## Case 1: INSERT into one partition, of one table, of the MergeTree* family
 
-This is transactional (ACID) if the number of rows inserted is less than or equal to `max_insert_block_size rows`, and in the case of data in TSV, TKSV, CSV, or JSONEachRow format if the number of bytes is less than `min_chunk_bytes_for_parallel_parsing`:
+This is transactional (ACID) if the inserted rows are packed and inserted as a single block (see Notes):
 - Atomic: an INSERT succeeds or is rejected as a whole: if a confirmation is sent to the client, then all rows were inserted; if an error is sent to the client, then no rows were inserted.
 - Consistent: if there are no table constraints violated, then all rows in an INSERT are inserted and the INSERT succeeds; if constraints are violated, then no rows are inserted.
 - Isolated: concurrent clients observe a consistent snapshot of the table–the state of the table either as it was before the INSERT attempt, or after the successful INSERT; no partial state is seen
@@ -33,14 +33,16 @@ Same as Case 1 above, with this detail:
 - atomicity is ensured even if `async_insert` is enabled and `wait_for_async_insert` is set to 1 (the default), but if `wait_for_async_insert` is set to 0, then atomicity is not ensured.
 
 ## Notes
-- `max_insert_block_size` is 1 000 000 by default and can be adjusted as needed
-- `min_chunk_bytes_for_parallel_parsing` is 1 000 000 by default and can be adjusted as needed
+- rows inserted from the client in some data format are packed into a single block when:
+  - the insert format is row-based (like CSV, TSV, Values, JSONEachRow, etc) and the data contains less then `max_insert_block_size` rows (~1 000 000 by default) or less then `min_chunk_bytes_for_parallel_parsing` bytes (10 MB by default) in case of parallel parsing is used (enabled by default)
+  - the insert format is column-based (like Native, Parquet, ORC, etc) and the data contains only one block of data
+- the size of the inserted block in general may depend on many settings (for example: `max_block_size`, `max_insert_block_size`, `min_insert_block_size_rows`, `min_insert_block_size_bytes`, `preferred_block_size_bytes`, etc)
 - if the client did not receive an answer from the server, the client does not know if the transaction succeeded, and it can repeat the transaction, using exactly-once insertion properties
 - ClickHouse is using MVCC with snapshot isolation internally
 - all ACID properties are valid even in the case of server kill/crash
 - either insert_quorum into different AZ or fsync should be enabled to ensure durable inserts in the typical setup
 - "consistency" in ACID terms does not cover the semantics of distributed systems, see https://jepsen.io/consistency which is controlled by different settings (select_sequential_consistency)
-- this explanation does not cover a new transactions feature that allow to have full-featured transactions over multiple tables, materialized views, for multiple SELECTs, etc. (see the next section on Transactions, Commit, and Rollback).
+- this explanation does not cover a new transactions feature that allow to have full-featured transactions over multiple tables, materialized views, for multiple SELECTs, etc. (see the next section on Transactions, Commit, and Rollback)
 
 ## Transactions, Commit, and Rollback
 
