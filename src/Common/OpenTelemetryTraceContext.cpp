@@ -2,11 +2,13 @@
 
 #include <random>
 #include <base/getThreadId.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <base/hex.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Logger.h>
 
 #include <Common/AsyncTaskExecutor.h>
 
@@ -291,6 +293,12 @@ TracingContextHolder::TracingContextHolder(
     const Settings * settings_ptr,
     const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
 {
+    LOG_TEST(&Poco::Logger::get(__FILE__), "TracingContextHolder: name={}, current_trace_context(enabled={}, trace_id={}, span_id={})",
+        _operation_name,
+        current_trace_context->isTraceEnabled(),
+        toString(current_trace_context->trace_id),
+        current_trace_context->span_id);
+
     /// Use try-catch to make sure the ctor is exception safe.
     /// If any exception is raised during the construction, the tracing is not enabled on current thread.
     try
@@ -368,6 +376,14 @@ TracingContextHolder::TracingContextHolder(
 
 TracingContextHolder::~TracingContextHolder()
 {
+    LOG_TEST(&Poco::Logger::get(__FILE__), "~TracingContextHolder: current_Trace_context(enabled={}, trace_id={}, span_id={}), root_span(enabled={}, trace_id={}, parent_span_id={})",
+        current_trace_context->isTraceEnabled(),
+        toString(current_trace_context->trace_id),
+        current_trace_context->span_id,
+        this->root_span.isTraceEnabled(),
+        this->root_span.trace_id,
+        this->root_span.parent_span_id);
+
     if (!this->root_span.isTraceEnabled())
     {
         return;
