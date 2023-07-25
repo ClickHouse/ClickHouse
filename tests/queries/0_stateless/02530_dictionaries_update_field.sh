@@ -54,13 +54,13 @@ for layout in "${layouts[@]}"; do
             SELECT key, value FROM $dictionary_name ORDER BY key ASC;
 
             INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-            SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+            SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 
             SELECT key, value FROM $dictionary_name ORDER BY key ASC;
 
             INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
             INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-            SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+            SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 
             SELECT key, value FROM $dictionary_name ORDER BY key ASC;
             -- { echoOff }
