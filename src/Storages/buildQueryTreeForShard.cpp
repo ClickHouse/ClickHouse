@@ -1,3 +1,4 @@
+
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -15,6 +16,8 @@
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -276,11 +279,14 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
     auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
-    auto io = interpreter.execute();
-    io.pipeline.complete(std::move(table_out));
-    CompletedPipelineExecutor executor(io.pipeline);
-    executor.execute();
 
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
+    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+
+    pipeline.complete(std::move(table_out));
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 
     return temporary_table_expression_node;
@@ -291,14 +297,13 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeNodePtr query_tree_to_modify)
 {
     auto & planner_context = query_info.planner_context;
-    const auto & query_context = planner_context->getQueryContext();
 
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
 
     const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
 
-    DistributedProductModeRewriteInJoinVisitor visitor(query_info.planner_context->getQueryContext());
+    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext());
     visitor.visit(query_tree_to_modify);
 
     auto replacement_map = visitor.getReplacementMap();

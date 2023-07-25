@@ -114,7 +114,10 @@ def node_update_config(mode, setting, value=None):
 
 
 def assert_took(took, should_took):
-    assert took >= should_took[0] * 0.9 and took < should_took[1]
+    # we need to decrease the lower limit because the server limits could
+    # be enforced by throttling some server background IO instead of query IO
+    # and we have no control over it
+    assert took >= should_took[0] * 0.85 and took < should_took[1]
 
 
 @pytest.mark.parametrize(

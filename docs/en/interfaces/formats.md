@@ -76,6 +76,7 @@ The supported formats are:
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔      |
 | [Native](#native)                                                                         | ✔    | ✔      |
 | [Null](#null)                                                                             | ✗    | ✔      |
 | [XML](#xml)                                                                               | ✗    | ✔      |
@@ -471,6 +472,8 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
 - [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
+- [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values. Default value - `false`.
+- [input_format_csv_use_default_on_bad_values](/docs/en/operations/settings/settings-formats.md/#input_format_csv_use_default_on_bad_values) - Allow to set default value to column when CSV field deserialization failed on bad value. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -1514,6 +1517,23 @@ If setting [input_format_with_types_use_header](/docs/en/operations/settings/set
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
 
+## RowBinaryWithDefaults {#rowbinarywithdefaults}
+
+Similar to [RowBinary](#rowbinary), but with an extra byte before each column that indicates if default value should be used.
+
+Examples:
+
+```sql
+:) select * from format('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+For column `x` there is only one byte `01` that indicates that default value should be used and no other data after this byte is provided.
+For column `y` data starts with byte `00` that indicates that column has actual value that should be read from the subsequent data `01000000`.
+
 ## RowBinary format settings {#row-binary-format-settings}
 
 - [format_binary_max_string_size](/docs/en/operations/settings/settings-formats.md/#format_binary_max_string_size) - The maximum allowed size for String in RowBinary format. Default value - `1GiB`.
@@ -2454,18 +2474,22 @@ In this format, all input data is read to a single value. It is possible to pars
 The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
 Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparatedraw).
+
 `RawBLOB`:
 - data is output in binary format, no escaping;
 - there are no delimiters between values;
 - no newline at the end of each value.
-[TabSeparatedRaw] (#tabseparatedraw):
+
+`TabSeparatedRaw`:
 - data is output without escaping;
 - the rows contain values separated by tabs;
 - there is a line feed after the last value in every row.
 
 The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
+
 `RawBLOB`:
 - String fields are output without being prefixed by length.
+
 `RowBinary`:
 - String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
