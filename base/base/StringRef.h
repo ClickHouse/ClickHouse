@@ -8,6 +8,7 @@
 #include <functional>
 #include <iosfwd>
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -273,6 +274,8 @@ struct CRC32Hash
 
         if (size == 0)
             return 0;
+
+        chassert(pos);
 
         if (size < 8)
         {
