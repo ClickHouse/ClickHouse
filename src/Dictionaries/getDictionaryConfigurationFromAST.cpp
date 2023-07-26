@@ -322,7 +322,7 @@ void buildSingleAttribute(
 
 
 /** Transforms
-  *   PRIMARY KEY Attr1 ,..., AttrN
+  *   PRIMARY KEY Attr1, ..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
   * or

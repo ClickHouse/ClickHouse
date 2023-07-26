@@ -182,7 +182,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 Синтаксис:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property;
+ALTER TABLE table_name MODIFY COLUMN column_name REMOVE property;
 ```
 
 **Пример**
