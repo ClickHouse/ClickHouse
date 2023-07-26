@@ -11,8 +11,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/ConstantNode.h>
 
 
 namespace DB
