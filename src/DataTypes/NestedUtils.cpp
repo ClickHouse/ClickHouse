@@ -7,11 +7,13 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 
@@ -125,8 +127,18 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 {
     Block res;
 
-    for (const auto & elem : block)
+    for (const auto & col: block)
     {
+        auto elem = col;
+        DB::ColumnPtr null_map_col = nullptr;
+        if (col.type->isNullable())
+        {
+            elem.type = removeNullable(col.type);
+
+            const auto * nullable_col = typeid_cast<const ColumnNullable *>(elem.column->getPtr().get());
+            elem.column = nullable_col->getNestedColumnPtr();
+            null_map_col = nullable_col->getNullMapColumnPtr();
+        }
         if (isNested(elem.type))
         {
             const DataTypeArray * type_arr = assert_cast<const DataTypeArray *>(elem.type.get());
@@ -154,12 +166,20 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
                     String nested_name = concatenateName(elem.name, names[i]);
                     ColumnPtr column_array_of_element = ColumnArray::create(element_columns[i], column_offsets);
 
-                    res.insert(ColumnWithTypeAndName(
+                    auto new_elem = ColumnWithTypeAndName(
                         is_const
                             ? ColumnConst::create(column_array_of_element, block.rows())
                             : column_array_of_element,
                         std::make_shared<DataTypeArray>(element_types[i]),
-                        nested_name));
+                        nested_name);
+
+                    if (null_map_col)
+                    {
+                        new_elem.type = std::make_shared<DB::DataTypeNullable>(new_elem.type);
+                        new_elem.column = DB::ColumnNullable::create(new_elem.column, null_map_col);
+                    }
+
+                    res.insert(new_elem);
                 }
             }
             else
@@ -181,7 +201,14 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
                 {
                     const auto & element_column = column_tuple->getColumn(i);
                     String nested_name = concatenateName(elem.name, names[i]);
-                    res.insert(ColumnWithTypeAndName(element_column.getPtr(), element_types[i], nested_name));
+                    auto new_elem = ColumnWithTypeAndName(element_column.getPtr(), element_types[i], nested_name);
+                    if (null_map_col && !element_types[i]->isNullable())
+                    {
+                        new_elem.column = DB::ColumnNullable::create(new_elem.column, null_map_col);
+                        new_elem.type = std::make_shared<DB::DataTypeNullable>(new_elem.type);
+                    }
+
+                    res.insert(new_elem);
                 }
             }
             else
