@@ -211,6 +211,7 @@ Decrypted
 Deduplicate
 Deduplication
 DelayedInserts
+delim
 DeliveryTag
 DeltaLake
 Denormalize
@@ -762,6 +763,7 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -836,6 +838,8 @@ Subexpression
 Submodules
 Subqueries
 Substrings
+substringIndex
+substringIndexUTF
 SummingMergeTree
 SuperSet
 Superset
@@ -991,6 +995,7 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1427,6 +1432,7 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
+firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
@@ -1536,6 +1542,10 @@ hadoop
 halfMD
 halfday
 hardlinks
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF
+hasSubsequenceUTF
 hasAll
 hasAny
 hasColumnInTable
@@ -2123,6 +2133,7 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
+rowbinarywithdefaults
 rsync
 rsyslog
 runnable
@@ -2243,6 +2254,7 @@ subquery
 subranges
 subreddits
 subseconds
+subsequence
 substring
 substringUTF
 substrings
@@ -2544,3 +2556,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+curdate

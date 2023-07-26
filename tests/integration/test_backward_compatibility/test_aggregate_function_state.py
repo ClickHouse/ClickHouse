@@ -10,6 +10,7 @@ node1 = cluster.add_instance(
     tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -18,9 +19,10 @@ node2 = cluster.add_instance(
     tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False)
-node4 = cluster.add_instance("node4", with_zookeeper=False)
+node3 = cluster.add_instance("node3", with_zookeeper=False, allow_analyzer=False)
+node4 = cluster.add_instance("node4", with_zookeeper=False, allow_analyzer=False)
 
 
 @pytest.fixture(scope="module")
