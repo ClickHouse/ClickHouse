@@ -24,24 +24,30 @@ def started_cluster():
         cluster.shutdown()
 
 
-def keeper_query(query):
-    return CommandRequest(
-        [
-            started_cluster.server_bin_path,
-            "keeper-client",
-            "--host",
-            str(cluster.get_instance_ip("zoo1")),
-            "--port",
-            str(cluster.zookeeper_port),
-            "-q",
-            query,
-        ],
-        stdin="",
-    )
+class KeeperClient:
+    def __init__(self, started_cluster: ClickHouseCluster):
+        self.cluster = started_cluster
+
+    def query(self, query: str):
+        return CommandRequest(
+            [
+                self.cluster.server_bin_path,
+                "keeper-client",
+                "--host",
+                str(cluster.get_instance_ip("zoo1")),
+                "--port",
+                str(cluster.zookeeper_port),
+                "-q",
+                query,
+            ],
+            stdin="",
+        )
 
 
-def test_big_family():
-    command = keeper_query(
+def test_big_family(started_cluster: ClickHouseCluster):
+    client = KeeperClient(started_cluster)
+
+    command = client.query(
         "create test_big_family foo;"
         "create test_big_family/1 foo;"
         "create test_big_family/1/1 foo;"
@@ -70,7 +76,7 @@ def test_big_family():
         ]
     )
 
-    command = keeper_query("find_big_family test_big_family 1;")
+    command = client.query("find_big_family test_big_family 1;")
 
     assert command.get_answer() == TSV(
         [
@@ -79,8 +85,10 @@ def test_big_family():
     )
 
 
-def test_find_super_nodes():
-    command = keeper_query(
+def test_find_super_nodes(started_cluster: ClickHouseCluster):
+    client = KeeperClient(started_cluster)
+
+    command = client.query(
         "create test_find_super_nodes/1 foo;"
         "create test_find_super_nodes/1/1 foo;"
         "create test_find_super_nodes/1/2 foo;"
@@ -103,8 +111,10 @@ def test_find_super_nodes():
     )
 
 
-def test_delete_stable_backups():
-    command = keeper_query(
+def test_delete_stable_backups(started_cluster: ClickHouseCluster):
+    client = KeeperClient(started_cluster)
+
+    command = client.query(
         "create /clickhouse foo;"
         "create /clickhouse/backups foo;"
         "create /clickhouse/backups/1 foo;"
@@ -128,8 +138,10 @@ def test_delete_stable_backups():
     )
 
 
-def test_base_commands():
-    command = keeper_query(
+def test_base_commands(started_cluster: ClickHouseCluster):
+    client = KeeperClient(started_cluster)
+
+    command = client.query(
         "create test_create_zk_node1 testvalue1;"
         "create test_create_zk_node_2 testvalue2;"
         "get test_create_zk_node1;"
@@ -138,7 +150,8 @@ def test_base_commands():
     assert command.get_answer() == "testvalue1\n"
 
 
-def test_four_letter_word_commands():
-    command = keeper_query("ruok")
+def test_four_letter_word_commands(started_cluster: ClickHouseCluster):
+    client = KeeperClient(started_cluster)
 
+    command = client.query("ruok")
     assert command.get_answer() == "imok\n"
