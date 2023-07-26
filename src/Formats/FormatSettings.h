@@ -77,6 +77,17 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
+    enum class IntervalOutputFormat
+    {
+        Kusto,
+        Numeric
+    };
+
+    struct
+    {
+        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
+    } interval;
+
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
 
@@ -141,6 +152,7 @@ struct FormatSettings
         bool trim_whitespaces = true;
         bool allow_whitespace_or_tab_as_delimiter = false;
         bool allow_variable_number_of_columns = false;
+        bool use_default_on_bad_values = false;
     } csv;
 
     struct HiveText

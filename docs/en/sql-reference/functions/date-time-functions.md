@@ -694,9 +694,13 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works exactly like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
+The mode argument works like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
 
 `toISOYear()` is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+
+:::warning
+The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
+:::
 
 **Syntax**
 
@@ -707,13 +711,13 @@ toYearWeek(t[, mode[, timezone]])
 **Example**
 
 ``` sql
-SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9, toYearWeek(toDate('2022-01-01')) AS prev_yearWeek;
 ```
 
 ``` text
-┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
-│ 2016-12-27 │    201652 │    201652 │    201701 │
-└────────────┴───────────┴───────────┴───────────┘
+┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┬─prev_yearWeek─┐
+│ 2016-12-27 │    201652 │    201652 │    201701 │        202152 │
+└────────────┴───────────┴───────────┴───────────┴───────────────┘
 ```
 
 ## age
@@ -1134,6 +1138,8 @@ Result:
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
+Alias: `current_timestamp`.
+
 **Syntax**
 
 ``` sql
@@ -1263,6 +1269,8 @@ Result:
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
+
+Aliases: `curdate`, `current_date`.
 
 ## yesterday
 
@@ -1441,7 +1449,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%i %p        | 10:30 PM   |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
 | %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |

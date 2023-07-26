@@ -39,7 +39,7 @@ client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part SYNC")
 
 
 # generate data and push to queue
-def generate_data(q, total_number):
+def generate_data(q, total_number, use_token):
     old_data = []
     max_chunk_size = 30
     partitions = ["2022-11-11 10:10:10", "2022-12-12 10:10:10"]
@@ -63,12 +63,16 @@ def generate_data(q, total_number):
             end = start + chunk_size
             if end > total_number:
                 end = total_number
+
+            token = ""
             for i in range(start, end + 1):
                 partition = partitions[random.randint(0, 1)]
                 insert_stmt += "('{}', {}),".format(partition, i)
+                if use_token:
+                    token = str(i)
             insert_stmt = insert_stmt[:-1]
-            q.put(insert_stmt)
-            old_data.append(insert_stmt)
+            q.put((insert_stmt, token))
+            old_data.append((insert_stmt, token))
             last_number = end
             if end >= total_number:
                 break
@@ -80,13 +84,14 @@ def fetch_and_insert_data(q, client):
     while True:
         insert = q.get()
         client.query(
-            insert,
+            insert[0],
             settings={
                 "async_insert": 1,
                 "async_insert_deduplicate": 1,
                 "wait_for_async_insert": 0,
                 "async_insert_busy_timeout_ms": 1500,
                 "insert_keeper_fault_injection_probability": 0,
+                "insert_deduplication_token": insert[1],
             },
         )
         q.task_done()
@@ -110,7 +115,11 @@ ORDER BY (KeyID, EventDate) SETTINGS use_async_block_ids_cache = 1
 q = queue.Queue(100)
 total_number = 10000
 
-gen = Thread(target=generate_data, args=[q, total_number])
+use_token = False
+if sys.argv[-1] == "token":
+    use_token = True
+
+gen = Thread(target=generate_data, args=[q, total_number, use_token])
 gen.start()
 
 for i in range(3):
