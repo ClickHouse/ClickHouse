@@ -2,6 +2,10 @@
 
 DROP TABLE IF EXISTS t_refcount SYNC;
 
+-- Names of parts (on which this test depends)
+-- can differ in case of fault injection.
+SET insert_keeper_fault_injection_probability = 0.0;
+
 CREATE TABLE t_refcount (id UInt64, v UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/test/{database}/t_refcount', '1')
 ORDER BY id PARTITION BY id % 2
