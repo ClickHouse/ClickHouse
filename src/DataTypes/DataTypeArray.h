@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -15,6 +16,8 @@ private:
     DataTypePtr nested;
 
 public:
+    using FieldType = Array;
+    using ColumnType = ColumnArray;
     static constexpr bool is_parametric = true;
 
     explicit DataTypeArray(const DataTypePtr & nested_);
@@ -41,6 +44,8 @@ public:
     }
 
     MutableColumnPtr createColumn() const override;
+    
+    MutableColumnPtr createColumnConst(size_t size, const Field & field) const;
 
     Field getDefault() const override;
 
@@ -66,5 +71,13 @@ public:
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
 };
+
+template <typename DataType> inline constexpr bool IsDataTypeArray() {
+    return false;
+}
+
+template <> inline constexpr bool IsDataTypeArray<DataTypeArray>() {
+    return std::is_same_v<DataTypeArray, class Up>;
+}
 
 }
