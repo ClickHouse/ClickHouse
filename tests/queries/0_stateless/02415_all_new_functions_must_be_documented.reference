@@ -238,10 +238,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-detectCharset
-detectLanguageUnknown
-detectProgrammingLanguage
-detectTonality
 divide
 dotProduct
 dumpColumnStructure
@@ -344,9 +340,12 @@ has
 hasAll
 hasAny
 hasColumnInTable
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF8
+hasSubsequenceUTF8
 hasSubstr
 hasThreadFuzzer
-hashid
 hex
 hiveHash
 hop
@@ -668,6 +667,8 @@ sqrt
 startsWith
 subBitmap
 substring
+substringIndex
+substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours

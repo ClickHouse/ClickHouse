@@ -60,7 +60,7 @@ public:
 
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
         /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which will look ugly in
-        /// the SYSTEM.QUERY_CACHE.
+        /// SYSTEM.QUERY_CACHE.
         const String query_string;
 
         /// Ctor to construct a Key for writing into query cache.
