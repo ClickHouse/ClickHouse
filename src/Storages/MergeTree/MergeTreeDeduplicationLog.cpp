@@ -10,6 +10,8 @@
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -231,6 +233,12 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
         return std::make_pair(info, false);
     }
 
+    if (stopped)
+    {
+        LOG_ERROR(&Poco::Logger::get("MergeTreeDeduplicationLog"), "Storage has been shutdown when we add this part.");
+        return {};
+    }
+
     chassert(current_writer != nullptr);
 
     /// Create new record
@@ -260,6 +268,12 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// threads and so on.
     if (deduplication_window == 0)
         return;
+
+    if (stopped)
+    {
+        LOG_ERROR(&Poco::Logger::get("MergeTreeDeduplicationLog"), "Storage has been shutdown when we drop this part.");
+        return;
+    }
 
     chassert(current_writer != nullptr);
 
