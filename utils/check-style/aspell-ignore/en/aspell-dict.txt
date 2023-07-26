@@ -1394,7 +1394,7 @@ encodings
 encryptions
 endian
 endsWith
-endsWithUTF8
+endsWithUTF
 enum
 enum's
 enums
@@ -2201,7 +2201,7 @@ src
 stacktrace
 stacktraces
 startsWith
-startsWithUTF8
+startsWithUTF
 statbox
 stateful
 stddev
