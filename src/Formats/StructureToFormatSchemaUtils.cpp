@@ -35,11 +35,14 @@ void endNested(WriteBuffer & buf, size_t indent)
 String getSchemaFieldName(const String & column_name)
 {
     String result = column_name;
-    size_t i = 0;
-    while (i < result.size() && isupper(result[i]))
+    /// Replace all first uppercase letters to lower-case,
+    /// because fields in CapnProto schema must begin with a lower-case letter.
+    /// Don't replace all letters to lower-case to remain camelCase field names.
+    for (auto & symbol : result)
     {
-        result[i] = tolower(result[i]);
-        ++i;
+        if (islower(symbol))
+            break;
+        symbol = tolower(symbol);
     }
     return result;
 }
