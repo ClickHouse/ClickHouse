@@ -989,6 +989,28 @@ Result
 a  b
 ```
 
+### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
+
+Allow to set default value to column when CSV field deserialization failed on bad value
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
+echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  0  1971-01-01
+```
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
@@ -1291,6 +1313,17 @@ Default value: 0.
 ### format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md/#data-format-avro-confluent) format.
+
+Format:
+``` text
+http://[user:password@]machine[:port]"
+```
+
+Examples:
+``` text
+http://registry.example.com:8081
+http://admin:secret@registry.example.com:8081
+```
 
 Default value: `Empty`.
 

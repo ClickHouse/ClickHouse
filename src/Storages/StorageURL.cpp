@@ -2,7 +2,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -226,7 +225,7 @@ StorageURLSource::StorageURLSource(
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url)
-    : ISource(info.source_header)
+    : ISource(info.source_header, false)
     , name(std::move(name_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
@@ -268,22 +267,11 @@ StorageURLSource::StorageURLSource(
         curr_uri = uri_and_buf.first;
         read_buf = std::move(uri_and_buf.second);
 
-        size_t file_size = 0;
-        try
+        if (auto file_progress_callback = context->getFileProgressCallback())
         {
-            file_size = getFileSizeFromReadBuffer(*read_buf);
-        }
-        catch (...)
-        {
-            // we simply continue without updating total_size
-        }
-
-        if (file_size)
-        {
-            /// Adjust total_rows_approx_accumulated with new total size.
-            if (total_size)
-                total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_size + file_size) / total_size * total_rows_approx_accumulated));
-            total_size += file_size;
+            size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
+            LOG_DEBUG(&Poco::Logger::get("URL"), "Send file size {}", file_size);
+            file_progress_callback(FileProgress(0, file_size));
         }
 
         // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
@@ -341,15 +329,8 @@ Chunk StorageURLSource::generate()
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
-            if (num_rows && total_size)
-            {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                if (!chunk_size)
-                    chunk_size = chunk.bytes();
-                if (chunk_size)
-                    updateRowsProgressApprox(
-                        *this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-            }
+            size_t chunk_size = input_format->getApproxBytesReadForChunk();
+            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const String & path{curr_uri.getPath()};
 
@@ -399,7 +380,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     for (; option != end; ++option)
     {
         bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
-        auto request_uri = Poco::URI(*option);
+        auto request_uri = Poco::URI(*option, context->getSettingsRef().disable_url_encoding);
 
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
@@ -1001,6 +982,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 
