@@ -695,7 +695,7 @@ endsWith(str, suffix)
 
 ## endsWithUTF8
 
-Returns whether string `str` ends with `suffix`, assuming that both strings contain valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 
 **Syntax**
 
@@ -727,7 +727,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 
 ## startsWithUTF8
 
-Returns whether string `str` starts with `prefix`, assuming that both string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 
 
 **Example**
