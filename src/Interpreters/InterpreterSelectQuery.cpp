@@ -2336,8 +2336,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
-        && storage->getName() != "MaterializedMySQL"
-        && !storage->hasLightweightDeletedMask()
+        && storage->supportsTrivialCountOptimization()
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -3262,9 +3261,9 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
-        InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
+        InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
     auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
     auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
