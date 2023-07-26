@@ -550,6 +550,8 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 }
             }
 
+            // We update offsets for all the arrays except the first one. Offsets for the first array would be updated later.
+            // It is needed to iterate the first array again so that the elements in the result would have fixed order.
             if (arg_num)
             {
                 prev_off[arg_num] = off;
@@ -573,12 +575,18 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         for (auto i : collections::range(prev_off[0], off))
         {
             all_has_nullable = all_nullable;
-            current_has_nullable = false;
             typename Map::LookupResult pair = nullptr;
 
             if (arg.null_map && (*arg.null_map)[i])
             {
                 current_has_nullable = true;
+                if (all_has_nullable && !null_added)
+                {
+                    ++result_offset;
+                    result_data.insertDefault();
+                    null_map.push_back(1);
+                    null_added = true;
+                }
                 if (null_added)
                     continue;
             }
@@ -602,29 +610,20 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
             if (pair && pair->getMapped() == args)
             {
+                // We increase pair->getMapped() here to not skip duplicate values from the first array.
                 ++pair->getMapped();
                 ++result_offset;
                 if constexpr (is_numeric_column)
                 {
-                    if (pair->getKey() == columns[0]->getElement(i))
-                    {
-                        result_data.insertValue(pair->getKey());
-                    }
+                    result_data.insertValue(pair->getKey());
                 }
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                 {
-                    if (pair->getKey() == columns[0]->getDataAt(i))
-                    {
-                        result_data.insertData(pair->getKey().data, pair->getKey().size);
-                    }
+                    result_data.insertData(pair->getKey().data, pair->getKey().size);
                 }
                 else
                 {
-                    const char * data = nullptr;
-                    if (pair->getKey() == columns[0]->serializeValueIntoArena(i, arena, data))
-                    {
-                        result_data.deserializeAndInsertFromArena(pair->getKey().data);
-                    }
+                    result_data.deserializeAndInsertFromArena(pair->getKey().data);
                 }
                 if (all_nullable)
                     null_map.push_back(0);
