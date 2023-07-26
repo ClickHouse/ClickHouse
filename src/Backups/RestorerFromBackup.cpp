@@ -322,6 +322,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    setCustomStoragePolicyIfAny(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
@@ -622,6 +623,20 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     {
         e.addMessage("While checking database {}", backQuoteIfNeed(database_name));
         throw;
+    }
+}
+
+void RestorerFromBackup::setCustomStoragePolicyIfAny(ASTPtr query_ptr)
+{
+    if (!restore_settings.storage_policy.empty())
+    {
+        auto & create_table_query = query_ptr->as<ASTCreateQuery &>();
+        if (create_table_query.storage && create_table_query.storage->settings)
+        {
+            auto value = create_table_query.storage->settings->changes.tryGet("storage_policy");
+            if (value)
+                *value = restore_settings.storage_policy;
+        }
     }
 }
 
