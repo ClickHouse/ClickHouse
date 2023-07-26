@@ -19,6 +19,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.remove_redundant_distinct = from.query_plan_remove_redundant_distinct;
     settings.optimize_projection = from.optimize_use_projections && from.query_plan_optimize_projection;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
+    settings.optimize_use_implicit_projections = settings.optimize_projection && from.optimize_use_implicit_projections;
     return settings;
 }
 

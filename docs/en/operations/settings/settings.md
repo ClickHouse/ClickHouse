@@ -537,6 +537,8 @@ Possible values:
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
+ Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
+
 - hash
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
@@ -3466,6 +3468,12 @@ Possible values:
 
 Default value: `0`.
 
+## disable_url_encoding {#disable_url_encoding}
+
+Allows to disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Disabled by default.
+
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
@@ -4524,6 +4532,7 @@ This setting allows to specify renaming pattern for files processed by `file` ta
 
 ### Placeholders
 
+- `%a` — Full original filename (e.g., "sample.csv").
 - `%f` — Original filename without extension (e.g., "sample").
 - `%e` — Original file extension with dot (e.g., ".csv").
 - `%t` — Timestamp (in microseconds).
