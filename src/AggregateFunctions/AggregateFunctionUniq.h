@@ -29,6 +29,10 @@
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace DB
 {
@@ -458,13 +462,20 @@ public:
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool) const override
     {
-        std::vector<DataSet *> data_vec;
-        data_vec.resize(places.size());
+        if constexpr (is_parallelize_merge_prepare_needed)
+        {
+            std::vector<DataSet *> data_vec;
+            data_vec.resize(places.size());
 
-        for (unsigned long i = 0; i < data_vec.size(); i++)
-            data_vec[i] = &this->data(places[i]).set;
+            for (unsigned long i = 0; i < data_vec.size(); i++)
+                data_vec[i] = &this->data(places[i]).set;
 
-        DataSet::parallelizeMergePrepare(data_vec, thread_pool);
+            DataSet::parallelizeMergePrepare(data_vec, thread_pool);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() is only implemented when is_parallelize_merge_prepare_needed is true for {} ", getName());
+        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -33,7 +33,6 @@ public:
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
     static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
     {
-        bool is_convert_needed = false;
         unsigned long single_level_set_num = 0;
 
         for (auto ele : data_vec)

@@ -4,7 +4,7 @@
 
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
-#include <Common/ThreadPool_fwd.h>
+
 
 namespace DB
 {
@@ -81,8 +81,6 @@ public:
     {
         return !isLarge() ? small.size() : large->size();
     }
-
-    static void parallelizeMergePrepare(const std::vector<HyperLogLogWithSmallSetOptimization *> & /*places*/, ThreadPool & /*thread_pool*/) {}
 
     void merge(const HyperLogLogWithSmallSetOptimization & rhs)
     {
