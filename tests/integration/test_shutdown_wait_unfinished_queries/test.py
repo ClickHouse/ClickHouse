@@ -6,10 +6,16 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node_wait_queries = cluster.add_instance(
-    "node_wait_queries", main_configs=["configs/config_wait.xml"], stay_alive=True
+    "node_wait_queries",
+    main_configs=["configs/config_wait.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
 )
 node_kill_queries = cluster.add_instance(
-    "node_kill_queries", main_configs=["configs/config_kill.xml"], stay_alive=True
+    "node_kill_queries",
+    main_configs=["configs/config_kill.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
 )
 
 global result
