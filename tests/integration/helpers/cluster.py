@@ -1533,6 +1533,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
+        allow_analyzer=True,
         hostname=None,
         env_variables=None,
         image="clickhouse/integration-test",
@@ -1630,6 +1631,7 @@ class ClickHouseCluster:
             with_hive=with_hive,
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
+            allow_analyzer=allow_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -3169,6 +3171,7 @@ class ClickHouseInstance:
         with_hive,
         with_coredns,
         with_cassandra,
+        allow_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
         library_bridge_bin_path,
@@ -3196,6 +3199,7 @@ class ClickHouseInstance:
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
+        self.base_dir = base_path
         self.docker_id = cluster.get_instance_docker_id(self.name)
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
@@ -3256,6 +3260,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
+        self.allow_analyzer = allow_analyzer
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -4189,6 +4194,14 @@ class ClickHouseInstance:
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
+    def put_users_config(self, config_path):
+        """Put new config (useful if you cannot put it at the start)"""
+
+        instance_config_dir = p.abspath(p.join(self.path, "configs"))
+        users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
+        config_path = p.join(self.base_dir, config_path)
+        shutil.copy(config_path, users_d_dir)
+
     def create_dir(self):
         """Create the instance directory and all the needed files there."""
 
@@ -4245,7 +4258,10 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None:
+        if (
+            os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
+            and self.allow_analyzer
+        ):
             write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):

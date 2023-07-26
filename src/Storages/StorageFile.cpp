@@ -5,7 +5,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -242,8 +241,8 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (recursive)
             {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "" ,
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob ,
+                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
+                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
                                                 total_bytes_to_read, result, recursive);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
@@ -388,14 +387,6 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
-
-    /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL
-        || context->getApplicationType() == Context::ApplicationType::CLIENT)
-    {
-        auto & in = static_cast<ReadBufferFromFileBase &>(*nested_buffer);
-        in.setProgressCallback(context);
-    }
 
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
@@ -701,7 +692,7 @@ public:
         ColumnsDescription columns_description_,
         const Block & block_for_format_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : ISource(getBlockForSource(block_for_format_, files_info_))
+        : ISource(getBlockForSource(block_for_format_, files_info_), false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
@@ -816,12 +807,6 @@ public:
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
                 }
 
-                size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
-                /// Adjust total_rows_approx_accumulated with new total size.
-                if (total_files_size)
-                    total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_files_size + file_size) / total_files_size * total_rows_approx_accumulated));
-                total_files_size += file_size;
-
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
@@ -847,6 +832,10 @@ public:
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
+                size_t chunk_size = 0;
+                if (storage->format_name != "Distributed")
+                    chunk_size = input_format->getApproxBytesReadForChunk();
+                progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)
@@ -864,14 +853,6 @@ public:
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
-                if (num_rows && total_files_size)
-                {
-                    size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                    if (!chunk_size)
-                        chunk_size = chunk.bytes();
-                    updateRowsProgressApprox(
-                        *this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-                }
                 return chunk;
             }
 
@@ -910,12 +891,6 @@ private:
     bool finished_generate = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
-
-    UInt64 total_rows_approx_accumulated = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_max = 0;
-
-    size_t total_files_size = 0;
 };
 
 
