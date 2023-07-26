@@ -359,11 +359,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT *\nFROM Customers\nORDER BY LastName DESC"
         },
         {
-            "Customers | order by Age desc , FirstName asc  ",
+            "Customers | order by Age desc, FirstName asc  ",
             "SELECT *\nFROM Customers\nORDER BY\n    Age DESC,\n    FirstName ASC"
         },
         {
-            "Customers | order by Age asc , FirstName desc",
+            "Customers | order by Age asc, FirstName desc",
             "SELECT *\nFROM Customers\nORDER BY\n    Age ASC,\n    FirstName DESC"
         },
         {
