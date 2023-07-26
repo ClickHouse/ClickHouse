@@ -168,7 +168,7 @@ void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client
     std::cout << "numChildren = " << stat.numChildren << "\n";
 }
 
-bool FindSupperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool FindSuperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     ASTPtr threshold;
     if (!ParserUnsignedInteger{}.parse(pos, threshold, expected))
@@ -184,7 +184,7 @@ bool FindSupperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> 
     return true;
 }
 
-void FindSupperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     auto threshold = query->args[0].safeGet<UInt64>();
     auto path = client->getAbsolutePath(query->args[1].safeGet<String>());
@@ -200,7 +200,7 @@ void FindSupperNodes::execute(const ASTKeeperQuery * query, KeeperClient * clien
 
     auto children = client->zookeeper->getChildren(path);
     std::sort(children.begin(), children.end());
-    for (auto & child : children)
+    for (const auto & child : children)
     {
         auto next_query = *query;
         next_query.args[1] = DB::Field(path / child);
@@ -222,7 +222,7 @@ void DeleteStableBackups::execute(const ASTKeeperQuery * /* query */, KeeperClie
             String backup_root = "/clickhouse/backups";
             auto backups = client->zookeeper->getChildren(backup_root);
 
-            for (auto & child : backups)
+            for (const auto & child : backups)
             {
                 String backup_path = backup_root + "/" + child;
                 std::cout << "Found backup " << backup_path << ", checking if it's active\n";
@@ -231,7 +231,7 @@ void DeleteStableBackups::execute(const ASTKeeperQuery * /* query */, KeeperClie
                 auto stages = client->zookeeper->getChildren(stage_path);
 
                 bool is_active = false;
-                for (auto & stage : stages)
+                for (const auto & stage : stages)
                 {
                     if (startsWith(stage, "alive"))
                     {

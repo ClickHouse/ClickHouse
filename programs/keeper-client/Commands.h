@@ -101,7 +101,7 @@ class GetStatCommand : public IKeeperClientCommand
     String getHelpMessage() const override { return "{} [path] -- Returns the node's stat (default `.`)"; }
 };
 
-class FindSupperNodes : public IKeeperClientCommand
+class FindSuperNodes : public IKeeperClientCommand
 {
     String getName() const override { return "find_super_nodes"; }
 
