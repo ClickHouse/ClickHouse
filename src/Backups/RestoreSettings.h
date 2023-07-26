@@ -117,7 +117,7 @@ struct RestoreSettings
     /// The current host's ID in the format 'escaped_host_name:port'.
     String host_id;
 
-    /// Alterative storage policy that may be specified in the SETTINGS clause of RESTORE queries
+    /// Alternative storage policy that may be specified in the SETTINGS clause of RESTORE queries
     String storage_policy;
 
     /// Internal, should not be specified by user.
