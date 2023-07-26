@@ -134,7 +134,7 @@ Multiple path components can have globs. For being processed file must exist and
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`, including `/`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 - `**` - Fetches all files inside the folder recursively.
 
