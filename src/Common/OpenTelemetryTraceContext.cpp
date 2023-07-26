@@ -376,6 +376,11 @@ TracingContextHolder::TracingContextHolder(
 
 TracingContextHolder::~TracingContextHolder()
 {
+    if (!this->root_span.isTraceEnabled())
+    {
+        return;
+    }
+
     LOG_TEST(&Poco::Logger::get(__FILE__), "~TracingContextHolder: current_Trace_context(enabled={}, trace_id={}, span_id={}), root_span(enabled={}, trace_id={}, parent_span_id={})",
         current_trace_context->isTraceEnabled(),
         toString(current_trace_context->trace_id),
@@ -383,11 +388,6 @@ TracingContextHolder::~TracingContextHolder()
         this->root_span.isTraceEnabled(),
         this->root_span.trace_id,
         this->root_span.parent_span_id);
-
-    if (!this->root_span.isTraceEnabled())
-    {
-        return;
-    }
 
     try
     {
