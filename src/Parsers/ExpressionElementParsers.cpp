@@ -188,6 +188,20 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
         return true;
     }
+    else if (pos->type == TokenType::StringLiteral)
+    {
+        ReadBufferFromMemory buf(pos->begin, pos->size());
+        String s;
+
+        readQuotedStringWithSQLStyle(s, buf);
+
+        if (s.empty())    /// Identifiers "empty string" are not allowed.
+            return false;
+
+        node = std::make_shared<ASTIdentifier>(s);
+        ++pos;
+        return true;
+    }
     else if (pos->type == TokenType::BareWord)
     {
         node = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
