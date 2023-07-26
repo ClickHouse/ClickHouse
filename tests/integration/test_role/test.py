@@ -301,7 +301,7 @@ def test_introspection():
     )
 
     assert instance.query(
-        "SELECT * from system.role_grants WHERE user_name IN ('A', 'B') OR role_name IN ('R1', 'R2') ORDER BY user_name, role_name, granted_role_name"
+        "SELECT user_name, role_name, granted_role_name, granted_role_is_default, with_admin_option from system.role_grants WHERE user_name IN ('A', 'B') OR role_name IN ('R1', 'R2') ORDER BY user_name, role_name, granted_role_name"
     ) == TSV([["A", "\\N", "R1", 1, 0], ["B", "\\N", "R2", 1, 1]])
 
     assert instance.query(

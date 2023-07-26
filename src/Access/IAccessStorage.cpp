@@ -180,7 +180,7 @@ UUID IAccessStorage::insert(const AccessEntityPtr & entity)
 
 std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    return *insert(entity, replace_if_exists, throw_if_exists, /* set_id = */ std::nullopt);
+    return insert(entity, replace_if_exists, throw_if_exists, /* set_id = */ std::nullopt);
 }
 
 std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
