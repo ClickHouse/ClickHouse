@@ -43,9 +43,6 @@ public:
         }
 
         if (single_level_set_num > 0 && single_level_set_num < data_vec.size())
-            is_convert_needed = true;
-
-        if (is_convert_needed)
         {
             try
             {
