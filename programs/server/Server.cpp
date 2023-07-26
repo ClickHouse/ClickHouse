@@ -747,6 +747,7 @@ try
 
             std::lock_guard lock(servers_lock);
             metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+
             for (const auto & server : servers_to_start_before_tables)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
 

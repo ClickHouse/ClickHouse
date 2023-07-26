@@ -29,7 +29,8 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
         size_t read_until_position_ = 0,
-        bool use_external_buffer = false);
+        bool use_external_buffer = false,
+        std::optional<size_t> file_size = std::nullopt);
 
     ~ReadBufferFromHDFS() override;
 
