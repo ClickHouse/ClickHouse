@@ -1,11 +1,5 @@
-import os
-import logging
-
 import pytest
 from helpers.cluster import ClickHouseCluster
-
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
