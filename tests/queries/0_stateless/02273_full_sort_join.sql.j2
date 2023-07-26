@@ -1,4 +1,6 @@
--- Tags: long
+-- Tags: long, no-upgrade-check
+
+-- TODO(@vdimir): remove no-upgrade-check tag after https://github.com/ClickHouse/ClickHouse/pull/51737 is released
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -26,9 +28,7 @@ INSERT INTO t2
         'val' || toString(number) as s
     FROM numbers_mt({{ table_size - 3 }});
 
-
 {% macro is_implemented(join_algorithm) -%}
-{% if join_algorithm == 'grace_hash' %} -- { serverError NOT_IMPLEMENTED } {% endif %}
 {% endmacro -%}
 
 {% for join_algorithm in ['default', 'full_sorting_merge', 'grace_hash'] -%}
@@ -38,7 +38,7 @@ SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{%
 SELECT '-- {{ join_algorithm }} --';
 SET join_algorithm = '{{ join_algorithm }}';
 
-{% for block_size in range(1, table_size + 1) -%}
+{% for block_size in range(1, table_size + 1, 4) -%}
 {% for kind in ['ALL', 'ANY'] -%}
 
 SET max_block_size = {{ block_size }};

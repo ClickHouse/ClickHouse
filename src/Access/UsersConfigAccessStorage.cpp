@@ -807,7 +807,7 @@ void UsersConfigAccessStorage::load(
     config_reloader.reset();
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
-        include_from_path,
+        std::vector{{include_from_path}},
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),

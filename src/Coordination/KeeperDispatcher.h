@@ -31,7 +31,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
-    using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
+    using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
@@ -39,7 +39,7 @@ private:
     SnapshotsQueue snapshots_queue{1};
 
     /// More than 1k updates is definitely misconfiguration.
-    UpdateConfigurationQueue update_configuration_queue{1000};
+    ClusterUpdateQueue cluster_update_queue{1000};
 
     std::atomic<bool> shutdown_called{false};
 
@@ -91,8 +91,10 @@ private:
     void sessionCleanerTask();
     /// Thread create snapshots in the background
     void snapshotThread();
-    /// Thread apply or wait configuration changes from leader
-    void updateConfigurationThread();
+
+    // TODO (myrrc) this should be removed once "reconfig" is stabilized
+    void clusterUpdateWithReconfigDisabledThread();
+    void clusterUpdateThread();
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
@@ -132,10 +134,9 @@ public:
     /// and achieved quorum
     bool isServerActive() const;
 
-    /// Registered in ConfigReloader callback. Add new configuration changes to
-    /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
-    /// 'macros' are used to substitute macros in endpoint of disks
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
+    void pushClusterUpdates(ClusterUpdateActions && actions);
+    bool reconfigEnabled() const;
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
