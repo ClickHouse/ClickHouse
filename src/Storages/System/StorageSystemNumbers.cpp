@@ -110,10 +110,10 @@ protected:
         /// This will accelerates the code.
         UInt64 * pos = vec.data();
 
-        UInt128 provided = 0;
+        UInt64 provided = 0;
         while (size != 0 && block_size - provided != 0)
         {
-            UInt128 need = block_size - provided;
+            UInt64 need = block_size - provided;
             auto& range = ranges[cursor.offset_in_ranges];
 
             UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
@@ -142,10 +142,11 @@ protected:
             }
             else
             {
-                for (size_t i=0; i < can_provide; ++i, ++start_value)
+                auto can_provide_copy = static_cast<UInt64>(can_provide);
+                for (size_t i=0; i < can_provide_copy; ++i, ++start_value)
                     *(pos++) = start_value;
 
-                provided += can_provide;
+                provided += can_provide_copy;
                 cursor.offset_in_ranges++;
                 cursor.offset_in_range = 0;
                 size -= can_provide;
