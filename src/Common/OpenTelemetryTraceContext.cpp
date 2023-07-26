@@ -414,6 +414,7 @@ TracingContextHolder::~TracingContextHolder()
     }
     catch (...)
     {
+        /// FIXME: this is unsafe, since the logger object can be gone already, and there is no proper wait of thread pool (see commit message for details).
         tryLogCurrentException(__FUNCTION__);
     }
 
