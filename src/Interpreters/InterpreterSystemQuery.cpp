@@ -38,6 +38,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -370,18 +371,7 @@ BlockIO InterpreterSystemQuery::execute()
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                if (query.key_to_drop.empty())
-                {
-                    cache->removeAllReleasable();
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                    if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
-                    else
-                        cache->removeKey(key);
-                }
+                cache->removeAllReleasable();
             }
             break;
         }
@@ -470,16 +460,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
-        case Type::RELOAD_SYMBOLS:
-        {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
-            break;
-#else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
-#endif
-        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -574,6 +554,17 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
                 [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
             );
+            break;
+        }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            auto * queue = getContext()->getAsynchronousInsertQueue();
+            if (!queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot flush asynchronous insert queue because it is not initialized");
+
+            queue->flushAll();
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
@@ -1056,11 +1047,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            break;
-        }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
@@ -1173,6 +1159,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
+            break;
+        }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
             break;
         }
         case Type::RESTART_DISK:
