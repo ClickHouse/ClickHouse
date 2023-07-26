@@ -164,6 +164,7 @@ namespace
     M(Bool, allow_s3_native_copy) \
     M(Bool, internal) \
     M(String, host_id) \
+    M(String, storage_policy) \
     M(OptionalUUID, restore_uuid)
 
 
