@@ -61,7 +61,7 @@ namespace
         const auto * it = find_first_symbols<'_', '.'>(begin, end);
         String first = String(begin, it);
         String second = it == end ? "" : String(it + 1, end);
-        return {first, second};
+        return {std::move(first), std::move(second)};
     }
 }
 
