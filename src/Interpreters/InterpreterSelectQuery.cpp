@@ -2373,11 +2373,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
-    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
-     *  but LIMIT is specified, and limit + offset < max_block_size,
-     *  then as the block size we will use limit + offset (not to read more from the table than requested),
-     *  and also set the number of threads to 1.
-     */
     if (!query.distinct
        && !query.limit_with_ties
        && !query.prewhere()
@@ -2469,11 +2464,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     UInt64 max_block_size = settings.max_block_size;
     auto local_limits = getStorageLimits(*context, options);
 
-    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
-     *  but LIMIT is specified, and limit + offset < max_block_size,
-     *  then as the block size we will use limit + offset (not to read more from the table than requested),
-     *  and also set the number of threads to 1.
-     */
     if (UInt64 max_block_limited = maxBlockSizeByLimit())
     {
         if (max_block_limited < max_block_size)
