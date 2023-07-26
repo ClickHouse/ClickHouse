@@ -102,6 +102,14 @@ private:
     void createServers(
         Poco::Util::AbstractConfiguration & config,
         const Strings & listen_hosts,
+        bool listen_try,
+        Poco::ThreadPool & server_pool,
+        AsynchronousMetrics & async_metrics,
+        std::vector<ProtocolServerAdapter> & servers,
+        bool start_servers = false);
+
+    void createInterserverServers(
+        Poco::Util::AbstractConfiguration & config,
         const Strings & interserver_listen_hosts,
         bool listen_try,
         Poco::ThreadPool & server_pool,
@@ -113,7 +121,8 @@ private:
         Poco::Util::AbstractConfiguration & config,
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
-        std::vector<ProtocolServerAdapter> & servers);
+        std::vector<ProtocolServerAdapter> & servers,
+        std::vector<ProtocolServerAdapter> & servers_to_start_before_tables);
 };
 
 }
