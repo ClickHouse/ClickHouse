@@ -132,4 +132,3 @@
 02790_optimize_skip_unused_shards_join
 01940_custom_tld_sharding_key
 02815_range_dict_no_direct_join
-02265_limit_push_down_over_window_functions_bug
