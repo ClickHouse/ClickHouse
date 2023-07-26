@@ -134,6 +134,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 
@@ -1056,6 +1057,13 @@ public:
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
+
+    using StartStopServersCallback = std::function<void(const ServerType &)>;
+    void setStartServersCallback(StartStopServersCallback && callback);
+    void setStopServersCallback(StartStopServersCallback && callback);
+
+    void startServers(const ServerType & server_type) const;
+    void stopServers(const ServerType & server_type) const;
 
     void shutdown();
 
