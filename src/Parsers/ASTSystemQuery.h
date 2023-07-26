@@ -56,7 +56,6 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
-        RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -72,6 +71,7 @@ public:
         START_REPLICATION_QUEUES,
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
+        FLUSH_ASYNC_INSERT_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
@@ -107,8 +107,6 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
-    std::string key_to_drop;
-    std::optional<size_t> offset_to_drop;
 
     String backup_name;
 
