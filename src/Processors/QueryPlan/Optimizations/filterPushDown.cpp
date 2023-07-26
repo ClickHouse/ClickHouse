@@ -341,6 +341,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (table_join.kind() != JoinKind::Inner && table_join.kind() != JoinKind::Cross && table_join.kind() != kind)
                 return 0;
 
+            /// There is no ASOF Right join, so we're talking about pushing to the right side
+            if (kind == JoinKind::Right && table_join.strictness() == JoinStrictness::Asof)
+                return 0;
+
             bool is_left = kind == JoinKind::Left;
             const auto & input_header = is_left ? child->getInputStreams().front().header : child->getInputStreams().back().header;
             const auto & res_header = child->getOutputStream().header;

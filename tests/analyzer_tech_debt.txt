@@ -81,7 +81,6 @@
 02242_join_rocksdb
 02267_join_dup_columns_issue36199
 02302_s3_file_pruning
-02317_distinct_in_order_optimization_explain
 02341_global_join_cte
 02345_implicit_transaction
 02352_grouby_shadows_arg
