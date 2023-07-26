@@ -1794,9 +1794,9 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-## array
+## arrayRemove
 
-Returns the array after removing all occurrences of a specific value from the array.
+Returns a pointer to the input array with elements removed based on the provided predicate condition.
 
 **Syntax**
 
