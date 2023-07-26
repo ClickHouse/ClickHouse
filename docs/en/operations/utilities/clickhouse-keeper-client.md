@@ -51,3 +51,7 @@ keeper foo bar
 -   `rmr <path>` -- Recursively deletes path. Confirmation required
 -   `flwc <command>` -- Executes four-letter-word command
 -   `help` -- Prints this message
+-   `get_stat [path]` -- Returns the node's stat (default `.`)
+-   `find_super_nodes <threshold> [path]` -- Finds nodes with number of children larger than some threshold for the given path (default `.`)
+-   `delete_stable_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
+-   `find_big_family [path] [n]` -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)
