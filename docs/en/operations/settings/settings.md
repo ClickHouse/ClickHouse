@@ -3468,11 +3468,11 @@ Possible values:
 
 Default value: `0`.
 
-## disable_url_encoding {#disable_url_encoding}
+## enable_url_encoding {#enable_url_encoding}
 
-Allows to disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
 
-Disabled by default.
+Enabled by default.
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
