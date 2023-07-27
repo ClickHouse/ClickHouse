@@ -79,6 +79,10 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
+IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+     {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
@@ -134,7 +138,9 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
-     {"kusto", Dialect::kusto}})
+     {"kusto", Dialect::kusto},
+     {"kusto", Dialect::kusto},
+     {"prql", Dialect::prql}})
     // FIXME: do not add 'kusto_auto' to the list. Maybe remove it from code completely?
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
