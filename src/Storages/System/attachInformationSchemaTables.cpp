@@ -49,6 +49,14 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
                                              database.getTableDataPath(ast_create), context, true).second;
 
         database.createTable(context, ast_create.getTable(), view, ast);
+        if (ast_create.getTable() == "tables")
+        {
+            database.createTable(context, Poco::toUpper(ast_create.getTable()), view, ast);
+        }
+        else if (ast_create.getTable() == "TABLES")
+        {
+            database.createTable(context, Poco::toLower(ast_create.getTable()), view, ast); 
+        }
     }
     catch (...)
     {
