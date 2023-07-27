@@ -3,6 +3,8 @@
 #include <base/Decimal_fwd.h>
 #include <base/extended_types.h>
 
+#include <city.h>
+
 #include <utility>
 
 namespace DB
@@ -64,5 +66,12 @@ template <std::endian endian, typename T, typename Tag>
 inline void transformEndianness(StrongTypedef<T, Tag> & x)
 {
     transformEndianness<endian>(x.toUnderType());
+}
+
+template <std::endian endian>
+inline void transformEndianness(CityHash_v1_0_2::uint128 & x)
+{
+    transformEndianness<endian>(x.low64);
+    transformEndianness<endian>(x.high64);
 }
 }
