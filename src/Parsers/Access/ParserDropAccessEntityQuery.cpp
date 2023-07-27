@@ -1,3 +1,4 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
@@ -78,7 +79,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
 
     if (ParserKeyword{"FROM"}.ignore(pos, expected))
-        parseStorageName(pos, expected, storage_name);
+        parseAccessStorageName(pos, expected, storage_name);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);

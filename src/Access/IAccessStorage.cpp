@@ -180,13 +180,20 @@ UUID IAccessStorage::insert(const AccessEntityPtr & entity)
 
 std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    return insert(entity, replace_if_exists, throw_if_exists, /* set_id = */ std::nullopt);
+    auto id = generateRandomID();
+
+    if (insert(id, entity, replace_if_exists, throw_if_exists))
+        return id;
+
+    return std::nullopt;
 }
 
-std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
+
+bool IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    return insertImpl(entity, replace_if_exists, throw_if_exists, set_id);
+    return insertImpl(id, entity, replace_if_exists, throw_if_exists);
 }
+
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists, bool throw_if_exists)
 {
@@ -216,16 +223,16 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
         {
             const auto & entity = multiple_entities[i];
 
-            std::optional<UUID> id;
+            UUID id;
             if (!ids.empty())
                 id = ids[i];
+            else
+                id = generateRandomID();
 
-            auto new_id = insertImpl(entity, replace_if_exists, throw_if_exists, id);
-
-            if (new_id)
+            if (insertImpl(id, entity, replace_if_exists, throw_if_exists))
             {
                 successfully_inserted.push_back(entity);
-                new_ids.push_back(*new_id);
+                new_ids.push_back(id);
             }
         }
         return new_ids;
@@ -274,7 +281,7 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 }
 
 
-std::optional<UUID> IAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool, std::optional<UUID>)
+bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool)
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());

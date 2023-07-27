@@ -1,3 +1,4 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
@@ -73,7 +74,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    if (!ParserKeyword{"TO"}.ignore(pos, expected) || !parseStorageName(pos, expected, storage_name))
+    if (!ParserKeyword{"TO"}.ignore(pos, expected) || !parseAccessStorageName(pos, expected, storage_name))
         return false;
 
     if (cluster.empty())

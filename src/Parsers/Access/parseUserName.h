@@ -35,9 +35,4 @@ inline bool parseRoleNames(IParser::Pos & pos, Expected & expected, Strings & ro
     return parseUserNames(pos, expected, role_names);
 }
 
-inline bool parseStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
-{
-    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
-}
-
 }

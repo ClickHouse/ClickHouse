@@ -3,6 +3,8 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Parsers/IParser.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -132,7 +134,7 @@ public:
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
     std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id);
+    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
 
@@ -185,7 +187,7 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id);
+    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
@@ -282,6 +284,11 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
             entities.emplace_back(id, entity);
     }
     return entities;
+}
+
+inline bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
+{
+    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
 }
 
 }
