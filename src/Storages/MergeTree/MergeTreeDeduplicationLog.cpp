@@ -11,7 +11,6 @@
 #include <Disks/IDisk.h>
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
