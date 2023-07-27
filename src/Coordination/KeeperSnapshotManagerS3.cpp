@@ -218,7 +218,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             }
             catch (...)
             {
-                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_path);
+                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_file_info.path);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         });
