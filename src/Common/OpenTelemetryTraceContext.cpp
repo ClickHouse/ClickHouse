@@ -370,6 +370,13 @@ TracingContextHolder::TracingContextHolder(
         return;
     }
 
+    LOG_TEST(&Poco::Logger::get(__func__), "name={}, root(enabled={}, trace_id={}, span_id={})",
+        _operation_name,
+        root_span.isTraceEnabled(),
+        toString(root_span.trace_id),
+        root_span.span_id);
+
+
     /// Set up trace context on current thread only when the root span is successfully initialized.
     *current_trace_context = _parent_trace_context;
     current_trace_context->span_id = this->root_span.span_id;
