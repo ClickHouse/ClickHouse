@@ -562,6 +562,10 @@ public:
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
+
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
 };

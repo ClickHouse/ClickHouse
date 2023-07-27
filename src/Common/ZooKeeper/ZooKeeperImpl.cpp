@@ -449,6 +449,20 @@ void ZooKeeper::connect(
                 if (connected_callback.has_value())
                     (*connected_callback)(i, node);
 
+                if (i != 0)
+                {
+                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
+                    {
+                        args.fallback_session_lifetime.min_sec,
+                        args.fallback_session_lifetime.max_sec,
+                    };
+                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
+                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
+
+                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
+                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
+                    node.address.toString(), i, session_lifetime_seconds);
+                }
 
                 break;
             }
@@ -1062,6 +1076,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
+        checkSessionDeadline();
         info.time = clock::now();
         if (zk_log)
         {
@@ -1482,6 +1497,17 @@ void ZooKeeper::setupFaultDistributions()
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();
+}
+
+void ZooKeeper::checkSessionDeadline() const
+{
+    if (unlikely(hasReachedDeadline()))
+        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
+}
+
+bool ZooKeeper::hasReachedDeadline() const
+{
+    return client_session_deadline.has_value() && clock::now() >= client_session_deadline.value();
 }
 
 void ZooKeeper::maybeInjectSendFault()
