@@ -53,14 +53,7 @@ def check(query, result):
     # new analyzer
     query = query + ", allow_experimental_analyzer = 1"
     assert node.query(query) == f"{result}\n"
-    assert "count()" in node.query("EXPLAIN QUERY TREE " + query)
-
-
-def check_by_old_analyzer(query, result):
-    # only old analyzer
-    query = query + " settings optimize_uniq_to_count = 1"
-    assert node.query(query) == f"{result}\n"
-    assert "count()" in node.query("EXPLAIN SYNTAX " + query)
+    assert "function_name: count" in node.query("EXPLAIN QUERY TREE " + query)
 
 
 def test_rewrite_distinct(started_cluster):
