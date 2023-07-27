@@ -1089,15 +1089,16 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_)
+void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
     /// so Context::getLock() must be unlocked while we're doing this.
 
     auto user = getAccessControl().read<User>(user_id_);
-    auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = getAccessControl().getEnabledRolesInfo(default_roles, {});
+
+    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = getAccessControl().getEnabledRolesInfo(new_current_roles, {});
     auto enabled_profiles = getAccessControl().getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
@@ -1111,7 +1112,7 @@ void Context::setUser(const UUID & user_id_)
     /// so we shouldn't check constraints here.
     setCurrentProfiles(*enabled_profiles, /* check_constraints= */ false);
 
-    setCurrentRoles(default_roles);
+    setCurrentRoles(new_current_roles);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
