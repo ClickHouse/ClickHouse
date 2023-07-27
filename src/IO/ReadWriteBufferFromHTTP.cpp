@@ -850,7 +850,7 @@ SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::
 
 SessionFactory::SessionType SessionFactory::buildNewSession(const Poco::URI & uri)
 {
-    return makeHTTPSession(uri, timeouts, true, proxy_config);
+    return makeHTTPSession(uri, timeouts, proxy_config);
 }
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(

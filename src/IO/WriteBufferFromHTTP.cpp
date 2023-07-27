@@ -16,7 +16,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     size_t buffer_size_,
     Poco::Net::HTTPClientSession::ProxyConfig proxy_configuration)
     : WriteBufferFromOStream(buffer_size_)
-    , session{makeHTTPSession(uri, timeouts, /*resolve_host=*/ true, proxy_configuration)}
+    , session{makeHTTPSession(uri, timeouts, proxy_configuration)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
     request.setHost(uri.getHost());
