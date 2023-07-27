@@ -114,6 +114,6 @@ inline void assertNoAggregates(const ASTPtr & ast, const char * description)
     GetAggregatesVisitor(data).visit(ast);
 }
 
-std::vector<const ASTFunction *> getExpressionsWithWindowFunctions(ASTPtr & ast);
+ASTs getExpressionsWithWindowFunctions(ASTPtr & ast);
 
 }
