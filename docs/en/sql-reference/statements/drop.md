@@ -119,3 +119,20 @@ DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
 ```
+
+## DROP NAMED COLLECTION
+
+Deletes a named collection.
+
+**Syntax**
+
+``` sql
+DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
+```
+
+**Example**
+
+``` sql
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
+DROP NAMED COLLECTION foobar;
+```
