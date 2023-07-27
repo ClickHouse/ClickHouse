@@ -329,7 +329,7 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) > 10
+        assert int(result["Zxid"], 16) > 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "14"
 
@@ -369,7 +369,7 @@ def test_cmd_stat(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) >= 10
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "14"
 
