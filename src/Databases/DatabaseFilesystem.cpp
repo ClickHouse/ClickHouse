@@ -77,10 +77,8 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     /// Check access for file before checking its existence.
     if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
     {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
-        else
-            return false;
+        /// Access denied is thrown regardless of 'throw_on_error'
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
     }
 
     /// Check if the corresponding file exists.
