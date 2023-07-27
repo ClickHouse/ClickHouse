@@ -47,8 +47,8 @@ namespace
         {
             if (startsWith(key, "resolver"))
             {
-                auto proxy_scheme = configuration.getString(config_prefix + ".resolver.proxy_scheme");
-                if (proxy_scheme == protocol)
+                auto config_protocol = configuration.getString(config_prefix + ".resolver.proxy_scheme");
+                if (config_protocol == protocol)
                 {
                     return getRemoteResolver(config_prefix + "." + key, configuration);
                 }

@@ -167,9 +167,9 @@ namespace
         return poco_proxy_config;
     }
 
-    auto getProxyConfiguration(const std::string & protocol)
+    auto getProxyConfiguration(const std::string & protocol_string)
     {
-        auto protocol = protocol == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
+        auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
         auto proxy_config = ProxyConfigurationResolverProvider::get()->resolve(protocol);
 
