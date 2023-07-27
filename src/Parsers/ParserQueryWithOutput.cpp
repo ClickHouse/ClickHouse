@@ -109,6 +109,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             query_with_output.is_outfile_append = true;
         }
 
+        ParserKeyword s_truncate("TRUNCATE");
+        if (s_truncate.ignore(pos, expected))
+        {
+            query_with_output.is_outfile_truncate = true;
+        }
+
         ParserKeyword s_stdout("AND STDOUT");
         if (s_stdout.ignore(pos, expected))
         {
@@ -150,7 +156,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     // SETTINGS key1 = value1, key2 = value2, ...
     ParserKeyword s_settings("SETTINGS");
-    if (s_settings.ignore(pos, expected))
+    if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))

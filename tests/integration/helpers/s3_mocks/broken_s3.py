@@ -6,10 +6,10 @@ import time
 import urllib.parse
 import http.server
 import socketserver
+import string
 
 
-UPSTREAM_HOST = "minio1"
-UPSTREAM_PORT = 9001
+INF_COUNT = 100000000
 
 
 class MockControl:
@@ -28,31 +28,88 @@ class MockControl:
             ],
             nothrow=True,
         )
-        assert response == "OK"
+        assert response == "OK", response
 
-    def setup_fail_upload(self, part_length):
+    def setup_error_at_object_upload(self, count=None, after=None):
+        url = f"http://localhost:{self._port}/mock_settings/error_at_object_upload?nothing=1"
+
+        if count is not None:
+            url += f"&count={count}"
+
+        if after is not None:
+            url += f"&after={after}"
+
         response = self._cluster.exec_in_container(
             self._cluster.get_container_id(self._container),
             [
                 "curl",
                 "-s",
-                f"http://localhost:{self._port}/mock_settings/error_at_put?when_length_bigger={part_length}",
+                url,
             ],
             nothrow=True,
         )
-        assert response == "OK"
+        assert response == "OK", response
 
-    def setup_fake_upload(self, part_length):
+    def setup_error_at_part_upload(self, count=None, after=None):
+        url = f"http://localhost:{self._port}/mock_settings/error_at_part_upload?nothing=1"
+
+        if count is not None:
+            url += f"&count={count}"
+
+        if after is not None:
+            url += f"&after={after}"
+
         response = self._cluster.exec_in_container(
             self._cluster.get_container_id(self._container),
             [
                 "curl",
                 "-s",
-                f"http://localhost:{self._port}/mock_settings/fake_put?when_length_bigger={part_length}",
+                url,
             ],
             nothrow=True,
         )
-        assert response == "OK"
+        assert response == "OK", response
+
+    def setup_error_at_create_multi_part_upload(self, count=None):
+        url = f"http://localhost:{self._port}/mock_settings/error_at_create_multi_part_upload"
+
+        if count is not None:
+            url += f"?count={count}"
+
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                url,
+            ],
+            nothrow=True,
+        )
+        assert response == "OK", response
+
+    def setup_fake_puts(self, part_length):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK", response
+
+    def setup_fake_multpartuploads(self):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK", response
 
     def setup_slow_answers(
         self, minimal_length=0, timeout=None, probability=None, count=None
@@ -77,7 +134,7 @@ class MockControl:
             ["curl", "-s", url],
             nothrow=True,
         )
-        assert response == "OK"
+        assert response == "OK", response
 
 
 class _ServerRuntime:
@@ -88,7 +145,7 @@ class _ServerRuntime:
             self.probability = probability_ if probability_ is not None else 1
             self.timeout = timeout_ if timeout_ is not None else 0.1
             self.minimal_length = minimal_length_ if minimal_length_ is not None else 0
-            self.count = count_ if count_ is not None else 2**32
+            self.count = count_ if count_ is not None else INF_COUNT
 
         def __str__(self):
             return (
@@ -109,12 +166,32 @@ class _ServerRuntime:
                         return _runtime.slow_put.timeout
             return None
 
+    class CountAfter:
+        def __init__(self, count_=None, after_=None):
+            self.count = count_ if count_ is not None else INF_COUNT
+            self.after = after_ if after_ is not None else 0
+
+        def __str__(self):
+            return f"count:{self.count} after:{self.after}"
+
+        def has_effect(self):
+            if self.after:
+                self.after -= 1
+            if self.after == 0:
+                if self.count:
+                    self.count -= 1
+                    return True
+            return False
+
     def __init__(self):
         self.lock = threading.Lock()
-        self.error_at_put_when_length_bigger = None
+        self.error_at_part_upload = None
+        self.error_at_object_upload = None
         self.fake_put_when_length_bigger = None
         self.fake_uploads = dict()
         self.slow_put = None
+        self.fake_multipart_upload = None
+        self.error_at_create_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -127,10 +204,14 @@ class _ServerRuntime:
         return False
 
     def reset(self):
-        self.error_at_put_when_length_bigger = None
-        self.fake_put_when_length_bigger = None
-        self.fake_uploads = dict()
-        self.slow_put = None
+        with self.lock:
+            self.error_at_part_upload = None
+            self.error_at_object_upload = None
+            self.fake_put_when_length_bigger = None
+            self.fake_uploads = dict()
+            self.slow_put = None
+            self.fake_multipart_upload = None
+            self.error_at_create_multi_part_upload = None
 
 
 _runtime = _ServerRuntime()
@@ -139,6 +220,13 @@ _runtime = _ServerRuntime()
 def _and_then(value, func):
     assert callable(func)
     return None if value is None else func(value)
+
+
+def get_random_string(length):
+    # choose from all lowercase letter
+    letters = string.ascii_lowercase
+    result_str = "".join(random.choice(letters) for i in range(length))
+    return result_str
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -166,18 +254,29 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self._read_out()
 
         self.send_response(307)
-        url = f"http://{UPSTREAM_HOST}:{UPSTREAM_PORT}{self.path}"
+        url = (
+            f"http://{self.server.upstream_host}:{self.server.upstream_port}{self.path}"
+        )
         self.send_header("Location", url)
         self.end_headers()
         self.wfile.write(b"Redirected")
 
     def _error(self, data):
         self._read_out()
-
         self.send_response(500)
         self.send_header("Content-Type", "text/xml")
         self.end_headers()
         self.wfile.write(bytes(data, "UTF-8"))
+
+    def _error_expected_500(self):
+        self._error(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Error>"
+            "<Code>ExpectedError</Code>"
+            "<Message>mock s3 injected error</Message>"
+            "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+            "</Error>"
+        )
 
     def _fake_put_ok(self):
         self._read_out()
@@ -187,6 +286,28 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("ETag", "b54357faf0632cce46e942fa68356b38")
         self.send_header("Content-Length", 0)
         self.end_headers()
+
+    def _fake_uploads(self, path, upload_id):
+        self._read_out()
+
+        parts = [x for x in path.split("/") if x]
+        bucket = parts[0]
+        key = "/".join(parts[1:])
+        data = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<InitiateMultipartUploadResult>\n"
+            f"<Bucket>{bucket}</Bucket>"
+            f"<Key>{key}</Key>"
+            f"<UploadId>{upload_id}</UploadId>"
+            "</InitiateMultipartUploadResult>"
+        )
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/xml")
+        self.send_header("Content-Length", len(data))
+        self.end_headers()
+
+        self.wfile.write(bytes(data, "UTF-8"))
 
     def _fake_post_ok(self, path):
         self._read_out()
@@ -219,18 +340,29 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if len(path) < 2:
             return self._error("_mock_settings: wrong command")
 
-        if path[1] == "error_at_put":
+        if path[1] == "error_at_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.error_at_put_when_length_bigger = int(
-                params.get("when_length_bigger", [1024 * 1024])[0]
+            _runtime.error_at_part_upload = _ServerRuntime.CountAfter(
+                count_=_and_then(params.get("count", [None])[0], int),
+                after_=_and_then(params.get("after", [None])[0], int),
             )
             return self._ok()
-        if path[1] == "fake_put":
+
+        if path[1] == "error_at_object_upload":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.error_at_object_upload = _ServerRuntime.CountAfter(
+                count_=_and_then(params.get("count", [None])[0], int),
+                after_=_and_then(params.get("after", [None])[0], int),
+            )
+            return self._ok()
+
+        if path[1] == "fake_puts":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.fake_put_when_length_bigger = int(
                 params.get("when_length_bigger", [1024 * 1024])[0]
             )
             return self._ok()
+
         if path[1] == "slow_put":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.slow_put = _ServerRuntime.SlowPut(
@@ -241,6 +373,18 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             self.log_message("set slow put %s", _runtime.slow_put)
             return self._ok()
+
+        if path[1] == "setup_fake_multpartuploads":
+            _runtime.fake_multipart_upload = True
+            return self._ok()
+
+        if path[1] == "error_at_create_multi_part_upload":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.error_at_create_multi_part_upload = int(
+                params.get("count", [INF_COUNT])[0]
+            )
+            return self._ok()
+
         if path[1] == "reset":
             _runtime.reset()
             return self._ok()
@@ -265,33 +409,42 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.log_message("slow put %s", timeout)
                 time.sleep(timeout)
 
-        if _runtime.error_at_put_when_length_bigger is not None:
-            if content_length > _runtime.error_at_put_when_length_bigger:
-                return self._error(
-                    '<?xml version="1.0" encoding="UTF-8"?>'
-                    "<Error>"
-                    "<Code>ExpectedError</Code>"
-                    "<Message>mock s3 injected error</Message>"
-                    "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
-                    "</Error>"
-                )
-
         parts = urllib.parse.urlsplit(self.path)
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
         upload_id = params.get("uploadId", [None])[0]
-        if _runtime.fake_put_when_length_bigger is not None:
-            if content_length > _runtime.fake_put_when_length_bigger:
-                if upload_id is not None:
-                    _runtime.register_fake_upload(upload_id, parts.path)
-                return self._fake_put_ok()
+
+        if upload_id is not None:
+            if _runtime.error_at_part_upload is not None:
+                if _runtime.error_at_part_upload.has_effect():
+                    return self._error_expected_500()
+            if _runtime.fake_multipart_upload:
+                if _runtime.is_fake_upload(upload_id, parts.path):
+                    return self._fake_put_ok()
+        else:
+            if _runtime.error_at_object_upload is not None:
+                if _runtime.error_at_object_upload.has_effect():
+                    return self._error_expected_500()
+            if _runtime.fake_put_when_length_bigger is not None:
+                if content_length > _runtime.fake_put_when_length_bigger:
+                    return self._fake_put_ok()
 
         return self._redirect()
 
     def do_POST(self):
         parts = urllib.parse.urlsplit(self.path)
-        params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-        upload_id = params.get("uploadId", [None])[0]
+        params = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
+        uploads = params.get("uploads", [None])[0]
+        if uploads is not None:
+            if _runtime.error_at_create_multi_part_upload:
+                _runtime.error_at_create_multi_part_upload -= 1
+                return self._error_expected_500()
 
+            if _runtime.fake_multipart_upload:
+                upload_id = get_random_string(5)
+                _runtime.register_fake_upload(upload_id, parts.path)
+                return self._fake_uploads(parts.path, upload_id)
+
+        upload_id = params.get("uploadId", [None])[0]
         if _runtime.is_fake_upload(upload_id, parts.path):
             return self._fake_post_ok(parts.path)
 
@@ -307,7 +460,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
 
+    def set_upstream(self, upstream_host, upstream_port):
+        self.upstream_host = upstream_host
+        self.upstream_port = upstream_port
+
 
 if __name__ == "__main__":
     httpd = _ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+    if len(sys.argv) == 4:
+        httpd.set_upstream(sys.argv[2], sys.argv[3])
+    else:
+        httpd.set_upstream("minio1", 9001)
     httpd.serve_forever()
