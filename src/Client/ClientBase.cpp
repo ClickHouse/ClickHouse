@@ -2624,6 +2624,10 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }
 
+    /// Check positional options.
+    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+
     po::store(parsed, options);
 }
 
