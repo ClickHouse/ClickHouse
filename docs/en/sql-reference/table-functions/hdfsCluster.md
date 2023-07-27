@@ -1,12 +1,12 @@
 ---
 slug: /en/sql-reference/table-functions/hdfsCluster
-sidebar_position: 81
+sidebar_position: 55
 sidebar_label: hdfsCluster
 ---
 
 # hdfsCluster Table Function
 
-Allows processing files from HDFS in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in HDFS file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
+Allows processing files from HDFS in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterics in HDFS file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
 **Syntax**
 
@@ -50,7 +50,7 @@ SELECT count(*)
 FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
-:::note
+:::note    
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 

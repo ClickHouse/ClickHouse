@@ -212,10 +212,10 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
-
-    std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
+
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
 
     /// This is needed only for parallel reading from replicas, because
     /// we create a RemoteQueryExecutor per replica and have to store additional info

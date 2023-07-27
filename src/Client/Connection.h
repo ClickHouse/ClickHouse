@@ -260,7 +260,7 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void sendAddendum();
-    void receiveHello(const Poco::Timespan & handshake_timeout);
+    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();

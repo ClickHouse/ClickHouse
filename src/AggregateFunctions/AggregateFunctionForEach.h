@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
-#include <Common/Arena.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>

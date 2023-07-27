@@ -40,28 +40,20 @@ VolumeJBOD::VolumeJBOD(
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
         if (ratio < 0)
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'max_data_part_size_ratio' have to be not less then 0.");
-
         UInt64 sum_size = 0;
         std::vector<UInt64> sizes;
         for (const auto & disk : disks)
         {
-            auto size = disk->getTotalSpace();
-            if (size)
-                sum_size += *size;
-            else
-                break;
-            sizes.push_back(*size);
+            sizes.push_back(disk->getTotalSpace());
+            sum_size += sizes.back();
         }
-        if (sizes.size() == disks.size())
+        max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
+        for (size_t i = 0; i < disks.size(); ++i)
         {
-            max_data_part_size = static_cast<UInt64>(sum_size * ratio / disks.size());
-            for (size_t i = 0; i < disks.size(); ++i)
+            if (sizes[i] < max_data_part_size)
             {
-                if (sizes[i] < max_data_part_size)
-                {
-                    LOG_WARNING(logger, "Disk {} on volume {} have not enough space ({}) for containing part the size of max_data_part_size ({})",
-                        backQuote(disks[i]->getName()), backQuote(config_prefix), ReadableSize(sizes[i]), ReadableSize(max_data_part_size));
-                }
+                LOG_WARNING(logger, "Disk {} on volume {} have not enough space ({}) for containing part the size of max_data_part_size ({})",
+                    backQuote(disks[i]->getName()), backQuote(config_prefix), ReadableSize(sizes[i]), ReadableSize(max_data_part_size));
             }
         }
     }

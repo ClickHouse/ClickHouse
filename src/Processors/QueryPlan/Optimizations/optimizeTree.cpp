@@ -114,46 +114,36 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        /// NOTE: optimizePrewhere can modify the stack.
-        optimizePrewhere(stack, nodes);
-        optimizePrimaryKeyCondition(stack);
+        auto & frame = stack.back();
 
+        if (frame.next_child == 0)
         {
-            /// NOTE: frame cannot be safely used after stack was modified.
-            auto & frame = stack.back();
+            has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
 
-            if (frame.next_child == 0)
-            {
-                has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(*frame.node, nodes);
 
-                if (optimization_settings.read_in_order)
-                    optimizeReadInOrder(*frame.node, nodes);
+            if (optimization_settings.optimize_projection)
+                num_applied_projection += optimizeUseAggregateProjections(*frame.node, nodes);
 
-                /// Projection optimization relies on PK optimization
-                if (optimization_settings.optimize_projection)
-                    num_applied_projection
-                        += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
+            if (optimization_settings.aggregation_in_order)
+                optimizeAggregationInOrder(*frame.node, nodes);
 
-                if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
+            if (optimization_settings.distinct_in_order)
+                tryDistinctReadInOrder(frame.node);
+        }
 
-                if (optimization_settings.distinct_in_order)
-                    tryDistinctReadInOrder(frame.node);
-            }
-
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
-            {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
         }
 
         if (optimization_settings.optimize_projection)
         {
-            /// Projection optimization relies on PK optimization
             if (optimizeUseNormalProjections(stack, nodes))
             {
                 ++num_applied_projection;
@@ -170,7 +160,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        enableMemoryBoundMerging(*stack.back().node, nodes);
+        optimizePrewhere(stack, nodes);
+        optimizePrimaryKeyCondition(stack);
+        enableMemoryBoundMerging(*frame.node, nodes);
 
         stack.pop_back();
     }
@@ -178,37 +170,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
-}
-
-void optimizeTreeThirdPass(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
-{
-    Stack stack;
-    stack.push_back({.node = &root});
-
-    while (!stack.empty())
-    {
-        /// NOTE: frame cannot be safely used after stack was modified.
-        auto & frame = stack.back();
-
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-            continue;
-        }
-
-        if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get()))
-        {
-            source_step_with_filter->applyFilters();
-        }
-
-        addPlansForSets(*frame.node, nodes);
-
-        stack.pop_back();
-    }
+            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 }
 
 }

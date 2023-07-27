@@ -15,7 +15,7 @@ public:
         Poco::Logger * log_);
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
-    void set(const String & current_host, const String & new_stage, const String & message, const bool & all_hosts = false);
+    void set(const String & current_host, const String & new_stage, const String & message);
     void setError(const String & current_host, const Exception & exception);
 
     /// Sets the stage of the current host and waits until all hosts come to the same stage.

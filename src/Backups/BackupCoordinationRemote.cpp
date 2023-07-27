@@ -115,7 +115,6 @@ namespace
                 writeBinary(info.checksum, out);
                 writeBinary(info.base_size, out);
                 writeBinary(info.base_checksum, out);
-                writeBinary(info.encrypted_by_disk, out);
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
@@ -137,7 +136,6 @@ namespace
                 readBinary(info.checksum, in);
                 readBinary(info.base_size, in);
                 readBinary(info.base_checksum, in);
-                readBinary(info.encrypted_by_disk, in);
             }
             return res;
         }
@@ -175,13 +173,13 @@ BackupCoordinationRemote::BackupCoordinationRemote(
         log,
         get_zookeeper_,
         keeper_settings,
-        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
+        [zookeeper_path = zookeeper_path, current_host = current_host, is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {
             /// Recreate this ephemeral node to signal that we are alive.
-            if (my_is_internal)
+            if (is_internal)
             {
-                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
+                String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
                 if (code == Coordination::Error::ZNODEEXISTS)
@@ -256,10 +254,7 @@ void BackupCoordinationRemote::removeAllNodes()
 
 void BackupCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
-    if (is_internal)
-        stage_sync->set(current_host, new_stage, message);
-    else
-        stage_sync->set(current_host, new_stage, /* message */ "", /* all_hosts */ true);
+    stage_sync->set(current_host, new_stage, message);
 }
 
 void BackupCoordinationRemote::setError(const Exception & exception)
@@ -721,15 +716,7 @@ void BackupCoordinationRemote::prepareFileInfos() const
 
 bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
 {
-    {
-        /// Check if this host is already writing this file.
-        std::lock_guard lock{writing_files_mutex};
-        if (writing_files.contains(data_file_index))
-            return false;
-    }
-
-    /// Store in Zookeeper that this host is the only host which is allowed to write this file.
-    bool host_is_assigned = false;
+    bool acquired_writing = false;
     String full_path = zookeeper_path + "/writing_files/" + std::to_string(data_file_index);
     String host_index_str = std::to_string(current_host_index);
 
@@ -741,23 +728,14 @@ bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
         auto code = zk->tryCreate(full_path, host_index_str, zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)
-            host_is_assigned = true; /// If we've just created this ZooKeeper's node, this host is assigned.
+            acquired_writing = true; /// If we've just created this ZooKeeper's node, the writing is acquired, i.e. we should write this data file.
         else if (code == Coordination::Error::ZNODEEXISTS)
-            host_is_assigned = (zk->get(full_path) == host_index_str); /// The previous retry could write this ZooKeeper's node and then fail.
+            acquired_writing = (zk->get(full_path) == host_index_str); /// The previous retry could write this ZooKeeper's node and then fail.
         else
             throw zkutil::KeeperException(code, full_path);
     });
 
-    if (!host_is_assigned)
-        return false; /// Other host is writing this file.
-
-    {
-        /// Check if this host is already writing this file,
-        /// and if it's not, mark that this host is writing this file.
-        /// We have to check that again because we were accessing ZooKeeper with the mutex unlocked.
-        std::lock_guard lock{writing_files_mutex};
-        return writing_files.emplace(data_file_index).second; /// Return false if this host is already writing this file.
-    }
+    return acquired_writing;
 }
 
 bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &) const
@@ -799,8 +777,8 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
                 String status;
                 if (zk->tryGet(root_zookeeper_path + "/" + existing_backup_path + "/stage", status))
                 {
-                    /// Check if some other backup is in progress
-                    if (status == Stage::SCHEDULED_TO_START)
+                    /// If status is not COMPLETED it could be because the backup failed, check if 'error' exists
+                    if (status != Stage::COMPLETED && !zk->exists(root_zookeeper_path + "/" + existing_backup_path + "/error"))
                     {
                         LOG_WARNING(log, "Found a concurrent backup: {}, current backup: {}", existing_backup_uuid, toString(backup_uuid));
                         result = true;

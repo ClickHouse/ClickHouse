@@ -6,6 +6,7 @@ import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
+
 cluster = ClickHouseCluster(__file__)
 
 num_nodes = 10
@@ -83,7 +84,7 @@ def drop_after_test():
         yield
     finally:
         node0.query(
-            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC",
+            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY",
             settings={
                 "distributed_ddl_task_timeout": 360,
             },
@@ -133,21 +134,9 @@ def test_concurrent_backups_on_same_node():
     )
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
-    try:
-        error = nodes[0].query_and_get_error(
-            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
-        )
-    except Exception as e:
-        status = (
-            nodes[0]
-            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
-            .rstrip("\n")
-        )
-        # It is possible that the second backup was picked up first, and then the async backup
-        if status == "CREATING_BACKUP" or status == "BACKUP_FAILED":
-            return
-        else:
-            raise e
+    error = nodes[0].query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+    )
     expected_errors = [
         "Concurrent backups not supported",
         f"Backup {backup_name} already exists",
@@ -165,7 +154,7 @@ def test_concurrent_backups_on_same_node():
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -191,20 +180,9 @@ def test_concurrent_backups_on_different_nodes():
     )
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
-    try:
-        error = nodes[0].query_and_get_error(
-            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
-        )
-    except Exception as e:
-        status = (
-            nodes[1]
-            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
-            .rstrip("\n")
-        )
-        if status == "CREATING_BACKUP" or status == "BACKUP_FAILED":
-            return
-        else:
-            raise e
+    error = nodes[0].query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+    )
     expected_errors = [
         "Concurrent backups not supported",
         f"Backup {backup_name} already exists",
@@ -228,7 +206,7 @@ def test_concurrent_restores_on_same_node():
     nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -247,20 +225,9 @@ def test_concurrent_restores_on_same_node():
     )
     assert status in ["RESTORING", "RESTORED"]
 
-    try:
-        error = nodes[0].query_and_get_error(
-            f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
-        )
-    except Exception as e:
-        status = (
-            nodes[0]
-            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
-            .rstrip("\n")
-        )
-        if status == "RESTORING" or status == "RESTORE_FAILED":
-            return
-        else:
-            raise e
+    error = nodes[0].query_and_get_error(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
     expected_errors = [
         "Concurrent restores not supported",
         "Cannot restore the table default.tbl because it already contains some data",
@@ -284,7 +251,7 @@ def test_concurrent_restores_on_different_node():
     nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -303,20 +270,9 @@ def test_concurrent_restores_on_different_node():
     )
     assert status in ["RESTORING", "RESTORED"]
 
-    try:
-        error = nodes[1].query_and_get_error(
-            f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
-        )
-    except Exception as e:
-        status = (
-            nodes[0]
-            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
-            .rstrip("\n")
-        )
-        if status == "RESTORING" or status == "RESTORE_FAILED":
-            return
-        else:
-            raise e
+    error = nodes[1].query_and_get_error(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
     expected_errors = [
         "Concurrent restores not supported",
         "Cannot restore the table default.tbl because it already contains some data",

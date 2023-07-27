@@ -3,7 +3,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
-#include <Server/ServerType.h>
 
 #include "config.h"
 
@@ -36,8 +35,8 @@ public:
 #if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
 #endif
-        STOP_LISTEN,
-        START_LISTEN,
+        STOP_LISTEN_QUERIES,
+        START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
@@ -57,6 +56,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
+        RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -72,14 +72,11 @@ public:
         START_REPLICATION_QUEUES,
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
-        FLUSH_ASYNC_INSERT_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
         UNFREEZE,
-        ENABLE_FAILPOINT,
-        DISABLE_FAILPOINT,
         END
     };
 
@@ -99,7 +96,6 @@ public:
     String target_model;
     String target_function;
     String replica;
-    String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     String storage_policy;
@@ -113,11 +109,7 @@ public:
 
     String schema_cache_storage;
 
-    String fail_point_name;
-
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
-
-    ServerType server_type;
 
     String getID(char) const override { return "SYSTEM query"; }
 

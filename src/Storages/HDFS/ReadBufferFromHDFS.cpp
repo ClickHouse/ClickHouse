@@ -3,7 +3,6 @@
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
 #include <IO/ResourceGuard.h>
-#include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
@@ -43,23 +42,19 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     off_t file_offset = 0;
     off_t read_until_position = 0;
 
-    std::optional<size_t> file_size;
-
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
         size_t read_until_position_,
-        bool use_external_buffer_,
-        std::optional<size_t> file_size_)
+        bool use_external_buffer_)
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , builder(createHDFSBuilder(hdfs_uri_, config_))
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
-        , file_size(file_size_)
     {
         fs = createHDFSFS(builder.get());
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
@@ -75,16 +70,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    size_t getFileSize()
+    size_t getFileSize() const
     {
-        if (file_size)
-            return *file_size;
-
         auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
         if (!file_info)
             throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
-        file_size = static_cast<size_t>(file_info->mSize);
-        return *file_size;
+        return file_info->mSize;
     }
 
     bool nextImpl() override
@@ -98,7 +89,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             if (read_until_position < file_offset)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", file_offset, read_until_position - 1);
 
-            num_bytes_to_read = std::min<size_t>(read_until_position - file_offset, internal_buffer.size());
+            num_bytes_to_read = read_until_position - file_offset;
         }
         else
         {
@@ -165,11 +156,10 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
         size_t read_until_position_,
-        bool use_external_buffer_,
-        std::optional<size_t> file_size_)
+        bool use_external_buffer_)
     : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
-               hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_, file_size_))
+               hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_))
     , use_external_buffer(use_external_buffer_)
 {
 }

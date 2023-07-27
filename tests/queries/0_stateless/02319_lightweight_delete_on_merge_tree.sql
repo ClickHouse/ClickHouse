@@ -110,7 +110,7 @@ DROP TABLE t_proj;
 
 CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTree order by id settings min_bytes_for_wide_part=0;
 SET allow_experimental_lightweight_delete = false;
-DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
+DELETE FROM merge_table_standard_delete WHERE id = 10; -- allow_experimental_lightweight_delete=false is now ignored
 SET enable_lightweight_delete = false;
 DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE merge_table_standard_delete;

@@ -8,7 +8,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -38,7 +37,6 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -366,12 +364,12 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeAllReleasable();
+                    cache_data->cache->removeIfReleasable();
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                cache->removeAllReleasable();
+                cache->removeIfReleasable();
             }
             break;
         }
@@ -460,6 +458,16 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
+        case Type::RELOAD_SYMBOLS:
+        {
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
+            SymbolIndex::reload();
+            break;
+#else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
+#endif
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -556,25 +564,9 @@ BlockIO InterpreterSystemQuery::execute()
             );
             break;
         }
-        case Type::STOP_LISTEN:
-            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
-            getContext()->stopServers(query.server_type);
-            break;
-        case Type::START_LISTEN:
-            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
-            getContext()->startServers(query.server_type);
-            break;
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->getAsynchronousInsertQueue();
-            if (!queue)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot flush asynchronous insert queue because it is not initialized");
-
-            queue->flushAll();
-            break;
-        }
+        case Type::STOP_LISTEN_QUERIES:
+        case Type::START_LISTEN_QUERIES:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
@@ -588,18 +580,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
             /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
-            break;
-        }
-        case Type::ENABLE_FAILPOINT:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointInjection::enableFailPoint(query.fail_point_name);
-            break;
-        }
-        case Type::DISABLE_FAILPOINT:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
         default:
@@ -820,6 +800,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
         return false;
 
     ReplicatedTableStatus status;
+    auto zookeeper = getContext()->getZooKeeper();
     storage_replicated->getStatus(status);
 
     /// Do not allow to drop local replicas and active remote replicas
@@ -828,7 +809,13 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    storage_replicated->dropReplica(status.zookeeper_path, query.replica, log);
+    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
+    /// However, the main use case is to drop dead replica, which cannot become active.
+    /// This check prevents only from accidental drop of some other replica.
+    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", query.replica);
+
+    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, log);
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
 
     return true;
@@ -843,9 +830,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     {
         if (!query_.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query_.replica_zk_path))
             return;
-        String full_replica_name = query_.shard.empty() ? query_.replica
-                                                        : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
-        if (replicated->getFullReplicaName() != full_replica_name)
+        if (replicated->getFullReplicaName() != query_.replica)
             return;
 
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local database {}, which has the same path in ZooKeeper "
@@ -860,7 +845,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.replica);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -885,7 +870,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
 
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.replica);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -898,7 +883,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, query);
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica);
+        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.replica);
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
     else
@@ -1052,6 +1037,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
+        case Type::RELOAD_SYMBOLS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
+            break;
+        }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
@@ -1166,11 +1156,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;
         }
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            break;
-        }
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
@@ -1186,16 +1171,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
-        case Type::STOP_LISTEN:
-        case Type::START_LISTEN:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_LISTEN);
-            break;
-        }
+        case Type::STOP_LISTEN_QUERIES:
+        case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
-        case Type::ENABLE_FAILPOINT:
-        case Type::DISABLE_FAILPOINT:
         case Type::UNKNOWN:
         case Type::END: break;
     }

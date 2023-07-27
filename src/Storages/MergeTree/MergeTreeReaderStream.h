@@ -9,7 +9,6 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -20,7 +19,7 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+        DataPartStoragePtr data_part_storage_,
         const String & path_prefix_,
         const String & data_file_extension_,
         size_t marks_count_,

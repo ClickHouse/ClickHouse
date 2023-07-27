@@ -5,9 +5,7 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
-#include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
 #include "config.h"
 
@@ -28,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
 }
+
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
@@ -120,7 +119,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
+            auto context = Context::getGlobalContextInstance();
+            if (!context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
                 settings.priority,
@@ -134,7 +137,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
+            auto context = Context::getGlobalContextInstance();
+            if (!context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
                 settings.priority,

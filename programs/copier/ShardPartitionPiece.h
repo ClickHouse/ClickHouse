@@ -2,8 +2,6 @@
 
 #include <base/types.h>
 
-#include <vector>
-
 namespace DB
 {
 

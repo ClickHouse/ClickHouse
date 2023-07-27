@@ -11,14 +11,14 @@ namespace DB
 class ASTOrderByElement : public IAST
 {
 public:
-    int direction = 0; /// 1 for ASC, -1 for DESC
-    int nulls_direction = 0; /// Same as direction for NULLS LAST, opposite for NULLS FIRST.
-    bool nulls_direction_was_explicitly_specified = false;
+    int direction; /// 1 for ASC, -1 for DESC
+    int nulls_direction; /// Same as direction for NULLS LAST, opposite for NULLS FIRST.
+    bool nulls_direction_was_explicitly_specified;
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
     ASTPtr collation;
 
-    bool with_fill = false;
+    bool with_fill;
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;

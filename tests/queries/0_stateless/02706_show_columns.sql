@@ -15,9 +15,7 @@ ENGINE = MergeTree
 PRIMARY KEY (uint64)
 ORDER BY (uint64, str);
 
-SELECT '--- Aliases of SHOW COLUMNS';
 SHOW COLUMNS FROM tab;
-SHOW FIELDS FROM tab;
 
 SELECT '--- EXTENDED';
 SHOW EXTENDED COLUMNS FROM tab;
@@ -42,26 +40,6 @@ SHOW COLUMNS FROM tab WHERE field LIKE '%int%';
 
 SELECT '--- LIMIT';
 SHOW COLUMNS FROM tab LIMIT 1;
-
-SELECT '--- Check with weird table names';
-
-DROP TABLE IF EXISTS `$4@^7`;
-CREATE TABLE `$4@^7` (c String) ENGINE = MergeTree ORDER BY c;
-SHOW COLUMNS FROM `$4@^7`;
-DROP TABLE `$4@^7`;
-
-DROP TABLE IF EXISTS NULL;
-CREATE TABLE NULL (c String) ENGINE = MergeTree ORDER BY c;
-SHOW COLUMNS FROM NULL;
-DROP TABLE NULL;
-
-DROP DATABASE IF EXISTS `'`;
-CREATE DATABASE `'`;
-CREATE TABLE `'`.`'` (c String) ENGINE = MergeTree ORDER BY c;
-SHOW COLUMNS FROM `'` FROM `'`;
-SHOW COLUMNS FROM `'`.`'`; -- abbreviated form
-DROP TABLE `'`.`'`;
-DROP DATABASE `'`;
 
 -- Create a table in a different database. Intentionally useing the same table/column names as above so
 -- we notice if something is buggy in the implementation of SHOW COLUMNS.

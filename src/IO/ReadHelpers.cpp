@@ -31,7 +31,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
-    extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
@@ -47,45 +46,48 @@ inline void parseHex(IteratorSrc src, IteratorDst dst)
         dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
 }
 
-UUID parseUUID(std::span<const UInt8> src)
+void parseUUID(const UInt8 * src36, UInt8 * dst16)
 {
-    UUID uuid;
-    const auto * src_ptr = src.data();
-    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
-    const auto size = src.size();
+    /// If string is not like UUID - implementation specific behaviour.
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst_it(dst + sizeof(UUID));
-#endif
-    if (size == 36)
-    {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        parseHex<4>(src_ptr, dst_it + 8);
-        parseHex<2>(src_ptr + 9, dst_it + 12);
-        parseHex<2>(src_ptr + 14, dst_it + 14);
-        parseHex<2>(src_ptr + 19, dst_it);
-        parseHex<6>(src_ptr + 24, dst_it + 2);
-#else
-        parseHex<4>(src_ptr, dst);
-        parseHex<2>(src_ptr + 9, dst + 4);
-        parseHex<2>(src_ptr + 14, dst + 6);
-        parseHex<2>(src_ptr + 19, dst + 8);
-        parseHex<6>(src_ptr + 24, dst + 10);
-#endif
-    }
-    else if (size == 32)
-    {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        parseHex<8>(src_ptr, dst_it + 8);
-        parseHex<8>(src_ptr + 16, dst_it);
-#else
-        parseHex<16>(src_ptr, dst);
-#endif
-    }
-    else
-        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
+    parseHex<4>(&src36[0], &dst16[0]);
+    parseHex<2>(&src36[9], &dst16[4]);
+    parseHex<2>(&src36[14], &dst16[6]);
+    parseHex<2>(&src36[19], &dst16[8]);
+    parseHex<6>(&src36[24], &dst16[10]);
+}
 
-    return uuid;
+void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex<16>(&src36[0], &dst16[0]);
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    /// FIXME This code looks like trash.
+    parseHex<4>(&src36[0], dst16 + 8);
+    parseHex<2>(&src36[9], dst16 + 12);
+    parseHex<2>(&src36[14], dst16 + 14);
+    parseHex<2>(&src36[19], dst16);
+    parseHex<6>(&src36[24], dst16 + 2);
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex<8>(&src36[0], dst16 + 8);
+    parseHex<8>(&src36[16], dst16);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -847,18 +849,15 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             if constexpr (WithResize<Vector>)
             {
-                if (settings.trim_whitespaces) [[likely]]
-                {
-                    /** CSV format can contain insignificant spaces and tabs.
-                    * Usually the task of skipping them is for the calling code.
-                    * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
-                    */
-                    size_t size = s.size();
-                    while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
-                        --size;
+                /** CSV format can contain insignificant spaces and tabs.
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
+                size_t size = s.size();
+                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                    --size;
 
-                    s.resize(size);
-                }
+                s.resize(size);
             }
             return;
         }

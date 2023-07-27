@@ -32,15 +32,13 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     size_t threads_count_,
     size_t max_tasks_count_,
     CurrentMetrics::Metric metric_,
-    CurrentMetrics::Metric max_tasks_metric_,
-    std::string_view policy)
+    CurrentMetrics::Metric max_tasks_metric_)
     : name(name_)
     , threads_count(threads_count_)
     , max_tasks_count(max_tasks_count_)
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
-    , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
+    , pool(std::make_unique<ThreadPool>(CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -54,9 +52,20 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
 
     for (size_t number = 0; number < threads_count; ++number)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
+}
 
-    if (!policy.empty())
-        pending.updatePolicy(policy);
+template <class Queue>
+MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
+    String name_,
+    size_t threads_count_,
+    size_t max_tasks_count_,
+    CurrentMetrics::Metric metric_,
+    CurrentMetrics::Metric max_tasks_metric_,
+    std::string_view policy)
+    requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
+    : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_, max_tasks_metric_)
+{
+    pending.updatePolicy(policy);
 }
 
 template <class Queue>
@@ -136,36 +145,6 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void printExceptionWithRespectToAbort(Poco::Logger * log, const String & query_id)
-{
-    std::exception_ptr ex = std::current_exception();
-
-    if (ex == nullptr)
-        return;
-
-    try
-    {
-        std::rethrow_exception(ex);
-    }
-    catch (const Exception & e)
-    {
-        NOEXCEPT_SCOPE({
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            /// Cancelled merging parts is not an error - log normally.
-            if (e.code() == ErrorCodes::ABORTED)
-                LOG_DEBUG(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-            else
-                tryLogCurrentException(log, "Exception while executing background task {" + query_id + "}");
-        });
-    }
-    catch (...)
-    {
-        NOEXCEPT_SCOPE({
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            tryLogCurrentException(log, "Exception while executing background task {" + query_id + "}");
-        });
-    }
-}
 
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
@@ -175,15 +154,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         std::lock_guard lock(mutex);
 
         /// Erase storage related tasks from pending and select active tasks to wait for
-        try
-        {
-            /// An exception context is needed to proper delete write buffers without finalization
-            throw Exception(ErrorCodes::ABORTED, "Storage is about to be deleted. Done pending task as if it was aborted.");
-        }
-        catch (...)
-        {
-            pending.remove(id);
-        }
+        pending.remove(id);
 
         /// Copy items to wait for their completion
         std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
@@ -201,6 +172,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
     }
 }
 
+
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 {
@@ -209,43 +181,65 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
     /// All operations with queues are considered no to do any allocations
 
-    auto erase_from_active = [this](TaskRuntimeDataPtr & item_) TSA_REQUIRES(mutex)
+    auto erase_from_active = [this, &item]() TSA_REQUIRES(mutex)
     {
-        active.erase(std::remove(active.begin(), active.end(), item_), active.end());
+        active.erase(std::remove(active.begin(), active.end(), item), active.end());
     };
 
-    auto on_task_done = [] (TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
+    bool need_execute_again = false;
+
+    try
     {
-        /// We have to call reset() under a lock, otherwise a race is possible.
-        /// Imagine, that task is finally completed (last execution returned false),
-        /// we removed the task from both queues, but still have pointer.
-        /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
-        /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        need_execute_again = item->task->executeStep();
+    }
+    catch (const Exception & e)
+    {
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            item_->task.reset();
+            if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
         });
-        item_->is_done.set();
-        item_.reset();
-    };
-
-    auto on_task_restart = [this](TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
+    }
+    catch (...)
     {
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        });
+    }
+
+    if (need_execute_again)
+    {
+        std::lock_guard guard(mutex);
+        erase_from_active();
+
+        if (item->is_currently_deleting)
+        {
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                item->task.reset();
+            });
+            item->is_done.set();
+            item = nullptr;
+            return;
+        }
+
         /// After the `guard` destruction `item` has to be in moved from state
         /// Not to own the object it points to.
         /// Otherwise the destruction of the task won't be ordered with the destruction of the
         /// storage.
-        pending.push(std::move(item_));
+        pending.push(std::move(item));
         has_tasks.notify_one();
-    };
+        item = nullptr;
+        return;
+    }
 
-    String query_id;
-
-    auto release_task = [this, &erase_from_active, &on_task_done, &query_id](TaskRuntimeDataPtr && item_)
     {
         std::lock_guard guard(mutex);
-
-        erase_from_active(item_);
+        erase_from_active();
         has_tasks.notify_one();
 
         try
@@ -254,60 +248,41 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             /// In a situation of a lack of memory this method can throw an exception,
             /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
             /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
-            item_->task->onCompleted();
+            item->task->onCompleted();
+        }
+        catch (const Exception & e)
+        {
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
+                    LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                else
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+            });
         }
         catch (...)
         {
-            printExceptionWithRespectToAbort(log, query_id);
-        }
-
-        on_task_done(std::move(item_));
-    };
-
-    bool need_execute_again = false;
-
-    try
-    {
-        ALLOW_ALLOCATIONS_IN_SCOPE;
-        query_id = item->task->getQueryId();
-        need_execute_again = item->task->executeStep();
-    }
-    catch (...)
-    {
-        printExceptionWithRespectToAbort(log, query_id);
-        /// Release the task with exception context.
-        /// An exception context is needed to proper delete write buffers without finalization
-        release_task(std::move(item));
-        return;
-    }
-
-    if (!need_execute_again)
-    {
-        release_task(std::move(item));
-        return;
-    }
-
-    {
-        std::lock_guard guard(mutex);
-        erase_from_active(item);
-
-        if (item->is_currently_deleting)
-        {
-            try
-            {
+            NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
-                /// An exception context is needed to proper delete write buffers without finalization
-                throw Exception(ErrorCodes::ABORTED, "Storage is about to be deleted. Done active task as if it was aborted.");
-            }
-            catch (...)
-            {
-                printExceptionWithRespectToAbort(log, query_id);
-                on_task_done(std::move(item));
-                return;
-            }
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            });
         }
 
-        on_task_restart(std::move(item));
+
+        /// We have to call reset() under a lock, otherwise a race is possible.
+        /// Imagine, that task is finally completed (last execution returned false),
+        /// we removed the task from both queues, but still have pointer.
+        /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
+        /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
+        {
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                item->task.reset();
+            });
+        }
+
+        item->is_done.set();
+        item = nullptr;
     }
 }
 
@@ -351,4 +326,5 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
 template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
+
 }

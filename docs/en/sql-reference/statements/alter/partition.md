@@ -103,11 +103,7 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ```
 
 This query copies the data partition from `table1` to `table2`.
-
-Note that:
-
-- Data will be deleted neither from `table1` nor from `table2`.
-- `table1` may be a temporary table.
+Note that data will be deleted neither from `table1` nor from `table2`.
 
 For the query to run successfully, the following conditions must be met:
 
@@ -121,12 +117,7 @@ For the query to run successfully, the following conditions must be met:
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`.
-
-Note that:
-
-- Data won’t be deleted from `table1`.
-- `table1` may be a temporary table.
+This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`. Note that data won’t be deleted from `table1`.
 
 For the query to run successfully, the following conditions must be met:
 
@@ -284,17 +275,13 @@ Manipulates data in the specifies partition matching the specified filtering exp
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
--- using partition name
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
-
--- using partition id
-ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also
@@ -308,17 +295,13 @@ Deletes data in the specifies partition matching the specified filtering express
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_id] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
--- using partition name
 ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
-
--- using partition id
-ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also

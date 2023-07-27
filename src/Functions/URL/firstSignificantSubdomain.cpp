@@ -15,8 +15,8 @@ using FunctionFirstSignificantSubdomainRFC = FunctionStringToString<ExtractSubst
 REGISTER_FUNCTION(FirstSignificantSubdomain)
 {
     factory.registerFunction<FunctionFirstSignificantSubdomain>(
-        FunctionDocumentation{
-        .description=R"(
+        {
+        R"(
 Returns the "first significant subdomain".
 
 The first significant subdomain is a second-level domain if it is 'com', 'net', 'org', or 'co'.
@@ -26,15 +26,15 @@ For example, firstSignificantSubdomain('https://news.clickhouse.com/') = 'clickh
 
 The list of "insignificant" second-level domains and other implementation details may change in the future.
         )",
-        .examples{{"firstSignificantSubdomain", "SELECT firstSignificantSubdomain('https://news.clickhouse.com/')", ""}},
-        .categories{"URL"}
+        Documentation::Examples{{"firstSignificantSubdomain", "SELECT firstSignificantSubdomain('https://news.clickhouse.com/')"}},
+        Documentation::Categories{"URL"}
         });
 
     factory.registerFunction<FunctionFirstSignificantSubdomainRFC>(
-        FunctionDocumentation{
-        .description=R"(Returns the "first significant subdomain" according to RFC 1034.)",
-        .examples{},
-        .categories{"URL"}
+        {
+        R"(Returns the "first significant subdomain" according to RFC 1034.)",
+        Documentation::Examples{},
+        Documentation::Categories{"URL"}
         });
 }
 

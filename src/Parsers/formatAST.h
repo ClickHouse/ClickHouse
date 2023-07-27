@@ -8,13 +8,12 @@ namespace DB
 
 class WriteBuffer;
 
-/// Takes a syntax tree and turns it into text.
-/// Intended for pretty-printing (multi-line + hiliting).
-/// In case of INSERT query, the data will be missing.
-void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite = true, bool one_line = false, bool show_secrets = true);
+/** Takes a syntax tree and turns it back into text.
+  * In case of INSERT query, the data will be missing.
+  */
+void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite = true, bool one_line = false);
 
-/// Like formatAST() but intended for serialization w/o pretty-printing (single-line, no hiliting).
-String serializeAST(const IAST & ast);
+String serializeAST(const IAST & ast, bool one_line = true);
 
 inline WriteBuffer & operator<<(WriteBuffer & buf, const IAST & ast)
 {

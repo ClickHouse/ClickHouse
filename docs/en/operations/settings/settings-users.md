@@ -38,10 +38,6 @@ Structure of the `users` section:
                 </table_name>
             </database_name>
         </databases>
-        
-        <grants>
-            <query>GRANT SELECT ON system.*</query>
-        </grants>
     </user_name>
     <!-- Other users settings -->
 </users>
@@ -89,28 +85,6 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 0.
-
-### grants {#grants-user-setting}
-
-This setting allows to grant any rights to selected user.
-Each element of the list should be `GRANT` query without any grantees specified.
-
-Example:
-
-```xml
-<user1>
-    <grants>
-        <query>GRANT SHOW ON *.*</query>
-        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
-        <query>GRANT SELECT ON system.*</query>
-    </grants>
-</user1>
-```
-
-This setting can't be specified at the same time with
-`dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
-and `allow_databases` settings.
-
 
 ### user_name/networks {#user-namenetworks}
 

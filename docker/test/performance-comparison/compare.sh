@@ -14,13 +14,6 @@ LEFT_SERVER_PORT=9001
 # patched version
 RIGHT_SERVER_PORT=9002
 
-# abort_conf   -- abort if some options is not recognized
-# abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
-# narenas      -- set them explicitly to avoid disabling per-cpu arena in env
-#                 that returns different number of CPUs for some of the following
-#                 _SC_NPROCESSORS_ONLN/_SC_NPROCESSORS_CONF/sched_getaffinity
-export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
-
 function wait_for_server # port, pid
 {
     for _ in {1..60}
@@ -116,6 +109,10 @@ function restart
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
 
+    # Change the jemalloc settings here.
+    # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
+    export MALLOC_CONF="confirm_conf:true"
+
     set -m # Spawn servers in their own process groups
 
     local left_server_opts=(
@@ -149,6 +146,8 @@ function restart
     disown $right_pid
 
     set +m
+
+    unset MALLOC_CONF
 
     wait_for_server $LEFT_SERVER_PORT $left_pid
     echo left ok

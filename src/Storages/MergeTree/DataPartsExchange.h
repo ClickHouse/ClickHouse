@@ -66,11 +66,10 @@ public:
     explicit Fetcher(StorageReplicatedMergeTree & data_);
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
+    MergeTreeData::MutableDataPartPtr fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
-        const String & zookeeper_name,
         const String & replica_path,
         const String & host,
         int port,

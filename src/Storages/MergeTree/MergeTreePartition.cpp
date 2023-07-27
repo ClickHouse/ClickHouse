@@ -247,7 +247,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(value[i].get<IPv4>().toUnderType());
             else
@@ -331,7 +331,7 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
                     throw Exception(
                         ErrorCodes::INVALID_PARTITION_VALUE, "Cannot parse partition_id: got unexpected Date: {}", date_yyyymmdd);
 
-                UInt32 date = DateLUT::serverTimezoneInstance().YYYYMMDDToDayNum(date_yyyymmdd);
+                UInt32 date = DateLUT::instance().YYYYMMDDToDayNum(date_yyyymmdd);
                 res.emplace_back(date);
                 break;
             }
@@ -435,11 +435,9 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing, {});
     }
 
-    out_hashing.finalize();
-
+    out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-
     out->preFinalize();
     return out;
 }
