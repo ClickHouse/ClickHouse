@@ -37,9 +37,7 @@ class MockControl:
         )
         assert response == "OK", response
 
-    def setup_action(
-        self, when, count=None, after=None, action="error_500", action_args=None
-    ):
+    def setup_action(self, when, count=None, after=None, action=None, action_args=None):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
 
         if count is not None:
@@ -128,8 +126,14 @@ class MockControl:
 class _ServerRuntime:
     class SlowPut:
         def __init__(
-            self, probability_=None, timeout_=None, minimal_length_=None, count_=None
+            self,
+            lock,
+            probability_=None,
+            timeout_=None,
+            minimal_length_=None,
+            count_=None,
         ):
+            self.lock = lock
             self.probability = probability_ if probability_ is not None else 1
             self.timeout = timeout_ if timeout_ is not None else 0.1
             self.minimal_length = minimal_length_ if minimal_length_ is not None else 0
@@ -144,14 +148,15 @@ class _ServerRuntime:
             )
 
         def get_timeout(self, content_length):
-            if content_length > self.minimal_length:
-                if self.count > 0:
-                    if (
-                        _runtime.slow_put.probability == 1
-                        or random.random() <= _runtime.slow_put.probability
-                    ):
-                        self.count -= 1
-                        return _runtime.slow_put.timeout
+            with self.lock:
+                if content_length > self.minimal_length:
+                    if self.count > 0:
+                        if (
+                            _runtime.slow_put.probability == 1
+                            or random.random() <= _runtime.slow_put.probability
+                        ):
+                            self.count -= 1
+                            return _runtime.slow_put.timeout
             return None
 
     class Expected500ErrorAction:
@@ -199,29 +204,48 @@ class _ServerRuntime:
             )
             request_handler.connection.close()
 
+    class BrokenPipeAction:
+        def inject_error(self, request_handler):
+            # partial read
+            self.rfile.read(50)
+
+            time.sleep(1)
+            request_handler.connection.setsockopt(
+                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+            )
+            request_handler.connection.close()
+
     class ConnectionRefusedAction(RedirectAction):
         pass
 
     class CountAfter:
-        def __init__(self, count_=None, after_=None, action_=None, action_args_=[]):
+        def __init__(
+            self, lock, count_=None, after_=None, action_=None, action_args_=[]
+        ):
+            self.lock = lock
+
             self.count = count_ if count_ is not None else INF_COUNT
             self.after = after_ if after_ is not None else 0
             self.action = action_
             self.action_args = action_args_
+
             if self.action == "connection_refused":
                 self.error_handler = _ServerRuntime.ConnectionRefusedAction()
             elif self.action == "connection_reset_by_peer":
                 self.error_handler = _ServerRuntime.ConnectionResetByPeerAction(
                     *self.action_args
                 )
+            elif self.action == "broken_pipe":
+                self.error_handler = _ServerRuntime.BrokenPipeAction()
             elif self.action == "redirect_to":
                 self.error_handler = _ServerRuntime.RedirectAction(*self.action_args)
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 
         @staticmethod
-        def from_cgi_params(params):
+        def from_cgi_params(lock, params):
             return _ServerRuntime.CountAfter(
+                lock=lock,
                 count_=_and_then(params.get("count", [None])[0], int),
                 after_=_and_then(params.get("after", [None])[0], int),
                 action_=params.get("action", [None])[0],
@@ -232,13 +256,14 @@ class _ServerRuntime:
             return f"count:{self.count} after:{self.after} action:{self.action} action_args:{self.action_args}"
 
         def has_effect(self):
-            if self.after:
-                self.after -= 1
-            if self.after == 0:
-                if self.count:
-                    self.count -= 1
-                    return True
-            return False
+            with self.lock:
+                if self.after:
+                    self.after -= 1
+                if self.after == 0:
+                    if self.count:
+                        self.count -= 1
+                        return True
+                return False
 
         def inject_error(self, request_handler):
             self.error_handler.inject_error(request_handler)
@@ -397,14 +422,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path[1] == "at_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_part_upload = _ServerRuntime.CountAfter.from_cgi_params(params)
+            _runtime.at_part_upload = _ServerRuntime.CountAfter.from_cgi_params(
+                _runtime.lock, params
+            )
             self.log_message("set at_part_upload %s", _runtime.at_part_upload)
             return self._ok()
 
         if path[1] == "at_object_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_object_upload = _ServerRuntime.CountAfter.from_cgi_params(
-                params
+                _runtime.lock, params
             )
             self.log_message("set at_object_upload %s", _runtime.at_object_upload)
             return self._ok()
@@ -420,6 +447,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if path[1] == "slow_put":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.slow_put = _ServerRuntime.SlowPut(
+                lock=_runtime.lock,
                 minimal_length_=_and_then(params.get("minimal_length", [None])[0], int),
                 probability_=_and_then(params.get("probability", [None])[0], float),
                 timeout_=_and_then(params.get("timeout", [None])[0], float),
@@ -436,7 +464,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if path[1] == "at_create_multi_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_create_multi_part_upload = (
-                _ServerRuntime.CountAfter.from_cgi_params(params)
+                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
             )
             self.log_message(
                 "set at_create_multi_part_upload %s",
@@ -477,7 +505,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if upload_id is not None:
             if _runtime.at_part_upload is not None:
                 self.log_message(
-                    "put error_at_object_upload %s, %s, %s",
+                    "put at_part_upload %s, %s, %s",
                     _runtime.at_part_upload,
                     upload_id,
                     parts,
@@ -492,7 +520,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             if _runtime.at_object_upload is not None:
                 if _runtime.at_object_upload.has_effect():
                     self.log_message(
-                        "put error_at_object_upload %s, %s, %s",
+                        "put error_at_object_upload %s, %s",
                         _runtime.at_object_upload,
                         parts,
                     )

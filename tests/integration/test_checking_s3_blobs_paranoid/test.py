@@ -41,11 +41,6 @@ def broken_s3(init_broken_s3):
     yield init_broken_s3
 
 
-@pytest.fixture(scope="module")
-def init_connection_reset_by_peer(cluster):
-    yield start_s3_mock(cluster, "connection_reset_by_peer", "8084")
-
-
 def test_upload_after_check_works(cluster, broken_s3):
     node = cluster.instances["node"]
 
@@ -395,5 +390,77 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
     assert (
         "DB::Exception: Connection reset by peer." in error
         or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        in error
+    ), error
+
+
+def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(
+        count=3,
+        after=2,
+        action="broken_pipe",
+    )
+
+    insert_query_id = f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD"
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 1000000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=1000000,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 7
+    assert count_s3_errors == 3
+
+    broken_s3.setup_at_part_upload(
+        count=1000,
+        after=2,
+        action="broken_pipe",
+    )
+    insert_query_id = f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1"
+    error = node.query_and_get_error(
+        f"""
+               INSERT INTO
+                   TABLE FUNCTION s3(
+                       'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
+                       'minio', 'minio123',
+                       'CSV', auto, 'none'
+                   )
+               SELECT
+                   *
+               FROM system.numbers
+               LIMIT 1000000
+               SETTINGS
+                   s3_max_single_part_upload_size=100,
+                   s3_min_upload_part_size=1000000,
+                   s3_check_objects_after_upload=0
+               """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 1000" in error, error
+    assert (
+        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
         in error
     ), error
