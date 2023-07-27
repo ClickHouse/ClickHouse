@@ -112,10 +112,10 @@ Columns:
 - `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `storages`, which were used during query execution.
 - `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
-    - `'Unknown' = 1` = Status unknown.
-    - `'None' = 2` = The query result was neither written into nor read from the query cache.
-    - `'Write' = 3` = The query result was written into the query cache.
-    - `'Read' = 4` = The query result was read from the query cache.
+    - `'Unknown'` = Status unknown.
+    - `'None'` = The query result was neither written into nor read from the query cache.
+    - `'Write'` = The query result was written into the query cache.
+    - `'Read'` = The query result was read from the query cache.
 
 **Example**
 
