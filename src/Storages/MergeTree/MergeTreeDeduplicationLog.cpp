@@ -241,8 +241,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
 
     if (stopped)
     {
-        LOG_ERROR(&Poco::Logger::get("MergeTreeDeduplicationLog"), "Storage has been shutdown when we add this part.");
-        return {};
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
     chassert(current_writer != nullptr);
