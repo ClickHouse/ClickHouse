@@ -31,7 +31,8 @@ for i in $(seq $REPLICAS); do
                  max_replicated_merges_in_queue = 1000,
                  temporary_directories_lifetime = 10,
                  cleanup_delay_period = 3,
-                 cleanup_delay_period_random_add = 0"
+                 cleanup_delay_period_random_add = 0,
+                 cleanup_thread_preferred_points_per_iteration=0"
 done
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"
@@ -137,8 +138,13 @@ while true ; do
 done
 
 for i in $(seq $REPLICAS); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_mt_$i"
+    $CLICKHOUSE_CLIENT --query "CHECK TABLE concurrent_mutate_mt_$i" &> /dev/null # if we will remove something the output of select will be wrong
     $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_mutate_mt_$i"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE table='concurrent_mutate_mt_$i' and is_done=0" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE table='concurrent_mutate_mt_$i' and is_done=0" # for verbose output
+done
+
+for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_mt_$i"
 done

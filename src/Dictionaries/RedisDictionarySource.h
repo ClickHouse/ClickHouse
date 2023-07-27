@@ -5,16 +5,7 @@
 
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
-
-namespace Poco
-{
-    namespace Redis
-    {
-        class Client;
-        class Array;
-        class Command;
-    }
-}
+#include <Storages/RedisCommon.h>
 
 namespace DB
 {
@@ -23,47 +14,12 @@ namespace DB
         extern const int NOT_IMPLEMENTED;
     }
 
-    enum class RedisStorageType
-    {
-            SIMPLE,
-            HASH_MAP,
-            UNKNOWN
-    };
-
     class RedisDictionarySource final : public IDictionarySource
     {
     public:
-        using RedisArray = Poco::Redis::Array;
-        using RedisCommand = Poco::Redis::Command;
-
-        using ClientPtr = std::unique_ptr<Poco::Redis::Client>;
-        using Pool = BorrowedObjectPool<ClientPtr>;
-        using PoolPtr = std::shared_ptr<Pool>;
-
-        struct Configuration
-        {
-            const std::string host;
-            const UInt16 port;
-            const UInt32 db_index;
-            const std::string password;
-            const RedisStorageType storage_type;
-            const size_t pool_size;
-        };
-
-        struct Connection
-        {
-            Connection(PoolPtr pool_, ClientPtr client_);
-            ~Connection();
-
-            PoolPtr pool;
-            ClientPtr client;
-        };
-
-        using ConnectionPtr = std::unique_ptr<Connection>;
-
         RedisDictionarySource(
             const DictionaryStructure & dict_struct_,
-            const Configuration & configuration_,
+            const RedisConfiguration & configuration_,
             const Block & sample_block_);
 
         RedisDictionarySource(const RedisDictionarySource & other);
@@ -92,12 +48,10 @@ namespace DB
         std::string toString() const override;
 
     private:
-        ConnectionPtr getConnection() const;
-
         const DictionaryStructure dict_struct;
-        const Configuration configuration;
+        const RedisConfiguration configuration;
 
-        PoolPtr pool;
+        RedisPoolPtr pool;
         Block sample_block;
     };
 }

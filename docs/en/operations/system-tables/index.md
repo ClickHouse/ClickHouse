@@ -13,6 +13,7 @@ System tables provide information about:
 
 - Server states, processes, and environment.
 - Server’s internal processes.
+- Options used when the ClickHouse binary was built.
 
 System tables:
 

@@ -20,7 +20,7 @@ namespace Poco {
 namespace MongoDB {
 
 
-Array::Array(): 
+Array::Array():
 	Document()
 {
 }
@@ -31,7 +31,7 @@ Array::~Array()
 }
 
 
-Element::Ptr Array::get(int pos) const
+Element::Ptr Array::get(std::size_t pos) const
 {
 	std::string name = Poco::NumberFormatter::format(pos);
 	return Document::get(name);

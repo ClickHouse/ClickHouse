@@ -2,40 +2,11 @@
 
 import argparse
 import sys
-import json
-import time
 
 import boto3  # type: ignore
-import jwt
 import requests  # type: ignore
 
-
-def get_installation_id(jwt_token):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.get("https://api.github.com/app/installations", headers=headers)
-    response.raise_for_status()
-    data = response.json()
-    for installation in data:
-        if installation["account"]["login"] == "ClickHouse":
-            installation_id = installation["id"]
-    return installation_id
-
-
-def get_access_token(jwt_token, installation_id):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.post(
-        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["token"]
+from lambda_shared.token import get_cached_access_token, get_access_token_by_key_app
 
 
 def get_runner_registration_token(access_token):
@@ -52,32 +23,10 @@ def get_runner_registration_token(access_token):
     return data["token"]
 
 
-def get_key_and_app_from_aws():
-    secret_name = "clickhouse_github_secret_key"
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-    )
-    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-    data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
-
-
-def main(github_secret_key, github_app_id, push_to_ssm, ssm_parameter_name):
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": github_app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    access_token = get_access_token(encoded_jwt, installation_id)
+def main(access_token, push_to_ssm, ssm_parameter_name):
     runner_registration_token = get_runner_registration_token(access_token)
 
     if push_to_ssm:
-        import boto3
-
         print("Trying to put params into ssm manager")
         client = boto3.client("ssm")
         client.put_parameter(
@@ -94,8 +43,7 @@ def main(github_secret_key, github_app_id, push_to_ssm, ssm_parameter_name):
 
 
 def handler(event, context):
-    private_key, app_id = get_key_and_app_from_aws()
-    main(private_key, app_id, True, "github_runner_registration_token")
+    main(get_cached_access_token(), True, "github_runner_registration_token")
 
 
 if __name__ == "__main__":
@@ -140,4 +88,5 @@ if __name__ == "__main__":
         with open(args.private_key_path, "r") as key_file:
             private_key = key_file.read()
 
-    main(private_key, args.app_id, args.push_to_ssm, args.ssm_parameter_name)
+    token = get_access_token_by_key_app(private_key, args.app_id)
+    main(token, args.push_to_ssm, args.ssm_parameter_name)
