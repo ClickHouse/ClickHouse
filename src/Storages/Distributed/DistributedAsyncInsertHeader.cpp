@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, Poco::Logger * log)
