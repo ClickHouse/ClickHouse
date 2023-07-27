@@ -95,7 +95,7 @@ private:
     void createDatabase(const String & database_name) const;
     void checkDatabase(const String & database_name);
 
-    void setCustomStoragePolicyIfAny(ASTPtr query_ptr);
+    void applyCustomStoragePolicy(ASTPtr query_ptr);
 
     void removeUnresolvedDependencies();
     void createTables();

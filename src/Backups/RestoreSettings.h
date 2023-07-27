@@ -118,7 +118,7 @@ struct RestoreSettings
     String host_id;
 
     /// Alternative storage policy that may be specified in the SETTINGS clause of RESTORE queries
-    String storage_policy;
+    std::optional<String> storage_policy;
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.

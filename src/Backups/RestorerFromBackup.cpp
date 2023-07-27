@@ -322,7 +322,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    setCustomStoragePolicyIfAny(create_table_query);
+    applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
@@ -626,16 +626,22 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
-void RestorerFromBackup::setCustomStoragePolicyIfAny(ASTPtr query_ptr)
+void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
 {
-    if (!restore_settings.storage_policy.empty())
+    constexpr auto setting_name = "storage_policy";
+    if (!query_ptr)
+        return;
+    auto storage = query_ptr->as<ASTCreateQuery &>().storage;
+    if (storage && storage->settings)
     {
-        auto & create_table_query = query_ptr->as<ASTCreateQuery &>();
-        if (create_table_query.storage && create_table_query.storage->settings)
+        if (restore_settings.storage_policy.has_value())
         {
-            auto value = create_table_query.storage->settings->changes.tryGet("storage_policy");
-            if (value)
-                *value = restore_settings.storage_policy;
+            if (restore_settings.storage_policy.value().empty())
+                /// it has been set to "" deliberately, so the source storage policy is erased
+                storage->settings->changes.removeSetting(setting_name);
+            else
+                /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
+                storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
         }
     }
 }
