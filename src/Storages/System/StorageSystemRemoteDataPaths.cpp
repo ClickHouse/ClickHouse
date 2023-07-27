@@ -25,7 +25,6 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"local_path", std::make_shared<DataTypeString>()},
         {"remote_path", std::make_shared<DataTypeString>()},
         {"size", std::make_shared<DataTypeUInt64>()},
-        {"refcount", std::make_shared<DataTypeUInt64>()},
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>()},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     }));
@@ -49,7 +48,6 @@ Pipe StorageSystemRemoteDataPaths::read(
     MutableColumnPtr col_local_path = ColumnString::create();
     MutableColumnPtr col_remote_path = ColumnString::create();
     MutableColumnPtr col_size = ColumnUInt64::create();
-    MutableColumnPtr col_refcount = ColumnUInt64::create();
     MutableColumnPtr col_namespace = ColumnString::create();
     MutableColumnPtr col_cache_paths = ColumnArray::create(ColumnString::create());
 
@@ -67,22 +65,19 @@ Pipe StorageSystemRemoteDataPaths::read(
             if (disk->supportsCache())
                 cache = FileCacheFactory::instance().getByName(disk->getCacheName()).cache;
 
-            for (const auto & [local_path, common_prefox_for_objects, storage_objects, refcount] : remote_paths_by_local_path)
+            for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
             {
                 for (const auto & object : storage_objects)
                 {
                     col_disk_name->insert(disk_name);
                     col_base_path->insert(disk->getPath());
-
                     if (cache)
                         col_cache_base_path->insert(cache->getBasePath());
                     else
                         col_cache_base_path->insertDefault();
-
                     col_local_path->insert(local_path);
                     col_remote_path->insert(object.remote_path);
                     col_size->insert(object.bytes_size);
-                    col_refcount->insert(refcount);
                     col_namespace->insert(common_prefox_for_objects);
 
                     if (cache)
@@ -106,7 +101,6 @@ Pipe StorageSystemRemoteDataPaths::read(
     res_columns.emplace_back(std::move(col_local_path));
     res_columns.emplace_back(std::move(col_remote_path));
     res_columns.emplace_back(std::move(col_size));
-    res_columns.emplace_back(std::move(col_refcount));
     res_columns.emplace_back(std::move(col_namespace));
     res_columns.emplace_back(std::move(col_cache_paths));
 
