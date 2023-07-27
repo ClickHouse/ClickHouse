@@ -1,6 +1,6 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:latest AS cctools
+FROM clickhouse/test-util:50773 AS cctools
 # The cctools are built always from the clickhouse/test-util:latest and cached inline
 # Theoretically, it should improve rebuild speed significantly
 ENV CC=clang-${LLVM_VERSION}
@@ -57,33 +57,6 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     rustup target add x86_64-unknown-freebsd && \
     rustup target add aarch64-apple-darwin && \
     rustup target add powerpc64le-unknown-linux-gnu
-
-# Create vendor cache for cargo.
-#
-# Note, that the config.toml for the root is used, you will not be able to
-# install any other crates, except those which had been vendored (since if
-# there is "replace-with" for some source, then cargo will not look to other
-# remotes except this).
-#
-# Notes for the command itself:
-# - --chown is required to preserve the rights
-# - unstable-options for -C
-# - chmod is required to fix the permissions, since builds are running from a different user
-# - copy of the Cargo.lock is required for proper dependencies versions
-# - cargo vendor --sync is requried to overcome [1] bug.
-#
-#   [1]: https://github.com/rust-lang/wg-cargo-std-aware/issues/23
-COPY --chown=root:root /rust /rust/packages
-RUN cargo -Z unstable-options -C /rust/packages vendor > $CARGO_HOME/config.toml && \
-    cp "$(rustc --print=sysroot)"/lib/rustlib/src/rust/Cargo.lock "$(rustc --print=sysroot)"/lib/rustlib/src/rust/library/test/ && \
-    cargo -Z unstable-options -C /rust/packages vendor --sync "$(rustc --print=sysroot)"/lib/rustlib/src/rust/library/test/Cargo.toml && \
-    rm "$(rustc --print=sysroot)"/lib/rustlib/src/rust/library/test/Cargo.lock && \
-    sed -i "s#\"vendor\"#\"/rust/vendor\"#" $CARGO_HOME/config.toml && \
-    cat $CARGO_HOME/config.toml && \
-    mv /rust/packages/vendor /rust/vendor && \
-    chmod -R o=r+X /rust/vendor && \
-    ls -R -l /rust/packages && \
-    rm -r /rust/packages
 
 # NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):

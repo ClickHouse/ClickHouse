@@ -83,8 +83,6 @@ def get_cached_access_token() -> str:
     # used. The first setting and close-to-ttl are not counted as update
     if _cached_token.time != 0 or time.time() - 590 < _cached_token.time:
         _cached_token.updating = True
-    else:
-        _cached_token.updating = False
     private_key, app_id = get_key_and_app_from_aws()
     _cached_token.time = int(time.time())
     _cached_token.value = get_access_token_by_key_app(private_key, app_id)

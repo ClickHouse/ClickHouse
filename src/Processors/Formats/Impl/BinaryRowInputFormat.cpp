@@ -13,8 +13,7 @@ namespace ErrorCodes
     extern const int CANNOT_SKIP_UNKNOWN_FIELD;
 }
 
-template <bool with_defaults>
-BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
         header,
         in_,
@@ -23,17 +22,16 @@ BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, cons
         with_names_,
         with_types_,
         format_settings_,
-        std::make_unique<BinaryFormatReader<with_defaults>>(in_, format_settings_))
+        std::make_unique<BinaryFormatReader>(in_, format_settings_))
 {
 }
 
-template <bool with_defaults>
-BinaryFormatReader<with_defaults>::BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_) : FormatWithNamesAndTypesReader(in_, format_settings_)
+
+BinaryFormatReader::BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_) : FormatWithNamesAndTypesReader(in_, format_settings_)
 {
 }
 
-template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
+std::vector<String> BinaryFormatReader::readHeaderRow()
 {
     std::vector<String> fields;
     String field;
@@ -45,15 +43,13 @@ std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
     return fields;
 }
 
-template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readNames()
+std::vector<String> BinaryFormatReader::readNames()
 {
     readVarUInt(read_columns, *in);
     return readHeaderRow();
 }
 
-template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
+std::vector<String> BinaryFormatReader::readTypes()
 {
     auto types = readHeaderRow();
     for (const auto & type_name : types)
@@ -61,40 +57,26 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
     return types;
 }
 
-template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
+bool BinaryFormatReader::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
 {
-    if constexpr (with_defaults)
-    {
-        UInt8 is_default;
-        readBinary(is_default, *in);
-        if (is_default)
-        {
-            column.insertDefault();
-            return false;
-        }
-    }
     serialization->deserializeBinary(column, *in, format_settings);
     return true;
 }
 
-template <bool with_defaults>
-void BinaryFormatReader<with_defaults>::skipHeaderRow()
+void BinaryFormatReader::skipHeaderRow()
 {
     String tmp;
     for (size_t i = 0; i < read_columns; ++i)
         readStringBinary(tmp, *in);
 }
 
-template <bool with_defaults>
-void BinaryFormatReader<with_defaults>::skipNames()
+void BinaryFormatReader::skipNames()
 {
     readVarUInt(read_columns, *in);
     skipHeaderRow();
 }
 
-template <bool with_defaults>
-void BinaryFormatReader<with_defaults>::skipTypes()
+void BinaryFormatReader::skipTypes()
 {
     if (read_columns == 0)
     {
@@ -105,8 +87,7 @@ void BinaryFormatReader<with_defaults>::skipTypes()
     skipHeaderRow();
 }
 
-template <bool with_defaults>
-void BinaryFormatReader<with_defaults>::skipField(size_t file_column)
+void BinaryFormatReader::skipField(size_t file_column)
 {
     if (file_column >= read_data_types.size())
         throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD,
@@ -130,21 +111,12 @@ void registerInputFormatRowBinary(FormatFactory & factory)
             const IRowInputFormat::Params & params,
             const FormatSettings & settings)
         {
-            return std::make_shared<BinaryRowInputFormat<false>>(buf, sample, params, with_names, with_types, settings);
+            return std::make_shared<BinaryRowInputFormat>(buf, sample, params, with_names, with_types, settings);
         });
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
     factory.registerFileExtension("bin", "RowBinary");
-
-    factory.registerInputFormat("RowBinaryWithDefaults", [](
-         ReadBuffer & buf,
-         const Block & sample,
-         const IRowInputFormat::Params & params,
-         const FormatSettings & settings)
-    {
-        return std::make_shared<BinaryRowInputFormat<true>>(buf, sample, params, false, false, settings);
-    });
 }
 
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
@@ -153,8 +125,6 @@ void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<BinaryWithNamesAndTypesSchemaReader>(buf, settings);
     });
-
-
 }
 
 

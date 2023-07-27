@@ -24,11 +24,10 @@ BlockIO InterpreterSetQuery::execute()
 }
 
 
-void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constraints)
+void InterpreterSetQuery::executeForCurrentContext()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    if (!ignore_setting_constraints)
-        getContext()->checkSettingsConstraints(ast.changes);
+    getContext()->checkSettingsConstraints(ast.changes);
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
@@ -65,9 +64,6 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
-        if (explain_query->settings_ast)
-            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext();
-
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))

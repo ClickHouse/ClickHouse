@@ -96,7 +96,7 @@ def test_part_move(policy, destination_disks):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='{}', temporary_directories_lifetime=1
+        SETTINGS storage_policy='{}'
         """.format(
             policy
         )

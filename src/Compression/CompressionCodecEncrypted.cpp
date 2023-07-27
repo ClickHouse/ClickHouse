@@ -28,17 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
-    extern const int BAD_ARGUMENTS;
-}
-
-EncryptionMethod getEncryptionMethod(const std::string & name)
-{
-    if (name == "AES_128_GCM_SIV")
-        return AES_128_GCM_SIV;
-    else if (name == "AES_256_GCM_SIV")
-        return AES_256_GCM_SIV;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", name);
 }
 
 namespace
@@ -74,7 +63,7 @@ uint8_t getMethodCode(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -90,6 +79,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
 
@@ -114,7 +104,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -139,7 +129,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -215,7 +205,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption method. Got {}", getMethodName(Method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -588,7 +578,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     if (current_params->keys_storage[method].contains(key_id))
         key = current_params->keys_storage[method].at(key_id);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config for {} encryption codec", key_id, getMethodName(method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config", key_id);
 
     return key;
 }

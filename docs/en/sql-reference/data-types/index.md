@@ -28,6 +28,6 @@ ClickHouse data types include:
 - **Nested data structures**: A [`Nested` data structure](./nested-data-structures/index.md) is like a table inside a cell
 - **Tuples**: A [`Tuple` of elements](./tuple.md), each having an individual type.
 - **Nullable**: [`Nullable`](./nullable.md) allows you to store a value as `NULL` when a value is "missing" (instead of the column settings its default value for the data type)
-- **IP addresses**: use [`IPv4`](./ipv4.md) and [`IPv6`](./ipv6.md) to efficiently store IP addresses
+- **IP addresses**: use [`IPv4`](./domains/ipv4.md) and [`IPv6`](./domains/ipv6.md) to efficiently store IP addresses
 - **Geo types**: for [geographical data](./geo.md), including `Point`, `Ring`, `Polygon` and `MultiPolygon`
 - **Special data types**: including [`Expression`](./special-data-types/expression.md), [`Set`](./special-data-types/set.md), [`Nothing`](./special-data-types/nothing.md) and [`Interval`](./special-data-types/interval.md)

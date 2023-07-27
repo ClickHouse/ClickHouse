@@ -266,20 +266,19 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const auto & value = this->data(place).value;
-        const size_t size = value.size();
+        size_t size = value.size();
         writeVarUInt(size, buf);
-        for (const auto & element : value)
-            writeBinaryLittleEndian(element, buf);
+        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
 
         if constexpr (Trait::last)
-            writeBinaryLittleEndian(this->data(place).total_values, buf);
+            DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            writeBinaryLittleEndian(this->data(place).total_values, buf);
+            DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
             WriteBufferFromOwnString rng_buf;
             rng_buf << this->data(place).rng;
-            writeStringBinary(rng_buf.str(), buf);
+            DB::writeStringBinary(rng_buf.str(), buf);
         }
     }
 
@@ -298,17 +297,16 @@ public:
         auto & value = this->data(place).value;
 
         value.resize_exact(size, arena);
-        for (auto & element : value)
-            readBinaryLittleEndian(element, buf);
+        buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
 
         if constexpr (Trait::last)
-            readBinaryLittleEndian(this->data(place).total_values, buf);
+            DB::readIntBinary<size_t>(this->data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(this->data(place).total_values, buf);
+            DB::readIntBinary<size_t>(this->data(place).total_values, buf);
             std::string rng_string;
-            readStringBinary(rng_string, buf);
+            DB::readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
             rng_buf >> this->data(place).rng;
         }
@@ -605,14 +603,14 @@ public:
             node->write(buf);
 
         if constexpr (Trait::last)
-            writeBinaryLittleEndian(data(place).total_values, buf);
+            DB::writeIntBinary<size_t>(data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            writeBinaryLittleEndian(data(place).total_values, buf);
+            DB::writeIntBinary<size_t>(data(place).total_values, buf);
             WriteBufferFromOwnString rng_buf;
             rng_buf << data(place).rng;
-            writeStringBinary(rng_buf.str(), buf);
+            DB::writeStringBinary(rng_buf.str(), buf);
         }
     }
 
@@ -638,13 +636,13 @@ public:
             value[i] = Node::read(buf, arena);
 
         if constexpr (Trait::last)
-            readBinaryLittleEndian(data(place).total_values, buf);
+            DB::readIntBinary<size_t>(data(place).total_values, buf);
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(data(place).total_values, buf);
+            DB::readIntBinary<size_t>(data(place).total_values, buf);
             std::string rng_string;
-            readStringBinary(rng_string, buf);
+            DB::readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
             rng_buf >> data(place).rng;
         }

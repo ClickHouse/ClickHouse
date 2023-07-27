@@ -27,13 +27,13 @@ namespace ErrorCodes
 
 
 template <typename Distance>
-AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
-    : Base::AnnoyIndex(dimensions)
+AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(uint64_t dim)
+    : Base::AnnoyIndex(dim)
 {
 }
 
 template<typename Distance>
-void AnnoyIndexWithSerialization<Distance>::serialize(WriteBuffer & ostr) const
+void AnnoyIndexWithSerialization<Distance>::serialize(WriteBuffer& ostr) const
 {
     chassert(Base::_built);
     writeIntBinary(Base::_s, ostr);
@@ -43,11 +43,11 @@ void AnnoyIndexWithSerialization<Distance>::serialize(WriteBuffer & ostr) const
     writeIntBinary(Base::_K, ostr);
     writeIntBinary(Base::_seed, ostr);
     writeVectorBinary(Base::_roots, ostr);
-    ostr.write(reinterpret_cast<const char *>(Base::_nodes), Base::_s * Base::_n_nodes);
+    ostr.write(reinterpret_cast<const char*>(Base::_nodes), Base::_s * Base::_n_nodes);
 }
 
 template<typename Distance>
-void AnnoyIndexWithSerialization<Distance>::deserialize(ReadBuffer & istr)
+void AnnoyIndexWithSerialization<Distance>::deserialize(ReadBuffer& istr)
 {
     chassert(!Base::_built);
     readIntBinary(Base::_s, istr);
@@ -69,7 +69,7 @@ void AnnoyIndexWithSerialization<Distance>::deserialize(ReadBuffer & istr)
 }
 
 template<typename Distance>
-size_t AnnoyIndexWithSerialization<Distance>::getDimensions() const
+uint64_t AnnoyIndexWithSerialization<Distance>::getNumOfDimensions() const
 {
     return Base::get_f();
 }
@@ -97,14 +97,14 @@ void MergeTreeIndexGranuleAnnoy<Distance>::serializeBinary(WriteBuffer & ostr) c
 {
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
-    writeIntBinary(static_cast<UInt64>(index->getDimensions()), ostr); // write dimension
+    writeIntBinary(index->getNumOfDimensions(), ostr); // write dimension
     index->serialize(ostr);
 }
 
 template <typename Distance>
 void MergeTreeIndexGranuleAnnoy<Distance>::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    UInt64 dimension;
+    uint64_t dimension;
     readIntBinary(dimension, istr);
     index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(dimension);
     index->deserialize(istr);
@@ -114,7 +114,7 @@ template <typename Distance>
 MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    UInt64 trees_)
+    uint64_t trees_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , trees(trees_)
@@ -251,10 +251,10 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     const AnnoyIndexWithSerializationPtr<Distance> annoy = granule->index;
 
-    if (ann_condition.getDimensions() != annoy->getDimensions())
+    if (ann_condition.getNumOfDimensions() != annoy->getNumOfDimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
                         "does not match the dimension in the index ({})",
-                        ann_condition.getDimensions(), annoy->getDimensions());
+                        ann_condition.getNumOfDimensions(), annoy->getNumOfDimensions());
 
     std::vector<UInt64> neighbors; /// indexes of dots which were closest to the reference vector
     std::vector<Float32> distances;
@@ -281,7 +281,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
     return granule_numbers;
 }
 
-MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, UInt64 trees_, const String & distance_function_)
+MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t trees_, const String & distance_function_)
     : IMergeTreeIndex(index_)
     , trees(trees_)
     , distance_function(distance_function_)
@@ -320,9 +320,9 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
 
-    UInt64 trees = default_trees;
+    uint64_t trees = default_trees;
     if (index.arguments.size() > 1)
-        trees = index.arguments[1].get<UInt64>();
+        trees = index.arguments[1].get<uint64_t>();
 
     return std::make_shared<MergeTreeIndexAnnoy>(index, trees, distance_function);
 }
@@ -338,7 +338,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance function argument of Annoy index must be of type String");
 
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Number of trees argument of Annoy index must be of type UInt64");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Number of trees argument of Annoy index must be UInt64");
 
     /// Check that the index is created on a single column
 
@@ -351,16 +351,17 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         String distance_name = index.arguments[0].get<String>();
         if (distance_name != "L2Distance" && distance_name != "cosineDistance")
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index only supports distance functions 'L2Distance' and 'cosineDistance'");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index supports only distance functions 'L2Distance' and 'cosineDistance'. Given distance function: {}", distance_name);
     }
 
     /// Check data type of indexed column:
 
-    auto throw_unsupported_underlying_column_exception = []()
+    auto throw_unsupported_underlying_column_exception = [](DataTypePtr data_type)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32)");
+            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32). Given type: {}",
+            data_type->getName());
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
@@ -369,7 +370,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
-            throw_unsupported_underlying_column_exception();
+            throw_unsupported_underlying_column_exception(data_type);
     }
     else if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(data_type.get()))
     {
@@ -378,11 +379,11 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
         {
             TypeIndex nested_type_index = inner_type->getTypeId();
             if (!WhichDataType(nested_type_index).isFloat32())
-                throw_unsupported_underlying_column_exception();
+                throw_unsupported_underlying_column_exception(data_type);
         }
     }
     else
-        throw_unsupported_underlying_column_exception();
+        throw_unsupported_underlying_column_exception(data_type);
 }
 
 }

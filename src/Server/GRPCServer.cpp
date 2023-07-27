@@ -798,7 +798,7 @@ namespace
         /// Authentication.
         session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
         session->authenticate(user, password, user_address);
-        session->setQuotaClientKey(quota_key);
+        session->getClientInfo().quota_key = quota_key;
 
         ClientInfo client_info = session->getClientInfo();
 
@@ -1299,7 +1299,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
+        LOG_ERROR(log, getExceptionMessageAndPattern(exception, /* with_stacktrace */ true));
 
         if (responder && !responder_finished)
         {

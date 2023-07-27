@@ -35,8 +35,7 @@ private:
     size_t max_parts_per_block;
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
-    UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
-    UInt64 num_blocks_processed = 0;
+    uint64_t chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 
     /// We can delay processing for previous chunk and start writing a new one.
     struct DelayedChunk;

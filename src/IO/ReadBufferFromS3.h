@@ -41,7 +41,7 @@ private:
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
 
-    std::optional<Aws::S3::Model::GetObjectResult> read_result;
+    Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
@@ -59,8 +59,6 @@ public:
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt);
-
-    ~ReadBufferFromS3() override;
 
     bool nextImpl() override;
 
@@ -95,8 +93,6 @@ private:
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
 
-    bool readAllRangeSuccessfully() const;
-
     ReadSettings read_settings;
 
     bool use_external_buffer;
@@ -104,8 +100,6 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
-
-    bool read_all_range_successfully = false;
 };
 
 }

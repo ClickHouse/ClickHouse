@@ -30,6 +30,8 @@
 #include <Dictionaries/RegExpTreeDictionary.h>
 #include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
+#include <re2_st/stringpiece.h>
+
 #include "config.h"
 
 #if USE_VECTORSCAN
@@ -467,16 +469,17 @@ public:
 
 std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
 {
-    std::string_view matches[10];
+    re2_st::StringPiece haystack(data.data(), data.size());
+    re2_st::StringPiece matches[10];
     String result;
-    searcher.Match({data.data(), data.size()}, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
+    searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
     /// if the pattern is a single '$1' but fails to match, we would use the default value.
     if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 10 && matches[pieces[0].ref_num].empty())
         return std::make_pair(result, true);
     for (const auto & item : pieces)
     {
         if (item.ref_num >= 0 && item.ref_num < 10)
-            result += String{matches[item.ref_num]};
+            result += matches[item.ref_num].ToString();
         else
             result += item.literal;
     }

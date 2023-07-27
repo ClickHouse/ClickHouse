@@ -188,7 +188,7 @@ public:
 
     /// Get the result in some form. This can only be done once!
 
-    ALWAYS_INLINE void get128(char * out)
+    void get128(char * out)
     {
         finalize();
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__

@@ -184,46 +184,41 @@ public:
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return useDefaultImplementationForNulls(); }
+    bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr &) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
-        assert(!values.empty());
+        assert(!types.empty() && !values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {
-            auto * result = nativeBoolCast(b, values[0]);
-            for (size_t i = 1; i < values.size(); ++i)
-                result = Impl::apply(b, result, nativeBoolCast(b, values[i]));
+            auto * result = nativeBoolCast(b, types[0], values[0]);
+            for (size_t i = 1; i < types.size(); ++i)
+                result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]));
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
-
         constexpr bool break_on_true = Impl::isSaturatedValue(true);
         auto * next = b.GetInsertBlock();
         auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
         b.SetInsertPoint(stop);
-
         auto * phi = b.CreatePHI(b.getInt8Ty(), static_cast<unsigned>(values.size()));
-
-        for (size_t i = 0; i < values.size(); ++i)
+        for (size_t i = 0; i < types.size(); ++i)
         {
             b.SetInsertPoint(next);
-            auto * value = values[i].value;
-            auto * truth = nativeBoolCast(b, values[i]);
-            if (!values[i].type->equals(DataTypeUInt8{}))
+            auto * value = values[i];
+            auto * truth = nativeBoolCast(b, types[i], value);
+            if (!types[i]->equals(DataTypeUInt8{}))
                 value = b.CreateSelect(truth, b.getInt8(1), b.getInt8(0));
             phi->addIncoming(value, b.GetInsertBlock());
-            if (i + 1 < values.size())
+            if (i + 1 < types.size())
             {
                 next = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
                 b.CreateCondBr(truth, break_on_true ? stop : next, break_on_true ? next : stop);
             }
         }
-
         b.CreateBr(stop);
         b.SetInsertPoint(stop);
-
         return phi;
     }
 #endif
@@ -253,12 +248,12 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return true; }
+    bool isCompilableImpl(const DataTypes &) const override { return true; }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr &) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, values[0])), b.getInt8(1), b.getInt8(0));
+        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, types[0], values[0])), b.getInt8(1), b.getInt8(0));
     }
 #endif
 };

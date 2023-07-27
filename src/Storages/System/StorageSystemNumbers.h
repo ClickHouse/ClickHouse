@@ -40,6 +40,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
+
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
     bool supportsTransactions() const override { return true; }
