@@ -240,7 +240,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
 
     if (stopped)
     {
-        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
     chassert(current_writer != nullptr);
