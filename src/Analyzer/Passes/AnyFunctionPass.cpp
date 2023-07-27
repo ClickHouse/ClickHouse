@@ -1,4 +1,4 @@
-#include "AnyFunctionPass.h"
+#include <Analyzer/Passes/AnyFunctionPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -7,7 +7,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ArrayJoinNode.h>
 
 namespace DB
 {
@@ -15,30 +14,27 @@ namespace DB
 namespace
 {
 
-class AnyFunctionVisitor : public InDepthQueryTreeVisitor<AnyFunctionVisitor>
+class AnyFunctionVisitor : public InDepthQueryTreeVisitorWithContext<AnyFunctionVisitor>
 {
 private:
     bool canRewrite(const FunctionNode * function_node)
     {
         for (const auto & argument : function_node->getArguments().getNodes())
         {
-            /// arrayJoin() is special and should not be optimized (think about
-            /// it as a an aggregate function), otherwise wrong result will be
-            /// produced:
+            if (argument->as<LambdaNode>())
+                return false;
+
+            /// Function arrayJoin is special and should be skipped (think about it as a
+            /// an aggregate function), otherwise wrong result will be produced.
+            /// For example:
             ///     SELECT *, any(arrayJoin([[], []])) FROM numbers(1) GROUP BY number
             ///     ┌─number─┬─arrayJoin(array(array(), array()))─┐
             ///     │      0 │ []                                 │
             ///     │      0 │ []                                 │
             ///     └────────┴────────────────────────────────────┘
-            /// While should be:
-            ///     ┌─number─┬─any(arrayJoin(array(array(), array())))─┐
-            ///     │      0 │ []                                      │
-            ///     └────────┴─────────────────────────────────────────┘
-            if (argument->as<LambdaNode>())
-                return false;
-
-            if (argument->as<ArrayJoinNode>())
-                return false;
+            if (const auto * inside_function = argument->as<FunctionNode>())
+                if (inside_function->getFunctionName() == "arrayJoin")
+                    return false;
 
             if (const auto * inside_function = argument->as<FunctionNode>())
             {
@@ -51,11 +47,14 @@ private:
     }
 
 public:
-    using Base = InDepthQueryTreeVisitor<AnyFunctionVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<AnyFunctionVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_move_functions_out_of_any)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
@@ -71,7 +70,7 @@ public:
 
         auto * inside_function_node = arguments[0]->as<FunctionNode>();
 
-        /// check argument is a function and can not be arrayJoin or lambda
+        /// check argument is a function
         if (!inside_function_node)
             return;
 
@@ -85,14 +84,7 @@ public:
         if (inside_arguments.empty())
             return;
 
-        if (rewritten.contains(node.get()))
-        {
-            node = rewritten.at(node.get());
-            return;
-        }
-
         /// checking done, rewrite function
-        bool pushed = false;
         for (auto & inside_argument : inside_arguments)
         {
             if (inside_argument->as<ConstantNode>()) /// skip constant node
@@ -108,31 +100,17 @@ public:
             any_function_arguments.push_back(std::move(inside_argument));
 
             inside_argument = std::move(any_function);
-            pushed = true;
         }
-
-        if (pushed)
-        {
-            rewritten.insert({node.get(), arguments[0]});
-            node = arguments[0];
-        }
+        node = arguments[0];
     }
 
-private:
-    /// After query analysis alias will be rewritten to QueryTreeNode
-    /// whose memory address is same with the original one.
-    /// So we can reuse the rewritten one.
-    std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr > rewritten;
 };
 
 }
 
 void AnyFunctionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    if (!context->getSettings().optimize_move_functions_out_of_any)
-        return;
-
-    AnyFunctionVisitor visitor;
+    AnyFunctionVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 
