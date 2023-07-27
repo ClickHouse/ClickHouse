@@ -109,6 +109,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 
 OpenTelemetry::TracingContextHolderPtr DistributedAsyncInsertHeader::createTracingContextHolder(const char * function, std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const
 {
+    /// NOTE: here we have problem if the SYSTEM FLUSH DISTRIBUTED will be executed with tracing
     if (OpenTelemetry::CurrentContext().isTraceEnabled())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tracing context already initialized.");
     OpenTelemetry::TracingContextHolderPtr trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
