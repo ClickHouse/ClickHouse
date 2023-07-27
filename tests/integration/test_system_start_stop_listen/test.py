@@ -8,7 +8,9 @@ import requests
 
 cluster = ClickHouseCluster(__file__)
 main_node = cluster.add_instance(
-    "main_node", main_configs=["configs/cluster.xml", "configs/protocols.xml"], with_zookeeper=True
+    "main_node",
+    main_configs=["configs/cluster.xml", "configs/protocols.xml"],
+    with_zookeeper=True,
 )
 backup_node = cluster.add_instance(
     "backup_node", main_configs=["configs/cluster.xml"], with_zookeeper=True
@@ -36,6 +38,7 @@ def http_works(port=8123):
 
     return False
 
+
 def assert_everything_works():
     custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
     main_node.query(QUERY)
@@ -44,8 +47,10 @@ def assert_everything_works():
     assert http_works()
     assert http_works(8124)
 
+
 QUERY = "SELECT 1"
 MYSQL_QUERY = "SELECT * FROM mysql('127.0.0.1:9004', 'system', 'one', 'default', '', SETTINGS connect_timeout = 100, connection_wait_timeout = 100)"
+
 
 def test_default_protocols(started_cluster):
     # TCP
@@ -68,6 +73,7 @@ def test_default_protocols(started_cluster):
 
     assert_everything_works()
 
+
 def test_custom_protocols(started_cluster):
     # TCP
     custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
@@ -83,6 +89,7 @@ def test_custom_protocols(started_cluster):
     main_node.query("SYSTEM START LISTEN CUSTOM 'http'")
 
     assert_everything_works()
+
 
 def test_all_protocols(started_cluster):
     custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
