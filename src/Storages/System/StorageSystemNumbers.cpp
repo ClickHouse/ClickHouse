@@ -120,11 +120,12 @@ protected:
                 ? end.offset_in_range - cursor.offset_in_range
                 : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
 
-            uint64_t start_value = first_value(range) + cursor.offset_in_range;
+            UInt64 start_value = first_value(range) + cursor.offset_in_range;
             if (can_provide > need)
             {
-                for (size_t i=0; i < need; ++i, ++start_value)
-                    *(pos++) = start_value;
+                auto end_value = start_value + need;
+                while(start_value < end_value)
+                    *(pos++) = start_value++;
 
                 provided += need;
                 cursor.offset_in_range += need;
@@ -132,8 +133,9 @@ protected:
             }
             else if (can_provide == need)
             {
-                for (size_t i=0; i < need; ++i, ++start_value)
-                    *(pos++) = start_value;
+                auto end_value = start_value + need;
+                while(start_value < end_value)
+                    *(pos++) = start_value++;
 
                 provided += need;
                 cursor.offset_in_ranges++;
@@ -142,11 +144,11 @@ protected:
             }
             else
             {
-                auto can_provide_copy = static_cast<UInt64>(can_provide);
-                for (size_t i=0; i < can_provide_copy; ++i, ++start_value)
-                    *(pos++) = start_value;
+                auto end_value = start_value + static_cast<UInt64>(can_provide);
+                while(start_value < end_value)
+                    *(pos++) = start_value++;
 
-                provided += can_provide_copy;
+                provided += static_cast<UInt64>(can_provide);
                 cursor.offset_in_ranges++;
                 cursor.offset_in_range = 0;
                 size -= can_provide;
