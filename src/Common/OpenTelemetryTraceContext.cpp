@@ -293,11 +293,14 @@ TracingContextHolder::TracingContextHolder(
     const Settings * settings_ptr,
     const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
 {
-    LOG_TEST(&Poco::Logger::get(__FILE__), "TracingContextHolder: name={}, current_trace_context(enabled={}, trace_id={}, span_id={})",
+    LOG_TEST(&Poco::Logger::get(__func__), "name={}, current_trace_context(enabled={}, trace_id={}, span_id={}), parent_trace_context(enabled={}, trace_id={}, span_id={})",
         _operation_name,
         current_trace_context->isTraceEnabled(),
         toString(current_trace_context->trace_id),
-        current_trace_context->span_id);
+        current_trace_context->span_id,
+        _parent_trace_context.isTraceEnabled(),
+        _parent_trace_context.trace_id,
+        _parent_trace_context.span_id);
 
     /// Use try-catch to make sure the ctor is exception safe.
     /// If any exception is raised during the construction, the tracing is not enabled on current thread.
@@ -381,7 +384,7 @@ TracingContextHolder::~TracingContextHolder()
         return;
     }
 
-    LOG_TEST(&Poco::Logger::get(__FILE__), "~TracingContextHolder: current_Trace_context(enabled={}, trace_id={}, span_id={}), root_span(enabled={}, trace_id={}, parent_span_id={})",
+    LOG_TEST(&Poco::Logger::get(__func__), "current_trace_context(enabled={}, trace_id={}, span_id={}), root_span(enabled={}, trace_id={}, parent_span_id={})",
         current_trace_context->isTraceEnabled(),
         toString(current_trace_context->trace_id),
         current_trace_context->span_id,
