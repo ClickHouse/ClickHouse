@@ -26,11 +26,10 @@ class QueryCache
 public:
     enum class Usage
     {
-        /// starts at 1 for compatibitity with DataTypeEnum8
-        Unknown = 1,  /// we don't know what what happened
-        None,         /// query result neither written nor read into/from query cache
-        Write,        /// query result written into query cache
-        Read,         /// query result read from query cache
+        Unknown,  /// we don't know what what happened
+        None,     /// query result neither written nor read into/from query cache
+        Write,    /// query result written into query cache
+        Read,     /// query result read from query cache
     };
 
     /// Represents a query result in the cache.
