@@ -67,7 +67,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve(Protocol)
         {
             auto resolved_endpoint = endpoint;
             resolved_endpoint.setHost(resolved_hosts[i].toString());
-            session = makeHTTPSession(resolved_endpoint, timeouts, false);
+            session = makeHTTPSession(resolved_endpoint, timeouts);
 
             try
             {

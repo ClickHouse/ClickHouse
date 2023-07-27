@@ -340,9 +340,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, /* resolve_host = */ true, wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
+                    session = makeHTTPSession(target_uri, timeouts);
                 bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
@@ -356,9 +356,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             {
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, /* resolve_host = */ true, wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
+                    session = makeHTTPSession(target_uri, timeouts);
             }
 
             /// In case of error this address will be written to logs
