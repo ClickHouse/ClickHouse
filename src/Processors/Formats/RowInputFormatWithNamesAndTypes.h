@@ -121,7 +121,7 @@ public:
 
     virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
 
-    virtual bool allowVariableNumberOfColumns() { return false; }
+    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -160,15 +160,15 @@ public:
     NamesAndTypesList readSchema() override;
 
 protected:
-    virtual DataTypes readRowAndGetDataTypes() override;
+    virtual std::optional<DataTypes> readRowAndGetDataTypes() override;
 
-    virtual DataTypes readRowAndGetDataTypesImpl()
+    virtual std::optional<DataTypes> readRowAndGetDataTypesImpl()
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypesImpl is not implemented"};
     }
 
-    /// Return column fields with inferred types. In case of no more rows, return empty vectors.
-    virtual std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes()
+    /// Return column fields with inferred types. In case of no more rows, return nullopt.
+    virtual std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
     }

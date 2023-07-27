@@ -1,0 +1,52 @@
+CSV
+1	1
+2	0
+0	0
+3	3
+1	1	\N	\N
+2	\N	\N	\N
+\N	\N	\N	\N
+3	3	3	3
+1	1
+2	\N
+\N	\N
+3	3
+TSV
+1	1
+2	0
+0	0
+3	3
+1	1	\N	\N
+2	\N	\N	\N
+\N	\N	\N	\N
+3	3	3	3
+1	1
+2	\N
+\N	\N
+3	3
+JSONCompactEachRow
+1	1
+2	0
+0	0
+3	3
+1	1	\N	\N
+2	\N	\N	\N
+\N	\N	\N	\N
+3	3	3	3
+1	1
+2	\N
+\N	\N
+3	3
+CustomSeparated
+1	1
+2	0
+0	0
+3	3
+1	1	\N	\N
+2	\N	\N	\N
+\N	\N	\N	\N
+3	3	3	3
+1	1
+2	\N
+\N	\N
+3	3

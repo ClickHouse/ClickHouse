@@ -634,7 +634,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
     UNREACHABLE();
 }
 
-DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};
