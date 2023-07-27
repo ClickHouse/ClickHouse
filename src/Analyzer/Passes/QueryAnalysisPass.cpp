@@ -6530,7 +6530,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             array_join_column_expressions.push_back(std::move(array_join_column_node));
         };
 
-        // Support ARRAY JOIN COLUMNS(...). COLUMNS trasformer is resolved to list of columns.
+        // Support ARRAY JOIN COLUMNS(...). COLUMNS transformer is resolved to list of columns.
         if (auto * columns_list = array_join_expression->as<ListNode>())
         {
             for (auto & array_join_subexpression : columns_list->getNodes())
