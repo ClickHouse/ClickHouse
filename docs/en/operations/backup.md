@@ -84,6 +84,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+    - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
 
 ### Usage examples
 
