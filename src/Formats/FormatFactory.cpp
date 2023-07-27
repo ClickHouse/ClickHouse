@@ -72,6 +72,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.skip_trailing_empty_lines = settings.input_format_csv_skip_trailing_empty_lines;
     format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
     format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
+    format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
+    format_settings.csv.use_default_on_bad_values = settings.input_format_csv_use_default_on_bad_values;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -86,6 +88,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.skip_trailing_empty_lines = settings.input_format_custom_skip_trailing_empty_lines;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
+    format_settings.interval.output_format = settings.interval_output_format;
     format_settings.input_format_ipv4_default_on_conversion_error = settings.input_format_ipv4_default_on_conversion_error;
     format_settings.input_format_ipv6_default_on_conversion_error = settings.input_format_ipv6_default_on_conversion_error;
     format_settings.bool_true_representation = settings.bool_true_representation;
@@ -127,6 +130,10 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
     format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
     format_settings.parquet.output_compliant_nested_types = settings.output_format_parquet_compliant_nested_types;
+    format_settings.parquet.use_custom_encoder = settings.output_format_parquet_use_custom_encoder;
+    format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
+    format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
+    format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -431,7 +438,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         return format;
     }
 
-    return getOutputFormat(name, buf, sample, context, _format_settings);
+    return getOutputFormat(name, buf, sample, context, format_settings);
 }
 
 
@@ -450,6 +457,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    format_settings.max_threads = context->getSettingsRef().max_threads;
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
