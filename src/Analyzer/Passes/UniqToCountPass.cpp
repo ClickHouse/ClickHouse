@@ -104,14 +104,17 @@ bool nodeListContainsAll(const QueryTreeNodes & query_columns, const NamesAndTyp
 
 }
 
-class UniqToCountVisitor : public InDepthQueryTreeVisitor<UniqToCountVisitor>
+class UniqToCountVisitor : public InDepthQueryTreeVisitorWithContext<UniqToCountVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<UniqToCountVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<UniqToCountVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_uniq_to_count)
+            return;
+
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -176,11 +179,8 @@ public:
             AggregateFunctionProperties properties;
             auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
-            function_node->resolveAsAggregateFunction(std::move(aggregate_function));
             function_node->getArguments().getNodes().clear();
-
-            /// Update projection columns
-            query_node->resolveProjectionColumns({{"count()", function_node->getResultType()}});
+            function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         }
     }
 };
@@ -188,10 +188,7 @@ public:
 
 void UniqToCountPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    if (!context->getSettings().optimize_uniq_to_count)
-        return;
-
-    UniqToCountVisitor visitor;
+    UniqToCountVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 
