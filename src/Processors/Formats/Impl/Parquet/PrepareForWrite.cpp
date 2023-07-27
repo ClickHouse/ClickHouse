@@ -303,14 +303,14 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             }
             else
             {
-                types(T::INT32, C::UINT_8 , int_type(8 , false));
+                types(T::INT32, C::UINT_8, int_type(8, false));
             }
             break;
         case TypeIndex::UInt16: types(T::INT32, C::UINT_16, int_type(16, false)); break;
         case TypeIndex::UInt32: types(T::INT32, C::UINT_32, int_type(32, false)); break;
         case TypeIndex::UInt64: types(T::INT64, C::UINT_64, int_type(64, false)); break;
-        case TypeIndex::Int8:   types(T::INT32, C::INT_8  , int_type(8 , true)); break;
-        case TypeIndex::Int16:  types(T::INT32, C::INT_16 , int_type(16, true)); break;
+        case TypeIndex::Int8:   types(T::INT32, C::INT_8,   int_type(8,  true)); break;
+        case TypeIndex::Int16:  types(T::INT32, C::INT_16,  int_type(16, true)); break;
         case TypeIndex::Int32:  types(T::INT32); break;
         case TypeIndex::Int64:  types(T::INT64); break;
         case TypeIndex::Float32: types(T::FLOAT); break;
@@ -319,8 +319,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         /// These don't have suitable parquet logical types, so we write them as plain numbers.
         /// (Parquet has "enums" but they're just strings, with nowhere to declare all possible enum
         /// values in advance as part of the data type.)
-        case TypeIndex::Enum8:    types(T::INT32, C::INT_8  , int_type(8 , true)); break; //  Int8
-        case TypeIndex::Enum16:   types(T::INT32, C::INT_16 , int_type(16, true)); break; //  Int16
+        case TypeIndex::Enum8:    types(T::INT32, C::INT_8,   int_type(8,  true)); break; //  Int8
+        case TypeIndex::Enum16:   types(T::INT32, C::INT_16,  int_type(16, true)); break; //  Int16
         case TypeIndex::IPv4:     types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
         case TypeIndex::Date:     types(T::INT32, C::UINT_16, int_type(16, false)); break; // UInt16
         case TypeIndex::DateTime: types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
@@ -392,8 +392,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Int256:  fixed_string(32); break;
         case TypeIndex::IPv6:    fixed_string(16); break;
 
-        case TypeIndex::Decimal32:  decimal(4 , getDecimalPrecision(*type), getDecimalScale(*type)); break;
-        case TypeIndex::Decimal64:  decimal(8 , getDecimalPrecision(*type), getDecimalScale(*type)); break;
+        case TypeIndex::Decimal32:  decimal(4, getDecimalPrecision(*type), getDecimalScale(*type)); break;
+        case TypeIndex::Decimal64:  decimal(8, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal128: decimal(16, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal256: decimal(32, getDecimalPrecision(*type), getDecimalScale(*type)); break;
 
