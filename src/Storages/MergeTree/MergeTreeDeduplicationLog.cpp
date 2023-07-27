@@ -10,10 +10,16 @@
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
 
 namespace
 {
@@ -271,8 +277,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     if (stopped)
     {
-        LOG_ERROR(&Poco::Logger::get("MergeTreeDeduplicationLog"), "Storage has been shutdown when we drop this part.");
-        return;
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
     chassert(current_writer != nullptr);
