@@ -156,7 +156,9 @@ def test_concurrent_backups_on_same_node():
             )
             return
         else:
-            raise Exception("Concurrent backups both passed, when one is expected to fail")
+            raise Exception(
+                "Concurrent backups both passed, when one is expected to fail"
+            )
 
     expected_errors = [
         "Concurrent backups not supported",
@@ -202,7 +204,7 @@ def test_concurrent_backups_on_different_nodes():
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
     result, error = nodes[0].query_and_get_answer_with_error(
-            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
     )
 
     if not error:
@@ -224,7 +226,9 @@ def test_concurrent_backups_on_different_nodes():
             )
             return
         else:
-            raise Exception("Concurrent backups both passed, when one is expected to fail")
+            raise Exception(
+                "Concurrent backups both passed, when one is expected to fail"
+            )
 
     expected_errors = [
         "Concurrent backups not supported",
@@ -291,8 +295,9 @@ def test_concurrent_restores_on_same_node():
             )
             return
         else:
-            raise Exception("Concurrent restores both passed, when one is expected to fail")
-
+            raise Exception(
+                "Concurrent restores both passed, when one is expected to fail"
+            )
 
     expected_errors = [
         "Concurrent restores not supported",
@@ -359,7 +364,9 @@ def test_concurrent_restores_on_different_node():
             )
             return
         else:
-            raise Exception("Concurrent restores both passed, when one is expected to fail")
+            raise Exception(
+                "Concurrent restores both passed, when one is expected to fail"
+            )
 
     expected_errors = [
         "Concurrent restores not supported",
