@@ -1421,15 +1421,17 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
-    ParserKeyword s_attach("ATTACH");
     ParserKeyword s_named_collection("NAMED COLLECTION");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
-
-    ParserToken s_comma(TokenType::Comma);
     ParserIdentifier name_p;
+    ParserToken s_comma(TokenType::Comma);
+
+    String cluster_str;
+    bool if_not_exists = false;
 
     ASTPtr collection_name;
-    String cluster_str;
 
     if (!s_create.ignore(pos, expected))
         return false;
@@ -1437,10 +1439,13 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!s_named_collection.ignore(pos, expected))
         return false;
 
+    if (s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
+
     if (!name_p.parse(pos, collection_name, expected))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -1465,7 +1470,9 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
+    query->if_not_exists = if_not_exists;
     query->changes = changes;
+    query->cluster = std::move(cluster_str);
 
     node = query;
     return true;
