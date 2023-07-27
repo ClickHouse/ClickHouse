@@ -23,7 +23,7 @@ key_name3 = 'some value',
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 ```
 
-**Related satements**
+**Related statements**
 
 - [CREATE NAMED COLLECTION](https://clickhouse.com/docs/en/sql-reference/statements/alter/named-collection)
 - [DROP NAMED COLLECTION](https://clickhouse.com/docs/en/sql-reference/statements/drop#drop-function)
