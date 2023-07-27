@@ -284,13 +284,7 @@ toDateTime(expr[, time_zone ])
 - `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
 - `time_zone` — Часовой пояс. [String](/docs/ru/sql-reference/data-types/string.md).
 
-:::note
-Если `expr` является числом, то оно интерпретируется как число секунд с начала Unix-эпохи (Unix Timestamp).
-
-Если же `expr` -- [строка (String)](/docs/ru/sql-reference/data-types/string.md), то оно может быть интерпретировано и как Unix Timestamp, и как строковое представление даты / даты со временем.  
-Ввиду неоднозначности запрещён парсинг строк длиной 4 и меньше. Так, строка `'1999'` могла бы представлять собой как год (неполное строковое представление даты или даты со временем), так и Unix Timestamp.  
-Строки длиной 5 символов и более не несут неоднозначности, а следовательно, их парсинг разрешён.
-:::
+Если `expr` является числом, оно интерпретируется как количество секунд от начала unix эпохи.
 
 **Возвращаемое значение**
 
@@ -760,6 +754,44 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
+```
+
+## toDecimalString
+
+Принимает любой численный тип первым аргументом, возвращает строковое десятичное представление числа с точностью, заданной вторым аргументом.
+
+**Синтаксис**
+
+``` sql
+toDecimalString(number, scale)
+```
+
+**Параметры**
+
+-   `number` — Значение любого числового типа: [Int, UInt](/docs/ru/sql-reference/data-types/int-uint.md), [Float](/docs/ru/sql-reference/data-types/float.md), [Decimal](/docs/ru/sql-reference/data-types/decimal.md),
+-   `scale` — Требуемое количество десятичных знаков после запятой, [UInt8](/docs/ru/sql-reference/data-types/int-uint.md).
+    * Значение `scale` для типов [Decimal](/docs/ru/sql-reference/data-types/decimal.md) и [Int, UInt](/docs/ru/sql-reference/data-types/int-uint.md) должно не превышать 77 (так как это наибольшее количество значимых символов для этих типов),
+    * Значение `scale` для типа [Float](/docs/ru/sql-reference/data-types/float.md) не должно превышать 60.
+
+**Возвращаемое значение**
+
+-   Строка ([String](/docs/en/sql-reference/data-types/string.md)), представляющая собой десятичное представление входного числа с заданной длиной дробной части.
+    При необходимости число округляется по стандартным правилам арифметики.
+
+**Пример использования**
+
+Запрос:
+
+``` sql
+SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
+```
+
+Результат:
+
+```response
+┌─toDecimalString(CAST('64.32', 'Float64'), 5)┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
 ```
 
 ## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}

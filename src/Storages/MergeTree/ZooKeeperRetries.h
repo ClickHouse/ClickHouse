@@ -72,7 +72,7 @@ public:
                 if (!Coordination::isHardwareError(e.code))
                     throw;
 
-                setKeeperError(std::current_exception(), e.code, e.message());
+                setKeeperError(e.code, e.message());
             }
             catch (...)
             {
@@ -91,16 +91,16 @@ public:
         }
         catch (const zkutil::KeeperException & e)
         {
-            setKeeperError(std::current_exception(), e.code, e.message());
+            setKeeperError(e.code, e.message());
         }
         catch (const Exception & e)
         {
-            setUserError(std::current_exception(), e.code(), e.what());
+            setUserError(e.code(), e.what());
         }
         return false;
     }
 
-    void setUserError(std::exception_ptr exception, int code, std::string message)
+    void setUserError(int code, std::string message)
     {
         if (retries_info.logger)
             LOG_TRACE(
@@ -113,19 +113,7 @@ public:
         iteration_succeeded = false;
         user_error.code = code;
         user_error.message = std::move(message);
-        user_error.exception = exception;
         keeper_error = KeeperError{};
-    }
-
-    template <typename... Args>
-    void setUserError(std::exception_ptr exception, int code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setUserError(exception, code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void setUserError(int code, std::string message)
-    {
-        setUserError(std::make_exception_ptr(Exception::createDeprecated(message, code)), code, message);
     }
 
     template <typename... Args>
@@ -134,7 +122,7 @@ public:
         setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
     }
 
-    void setKeeperError(std::exception_ptr exception, Coordination::Error code, std::string message)
+    void setKeeperError(Coordination::Error code, std::string message)
     {
         if (retries_info.logger)
             LOG_TRACE(
@@ -147,19 +135,7 @@ public:
         iteration_succeeded = false;
         keeper_error.code = code;
         keeper_error.message = std::move(message);
-        keeper_error.exception = exception;
         user_error = UserError{};
-    }
-
-    template <typename... Args>
-    void setKeeperError(std::exception_ptr exception, Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setKeeperError(exception, code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void setKeeperError(Coordination::Error code, std::string message)
-    {
-        setKeeperError(std::make_exception_ptr(zkutil::KeeperException(message, code)), code, message);
     }
 
     template <typename... Args>
@@ -187,14 +163,12 @@ private:
         using Code = Coordination::Error;
         Code code = Code::ZOK;
         std::string message;
-        std::exception_ptr exception;
     };
 
     struct UserError
     {
         int code = ErrorCodes::OK;
         std::string message;
-        std::exception_ptr exception;
     };
 
     bool canTry()
@@ -258,11 +232,11 @@ private:
 
     void throwIfError() const
     {
-        if (user_error.exception)
-            std::rethrow_exception(user_error.exception);
+        if (user_error.code != ErrorCodes::OK)
+            throw Exception::createDeprecated(user_error.message, user_error.code);
 
-        if (keeper_error.exception)
-            std::rethrow_exception(keeper_error.exception);
+        if (keeper_error.code != KeeperError::Code::ZOK)
+            throw zkutil::KeeperException(keeper_error.message, keeper_error.code);
     }
 
     void logLastError(std::string_view header)

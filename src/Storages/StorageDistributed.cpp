@@ -60,6 +60,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -74,7 +75,6 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -434,7 +434,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info.query);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -906,14 +906,15 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers_=*/ true);
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+        ast_format_settings.always_quote_identifiers = true;
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
-    query_context->increaseDistributedDepth();
+    ++query_context->getClientInfo().distributed_depth;
 
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
@@ -967,14 +968,15 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+        ast_format_settings.always_quote_identifiers = true;
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
-    query_context->increaseDistributedDepth();
+    ++query_context->getClientInfo().distributed_depth;
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     for (const auto & replicas : getCluster()->getShardsAddresses())
@@ -1297,7 +1299,7 @@ ClusterPtr StorageDistributed::getCluster() const
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
-    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const ASTPtr & query_ptr) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1306,7 +1308,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_info, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1355,34 +1357,25 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
-    const SelectQueryInfo & query_info,
+    const ASTPtr & query_ptr,
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (!select.prewhere() && !select.where())
-        return nullptr;
+    const auto & select = query_ptr->as<ASTSelectQuery &>();
 
-    /// FIXME: support analyzer
-    if (!query_info.syntax_analyzer_result)
+    if (!select.prewhere() && !select.where())
+    {
         return nullptr;
+    }
 
     ASTPtr condition_ast;
-    /// Remove JOIN from the query since it may contain a condition for other tables.
-    /// But only the conditions for the left table should be analyzed for shard skipping.
+    if (select.prewhere() && select.where())
     {
-        ASTPtr select_without_join_ptr = select.clone();
-        ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *query_info.syntax_analyzer_result;
-
-        removeJoin(select_without_join, analyzer_result_without_join, local_context);
-        if (!select_without_join.prewhere() && !select_without_join.where())
-            return nullptr;
-
-        if (select_without_join.prewhere() && select_without_join.where())
-            condition_ast = makeASTFunction("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
-        else
-            condition_ast = select_without_join.prewhere() ? select_without_join.prewhere()->clone() : select_without_join.where()->clone();
+        condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
+    }
+    else
+    {
+        condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
     replaceConstantExpressions(condition_ast, local_context, storage_snapshot->metadata->getColumns().getAll(), shared_from_this(), storage_snapshot);
@@ -1405,9 +1398,11 @@ ClusterPtr StorageDistributed::skipUnusedShards(
         return nullptr;
     }
 
-    // Can't get a definite answer if we can skip any shards
+    // Can't get definite answer if we can skip any shards
     if (!blocks)
+    {
         return nullptr;
+    }
 
     std::set<int> shards;
 
@@ -1432,7 +1427,7 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::flushAndPrepareForShutdown()
+void StorageDistributed::flush()
 {
     try
     {

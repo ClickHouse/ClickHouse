@@ -6,8 +6,8 @@
 namespace DB
 {
 
-StringRef parentNodePath(StringRef path);
+StringRef parentPath(StringRef path);
 
-StringRef getBaseNodeName(StringRef path);
+StringRef getBaseName(StringRef path);
 
 }

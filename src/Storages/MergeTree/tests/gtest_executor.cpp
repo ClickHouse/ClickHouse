@@ -39,7 +39,7 @@ public:
         return false;
     }
 
-    StorageID getStorageID() const override
+    StorageID getStorageID() override
     {
         return {"test", name};
     }
@@ -51,8 +51,7 @@ public:
             throw std::runtime_error("Unlucky...");
     }
 
-    Priority getPriority() const override { return {}; }
-    String getQueryId() const override { return {}; }
+    Priority getPriority() override { return {}; }
 
 private:
     std::mt19937 generator;
@@ -80,15 +79,14 @@ public:
         return --step_count;
     }
 
-    StorageID getStorageID() const override
+    StorageID getStorageID() override
     {
         return {"test", name};
     }
 
     void onCompleted() override {}
 
-    Priority getPriority() const override { return priority; }
-    String getQueryId() const override { return "test::lambda"; }
+    Priority getPriority() override { return priority; }
 
 private:
     String name;

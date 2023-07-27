@@ -155,6 +155,7 @@ public:
         if (!((executeType<UInt8>(result_column, arguments, input_rows_count))
               || (executeType<UInt16>(result_column, arguments, input_rows_count))
               || (executeType<UInt32>(result_column, arguments, input_rows_count))
+              || (executeType<UInt32>(result_column, arguments, input_rows_count))
               || (executeType<UInt64>(result_column, arguments, input_rows_count))
               || (executeType<Int8>(result_column, arguments, input_rows_count))
               || (executeType<Int16>(result_column, arguments, input_rows_count))

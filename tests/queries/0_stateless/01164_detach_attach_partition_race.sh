@@ -14,16 +14,14 @@ $CLICKHOUSE_CLIENT -q "insert into mt values (3)"
 
 function thread_insert()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         $CLICKHOUSE_CLIENT -q "insert into mt values (rand())";
     done
 }
 
 function thread_detach_attach()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         $CLICKHOUSE_CLIENT -q "alter table mt detach partition id 'all'";
         $CLICKHOUSE_CLIENT -q "alter table mt attach partition id 'all'";
     done
@@ -31,8 +29,7 @@ function thread_detach_attach()
 
 function thread_drop_detached()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         $CLICKHOUSE_CLIENT --allow_drop_detached 1 -q "alter table mt drop detached partition id 'all'";
     done
 }
@@ -43,10 +40,10 @@ export -f thread_drop_detached;
 
 TIMEOUT=10
 
-thread_insert $TIMEOUT &
-thread_detach_attach $TIMEOUT 2> /dev/null &
-thread_detach_attach $TIMEOUT 2> /dev/null &
-thread_drop_detached $TIMEOUT 2> /dev/null &
+timeout $TIMEOUT bash -c thread_insert &
+timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
+timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
+timeout $TIMEOUT bash -c thread_drop_detached 2> /dev/null &
 
 wait
 

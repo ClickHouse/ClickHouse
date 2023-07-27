@@ -83,6 +83,8 @@ struct QueryState
         NOT_CANCELLED
     };
 
+    static std::string cancellationStatusToName(CancellationStatus status);
+
     /// Is request cancelled
     CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
     bool is_connection_closed = false;

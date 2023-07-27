@@ -1,6 +1,3 @@
-DROP TABLE IF EXISTS session_events;
-DROP TABLE IF EXISTS event_types;
-
 CREATE TABLE session_events
 (
     clientId UInt64,
@@ -78,6 +75,3 @@ FROM
 WHERE runningDifference(timestamp) >= 500
 ORDER BY timestamp ASC
 FORMAT Null;
-
-DROP TABLE session_events;
-DROP TABLE event_types;

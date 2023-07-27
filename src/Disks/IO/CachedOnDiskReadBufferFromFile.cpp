@@ -1087,10 +1087,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         first_offset,
         file_segments->toString());
 
-    /// Release buffer a little bit earlier.
-    if (read_until_position == file_offset_of_buffer_end)
-        implementation_buffer.reset();
-
     return result;
 }
 

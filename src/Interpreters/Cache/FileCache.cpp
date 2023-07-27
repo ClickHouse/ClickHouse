@@ -11,7 +11,6 @@
 #include <base/hex.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <filesystem>
@@ -55,10 +54,9 @@ FileCache::FileCache(const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
-    , boundary_alignment(settings.boundary_alignment)
-    , background_download_threads(settings.background_download_threads)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
+    , boundary_alignment(settings.boundary_alignment)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -130,9 +128,6 @@ void FileCache::initialize()
     }
 
     is_initialized = true;
-
-    for (size_t i = 0; i < background_download_threads; ++i)
-         download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
@@ -428,12 +423,7 @@ FileSegmentsHolderPtr FileCache::set(
 }
 
 FileSegmentsHolderPtr
-FileCache::getOrSet(
-    const Key & key,
-    size_t offset,
-    size_t size,
-    size_t file_size,
-    const CreateFileSegmentSettings & settings)
+FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
@@ -655,14 +645,27 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 
         if (segment_metadata->releasable())
         {
-            const auto & key = segment_metadata->file_segment->key();
-            auto it = to_delete.find(key);
-            if (it == to_delete.end())
-                it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
-            it->second.add(segment_metadata);
+            auto segment = segment_metadata->file_segment;
+            if (segment->state() == FileSegment::State::DOWNLOADED)
+            {
+                const auto & key = segment->key();
 
-            freeable_space += segment_metadata->size();
-            ++freeable_count;
+                auto it = to_delete.find(key);
+                if (it == to_delete.end())
+                    it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
+                it->second.add(segment_metadata);
+
+                freeable_space += segment_metadata->size();
+                ++freeable_count;
+
+                return PriorityIterationResult::CONTINUE;
+            }
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
+
+            locked_key.removeFileSegment(segment->offset(), segment->lock());
+            return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }
         return PriorityIterationResult::CONTINUE;
     };
@@ -754,14 +757,12 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 chassert(candidate->releasable());
 
                 const auto * segment = candidate->file_segment.get();
-                auto queue_it = segment->getQueueIterator();
-                chassert(queue_it);
 
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
                 locked_key->removeFileSegment(segment->offset(), segment->lock());
-                queue_it->remove(cache_lock);
+                segment->getQueueIterator()->remove(cache_lock);
 
                 if (query_context)
                     query_context->remove(current_key, segment->offset(), cache_lock);
@@ -870,12 +871,13 @@ void FileCache::loadMetadata()
     }
 
     size_t total_size = 0;
-    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}; key_prefix_it != fs::directory_iterator();
-         key_prefix_it++)
+    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()};
+         key_prefix_it != fs::directory_iterator();)
     {
         const fs::path key_prefix_directory = key_prefix_it->path();
+        key_prefix_it++;
 
-        if (!key_prefix_it->is_directory())
+        if (!fs::is_directory(key_prefix_directory))
         {
             if (key_prefix_directory.filename() != "status")
             {
@@ -886,19 +888,19 @@ void FileCache::loadMetadata()
             continue;
         }
 
-        fs::directory_iterator key_it{key_prefix_directory};
-        if (key_it == fs::directory_iterator{})
+        if (fs::is_empty(key_prefix_directory))
         {
             LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_directory.string());
             fs::remove(key_prefix_directory);
             continue;
         }
 
-        for (/* key_it already initialized to verify emptiness */; key_it != fs::directory_iterator(); key_it++)
+        for (fs::directory_iterator key_it{key_prefix_directory}; key_it != fs::directory_iterator();)
         {
             const fs::path key_directory = key_it->path();
+            ++key_it;
 
-            if (!key_it->is_directory())
+            if (!fs::is_directory(key_directory))
             {
                 LOG_DEBUG(
                     log,
@@ -907,7 +909,7 @@ void FileCache::loadMetadata()
                 continue;
             }
 
-            if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
+            if (fs::is_empty(key_directory))
             {
                 LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
                 fs::remove(key_directory);
@@ -1023,11 +1025,6 @@ void FileCache::deactivateBackgroundOperations()
 {
     if (cleanup_task)
         cleanup_task->deactivate();
-
-    metadata.cancelDownload();
-    for (auto & thread : download_threads)
-        if (thread.joinable())
-            thread.join();
 }
 
 void FileCache::cleanup()
@@ -1039,6 +1036,10 @@ void FileCache::cleanupThreadFunc()
 {
     try
     {
+#ifdef ABORT_ON_LOGICAL_ERROR
+        assertCacheCorrectness();
+#endif
+
         cleanup();
     }
     catch (...)

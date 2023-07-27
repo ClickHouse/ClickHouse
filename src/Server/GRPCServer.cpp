@@ -798,7 +798,7 @@ namespace
         /// Authentication.
         session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
         session->authenticate(user, password, user_address);
-        session->setQuotaClientKey(quota_key);
+        session->getClientInfo().quota_key = quota_key;
 
         ClientInfo client_info = session->getClientInfo();
 

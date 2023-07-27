@@ -77,8 +77,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         {
             if (value.total_rows_to_read)
                 addTotalRowsApprox(value.total_rows_to_read);
-            if (value.total_bytes_to_read)
-                addTotalBytes(value.total_bytes_to_read);
             progress(value.read_rows, value.read_bytes);
         });
 

@@ -254,9 +254,6 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Return true if the trivial count query could be optimized without reading the data at all.
-    virtual bool supportsTrivialCountOptimization() const { return false; }
-
 private:
 
     StorageID storage_id;
@@ -286,7 +283,6 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
-    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -553,15 +549,15 @@ public:
     /**
       * If the storage requires some complicated work on destroying,
       * then you have two virtual methods:
-      * - flushAndPrepareForShutdown()
+      * - flush()
       * - shutdown()
       *
       * @see shutdown()
-      * @see flushAndPrepareForShutdown()
+      * @see flush()
       */
     void flushAndShutdown()
     {
-        flushAndPrepareForShutdown();
+        flush();
         shutdown();
     }
 
@@ -574,7 +570,7 @@ public:
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
-    virtual void flushAndPrepareForShutdown() {}
+    virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned

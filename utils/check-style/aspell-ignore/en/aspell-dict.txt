@@ -12,7 +12,6 @@ ARMv
 ASLR
 ASOF
 ASan
-AWST
 Actian
 ActionsMenu
 ActiveRecord
@@ -211,7 +210,6 @@ Decrypted
 Deduplicate
 Deduplication
 DelayedInserts
-delim
 DeliveryTag
 DeltaLake
 Denormalize
@@ -763,7 +761,6 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
-RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -838,8 +835,6 @@ Subexpression
 Submodules
 Subqueries
 Substrings
-substringIndex
-substringIndexUTF
 SummingMergeTree
 SuperSet
 Superset
@@ -995,7 +990,6 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
-agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1040,7 +1034,6 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
-arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1432,7 +1425,6 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
-firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
@@ -1542,10 +1534,6 @@ hadoop
 halfMD
 halfday
 hardlinks
-hasSubsequence
-hasSubsequenceCaseInsensitive
-hasSubsequenceCaseInsensitiveUTF
-hasSubsequenceUTF
 hasAll
 hasAny
 hasColumnInTable
@@ -1592,8 +1580,6 @@ indexOf
 infi
 initialQueryID
 initializeAggregation
-initcap
-initcapUTF
 injective
 innogames
 inodes
@@ -1621,7 +1607,6 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
-jaccard
 javaHash
 javaHashUTF
 jbod
@@ -2133,7 +2118,6 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
-rowbinarywithdefaults
 rsync
 rsyslog
 runnable
@@ -2254,7 +2238,6 @@ subquery
 subranges
 subreddits
 subseconds
-subsequence
 substring
 substringUTF
 substrings
@@ -2476,7 +2459,6 @@ unrounded
 untracked
 untrusted
 untuple
-uploader
 uploaders
 upperUTF
 uptime
@@ -2556,4 +2538,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-curdate
