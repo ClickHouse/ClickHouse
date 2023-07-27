@@ -316,7 +316,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, std::optional<UUID> set_id)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -339,13 +339,14 @@ std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & en
             getStorageName());
     }
 
-    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists, set_id);
-    if (id)
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
     {
         std::lock_guard lock{mutex};
-        ids_cache.set(*id, storage_for_insertion);
+        ids_cache.set(id, storage_for_insertion);
+        return true;
     }
-    return id;
+
+    return false;
 }
 
 
