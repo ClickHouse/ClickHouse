@@ -264,7 +264,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             secure,
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
-            /* password= */ ""
+            /* cluster_secret= */ ""
         };
         cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
     }
