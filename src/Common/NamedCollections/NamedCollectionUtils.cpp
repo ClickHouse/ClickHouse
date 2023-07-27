@@ -428,9 +428,21 @@ void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr contex
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
+    auto & instance = NamedCollectionFactory::instance();
+    if (!instance.exists(query.collection_name))
+    {
+        if (!query.if_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+                "Cannot remove collection `{}`, because it doesn't exist",
+                query.collection_name);
+        }
+        return;
+    }
     LoadFromSQL(context).update(query);
 
-    auto collection = NamedCollectionFactory::instance().getMutable(query.collection_name);
+    auto collection = instance.getMutable(query.collection_name);
     auto collection_lock = collection->lock();
 
     for (const auto & [name, value] : query.changes)
