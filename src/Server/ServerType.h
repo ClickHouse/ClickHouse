@@ -10,7 +10,6 @@ public:
 
     enum Type
     {
-        UNKNOWN,
         TCP,
         TCP_WITH_PROXY,
         TCP_SECURE,
