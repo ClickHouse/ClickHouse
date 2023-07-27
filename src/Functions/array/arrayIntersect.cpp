@@ -628,13 +628,6 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 if (all_nullable)
                     null_map.push_back(0);
             }
-            if (all_has_nullable && !null_added)
-            {
-                ++result_offset;
-                result_data.insertDefault();
-                null_map.push_back(1);
-                null_added = true;
-            }
         }
         result_offsets.getElement(row) = result_offset;
 
