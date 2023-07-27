@@ -313,8 +313,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_)
-    : args(args_)
+    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
+    : args(args_), connected_callback(std::move(connected_callback_))
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -395,8 +395,9 @@ void ZooKeeper::connect(
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (const auto & node : nodes)
+        for (size_t i = 0; i < nodes.size(); ++i)
         {
+            const auto & node = nodes[i];
             try
             {
                 /// Reset the state of previous attempt.
@@ -443,9 +444,11 @@ void ZooKeeper::connect(
                     e.addMessage("while receiving handshake from ZooKeeper");
                     throw;
                 }
-
                 connected = true;
-                connected_zk_address = node.address;
+
+                if (connected_callback.has_value())
+                    (*connected_callback)(i, node);
+
 
                 break;
             }
@@ -462,7 +465,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
 
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;

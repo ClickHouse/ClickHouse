@@ -107,6 +107,7 @@ public:
     };
 
     using Nodes = std::vector<Node>;
+    using ConnectedCallback = std::function<void(size_t, const Node&)>;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -115,7 +116,8 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::optional<ConnectedCallback> && connected_callback_ = {});
 
     ~ZooKeeper() override;
 
@@ -125,8 +127,6 @@ public:
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
-
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
@@ -213,9 +213,9 @@ public:
 
 private:
     ACLs default_acls;
-    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
+    std::optional<ConnectedCallback> connected_callback = {};
 
     /// Fault injection
     void maybeInjectSendFault();
