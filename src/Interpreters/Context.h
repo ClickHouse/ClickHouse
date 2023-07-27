@@ -534,7 +534,7 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
+    void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
     UserPtr getUser() const;
 
     std::optional<UUID> getUserID() const;
