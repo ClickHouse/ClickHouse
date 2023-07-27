@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWST
 Actian
 ActionsMenu
 ActiveRecord
@@ -210,6 +211,7 @@ Decrypted
 Deduplicate
 Deduplication
 DelayedInserts
+delim
 DeliveryTag
 DeltaLake
 Denormalize
@@ -469,6 +471,7 @@ MSan
 MVCC
 MacBook
 MacOS
+MapState
 MarkCacheBytes
 MarkCacheFiles
 MarksLoaderThreads
@@ -760,6 +763,7 @@ Rollup
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -772,6 +776,7 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
+SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
@@ -833,6 +838,8 @@ Subexpression
 Submodules
 Subqueries
 Substrings
+substringIndex
+substringIndexUTF
 SummingMergeTree
 SuperSet
 Superset
@@ -988,6 +995,7 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+agg
 aggregatefunction
 aggregatingmergetree
 aggregatio
@@ -1032,6 +1040,7 @@ arrayFirst
 arrayFirstIndex
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -1423,6 +1432,7 @@ filesystemFree
 filesystems
 finalizeAggregation
 fips
+firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 fixedstring
@@ -1532,6 +1542,10 @@ hadoop
 halfMD
 halfday
 hardlinks
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF
+hasSubsequenceUTF
 hasAll
 hasAny
 hasColumnInTable
@@ -1578,6 +1592,8 @@ indexOf
 infi
 initialQueryID
 initializeAggregation
+initcap
+initcapUTF
 injective
 innogames
 inodes
@@ -1605,6 +1621,7 @@ isNull
 isValidJSON
 isValidUTF
 iteratively
+jaccard
 javaHash
 javaHashUTF
 jbod
@@ -1762,6 +1779,7 @@ misconfiguration
 mispredictions
 mmap
 mmapped
+modularization
 moduloOrZero
 mongodb
 monthName
@@ -1935,6 +1953,7 @@ prefertch
 prefetch
 prefetchsize
 preloaded
+prem
 prepend
 prepended
 prepends
@@ -2114,6 +2133,7 @@ rowNumberInBlock
 rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
+rowbinarywithdefaults
 rsync
 rsyslog
 runnable
@@ -2133,6 +2153,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+serverTimeZone
+serverTimezone
 serverUUID
 sessionCacheSize
 sessionIdContext
@@ -2164,6 +2186,7 @@ snowflakeToDateTime
 socketcache
 soundex
 sparkbar
+sparkBar
 sparsehash
 speedscope
 splitByChar
@@ -2231,6 +2254,7 @@ subquery
 subranges
 subreddits
 subseconds
+subsequence
 substring
 substringUTF
 substrings
@@ -2257,6 +2281,7 @@ summap
 summingmergetree
 sumwithoverflow
 superaggregates
+supertype
 supremum
 symlink
 symlinks
@@ -2451,6 +2476,7 @@ unrounded
 untracked
 untrusted
 untuple
+uploader
 uploaders
 upperUTF
 uptime
@@ -2530,3 +2556,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+curdate

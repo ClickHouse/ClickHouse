@@ -1,7 +1,7 @@
 #pragma once
 
 /// Macros for convenient usage of Poco logger.
-
+#include <unistd.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
@@ -15,15 +15,44 @@ namespace Poco { class Logger; }
 #define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
 #define LogFrequencyLimiter(x, y) std::make_unique<LogFrequencyLimiterIml>(x, y)
 
+using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
+
 namespace
 {
     [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; }
     [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); }
     [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLogger(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
     [[maybe_unused]] std::unique_ptr<LogFrequencyLimiterIml> getLogger(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
+    [[maybe_unused]] LogSeriesLimiterPtr getLogger(LogSeriesLimiterPtr & logger) { return logger; }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
+
+/// Copy-paste from contrib/libpq/include/c.h
+/// There's no easy way to count the number of arguments without evaluating these arguments...
+#define CH_VA_ARGS_NARGS(...) \
+    CH_VA_ARGS_NARGS_(__VA_ARGS__, \
+                   63,62,61,60,                   \
+                   59,58,57,56,55,54,53,52,51,50, \
+                   49,48,47,46,45,44,43,42,41,40, \
+                   39,38,37,36,35,34,33,32,31,30, \
+                   29,28,27,26,25,24,23,22,21,20, \
+                   19,18,17,16,15,14,13,12,11,10, \
+                   9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+#define CH_VA_ARGS_NARGS_( \
+    _01,_02,_03,_04,_05,_06,_07,_08,_09,_10, \
+    _11,_12,_13,_14,_15,_16,_17,_18,_19,_20, \
+    _21,_22,_23,_24,_25,_26,_27,_28,_29,_30, \
+    _31,_32,_33,_34,_35,_36,_37,_38,_39,_40, \
+    _41,_42,_43,_44,_45,_46,_47,_48,_49,_50, \
+    _51,_52,_53,_54,_55,_56,_57,_58,_59,_60, \
+    _61,_62,_63, N, ...) \
+    (N)
+
+#define LINE_NUM_AS_STRING_IMPL2(x) #x
+#define LINE_NUM_AS_STRING_IMPL(x) LINE_NUM_AS_STRING_IMPL2(x)
+#define LINE_NUM_AS_STRING LINE_NUM_AS_STRING_IMPL(__LINE__)
+#define MESSAGE_FOR_EXCEPTION_ON_LOGGING "Failed to write a log message: " __FILE__ ":" LINE_NUM_AS_STRING "\n"
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
@@ -31,27 +60,54 @@ namespace
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
 
-#define LOG_IMPL(logger, priority, PRIORITY, ...) do                              \
-{                                                                                 \
-    auto _logger = ::getLogger(logger);                                           \
-    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
-        (DB::CurrentThread::get().getClientLogsLevel() >= (priority));            \
-    if (_is_clients_log || _logger->is((PRIORITY)))                               \
-    {                                                                             \
-        std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
-        formatStringCheckArgsNum(__VA_ARGS__);                                    \
-        if (auto _channel = _logger->getChannel())                                \
-        {                                                                         \
-            std::string file_function;                                            \
-            file_function += __FILE__;                                            \
-            file_function += "; ";                                                \
-            file_function += __PRETTY_FUNCTION__;                                 \
-            Poco::Message poco_message(_logger->name(), formatted_message,        \
-                (PRIORITY), file_function.c_str(), __LINE__, tryGetStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__))); \
-            _channel->log(poco_message);                                          \
-        }                                                                         \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                          \
-    }                                                                             \
+#define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
+{                                                                                                                   \
+    auto _logger = ::getLogger(logger);                                                                             \
+    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&                                      \
+        (DB::CurrentThread::get().getClientLogsLevel() >= (priority));                                              \
+    if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
+        break;                                                                                                      \
+                                                                                                                    \
+    try                                                                                                             \
+    {                                                                                                               \
+        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
+        auto _channel = _logger->getChannel();                                                                      \
+        if (!_channel)                                                                                              \
+            break;                                                                                                  \
+                                                                                                                    \
+        constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
+        using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
+                                                                                                                    \
+        std::string_view _format_string;                                                                            \
+        std::string _formatted_message;                                                                             \
+                                                                                                                    \
+        if constexpr (LogTypeInfo::is_static)                                                                       \
+        {                                                                                                           \
+            formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
+            _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
+        }                                                                                                           \
+                                                                                                                    \
+        constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                \
+        if constexpr (is_preformatted_message)                                                                      \
+        {                                                                                                           \
+            static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
+            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string);  \
+        }                                                                                                           \
+        else                                                                                                        \
+        {                                                                                                           \
+             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : fmt::format(__VA_ARGS__);                   \
+        }                                                                                                           \
+                                                                                                                    \
+        std::string _file_function = __FILE__ "; ";                                                                 \
+        _file_function += __PRETTY_FUNCTION__;                                                                      \
+        Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
+            (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
+        _channel->log(_poco_message);                                                                               \
+    }                                                                                                               \
+    catch (...)                                                                                                     \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+    }                                                                                                               \
 } while (false)
 
 

@@ -55,6 +55,13 @@ def cluster_without_dns_cache_update():
 # node1 is a source, node2 downloads data
 # node2 has long dns_cache_update_period, so dns cache update wouldn't work
 def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
+    # In this case we should manually set up the static DNS entries on the source host
+    # to exclude resplving addresses automatically added by docker.
+    # We use ipv6 for hosts, but resolved DNS entries may contain an unexpected ipv4 address.
+    node2.set_hosts([("2001:3984:3989::1:1111", "node1")])
+    # drop DNS cache
+    node2.query("SYSTEM DROP DNS CACHE")
+
     # First we check, that normal replication works
     node1.query(
         "INSERT INTO test_table_drop VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)"
@@ -64,6 +71,7 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
 
     # We change source node ip
     cluster.restart_instance_with_ip_change(node1, "2001:3984:3989::1:7777")
+    node2.set_hosts([("2001:3984:3989::1:7777", "node1")])
 
     # Put some data to source node1
     node1.query(
@@ -163,17 +171,8 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     assert_eq_with_retry(node4, "SELECT count(*) from test_table_update", "7")
 
 
-def set_hosts(node, hosts):
-    new_content = "\\n".join(["127.0.0.1 localhost", "::1 localhost"] + hosts)
-    node.exec_in_container(
-        ["bash", "-c", 'echo -e "{}" > /etc/hosts'.format(new_content)],
-        privileged=True,
-        user="root",
-    )
-
-
 def test_dns_cache_update(cluster_with_dns_cache_update):
-    set_hosts(node4, ["127.255.255.255 lost_host"])
+    node4.set_hosts([("127.255.255.255", "lost_host")])
 
     with pytest.raises(QueryRuntimeException):
         node4.query("SELECT * FROM remote('lost_host', 'system', 'one')")
@@ -184,7 +183,7 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
     with pytest.raises(QueryRuntimeException):
         node4.query("SELECT * FROM distributed_lost_host")
 
-    set_hosts(node4, ["127.0.0.1 lost_host"])
+    node4.set_hosts([("127.0.0.1", "lost_host")])
 
     # Wait a bit until dns cache will be updated
     assert_eq_with_retry(
@@ -239,11 +238,10 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node):
         == "0\n"
     )
 
-    set_hosts(
-        node,
+    node.set_hosts(
         [
-            "127.255.255.255 node3",
-            "2001:3984:3989::1:88{}4 unknown_host".format(node_num),
+            ("127.255.255.255", "node3"),
+            (f"2001:3984:3989::1:88{node_num}4", "unknown_host"),
         ],
     )
 
@@ -260,7 +258,7 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node):
         node4.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
     # now wrong addresses are cached
 
-    set_hosts(node, [])
+    node.set_hosts([])
     retry_count = 60
     if node_name == "node5":
         # client is not allowed to connect, so execute it directly in container to send query from localhost
@@ -298,7 +296,7 @@ def test_host_is_drop_from_cache_after_consecutive_failures(
     # Note that the list of hosts in variable since lost_host will be there too (and it's dropped and added back)
     # dns_update_short -> dns_max_consecutive_failures set to 6
     assert node4.wait_for_log_line(
-        "Cannot resolve host \\(InvalidHostThatDoesNotExist\\), error 0: Host not found."
+        "Code: 198. DB::Exception: Not found address of host: InvalidHostThatDoesNotExist."
     )
     assert node4.wait_for_log_line(
         "Cached hosts not found:.*InvalidHostThatDoesNotExist**",

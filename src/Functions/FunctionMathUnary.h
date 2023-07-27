@@ -154,6 +154,8 @@ private:
             using ColVecType = ColumnVectorOrDecimal<Type>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
+            if (col_vec == nullptr)
+                return false;
             return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
         };
 
