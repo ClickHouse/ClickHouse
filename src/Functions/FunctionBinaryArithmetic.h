@@ -1175,7 +1175,7 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if constexpr (is_multiply || is_division)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot use multiplication or division on arrays");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use multiplication or division on arrays");
 
         auto num_args = arguments.size();
         DataTypes data_types;
@@ -1214,7 +1214,7 @@ class FunctionBinaryArithmetic : public IFunction
             else
             {
                 if (*typeid_cast<const ColumnArray *>(arguments[i].column.get())->getOffsets().data() != data)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments must be one size");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be one size");
             }
 
             t = typeid_cast<const DataTypeArray *>(arguments[i].type.get())->getNestedType();
