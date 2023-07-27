@@ -162,16 +162,16 @@ namespace
 
         poco_proxy_config.host = proxy_configuration.host;
         poco_proxy_config.port = proxy_configuration.port;
-        poco_proxy_config.protocol = proxy_configuration.scheme;
+        poco_proxy_config.protocol = proxy_configuration.protocol;
 
         return poco_proxy_config;
     }
 
-    auto getProxyConfiguration(const std::string & http_method)
+    auto getProxyConfiguration(const std::string & protocol)
     {
-        auto method = http_method == "https" ? ProxyConfigurationResolver::Method::HTTPS
-                                             : ProxyConfigurationResolver::Method::HTTP;
-        auto proxy_config = ProxyConfigurationResolverProvider::get()->resolve(method);
+        auto protocol = protocol == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
+                                             : ProxyConfigurationResolver::Protocol::HTTP;
+        auto proxy_config = ProxyConfigurationResolverProvider::get()->resolve(protocol);
 
         return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }

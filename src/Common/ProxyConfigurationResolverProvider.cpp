@@ -1,12 +1,12 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Common/EnvironmentProxyConfigurationResolver.h>
+#include <Common/Exception.h>
+#include <Common/ProtocolAwareProxyConfigurationResolver.h>
 #include <Common/ProxyListConfigurationResolver.h>
 #include <Common/RemoteProxyConfigurationResolver.h>
-#include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
-#include <Common/MethodAwareProxyConfigurationResolver.h>
 
 #include <Interpreters/Context.h>
 
@@ -37,7 +37,7 @@ namespace
     }
 
     std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
-        const String & method, const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
+        const String & protocol, const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
     {
         std::vector<String> keys;
         configuration.keys(config_prefix, keys);
@@ -48,7 +48,7 @@ namespace
             if (startsWith(key, "resolver"))
             {
                 auto proxy_scheme = configuration.getString(config_prefix + ".resolver.proxy_scheme");
-                if (proxy_scheme == method)
+                if (proxy_scheme == protocol)
                 {
                     return getRemoteResolver(config_prefix + "." + key, configuration);
                 }
@@ -155,7 +155,7 @@ namespace
         auto https_resolver = std::make_shared<ProxyListConfigurationResolver>(https_uris);
         auto any_resolver = https_resolver;
 
-        return std::make_shared<MethodAwareProxyConfigurationResolver>(http_resolver, https_resolver, any_resolver);
+        return std::make_shared<ProtocolAwareProxyConfigurationResolver>(http_resolver, https_resolver, any_resolver);
     }
 }
 
@@ -194,7 +194,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
             auto [http_resolver, https_resolver] = getRemoteResolvers(proxy_prefix, configuration);
             auto any_resolver = https_resolver;
 
-            return std::make_shared<MethodAwareProxyConfigurationResolver>(http_resolver, https_resolver, any_resolver);
+            return std::make_shared<ProtocolAwareProxyConfigurationResolver>(http_resolver, https_resolver, any_resolver);
         }
 
         if (auto list_resolver = getListResolver(proxy_prefix, configuration))

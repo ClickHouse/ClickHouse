@@ -5,15 +5,15 @@
 namespace DB
 {
 
-class MethodAwareProxyConfigurationResolver : public ProxyConfigurationResolver
+class ProtocolAwareProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    MethodAwareProxyConfigurationResolver(
+    ProtocolAwareProxyConfigurationResolver(
         std::shared_ptr<ProxyConfigurationResolver> http_resolver_,
         std::shared_ptr<ProxyConfigurationResolver> https_resolver_,
         std::shared_ptr<ProxyConfigurationResolver> any_resolver_);
 
-    ProxyConfiguration resolve(Method method) override;
+    ProxyConfiguration resolve(Protocol protocol) override;
     void errorReport(const ProxyConfiguration & config) override;
 private:
     std::shared_ptr<ProxyConfigurationResolver> http_resolver;

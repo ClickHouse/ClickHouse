@@ -8,7 +8,7 @@ namespace DB
 struct ProxyConfiguration
 {
     std::string host;
-    std::string scheme;
+    std::string protocol;
     uint16_t port;
 };
 

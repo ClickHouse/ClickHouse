@@ -18,12 +18,12 @@ class RemoteProxyConfigurationResolver : public ProxyConfigurationResolver
 public:
     RemoteProxyConfigurationResolver(
         const Poco::URI & endpoint_,
-        String proxy_scheme_,
+        String proxy_protocol_,
         unsigned proxy_port_,
         unsigned cache_ttl_
     );
 
-    ProxyConfiguration resolve(Method method) override;
+    ProxyConfiguration resolve(Protocol protocol) override;
 
     void errorReport(const ProxyConfiguration & config) override;
 
@@ -32,7 +32,7 @@ private:
     /// Endpoint to obtain a proxy host.
     const Poco::URI endpoint;
     /// Scheme for obtained proxy.
-    const String proxy_scheme;
+    const String proxy_protocol;
     /// Port for obtained proxy.
     const unsigned proxy_port;
 
