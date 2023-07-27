@@ -185,7 +185,7 @@ void SystemLogQueue<LogElement>::confirm(uint64_t to_flush_end)
 }
 
 template <typename LogElement>
-SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread)
+typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread)
 {
     std::unique_lock lock(mutex);
     flush_event.wait_for(lock,
