@@ -13,6 +13,22 @@ logging.raiseExceptions = False
 
 
 @pytest.fixture(autouse=True, scope="session")
+def tune_local_port_range():
+    # Lots of services uses non privileged ports:
+    # - hdfs -- 50020/50070/...
+    # - minio
+    # - mysql
+    # - psql
+    #
+    # So instead of tuning all these thirdparty services, let's simply
+    # prohibit using such ports for outgoing connections, this should fix
+    # possible "Address already in use" errors.
+    #
+    # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.
+    run_and_check(["sysctl net.ipv4.ip_local_port_range='55000 65535'"], shell=True)
+
+
+@pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
     try:
         if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
@@ -45,7 +61,7 @@ def cleanup_environment():
 
         logging.debug("Pruning Docker networks")
         run_and_check(
-            ["docker network prune"],
+            ["docker network prune --force"],
             shell=True,
             nothrow=True,
         )

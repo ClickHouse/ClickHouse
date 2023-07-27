@@ -54,7 +54,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
 bool JoinStep::allowPushDownToRight() const
 {
-    return join->pipelineType() == JoinPipelineType::YShaped;
+    return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
