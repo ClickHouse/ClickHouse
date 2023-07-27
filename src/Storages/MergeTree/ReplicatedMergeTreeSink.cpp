@@ -305,16 +305,6 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
 template<bool async_insert>
 ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl() = default;
 
-/// Allow to verify that the session in ZooKeeper is still alive.
-static void assertSessionIsNotExpired(const zkutil::ZooKeeperPtr & zookeeper)
-{
-    if (!zookeeper)
-        throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper session.");
-
-    if (zookeeper->expired())
-        throw Exception(ErrorCodes::NO_ZOOKEEPER, "ZooKeeper session has been expired.");
-}
-
 template<bool async_insert>
 size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
@@ -638,10 +628,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData:
 {
     /// NOTE: No delay in this case. That's Ok.
     auto origin_zookeeper = storage.getZooKeeper();
-    assertSessionIsNotExpired(origin_zookeeper);
     auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(origin_zookeeper);
 
-    size_t replicas_num = checkQuorumPrecondition(zookeeper);
+    size_t replicas_num = 0;
+    ZooKeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", zookeeper_retries_info, context->getProcessListElement());
+    quorum_retries_ctl.retryLoop(
+        [&]()
+        {
+            zookeeper->setKeeper(storage.getZooKeeper());
+            replicas_num = checkQuorumPrecondition(zookeeper);
+        });
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -1185,7 +1181,6 @@ template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
     auto zookeeper = storage.getZooKeeper();
-    assertSessionIsNotExpired(zookeeper);
     finishDelayedChunk(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
 }
 
