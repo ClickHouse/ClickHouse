@@ -137,6 +137,12 @@ The maximum rows of data to read for automatic schema inference.
 
 Default value: `25'000`.
 
+## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
+
+The maximum amount of data in bytes to read for automatic schema inference.
+
+Default value: `33554432` (32 Mb).
+
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
@@ -235,6 +241,26 @@ See also:
 
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+
+## interval_output_format {#interval_output_format}
+
+Allows choosing different output formats of the text representation of interval types.
+
+Possible values:
+
+-   `kusto` - KQL-style output format.
+
+    ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
+
+-   `numeric` - Numeric output format.
+
+    ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.
+
+Default value: `numeric`.
+
+See also:
+
+-   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 
 ## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
@@ -728,6 +754,12 @@ My NULL
 My NULL
 ```
 
+### input_format_tsv_skip_trailing_empty_lines {input_format_tsv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of TSV file will be skipped.
+
+Disabled by default.
+
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -880,6 +912,103 @@ Result
 788
 My NULL
 My NULL
+```
+
+### input_format_csv_skip_trailing_empty_lines {input_format_csv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of CSV file will be skipped.
+
+Disabled by default.
+
+### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
+
+Trims spaces and tabs in non-quoted CSV strings.
+
+Default value: `true`.
+
+**Examples**
+
+Query
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=true
+```
+
+Result
+
+```text
+"string"
+```
+
+Query
+
+```bash
+echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_trim_whitespaces=false
+```
+
+Result
+
+```text
+"  string  "
+```
+### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+
+Disabled by default.
+
+### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
+
+Allow to use whitespace or tab as field delimiter in CSV strings.
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter=' '
+```
+
+Result
+
+```text
+a  b
+```
+
+Query
+
+```bash
+echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter='\t'
+```
+
+Result
+
+```text
+a  b
+```
+
+### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
+
+Allow to set default value to column when CSV field deserialization failed on bad value
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
+echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  0  1971-01-01
 ```
 
 ## Values format settings {#values-format-settings}
@@ -1182,7 +1311,7 @@ Possible values:
 
 - `bin` - as 16-bytes binary.
 - `str` - as a string of 36 bytes.
-- `ext` - as extention with ExtType = 2.
+- `ext` - as extension with ExtType = 2.
 
 Default value: `ext`.
 
@@ -1217,6 +1346,17 @@ Default value: 0.
 ### format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md/#data-format-avro-confluent) format.
+
+Format:
+``` text
+http://[user:password@]machine[:port]"
+```
+
+Examples:
+``` text
+http://registry.example.com:8081
+http://admin:secret@registry.example.com:8081
+```
 
 Default value: `Empty`.
 
@@ -1442,6 +1582,12 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md/#format-customseparated) data format.
 
 Default value: `''`.
+
+### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
+
+Disabled by default.
 
 ## Regexp format settings {#regexp-format-settings}
 

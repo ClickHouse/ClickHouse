@@ -6,7 +6,6 @@ import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
-
 cluster = ClickHouseCluster(__file__)
 
 num_nodes = 10
@@ -134,9 +133,21 @@ def test_concurrent_backups_on_same_node():
     )
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
-    error = nodes[0].query_and_get_error(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
-    )
+    try:
+        error = nodes[0].query_and_get_error(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+        )
+    except Exception as e:
+        status = (
+            nodes[0]
+            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+            .rstrip("\n")
+        )
+        # It is possible that the second backup was picked up first, and then the async backup
+        if status == "CREATING_BACKUP" or status == "BACKUP_FAILED":
+            return
+        else:
+            raise e
     expected_errors = [
         "Concurrent backups not supported",
         f"Backup {backup_name} already exists",
@@ -180,9 +191,20 @@ def test_concurrent_backups_on_different_nodes():
     )
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
-    error = nodes[0].query_and_get_error(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
-    )
+    try:
+        error = nodes[0].query_and_get_error(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+        )
+    except Exception as e:
+        status = (
+            nodes[1]
+            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+            .rstrip("\n")
+        )
+        if status == "CREATING_BACKUP" or status == "BACKUP_FAILED":
+            return
+        else:
+            raise e
     expected_errors = [
         "Concurrent backups not supported",
         f"Backup {backup_name} already exists",
@@ -225,9 +247,20 @@ def test_concurrent_restores_on_same_node():
     )
     assert status in ["RESTORING", "RESTORED"]
 
-    error = nodes[0].query_and_get_error(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
-    )
+    try:
+        error = nodes[0].query_and_get_error(
+            f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+        )
+    except Exception as e:
+        status = (
+            nodes[0]
+            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+            .rstrip("\n")
+        )
+        if status == "RESTORING" or status == "RESTORE_FAILED":
+            return
+        else:
+            raise e
     expected_errors = [
         "Concurrent restores not supported",
         "Cannot restore the table default.tbl because it already contains some data",
@@ -270,9 +303,20 @@ def test_concurrent_restores_on_different_node():
     )
     assert status in ["RESTORING", "RESTORED"]
 
-    error = nodes[1].query_and_get_error(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
-    )
+    try:
+        error = nodes[1].query_and_get_error(
+            f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+        )
+    except Exception as e:
+        status = (
+            nodes[0]
+            .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+            .rstrip("\n")
+        )
+        if status == "RESTORING" or status == "RESTORE_FAILED":
+            return
+        else:
+            raise e
     expected_errors = [
         "Concurrent restores not supported",
         "Cannot restore the table default.tbl because it already contains some data",

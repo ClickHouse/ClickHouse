@@ -34,6 +34,7 @@ public:
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
@@ -53,6 +54,8 @@ public:
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
+
+    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 

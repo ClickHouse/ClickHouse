@@ -4,17 +4,14 @@
 #include <memory>
 #include <variant>
 #include <optional>
-#include <sparsehash/sparse_hash_map>
-#include <sparsehash/sparse_hash_set>
 
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
 #include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include <Dictionaries/HashedDictionaryCollectionType.h>
 
 /** This dictionary stores all content in a hash table in memory
   * (a separate Key -> Value map for each attribute)
@@ -28,6 +25,7 @@ struct HashedDictionaryConfiguration
 {
     const UInt64 shards;
     const UInt64 shard_load_queue_backlog;
+    const float max_load_factor;
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
 };
@@ -136,42 +134,7 @@ public:
 
 private:
     template <typename Value>
-    using CollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, Value, DefaultHash<UInt64>>,
-        HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
-
-    using NoAttributesCollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        HashSet<UInt64, DefaultHash<UInt64>>,
-        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>>>;
-
-    /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
-    ///
-    /// - DefaultHash<> is used for HashMap
-    /// - DefaultHash<> (from HashTable/Hash.h> works better then std::hash<>
-    ///   in case of sequential set of keys, but with random access to this set, i.e.
-    ///
-    ///       SELECT number FROM numbers(3000000) ORDER BY rand()
-    ///
-    ///   And even though std::hash<> works better in some other cases,
-    ///   DefaultHash<> is preferred since the difference for this particular
-    ///   case is significant, i.e. it can be 10x+.
-    template <typename Value>
-    using CollectionTypeSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
-        google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
-
-    using NoAttributesCollectionTypeSparse = google::sparse_hash_set<KeyType, DefaultHash<KeyType>>;
-
-    template <typename Value>
-    using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
-
-    template <typename Value>
-    using CollectionsHolder = std::vector<CollectionType<Value>>;
-
-    using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
+    using CollectionsHolder = std::vector<typename HashedDictionaryImpl::HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
     using NullableSets = std::vector<NullableSet>;
@@ -269,7 +232,7 @@ private:
 
     BlockPtr update_field_loaded_block;
     std::vector<std::unique_ptr<Arena>> string_arenas;
-    std::vector<NoAttributesCollectionType> no_attributes_containers;
+    std::vector<typename HashedDictionaryImpl::HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 

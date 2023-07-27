@@ -183,8 +183,9 @@ Arguments:
 - `-S`, `--structure` — table structure for input data.
 - `--input-format` — input format, `TSV` by default.
 - `-f`, `--file` — path to data, `stdin` by default.
-- `-q`, `--query` — queries to execute with `;` as delimiter. You must specify either `query` or `queries-file` option.
-- `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
+- `-q`, `--query` — queries to execute with `;` as delimiter. Cannot be used simultaneously with `--queries-file`.
+- `--queries-file` - file path with queries to execute. Cannot be used simultaneously with `--query`.
+- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `-N`, `--table` — table name where to put output data, `table` by default.
 - `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.

@@ -8,10 +8,6 @@ sidebar_label: Interval
 
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
 
-:::note    
-`Interval` data type values can’t be stored in tables.
-:::
-
 Structure:
 
 - Time interval as an unsigned integer value.
@@ -19,6 +15,9 @@ Structure:
 
 Supported interval types:
 
+- `NANOSECOND`
+- `MICROSECOND`
+- `MILLISECOND`
 - `SECOND`
 - `MINUTE`
 - `HOUR`

@@ -264,7 +264,9 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
-    captured_columns.push_back(column);
+    auto captured_column = column;
+    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
+    captured_columns.push_back(std::move(captured_column));
 }
 
 DataTypePtr ColumnFunction::getResultType() const
