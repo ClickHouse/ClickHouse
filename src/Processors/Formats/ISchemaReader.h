@@ -93,10 +93,12 @@ protected:
     /// Read one row and determine types of columns in it.
     /// Return types in the same order in which the values were in the row.
     /// If it's impossible to determine the type for some column, return nullptr for it.
-    /// Return empty list if can't read more data.
-    virtual DataTypes readRowAndGetDataTypes() = 0;
+    /// Return std::nullopt if can't read more data.
+    virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
+
+    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     size_t field_index;
 
