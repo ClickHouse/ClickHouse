@@ -539,6 +539,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
         const auto & settings = args.getContext()->getSettingsRef();
+        if (!settings.postgresql_connection_pool_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
@@ -557,6 +559,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             configuration.on_conflict);
     },
     {
+        .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::POSTGRES,
     });

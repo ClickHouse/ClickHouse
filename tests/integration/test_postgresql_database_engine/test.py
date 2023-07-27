@@ -81,6 +81,32 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
     drop_postgres_table(cursor, "test_table")
 
+def test_postgres_database_engine_with_postgres_ddl_with_settings(started_cluster):
+    """
+    issue-52343: PostgreSQL did not allow SETTINGS
+    """
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    assert "postgres_database" in node1.query("SHOW DATABASES")
+
+    create_postgres_table(cursor, "test_table")
+
+    node1.query(
+        """CREATE TABLE postgres_database.test_table(a INTEGER, b INTEGER)
+        ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
+        SETTINGS
+        postgresql_connection_pool_size = 50,
+        postgresql_connection_pool_auto_close = true
+        """
+    )
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
+    drop_postgres_table(cursor, "test_table")
+
 
 def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     conn = get_postgres_conn(
