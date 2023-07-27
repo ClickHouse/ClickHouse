@@ -109,7 +109,8 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 
 OpenTelemetry::TracingContextHolderPtr DistributedAsyncInsertHeader::createTracingContextHolder(const char * function, std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const
 {
-    chassert(!OpenTelemetry::CurrentContext().isTraceEnabled());
+    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tracing context already initialized.");
     OpenTelemetry::TracingContextHolderPtr trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
         function,
         client_info.client_trace_context,
