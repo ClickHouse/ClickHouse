@@ -41,7 +41,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods):
             logging.info(f"Method with ip: {method_with_ip}")
 
             has_get_minio_logs = (
-                    logs.find(method_with_domain) >= 0 or logs.find(method_with_ip) >= 0
+                logs.find(method_with_domain) >= 0 or logs.find(method_with_ip) >= 0
             )
             if has_get_minio_logs:
                 return
