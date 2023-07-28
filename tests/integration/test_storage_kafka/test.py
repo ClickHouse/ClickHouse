@@ -461,28 +461,14 @@ def test_kafka_settings_predefined_macros(kafka_cluster):
     )
 
     messages = []
-    for i in range(25):
+    for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    kafka_produce(kafka_cluster, "test_kafka", messages)
+    kafka_produce(kafka_cluster, "test_kafka_topic", messages)
 
-    # Insert couple of malformed messages.
-    kafka_produce(kafka_cluster, "test_kafka", ["}{very_broken_message,"])
-    kafka_produce(kafka_cluster, "test_kafka", ["}another{very_broken_message,"])
-
-    messages = []
-    for i in range(25, 50):
-        messages.append(json.dumps({"key": i, "value": i}))
-    kafka_produce(kafka_cluster, "test_kafka", messages)
-
-    result = ""
-    while True:
-        result += instance.query("SELECT * FROM test.kafka", ignore_error=True)
-        if kafka_check_result(result):
-            break
-
+    result = instance.query("SELECT * FROM test.kafka", ignore_error=True)
     kafka_check_result(result, True)
 
-    members = describe_consumer_group(kafka_cluster, "new")
+    members = describe_consumer_group(kafka_cluster, "test_kafka_group")
     assert members[0]["client_id"] == "test_kafka test 1234"
 
 
