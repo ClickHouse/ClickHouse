@@ -71,6 +71,9 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace traits_
@@ -1154,28 +1157,22 @@ class FunctionBinaryArithmetic : public IFunction
 
     ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        bool is_const = false;
         const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
         if (!return_type_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Return type for function {} must be array.", getName());
 
-        ColumnPtr result_column = executeArray<IColumn>(arguments, result_type, input_rows_count);
+        return executeArray(arguments, result_type, input_rows_count);
 
-        if (arguments[0].dumpStructure().contains("Const"))
-            is_const = true;
-
-        if (is_const)
-            return result_column;
-        else
-            return ColumnArray::create(result_column, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        // if (typeid_cast<const ColumnConst *>(arguments[0].column.get()))
+        //     return result_column;
+        // else
     }
 
-    template <typename ColumnType>
     ColumnPtr executeArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if constexpr (is_multiply || is_division)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use multiplication or division on arrays");
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use multiplication or division on arrays");
 
         auto num_args = arguments.size();
         DataTypes data_types;
@@ -1204,23 +1201,25 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         /// Unpacking non-const arrays and checking sizes of them.
-        UInt64 data = 0;
-        for (size_t i = 0; i < num_args; ++i)
+        if (*typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data() != 
+            *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data())
         {
-            auto a = typeid_cast<const ColumnArray *>(arguments[i].column.get())->getData().getPtr();
-
-            if (i == 0)
-                data = *typeid_cast<const ColumnArray *>(arguments[i].column.get())->getOffsets().data();
-            else
-            {
-                if (*typeid_cast<const ColumnArray *>(arguments[i].column.get())->getOffsets().data() != data)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be one size");
-            }
-
-            t = typeid_cast<const DataTypeArray *>(arguments[i].type.get())->getNestedType();
-            new_arguments[i] = {a, t, arguments[i].name};
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Cannot apply operation for arguments of different sizes. Size of the first argument: {}, size of the second argument: {}",
+            *typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data(),
+            *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data());
         }
-        return executeImpl(new_arguments, t, input_rows_count);
+
+        auto a = typeid_cast<const ColumnArray *>(arguments[0].column.get())->getData().getPtr();
+        t = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        new_arguments[0] = {a, t, arguments[0].name};
+
+        a = typeid_cast<const ColumnArray *>(arguments[1].column.get())->getData().getPtr();
+        t = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+        new_arguments[1] = {a, t, arguments[1].name};
+        
+        auto res = executeImpl(new_arguments, t, input_rows_count);
+        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
     ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1424,7 +1423,7 @@ public:
             return getReturnTypeImplStatic(new_arguments, context);
         }
 
-        if (isArray(arguments[0]) || isArray(arguments[1]))
+        if (isArray(arguments[0]) && isArray(arguments[1]))
         {
             DataTypes new_arguments {
                     static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
@@ -1433,6 +1432,11 @@ public:
 
             return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
         }
+
+        if (isArray(arguments[0]) || isArray(arguments[1]))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot execute arguments of different type. Type of the first argument: {}, type of the second argument: {}",
+            arguments[0]->getName(), arguments[1]->getName());
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
