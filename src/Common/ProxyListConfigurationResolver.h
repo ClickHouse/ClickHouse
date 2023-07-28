@@ -3,7 +3,6 @@
 #include <base/types.h>
 
 #include <Common/ProxyConfigurationResolver.h>
-#include <Common/AtomicRoundRobin.h>
 #include <Poco/URI.h>
 
 namespace DB
