@@ -139,7 +139,10 @@ void CustomSeparatedFormatReader::skipRowBetweenDelimiter()
 void CustomSeparatedFormatReader::skipField()
 {
     skipSpaces();
-    skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+    if (format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
+        readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
+    else
+        skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
 }
 
 bool CustomSeparatedFormatReader::checkForEndOfRow()

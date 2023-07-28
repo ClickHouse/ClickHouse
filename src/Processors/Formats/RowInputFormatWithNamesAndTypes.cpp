@@ -220,7 +220,8 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
             while (file_column < column_mapping->column_indexes_for_input_fields.size())
             {
                 const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
-                columns[*rem_column_index]->insertDefault();
+                if (rem_column_index)
+                    columns[*rem_column_index]->insertDefault();
                 ++file_column;
             }
             break;
