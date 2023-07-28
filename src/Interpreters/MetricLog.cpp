@@ -113,7 +113,7 @@ void MetricLog::metricThreadFunction()
                 elem.current_metrics[i] = CurrentMetrics::values[i];
             }
 
-            this->add(elem);
+            this->add(std::move(elem));
 
             /// We will record current time into table but align it to regular time intervals to avoid time drift.
             /// We may drop some time points if the server is overloaded and recording took too much time.
