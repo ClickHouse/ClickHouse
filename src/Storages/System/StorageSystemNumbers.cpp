@@ -124,7 +124,7 @@ protected:
             if (can_provide > need)
             {
                 auto end_value = start_value + need;
-                while(start_value < end_value)
+                while (start_value < end_value)
                     *(pos++) = start_value++;
 
                 provided += need;
@@ -134,7 +134,7 @@ protected:
             else if (can_provide == need)
             {
                 auto end_value = start_value + need;
-                while(start_value < end_value)
+                while (start_value < end_value)
                     *(pos++) = start_value++;
 
                 provided += need;
@@ -145,7 +145,7 @@ protected:
             else
             {
                 auto end_value = start_value + static_cast<UInt64>(can_provide);
-                while(start_value < end_value)
+                while (start_value < end_value)
                     *(pos++) = start_value++;
 
                 provided += static_cast<UInt64>(can_provide);
