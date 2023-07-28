@@ -14,11 +14,11 @@ TEST(ProxyEnvironmentConfiguration, TestHTTP)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    auto configuration = resolver.resolve(false);
+    auto configuration = resolver.resolve(DB::ProxyConfiguration::Protocol::HTTP);
 
     ASSERT_EQ(configuration.host, proxy_server.getHost());
     ASSERT_EQ(configuration.port, proxy_server.getPort());
-    ASSERT_EQ(configuration.scheme, proxy_server.getScheme());
+    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::fromString(proxy_server.getScheme()));
 }
 
 TEST(ProxyEnvironmentConfiguration, TestHTTPNoEnv)
@@ -27,10 +27,10 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPNoEnv)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    auto configuration = resolver.resolve(false);
+    auto configuration = resolver.resolve(DB::ProxyConfiguration::Protocol::HTTP);
 
     ASSERT_EQ(configuration.host, "");
-    ASSERT_EQ(configuration.scheme, "");
+    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::Protocol::HTTP);
     ASSERT_EQ(configuration.port, 0u);
 }
 
@@ -40,11 +40,11 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPs)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    auto configuration = resolver.resolve(true);
+    auto configuration = resolver.resolve(DB::ProxyConfiguration::Protocol::HTTPS);
 
     ASSERT_EQ(configuration.host, proxy_server.getHost());
     ASSERT_EQ(configuration.port, proxy_server.getPort());
-    ASSERT_EQ(configuration.scheme, proxy_server.getScheme());
+    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::fromString(proxy_server.getScheme()));
 }
 
 TEST(ProxyEnvironmentConfiguration, TestHTTPsNoEnv)
@@ -53,9 +53,9 @@ TEST(ProxyEnvironmentConfiguration, TestHTTPsNoEnv)
 
     DB::EnvironmentProxyConfigurationResolver resolver;
 
-    auto configuration = resolver.resolve(true);
+    auto configuration = resolver.resolve(DB::ProxyConfiguration::Protocol::HTTPS);
 
     ASSERT_EQ(configuration.host, "");
-    ASSERT_EQ(configuration.scheme, "");
+    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::Protocol::HTTP);
     ASSERT_EQ(configuration.port, 0u);
 }
