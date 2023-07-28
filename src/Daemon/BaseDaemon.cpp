@@ -38,7 +38,6 @@
 #include <base/coverage.h>
 #include <base/sleep.h>
 
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>

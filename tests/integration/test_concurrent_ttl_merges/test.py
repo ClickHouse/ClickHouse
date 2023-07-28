@@ -7,10 +7,16 @@ from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/fast_background_pool.xml"], with_zookeeper=True
+    "node1",
+    main_configs=["configs/fast_background_pool.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/fast_background_pool.xml"], with_zookeeper=True
+    "node2",
+    main_configs=["configs/fast_background_pool.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
 )
 
 
