@@ -337,7 +337,7 @@ public:
     {
         {
             std::lock_guard lock(mutex);
-            queue.emplace(file_segment->key(), file_segment->offset(), file_segment);
+            queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
@@ -360,6 +360,9 @@ private:
 
     struct DownloadInfo
     {
+        DownloadInfo(const CacheMetadata::Key & key_, const size_t & offset_, const std::weak_ptr<FileSegment> & file_segment_)
+            : key(key_), offset(offset_), file_segment(file_segment_) {}
+
         CacheMetadata::Key key;
         size_t offset;
         /// We keep weak pointer to file segment
