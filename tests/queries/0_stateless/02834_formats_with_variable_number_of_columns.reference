@@ -11,6 +11,10 @@ CSV
 2	\N
 \N	\N
 3	3
+1	0
+2	0
+0	0
+3	0
 TSV
 1	1
 2	0
@@ -24,6 +28,10 @@ TSV
 2	\N
 \N	\N
 3	3
+1	0
+2	0
+0	0
+3	0
 JSONCompactEachRow
 1	1
 2	0
@@ -37,6 +45,10 @@ JSONCompactEachRow
 2	\N
 \N	\N
 3	3
+1	0
+2	0
+0	0
+3	0
 CustomSeparated
 1	1
 2	0
@@ -50,3 +62,7 @@ CustomSeparated
 2	\N
 \N	\N
 3	3
+1	0
+2	0
+0	0
+3	0
