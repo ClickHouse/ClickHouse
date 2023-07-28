@@ -38,6 +38,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -555,9 +556,25 @@ BlockIO InterpreterSystemQuery::execute()
             );
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
+        case Type::STOP_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->stopServers(query.server_type);
+            break;
+        case Type::START_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->startServers(query.server_type);
+            break;
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            auto * queue = getContext()->getAsynchronousInsertQueue();
+            if (!queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot flush asynchronous insert queue because it is not initialized");
+
+            queue->flushAll();
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
@@ -1149,6 +1166,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;
         }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            break;
+        }
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
@@ -1164,8 +1186,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
+        case Type::STOP_LISTEN:
+        case Type::START_LISTEN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_LISTEN);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
