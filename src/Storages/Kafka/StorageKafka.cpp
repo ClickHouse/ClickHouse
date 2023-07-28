@@ -250,11 +250,7 @@ StorageKafka::StorageKafka(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
-    , macros_info([&table_id_](){
-        Macros::MacroExpansionInfo info;
-        info.table_id = table_id_;
-        return info;
-    }())
+    , macros_info{.table_id = table_id_}
     , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
     , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
     , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
