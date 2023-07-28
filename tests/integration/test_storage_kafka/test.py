@@ -762,7 +762,7 @@ def test_kafka_formats(kafka_cluster):
                 ),
             ],
             "extra_settings": ", format_avro_schema_registry_url='http://{}:{}'".format(
-                kafka_cluster.schema_registry_host, 8081
+                kafka_cluster.schema_registry_host, kafka_cluster.schema_registry_port
             ),
             "supports_empty_value": True,
         },
