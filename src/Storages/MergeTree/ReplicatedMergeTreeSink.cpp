@@ -724,7 +724,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     retries_ctl.setUserError(
                         ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                         "Insert failed due to zookeeper error. Please retry. Reason: {}",
-                        Coordination::errorMessage(write_part_info_keeper_error));
+                        write_part_info_keeper_error);
                 }
 
                 retries_ctl.stopRetries();
@@ -1034,7 +1034,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             retries_ctl.setUserError(
                 ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                 "Unknown status, client must retry. Reason: {}",
-                Coordination::errorMessage(multi_code));
+                multi_code);
             return;
         }
         else if (Coordination::isUserError(multi_code))
@@ -1110,7 +1110,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
                     block_number,
                     toString(block_id),
-                    Coordination::errorMessage(multi_code),
+                    multi_code,
                     failed_op_path);
             }
         }
@@ -1123,7 +1123,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
                 block_number,
                 toString(block_id),
-                Coordination::errorMessage(multi_code));
+                multi_code);
         }
     },
     [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
