@@ -1,7 +1,5 @@
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libarchive")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reserved-id-macro")
-
 set(SRCS 
     "${LIBRARY_DIR}/libarchive/archive_acl.c"
     "${LIBRARY_DIR}/libarchive/archive_blake2sp_ref.c"
@@ -145,5 +143,7 @@ target_include_directories(_libarchive PUBLIC
 target_compile_definitions(_libarchive PUBLIC
     HAVE_CONFIG_H
 )
+
+target_compile_options(_libarchive PRIVATE "-Wno-reserved-macro-identifier")
 
 add_library(ch_contrib::libarchive ALIAS _libarchive)
