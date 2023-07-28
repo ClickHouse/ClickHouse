@@ -134,6 +134,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 
@@ -658,6 +659,14 @@ public:
         const String & view_name = {});
     void addQueryAccessInfo(const Names & partition_names);
 
+    struct QualifiedProjectionName
+    {
+        StorageID storage_id = StorageID::createEmpty();
+        String projection_name;
+        explicit operator bool() const { return !projection_name.empty(); }
+    };
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
+
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -880,7 +889,6 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
@@ -989,6 +997,9 @@ public:
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
 
+    /// Call after unexpected crash happen.
+    void handleCrash() const;
+
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
@@ -1048,6 +1059,13 @@ public:
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
+
+    using StartStopServersCallback = std::function<void(const ServerType &)>;
+    void setStartServersCallback(StartStopServersCallback && callback);
+    void setStopServersCallback(StartStopServersCallback && callback);
+
+    void startServers(const ServerType & server_type) const;
+    void stopServers(const ServerType & server_type) const;
 
     void shutdown();
 
