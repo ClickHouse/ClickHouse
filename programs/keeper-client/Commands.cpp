@@ -27,8 +27,15 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
     auto children = client->zookeeper->getChildren(path);
     std::sort(children.begin(), children.end());
+
+    bool need_space = false;
     for (const auto & child : children)
-        std::cout << child << " ";
+    {
+        if (std::exchange(need_space, true))
+            std::cout << " ";
+
+        std::cout << child;
+    }
 
     std::cout << "\n";
 }
@@ -194,7 +201,7 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
 
     if (stat.numChildren >= static_cast<Int32>(threshold))
     {
-        std::cout << path << "\t" << stat.numChildren << "\n";
+        std::cout << static_cast<String>(path) << "\t" << stat.numChildren << "\n";
         return;
     }
 
@@ -219,15 +226,15 @@ void DeleteStableBackups::execute(const ASTKeeperQuery * /* query */, KeeperClie
         "You are going to delete all inactive backups in /clickhouse/backups.",
         [client]
         {
-            String backup_root = "/clickhouse/backups";
+            fs::path backup_root = "/clickhouse/backups";
             auto backups = client->zookeeper->getChildren(backup_root);
 
             for (const auto & child : backups)
             {
-                String backup_path = backup_root + "/" + child;
+                auto backup_path = backup_root / child;
                 std::cout << "Found backup " << backup_path << ", checking if it's active\n";
 
-                String stage_path = backup_path + "/stage";
+                String stage_path = backup_path / "stage";
                 auto stages = client->zookeeper->getChildren(stage_path);
 
                 bool is_active = false;
