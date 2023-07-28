@@ -211,6 +211,7 @@ Decrypted
 Deduplicate
 Deduplication
 DelayedInserts
+delim
 DeliveryTag
 DeltaLake
 Denormalize
@@ -837,6 +838,8 @@ Subexpression
 Submodules
 Subqueries
 Substrings
+substringIndex
+substringIndexUTF
 SummingMergeTree
 SuperSet
 Superset
