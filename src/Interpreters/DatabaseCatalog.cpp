@@ -349,6 +349,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     DatabasePtr database;
     {
+        // Callers assume that this method doesn't throw exceptions, but getDatabaseName() will throw if there is no database part.
+        // So, fail early and gracefully...
+        if (!table_id.hasDatabase())
+        {
+            if (exception)
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Empty database name"));
+            return {};
+        }
+
         std::lock_guard lock{databases_mutex};
         auto it = databases.find(table_id.getDatabaseName());
         if (databases.end() == it)

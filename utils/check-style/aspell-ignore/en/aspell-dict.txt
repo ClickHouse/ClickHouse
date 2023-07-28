@@ -698,6 +698,8 @@ PyCharm
 QEMU
 QTCreator
 Quantile
+QueryCacheBytes
+QueryCacheEntries
 QueryCacheHits
 QueryCacheMisses
 QueryPreempted
@@ -760,9 +762,9 @@ RoaringBitmap
 RocksDB
 Rollup
 RowBinary
+RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
-RowBinaryWithDefaults
 Runtime
 SATA
 SELECTs
@@ -775,7 +777,6 @@ SMALLINT
 SPNEGO
 SQEs
 SQLAlchemy
-SquaredDistance
 SQLConsoleDetail
 SQLInsert
 SQLSTATE
@@ -810,6 +811,7 @@ Smirnov'test
 Soundex
 SpanKind
 Spearman's
+SquaredDistance
 StartTLS
 StartTime
 StartupSystemTables
@@ -1269,6 +1271,7 @@ cryptographic
 csv
 csvwithnames
 csvwithnamesandtypes
+curdate
 currentDatabase
 currentProfiles
 currentRoles
@@ -1328,6 +1331,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+delim
 deltaLake
 deltaSum
 deltaSumTimestamp
@@ -1539,13 +1543,13 @@ hadoop
 halfMD
 halfday
 hardlinks
+hasAll
+hasAny
+hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
-hasAll
-hasAny
-hasColumnInTable
 hasSubstr
 hasToken
 hasTokenCaseInsensitive
@@ -1587,10 +1591,10 @@ incrementing
 indexHint
 indexOf
 infi
-initialQueryID
-initializeAggregation
 initcap
 initcapUTF
+initialQueryID
+initializeAggregation
 injective
 innogames
 inodes
@@ -2128,9 +2132,9 @@ routineley
 rowNumberInAllBlocks
 rowNumberInBlock
 rowbinary
+rowbinarywithdefaults
 rowbinarywithnames
 rowbinarywithnamesandtypes
-rowbinarywithdefaults
 rsync
 rsyslog
 runnable
@@ -2182,8 +2186,8 @@ sleepEachRow
 snowflakeToDateTime
 socketcache
 soundex
-sparkbar
 sparkBar
+sparkbar
 sparsehash
 speedscope
 splitByChar
@@ -2253,6 +2257,8 @@ subreddits
 subseconds
 subsequence
 substring
+substringIndex
+substringIndexUTF
 substringUTF
 substrings
 subtitiles
@@ -2553,4 +2559,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-curdate
