@@ -16,7 +16,8 @@ namespace
             case DB::ProxyConfiguration::Protocol::HTTPS:
                 return Aws::Http::Scheme::HTTPS;
             case DB::ProxyConfiguration::Protocol::ANY:
-                return Aws::Http::Scheme::HTTPS;
+                // default to HTTP since there is no ANY in AWS::Scheme and we don't want an exception
+                return Aws::Http::Scheme::HTTP;
         }
     }
 
