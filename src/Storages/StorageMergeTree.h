@@ -108,7 +108,7 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    void checkData(const ASTPtr & query, ContextPtr context, CheckDataCallback check_callback) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 

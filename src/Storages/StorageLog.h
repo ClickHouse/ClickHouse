@@ -59,7 +59,7 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr local_context) override;
+    void checkData(const ASTPtr & query, ContextPtr local_context, CheckDataCallback check_callback) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

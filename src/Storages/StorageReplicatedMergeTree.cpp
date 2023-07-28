@@ -8481,9 +8481,8 @@ void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, t
     part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
 }
 
-CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
+void StorageReplicatedMergeTree::checkData(const ASTPtr & query, ContextPtr local_context, CheckDataCallback check_callback)
 {
-    CheckResults results;
     DataPartsVector data_parts;
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
@@ -8500,17 +8499,19 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
         {
             try
             {
-                results.push_back(part_check_thread.checkPartAndFix(part->name));
+                bool should_continue = check_callback(part_check_thread.checkPartAndFix(part->name), data_parts.size());
+                if (!should_continue)
+                    break;
             }
             catch (const Exception & ex)
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+                bool should_continue = check_callback(CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'"), data_parts.size());
+                if (!should_continue)
+                    break;
             }
         }
     }
-
-    return results;
 }
 
 

@@ -596,7 +596,9 @@ public:
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
     /// Checks validity of the data
-    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
+    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */);
+
+    virtual void checkData(const ASTPtr & /* query */, ContextPtr /* context */, CheckDataCallback /* callback */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.

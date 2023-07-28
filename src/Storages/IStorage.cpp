@@ -273,6 +273,14 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
+CheckResults IStorage::checkData(const ASTPtr & query, ContextPtr context)
+{
+    CheckResults results;
+    auto callback = [&](const CheckResult & result, size_t) { results.push_back(result); return true;};
+    checkData(query, context, callback);
+    return results;
+}
+
 void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
 }
