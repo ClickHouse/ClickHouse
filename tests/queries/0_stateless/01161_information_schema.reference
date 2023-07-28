@@ -1,3 +1,7 @@
+COLUMNS
+SCHEMATA
+TABLES
+VIEWS
 columns
 schemata
 tables
@@ -6,6 +10,10 @@ COLUMNS
 SCHEMATA
 TABLES
 VIEWS
+columns
+schemata
+tables
+views
 INFORMATION_SCHEMA	INFORMATION_SCHEMA	default	\N	\N	\N	\N
 information_schema	information_schema	default	\N	\N	\N	\N
 default	default	mv	VIEW
