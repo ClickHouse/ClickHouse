@@ -223,10 +223,10 @@ public:
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
-        bool is_enbaled_by_default = val == JoinAlgorithm::DEFAULT
+        bool is_enabled_by_default = val == JoinAlgorithm::DEFAULT
                                   || val == JoinAlgorithm::HASH
                                   || val == JoinAlgorithm::DIRECT;
-        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enbaled_by_default)
+        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enabled_by_default)
             return true;
         return join_algorithm.isSet(val);
     }

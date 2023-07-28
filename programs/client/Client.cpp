@@ -812,6 +812,11 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
+            if (!ast_to_process)
+                fmt::print(stderr,
+                    "Error while forming new query: {}\n",
+                    getCurrentExceptionMessage(true));
+
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
             // uniformity.
@@ -1173,12 +1178,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         String traceparent = options["opentelemetry-traceparent"].as<std::string>();
         String error;
-        if (!global_context->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
+        if (!global_context->getClientTraceContext().parseTraceparentHeader(traceparent, error))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
     if (options.count("opentelemetry-tracestate"))
-        global_context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
+        global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 }
 
 
@@ -1238,10 +1243,9 @@ void Client::processConfig()
             global_context->getSettingsRef().max_insert_block_size);
     }
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.quota_key = config().getString("quota_key", "");
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQuotaClientKey(config().getString("quota_key", ""));
+    global_context->setQueryKind(query_kind);
 }
 
 
