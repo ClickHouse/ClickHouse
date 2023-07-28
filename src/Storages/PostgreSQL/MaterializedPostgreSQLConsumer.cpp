@@ -22,7 +22,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int TOO_MANY_PARTS;
 }
 
 MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
@@ -589,13 +588,10 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 executor.execute();
             }
         }
-        catch (DB::Exception & e)
+        catch (...)
         {
-            if (e.code() == ErrorCodes::TOO_MANY_PARTS)
-            {
-                /// Retry this buffer later.
-                storage_data.buffer.columns = result_rows.mutateColumns();
-            }
+            /// Retry this buffer later.
+            storage_data.buffer.columns = result_rows.mutateColumns();
             throw;
         }
 
