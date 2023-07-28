@@ -889,7 +889,6 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
