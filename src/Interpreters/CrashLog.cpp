@@ -83,9 +83,6 @@ void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, co
         stack_trace.toStringEveryLine([&trace_full](std::string_view line) { trace_full.push_back(line); });
 
         CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
-        crash_log_owned->add(element);
-        /// Notify savingThreadFunction to start flushing crash log
-        /// Crash log is storing in parallel with the signal processing thread.
-        crash_log_owned->notifyFlush(true);
+        crash_log_owned->add(std::move(element));
     }
 }
