@@ -1,10 +1,15 @@
 #pragma once
 
+#include "config.h"
+
 #include <IO/Archives/IArchiveReader.h>
 
 
 namespace DB
 {
+
+#if USE_LIBARCHIVE
+
 class ReadBuffer;
 class ReadBufferFromFileBase;
 class SeekableReadBuffer;
@@ -18,7 +23,7 @@ public:
 
     /// Constructs an archive's reader that will read by making a read buffer by using
     /// a specified function.
-    TarArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
+    TarArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_);
 
     ~TarArchiveReader() override;
 
@@ -37,11 +42,11 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename) override;
 
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
-    [[maybe_unused]] std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) override;
-    [[maybe_unused]] std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) override;
+    std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
 
     /// Sets password used to decrypt the contents of the files in the archive.
-    void setPassword([[maybe_unused]] const String & password_) override;
+    void setPassword(const String & password_) override;
 
 private:
     class ReadBufferFromTarArchive;
@@ -49,7 +54,8 @@ private:
 
     const String path_to_archive;
     const ReadArchiveFunction archive_read_function;
-    [[maybe_unused]] const UInt64 archive_size = 0;
 };
+
+#endif
 
 }

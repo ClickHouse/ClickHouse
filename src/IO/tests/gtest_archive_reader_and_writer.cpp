@@ -1,14 +1,7 @@
 #include <gtest/gtest.h>
 #include "config.h"
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-macro-identifier"
-
-#include <archive.h>
-#include <archive_entry.h>
-#endif
-
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
@@ -40,7 +33,7 @@ enum class ArchiveType : uint8_t
 };
 
 template <ArchiveType archive_type>
-bool createArchiveWithFiles(const std::string & archivename, std::map<std::string, std::string> files)
+bool createArchiveWithFiles(const std::string & archivename, const std::map<std::string, std::string> & files)
 {
     struct archive * a;
     struct archive_entry * entry;
@@ -56,7 +49,7 @@ bool createArchiveWithFiles(const std::string & archivename, std::map<std::strin
 
     archive_write_open_filename(a, archivename.c_str());
 
-    for (auto & [filename, content] : files) {
+    for (const auto & [filename, content] : files) {
         entry = archive_entry_new();
         archive_entry_set_pathname(entry, filename.c_str());
         archive_entry_set_size(entry, content.size());

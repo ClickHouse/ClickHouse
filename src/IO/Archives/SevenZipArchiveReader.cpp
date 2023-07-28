@@ -7,11 +7,15 @@
 
 namespace DB
 {
+
+#if USE_LIBARCHIVE
+
 namespace ErrorCodes
 {
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int NOT_IMPLEMENTED;
 }
 class SevenZipArchiveReader::Handle
 {
@@ -123,9 +127,8 @@ SevenZipArchiveReader::SevenZipArchiveReader(const String & path_to_archive_) : 
 {
 }
 
-SevenZipArchiveReader::SevenZipArchiveReader(
-    const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_)
-    : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_), archive_size(archive_size_)
+SevenZipArchiveReader::SevenZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_)
+    : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_)
 {
 }
 
@@ -152,7 +155,7 @@ SevenZipArchiveReader::FileInfo SevenZipArchiveReader::getFileInfo(const String 
 
 std::unique_ptr<SevenZipArchiveReader::FileEnumerator> SevenZipArchiveReader::firstFile()
 {
-    return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for 7z archives");
 }
 
 std::unique_ptr<ReadBufferFromFileBase> SevenZipArchiveReader::readFile(const String & filename)
@@ -163,21 +166,23 @@ std::unique_ptr<ReadBufferFromFileBase> SevenZipArchiveReader::readFile(const St
     return std::make_unique<ReadBufferFromSevenZipArchive>(path_to_archive, filename);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> SevenZipArchiveReader::readFile([[maybe_unused]] std::unique_ptr<FileEnumerator> enumerator)
+std::unique_ptr<ReadBufferFromFileBase> SevenZipArchiveReader::readFile(std::unique_ptr<FileEnumerator> /*enumerator*/)
 {
-    return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for 7z archives");
 }
 
 std::unique_ptr<SevenZipArchiveReader::FileEnumerator>
-SevenZipArchiveReader::nextFile([[maybe_unused]] std::unique_ptr<ReadBuffer> read_buffer)
+SevenZipArchiveReader::nextFile(std::unique_ptr<ReadBuffer> /*read_buffer*/)
 {
-    return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for 7z archives");
 }
 
 
-void SevenZipArchiveReader::setPassword([[maybe_unused]] const String & password_)
+void SevenZipArchiveReader::setPassword(const String & /*password_*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to .7z archive");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to 7z archive");
 }
+
+#endif
 
 }
