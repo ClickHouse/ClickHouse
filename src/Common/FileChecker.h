@@ -29,6 +29,7 @@ public:
 
     /// Check the files whose parameters are specified in sizes.json
     CheckResults check() const;
+    void check(CheckDataCallback check_callback) const;
 
     /// Truncate files that have excessive size to the expected size.
     /// Throw exception if the file size is less than expected.

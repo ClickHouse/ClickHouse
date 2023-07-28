@@ -230,7 +230,7 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    void checkData(const ASTPtr & query, ContextPtr context, CheckDataCallback check_callback) override;
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;

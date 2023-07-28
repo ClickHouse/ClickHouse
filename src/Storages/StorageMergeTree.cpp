@@ -2197,9 +2197,8 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_moves_assignee.trigger();
 }
 
-CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
+void StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context, CheckDataCallback check_callback)
 {
-    CheckResults results;
     DataPartsVector data_parts;
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
@@ -2224,12 +2223,16 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
-                results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
+                bool should_continue = check_callback(CheckResult(part->name, true, "Checksums recounted and written to disk."), data_parts.size());
+                if (!should_continue)
+                    break;
             }
             catch (const Exception & ex)
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+                bool should_continue = check_callback(CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'"), data_parts.size());
+                if (!should_continue)
+                    break;
             }
         }
         else
@@ -2238,15 +2241,18 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             {
                 checkDataPart(part, true);
                 part->checkMetadata();
-                results.emplace_back(part->name, true, "");
+                bool should_continue = check_callback(CheckResult(part->name, true, ""), data_parts.size());
+                if (!should_continue)
+                    break;
             }
             catch (const Exception & ex)
             {
-                results.emplace_back(part->name, false, ex.message());
+                bool should_continue = check_callback(CheckResult(part->name, false, ex.message()), data_parts.size());
+                if (!should_continue)
+                    break;
             }
         }
     }
-    return results;
 }
 
 

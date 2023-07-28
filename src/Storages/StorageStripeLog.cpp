@@ -403,14 +403,13 @@ SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const Storage
     return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-
-CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
+void StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr local_context, CheckDataCallback check_callback)
 {
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return file_checker.check();
+    file_checker.check(check_callback);
 }
 
 

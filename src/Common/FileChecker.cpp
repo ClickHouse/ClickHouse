@@ -84,10 +84,20 @@ size_t FileChecker::getTotalSize() const
 
 CheckResults FileChecker::check() const
 {
-    if (map.empty())
-        return {};
-
     CheckResults results;
+    auto callback = [&results](const CheckResult & result, size_t) -> bool
+    {
+        results.push_back(result);
+        return true;
+    };
+    check(callback);
+    return results;
+}
+
+void FileChecker::check(CheckDataCallback check_callback) const
+{
+    if (map.empty())
+        return;
 
     for (const auto & name_size : map)
     {
@@ -101,14 +111,12 @@ CheckResults FileChecker::check() const
             String failure_message = exists
                 ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second))
                 : ("File " + path + " doesn't exist");
-            results.emplace_back(name, false, failure_message);
+            check_callback(CheckResult(name, false, failure_message), map.size());
             break;
         }
 
-        results.emplace_back(name, true, "");
+        check_callback(CheckResult(name, true, ""), map.size());
     }
-
-    return results;
 }
 
 void FileChecker::repair()
