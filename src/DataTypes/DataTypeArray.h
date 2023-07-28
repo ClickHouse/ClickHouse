@@ -45,7 +45,6 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    MutableColumnPtr createColumnConst(size_t size, const Field & field) const;
 
     Field getDefault() const override;
 
@@ -75,11 +74,6 @@ public:
 template <typename DataType> inline constexpr bool IsDataTypeArray()
 {
     return false;
-}
-
-template <> inline constexpr bool IsDataTypeArray<DataTypeArray>()
-{
-    return std::is_same_v<DataTypeArray, class Up>;
 }
 
 }

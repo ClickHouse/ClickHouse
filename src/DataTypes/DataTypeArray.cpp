@@ -35,13 +35,6 @@ MutableColumnPtr DataTypeArray::createColumn() const
     return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets::create());
 }
 
-MutableColumnPtr DataTypeArray::createColumnConst(size_t size, const Field & field) const
-{
-    auto column = createColumn();
-    column->insert(field);
-    return ColumnConst::create(std::move(column), size);
-}
-
 Field DataTypeArray::getDefault() const
 {
     return Array();
