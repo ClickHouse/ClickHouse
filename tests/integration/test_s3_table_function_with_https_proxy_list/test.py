@@ -12,7 +12,10 @@ def cluster():
 
         cluster.add_instance(
             "proxy_list_node",
-            main_configs=["configs/config.d/proxy_list.xml", "configs/config.d/ssl.xml",],
+            main_configs=[
+                "configs/config.d/proxy_list.xml",
+                "configs/config.d/ssl.xml",
+            ],
             with_minio=True,
             minio_certs_dir="minio_certs",
         )

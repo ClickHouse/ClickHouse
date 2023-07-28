@@ -107,7 +107,8 @@ namespace
         bool new_setting_syntax = std::find_if(
                                         keys.begin(),
                                         keys.end(),
-                                        [](const String & key) {
+                                        [](const String & key)
+                                        {
                                             return startsWith(key, "http") || startsWith(key, "https");
                                         }) != keys.end();
 

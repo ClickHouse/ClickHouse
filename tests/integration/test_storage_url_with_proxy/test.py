@@ -40,7 +40,9 @@ def check_proxy_logs(cluster, proxy_instance, http_methods):
 
             logging.info(f"Method with ip: {method_with_ip}")
 
-            has_get_minio_logs = logs.find(method_with_domain) >= 0 or logs.find(method_with_ip) >= 0
+            has_get_minio_logs = (
+                    logs.find(method_with_domain) >= 0 or logs.find(method_with_ip) >= 0
+            )
             if has_get_minio_logs:
                 return
             time.sleep(1)
@@ -61,18 +63,20 @@ def test_s3_with_proxy_list(cluster):
     )
 
     content_type = "application/zstd"
-    date = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
-    resource="/root/data/ch-proxy-test/test.csv"
-    get_sig_string=f"GET\n\n{content_type}\n{date}\n{resource}"
-    password="minio123"
+    date = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+    resource = "/root/data/ch-proxy-test/test.csv"
+    get_sig_string = f"GET\n\n{content_type}\n{date}\n{resource}"
+    password = "minio123"
 
-    get_digest = hmac.new(password.encode('utf-8'), get_sig_string.encode('utf-8'), hashlib.sha1).digest()
-    get_signature = base64.b64encode(get_digest).decode('utf-8')
+    get_digest = hmac.new(
+        password.encode("utf-8"), get_sig_string.encode("utf-8"), hashlib.sha1
+    ).digest()
+    get_signature = base64.b64encode(get_digest).decode("utf-8")
     assert (
         node.query(
-        "SELECT * FROM url('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'CSV', 'a String, b String',"
-        f"headers('Host'='minio1', 'Date'= '{date}', 'Content-Type'='{content_type}',"
-        f"'Authorization'='AWS minio:{get_signature}')) FORMAT Values"
+            "SELECT * FROM url('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'CSV', 'a String, b String',"
+            f"headers('Host'='minio1', 'Date'= '{date}', 'Content-Type'='{content_type}',"
+            f"'Authorization'='AWS minio:{get_signature}')) FORMAT Values"
         )
         == "('color','red'),('size','10')"
     )
