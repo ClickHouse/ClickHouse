@@ -466,6 +466,10 @@ private:
         if (collectCrashLog)
             collectCrashLog(sig, thread_num, query_id, stack_trace);
 
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+        Context::getGlobalContextInstance()->handleCrash();
+#endif
+
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
