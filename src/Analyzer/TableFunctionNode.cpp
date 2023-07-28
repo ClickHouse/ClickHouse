@@ -133,6 +133,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
     result->settings_changes = settings_changes;
+    result->unresolved_arguments_indexes = unresolved_arguments_indexes;
 
     return result;
 }
