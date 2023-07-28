@@ -12,11 +12,11 @@ struct ProxyConfigurationResolverMock : public DB::ProxyConfigurationResolver
     : host(std::move(host_)), scheme(std::move(scheme_)), port(port_)
     {}
 
-    DB::ProxyConfiguration resolve(Protocol protocol) override
+    DB::ProxyConfiguration resolve(Protocol) override
     {
         return DB::ProxyConfiguration {
             host,
-            protocol,
+            DB::ProxyConfiguration::fromString(scheme),
             port
         };
     }
