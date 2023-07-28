@@ -755,20 +755,20 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 writeColumnImpl<parquet::BooleanType>(s, options, out,
                     ConverterNumeric<ColumnVector<UInt8>, bool, bool>(s.primitive_column));
             else
-                N(UInt8 , Int32Type);
+                N(UInt8, Int32Type);
          break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
         case TypeIndex::UInt32 : N(UInt32, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
-        case TypeIndex::Int8   : N(Int8  , Int32Type); break;
-        case TypeIndex::Int16  : N(Int16 , Int32Type); break;
-        case TypeIndex::Int32  : N(Int32 , Int32Type); break;
-        case TypeIndex::Int64  : N(Int64 , Int64Type); break;
+        case TypeIndex::Int8   : N(Int8,   Int32Type); break;
+        case TypeIndex::Int16  : N(Int16,  Int32Type); break;
+        case TypeIndex::Int32  : N(Int32,  Int32Type); break;
+        case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 
-        case TypeIndex::Enum8:      N(Int8  , Int32Type); break;
-        case TypeIndex::Enum16:     N(Int16 , Int32Type); break;
+        case TypeIndex::Enum8:      N(Int8,   Int32Type); break;
+        case TypeIndex::Enum16:     N(Int16,  Int32Type); break;
         case TypeIndex::Date:       N(UInt16, Int32Type); break;
-        case TypeIndex::Date32:     N(Int32 , Int32Type); break;
+        case TypeIndex::Date32:     N(Int32,  Int32Type); break;
         case TypeIndex::DateTime:   N(UInt32, Int32Type); break;
 
         #undef N
