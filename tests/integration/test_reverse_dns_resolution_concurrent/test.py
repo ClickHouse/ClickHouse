@@ -29,7 +29,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def stress_test(started_cluster):
+def test_stress_test(started_cluster):
     server_ip = cluster.get_instance_ip("clickhouse-server")
     client_ip = cluster.get_instance_ip("clickhouse-client")
 
