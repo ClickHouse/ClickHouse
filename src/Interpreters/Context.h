@@ -998,6 +998,9 @@ public:
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
 
+    /// Call after unexpected crash happen.
+    void handleCrash() const;
+
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
