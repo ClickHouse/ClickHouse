@@ -11,5 +11,9 @@
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
         </server>
+        <client>
+            <!-- certificate is outdated and outgoing connection would fail otherwise -->
+            <verificationMode>none</verificationMode>
+        </client>
     </openSSL>
 </clickhouse>
