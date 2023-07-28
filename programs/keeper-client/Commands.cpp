@@ -228,6 +228,7 @@ void DeleteStableBackups::execute(const ASTKeeperQuery * /* query */, KeeperClie
         {
             fs::path backup_root = "/clickhouse/backups";
             auto backups = client->zookeeper->getChildren(backup_root);
+            std::sort(backups.begin(), backups.end());
 
             for (const auto & child : backups)
             {
