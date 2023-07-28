@@ -21,6 +21,7 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
     registerTableFunctionMongoDB(factory);
+    registerTableFunctionRedis(factory);
 
     registerTableFunctionMeiliSearch(factory);
 
@@ -71,6 +72,12 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+
+#if USE_AZURE_BLOB_STORAGE
+    registerTableFunctionAzureBlobStorage(factory);
+#endif
+
+
 }
 
 }

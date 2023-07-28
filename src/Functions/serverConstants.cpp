@@ -27,7 +27,7 @@ namespace
     public:
         static constexpr auto name = "buildId";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBuildId>(context); }
-        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance()->getBuildIDHex(), context->isDistributed()) {}
+        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance().getBuildIDHex(), context->isDistributed()) {}
     };
 #endif
 
@@ -60,13 +60,22 @@ namespace
     };
 
 
-    /// Returns the server time zone.
+    /// Returns timezone for current session.
     class FunctionTimezone : public FunctionConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance().getTimeZone()}, context->isDistributed()) {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
+    };
+
+    /// Returns the server time zone (timezone in which server runs).
+    class FunctionServerTimezone : public FunctionConstantBase<FunctionServerTimezone, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "serverTimezone";
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerTimezone>(context); }
+        explicit FunctionServerTimezone(ContextPtr context) : FunctionConstantBase(DateLUT::serverTimezoneInstance().getTimeZone(), context->isDistributed()) {}
     };
 
 
@@ -151,8 +160,34 @@ REGISTER_FUNCTION(TcpPort)
 
 REGISTER_FUNCTION(Timezone)
 {
-    factory.registerFunction<FunctionTimezone>();
-    factory.registerAlias("timeZone", "timezone");
+    factory.registerFunction<FunctionTimezone>(
+        FunctionDocumentation{
+        .description=R"(
+Returns the default timezone for current session.
+Used as default timezone for parsing DateTime|DateTime64 without explicitly specified timezone.
+Can be changed with SET timezone = 'New/Tz'
+
+[example:timezone]
+    )",
+    .examples{{"timezone", "SELECT timezone();", ""}},
+    .categories{"Constant", "Miscellaneous"}
+});
+factory.registerAlias("timeZone", "timezone");
+}
+
+REGISTER_FUNCTION(ServerTimezone)
+{
+    factory.registerFunction<FunctionServerTimezone>(
+    FunctionDocumentation{
+        .description=R"(
+Returns the timezone name in which server operates.
+
+[example:serverTimezone]
+    )",
+     .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
+     .categories{"Constant", "Miscellaneous"}
+});
+    factory.registerAlias("serverTimeZone", "serverTimezone");
 }
 
 REGISTER_FUNCTION(Uptime)
