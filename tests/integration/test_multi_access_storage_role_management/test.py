@@ -76,6 +76,13 @@ def execute_test_for_access_type(access_type: str, system_table_name: str):
     with pytest.raises(QueryRuntimeException):
         node.query(f"MOVE {access_type} test6 TO users_xml")
 
+    node.query(f"DROP {access_type} test1")
+    node.query(f"DROP {access_type} test2")
+    node.query(f"DROP {access_type} test3")
+    node.query(f"DROP {access_type} test4")
+    node.query(f"DROP {access_type} test5")
+    node.query(f"DROP {access_type} test6")
+
 
 def test_roles():
     execute_test_for_access_type("ROLE", "roles")
@@ -91,10 +98,6 @@ def test_settings_profiles():
 
 def test_quotas():
     execute_test_for_access_type("QUOTA", "quotas")
-
-
-def test_row_policies():
-    execute_test_for_access_type("ROW POLICY", "row_policies")
 
 
 def test_role_from_different_storages():

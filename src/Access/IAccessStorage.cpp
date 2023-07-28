@@ -202,16 +202,21 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists, bool throw_if_exists)
 {
-    if (!ids.empty())
-        assert(multiple_entities.size() == ids.size());
+    assert(ids.empty() || (multiple_entities.size() == ids.size()));
 
     if (multiple_entities.empty())
         return {};
 
     if (multiple_entities.size() == 1)
     {
-        if (auto id = insert(multiple_entities[0], replace_if_exists, throw_if_exists))
-            return {*id};
+        UUID id;
+        if (!ids.empty())
+            id = ids[0];
+        else
+            id = generateRandomID();
+
+        if (insert(id, multiple_entities[0], replace_if_exists, throw_if_exists))
+            return {id};
         return {};
     }
 
@@ -229,7 +234,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             else
                 id = generateRandomID();
 
-            if (insertImpl(id, entity, replace_if_exists, throw_if_exists))
+            if (insert(id, entity, replace_if_exists, throw_if_exists))
             {
                 successfully_inserted.push_back(entity);
                 new_ids.push_back(id);
