@@ -108,24 +108,27 @@ public:
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
-        size_t flush_interval_milliseconds_);
+        size_t flush_interval_milliseconds_,
+        std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
+
+    /** Append a record into log.
+      * Writing to table will be done asynchronously and in case of failure, record could be lost.
+      */
 
     void shutdown() override;
 
+    void stopFlushThread() override;
+
 protected:
-    using ISystemLog::mutex;
+    Poco::Logger * log;
+
     using ISystemLog::is_shutdown;
-    using ISystemLog::flush_event;
-    using ISystemLog::stopFlushThread;
-    using Base::log;
+    using ISystemLog::saving_thread;
+    using ISystemLog::thread_mutex;
     using Base::queue;
-    using Base::queue_front_index;
-    using Base::is_force_prepare_tables;
-    using Base::requested_flush_up_to;
-    using Base::flushed_up_to;
-    using Base::logged_queue_full_at_index;
 
 private:
+
 
     /* Saving thread data */
     const StorageID table_id;
@@ -133,7 +136,6 @@ private:
     String create_query;
     String old_create_query;
     bool is_prepared = false;
-    const size_t flush_interval_milliseconds;
 
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.

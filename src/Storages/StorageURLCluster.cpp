@@ -48,6 +48,7 @@ StorageURLCluster::StorageURLCluster(
     , uri(uri_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context_->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
 
     StorageInMemoryMetadata storage_metadata;
 
