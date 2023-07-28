@@ -215,7 +215,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         if attempt == 59:
             assert parts_count == "(1)"
 
-        time.sleep(1)
+        time.sleep(10)
 
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
