@@ -1131,9 +1131,7 @@ private:
                 transformEndianness<std::endian::little>(value);
 
                 if constexpr (std::is_same_v<FromType, UUID>)
-                {
-                    UUIDHelpers::toCompatibleFormat(value);
-                }
+                    UUIDHelpers::toLegacyFormat(value);
 
                 const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
 
@@ -1149,9 +1147,7 @@ private:
             transformEndianness<std::endian::little>(value);
 
             if constexpr (std::is_same_v<FromType, UUID>)
-            {
-                UUIDHelpers::toCompatibleFormat(value);
-            }
+                UUIDHelpers::toLegacyFormat(value);
 
             const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
 

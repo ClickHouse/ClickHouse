@@ -4,7 +4,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Common/FieldVisitors.h>
-#include <Common/TransformEndianness.hpp>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -87,7 +86,7 @@ namespace
         {
             // Take a copy to modify the underlying components.
             auto uuid = x;
-            UUIDHelpers::toCompatibleFormat(uuid);
+            UUIDHelpers::toLegacyFormat(uuid);
             operator()(uuid.toUnderType());
         }
         void operator() (const IPv4 & x) const

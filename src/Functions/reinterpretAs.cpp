@@ -200,9 +200,7 @@ public:
                     }
 
                     if constexpr (std::is_same_v<ToType, DataTypeUUID>)
-                    {
-                        std::ranges::for_each(col_res->getData(), UUIDHelpers::toCompatibleFormat);
-                    }
+                        std::ranges::for_each(col_res->getData(), UUIDHelpers::toLegacyFormat);
 
                     result = std::move(col_res);
 
@@ -241,9 +239,7 @@ public:
                     }
 
                     if constexpr (std::is_same_v<ToType, DataTypeUUID>)
-                    {
-                        std::ranges::for_each(col_res->getData(), UUIDHelpers::toCompatibleFormat);
-                    }
+                        std::ranges::for_each(col_res->getData(), UUIDHelpers::toLegacyFormat);
 
                     result = std::move(col_res);
 
@@ -276,9 +272,7 @@ public:
                             [&](const auto & value)
                             {
                                 if constexpr (std::endian::native == std::endian::little)
-                                {
                                     memcpy(static_cast<void *>(&to[i]), static_cast<const void *>(&value), copy_size);
-                                }
                                 else
                                 {
                                     // This reverse memcpy is needed to undo the transformEndianness, while still maintaining
@@ -305,9 +299,7 @@ public:
                     }
 
                     if constexpr (std::is_same_v<ToType, DataTypeUUID>)
-                    {
-                        std::ranges::for_each(column_to->getData(), UUIDHelpers::toCompatibleFormat);
-                    }
+                        std::ranges::for_each(column_to->getData(), UUIDHelpers::toLegacyFormat);
 
                     result = std::move(column_to);
                     return true;
@@ -350,7 +342,7 @@ private:
         [](auto value)
         {
             transformEndianness<std::endian::little>(value);
-            UUIDHelpers::toCompatibleFormat(value);
+            UUIDHelpers::toLegacyFormat(value);
             return value;
         });
 

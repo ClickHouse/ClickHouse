@@ -395,7 +395,7 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
     auto src_copy = src_uuid;
     transformEndianness<std::endian::little>(src_copy);
-    UUIDHelpers::toCompatibleFormat(src_copy);
+    UUIDHelpers::toLegacyFormat(src_copy);
 
     const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
@@ -407,16 +407,16 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(&dst));
 
-    UInt128 trace = {0x000000000000f000ull, 0xe000000000000000ull};
+    const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace.items[1])) | (src.items[1] & trace.items[1]);
-    dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace.items[0])) | (src.items[0] & trace.items[0]);
+    dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace[1])) | (src.items[1] & trace[1]);
+    dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace[0])) | (src.items[0] & trace[0]);
 #else
     // Need to use the original src for getting the correct bytes to fall through.
-    dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace.items[1])) | (src_uuid.toUnderType().items[0] & trace.items[1]);
-    dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace.items[0])) | (src_uuid.toUnderType().items[1] & trace.items[0]);
+    dst.items[1] = (dst.items[1] & (0xffffffffffffffffull - trace[1])) | (src_uuid.toUnderType().items[0] & trace[1]);
+    dst.items[0] = (dst.items[0] & (0xffffffffffffffffull - trace[0])) | (src_uuid.toUnderType().items[1] & trace[0]);
 #endif
-    UUIDHelpers::toCompatibleFormat(dst_uuid);
+    UUIDHelpers::toLegacyFormat(dst_uuid);
 }
 
 class FixedStringModel : public IModel
