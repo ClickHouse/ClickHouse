@@ -264,6 +264,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
         global_ctx->gathering_columns.emplace_back(BlockNumberColumn);
         global_ctx->gathering_column_names.emplace_back(BlockNumberColumn.name);
+        auto info = BlockNumberColumn.type->createSerializationInfo(info_settings);
+        infos.emplace(BlockNumberColumn.name, std::move(info));
     }
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 

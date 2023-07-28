@@ -284,16 +284,8 @@ SerializationInfoByName SerializationInfoByName::readJSON(
             auto it = column_type_by_name.find(name);
 
             if (it == column_type_by_name.end())
-            {
-                if (name == BlockNumberColumn.name)
-                {
-                    auto info = BlockNumberColumn.type->createSerializationInfo(settings);
-                    infos.emplace(name, std::move(info));
-                    continue;
-                }
-                else
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Found unexpected column '{}' in serialization infos", name);
-            }
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Found unexpected column '{}' in serialization infos", name);
 
             auto info = it->second->createSerializationInfo(settings);
             info->fromJSON(*elem_object);
