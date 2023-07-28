@@ -122,10 +122,10 @@ def test_delete_stable_backups():
 
     assert command.get_answer() == (
         "You are going to delete all inactive backups in /clickhouse/backups. Continue?\n"
-        "Found backup \"/clickhouse/backups/1\", checking if it's active\n"
-        "Backup \"/clickhouse/backups/1\" is active, not going to delete\n"
-        "Found backup \"/clickhouse/backups/2\", checking if it's active\n"
-        "Backup \"/clickhouse/backups/2\" is not active, deleting it\n"
+        'Found backup "/clickhouse/backups/1", checking if it\'s active\n'
+        'Backup "/clickhouse/backups/1" is active, not going to delete\n'
+        'Found backup "/clickhouse/backups/2", checking if it\'s active\n'
+        'Backup "/clickhouse/backups/2" is not active, deleting it\n'
         "1\n"
     )
 
