@@ -124,7 +124,7 @@ template <typename LogElement>
 void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
-        notifyFlush( /* force */ true);
+        notifyFlush(/* force */ true);
 }
 
 template <typename LogElement>
