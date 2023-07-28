@@ -30,12 +30,26 @@ ProxyConfiguration ProtocolAwareProxyConfigurationResolver::resolve(Protocol pro
 
 void ProtocolAwareProxyConfigurationResolver::errorReport(const ProxyConfiguration & config)
 {
-    if (config.protocol == "http")
-        http_resolver->errorReport(config);
-    else if (config.protocol == "https")
-        https_resolver->errorReport(config);
-    else
-        any_resolver->errorReport(config);
+    auto reportOrNothing = [config](auto resolver)
+    {
+        if (resolver)
+        {
+            resolver->errorReport(config);
+        }
+    };
+
+    switch (config.protocol)
+    {
+        case Protocol::HTTP:
+            reportOrNothing(http_resolver);
+            break;
+        case Protocol::HTTPS:
+            reportOrNothing(https_resolver);
+            break;
+        case Protocol::ANY:
+            reportOrNothing(any_resolver);
+            break;
+    }
 }
 
 }

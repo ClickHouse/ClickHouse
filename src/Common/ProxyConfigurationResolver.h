@@ -7,12 +7,7 @@ namespace DB
 
 struct ProxyConfigurationResolver
 {
-    enum class Protocol
-    {
-        HTTP,
-        HTTPS,
-        ANY
-    };
+    using Protocol = ProxyConfiguration::Protocol;
 
     virtual ~ProxyConfigurationResolver() = default;
     virtual ProxyConfiguration resolve(Protocol protocol) = 0;
