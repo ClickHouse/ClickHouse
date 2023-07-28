@@ -176,6 +176,13 @@ Forces ClickHouse to send data to cluster nodes synchronously. If any nodes are 
 SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
+### FLUSH SETTINGS DISTRIBUTED
+Distributed table reload ClickHouse configuration.
+
+``` sql
+SYSTEM FLUSH SETTINGS DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
 ### START DISTRIBUTED SENDS
 
 Enables background data distribution when inserting data into distributed tables.
