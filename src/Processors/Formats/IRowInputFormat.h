@@ -85,7 +85,7 @@ private:
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 }

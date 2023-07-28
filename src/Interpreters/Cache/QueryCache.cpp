@@ -496,6 +496,16 @@ void QueryCache::reset()
     cache_size_in_bytes = 0;
 }
 
+size_t QueryCache::weight() const
+{
+    return cache.weight();
+}
+
+size_t QueryCache::count() const
+{
+    return cache.count();
+}
+
 size_t QueryCache::recordQueryRun(const Key & key)
 {
     std::lock_guard lock(mutex);
