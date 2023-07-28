@@ -14,7 +14,7 @@ node = cluster.add_instance(
 )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
@@ -24,30 +24,24 @@ def started_cluster():
         cluster.shutdown()
 
 
-class KeeperClient:
-    def __init__(self, started_cluster: ClickHouseCluster):
-        self.cluster = started_cluster
-
-    def query(self, query: str):
-        return CommandRequest(
-            [
-                self.cluster.server_bin_path,
-                "keeper-client",
-                "--host",
-                str(cluster.get_instance_ip("zoo1")),
-                "--port",
-                str(cluster.zookeeper_port),
-                "-q",
-                query,
-            ],
-            stdin="",
-        )
+def keeper_query(query: str):
+    return CommandRequest(
+        [
+            cluster.server_bin_path,
+            "keeper-client",
+            "--host",
+            str(cluster.get_instance_ip("zoo1")),
+            "--port",
+            str(cluster.zookeeper_port),
+            "-q",
+            query,
+        ],
+        stdin="",
+    )
 
 
-def test_big_family(started_cluster: ClickHouseCluster):
-    client = KeeperClient(started_cluster)
-
-    command = client.query(
+def test_big_family():
+    command = keeper_query(
         "create test_big_family foo;"
         "create test_big_family/1 foo;"
         "create test_big_family/1/1 foo;"
@@ -55,6 +49,7 @@ def test_big_family(started_cluster: ClickHouseCluster):
         "create test_big_family/1/3 foo;"
         "create test_big_family/1/4 foo;"
         "create test_big_family/1/5 foo;"
+        "create test_big_family/2 foo;"
         "create test_big_family/2/1 foo;"
         "create test_big_family/2/2 foo;"
         "create test_big_family/2/3 foo;"
@@ -76,7 +71,7 @@ def test_big_family(started_cluster: ClickHouseCluster):
         ]
     )
 
-    command = client.query("find_big_family test_big_family 1;")
+    command = keeper_query("find_big_family test_big_family 1;")
 
     assert command.get_answer() == TSV(
         [
@@ -85,16 +80,16 @@ def test_big_family(started_cluster: ClickHouseCluster):
     )
 
 
-def test_find_super_nodes(started_cluster: ClickHouseCluster):
-    client = KeeperClient(started_cluster)
-
-    command = client.query(
+def test_find_super_nodes():
+    command = keeper_query(
+        "create test_find_super_nodes foo;"
         "create test_find_super_nodes/1 foo;"
         "create test_find_super_nodes/1/1 foo;"
         "create test_find_super_nodes/1/2 foo;"
         "create test_find_super_nodes/1/3 foo;"
         "create test_find_super_nodes/1/4 foo;"
         "create test_find_super_nodes/1/5 foo;"
+        "create test_find_super_nodes/2 foo;"
         "create test_find_super_nodes/2/1 foo;"
         "create test_find_super_nodes/2/2 foo;"
         "create test_find_super_nodes/2/3 foo;"
@@ -111,11 +106,8 @@ def test_find_super_nodes(started_cluster: ClickHouseCluster):
     )
 
 
-def test_delete_stable_backups(started_cluster: ClickHouseCluster):
-    client = KeeperClient(started_cluster)
-
-    command = client.query(
-        "create /clickhouse foo;"
+def test_delete_stable_backups():
+    command = keeper_query(
         "create /clickhouse/backups foo;"
         "create /clickhouse/backups/1 foo;"
         "create /clickhouse/backups/1/stage foo;"
@@ -130,18 +122,16 @@ def test_delete_stable_backups(started_cluster: ClickHouseCluster):
 
     assert command.get_answer() == (
         "You are going to delete all inactive backups in /clickhouse/backups. Continue?\n"
-        "Found backup /clickhouse/backups/1, checking if it's active\n"
-        "Backup /clickhouse/backups/1 is active, not going to delete\n"
-        "Found backup /clickhouse/backups/2, checking if it's active\n"
-        "Backup /clickhouse/backups/2 is not active, deleting it\n"
-        "1"
+        "Found backup \"/clickhouse/backups/1\", checking if it's active\n"
+        "Backup \"/clickhouse/backups/1\" is active, not going to delete\n"
+        "Found backup \"/clickhouse/backups/2\", checking if it's active\n"
+        "Backup \"/clickhouse/backups/2\" is not active, deleting it\n"
+        "1\n"
     )
 
 
-def test_base_commands(started_cluster: ClickHouseCluster):
-    client = KeeperClient(started_cluster)
-
-    command = client.query(
+def test_base_commands():
+    command = keeper_query(
         "create test_create_zk_node1 testvalue1;"
         "create test_create_zk_node_2 testvalue2;"
         "get test_create_zk_node1;"
@@ -150,8 +140,6 @@ def test_base_commands(started_cluster: ClickHouseCluster):
     assert command.get_answer() == "testvalue1\n"
 
 
-def test_four_letter_word_commands(started_cluster: ClickHouseCluster):
-    client = KeeperClient(started_cluster)
-
-    command = client.query("ruok")
+def test_four_letter_word_commands():
+    command = keeper_query("ruok")
     assert command.get_answer() == "imok\n"
