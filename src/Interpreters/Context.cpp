@@ -3210,6 +3210,12 @@ void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
 }
 #endif
 
+/// Call after unexpected crash happen.
+void Context::handleCrash() const
+{
+    shared->system_logs->handleCrash();
+}
+
 bool Context::hasTraceCollector() const
 {
     return shared->hasTraceCollector();
