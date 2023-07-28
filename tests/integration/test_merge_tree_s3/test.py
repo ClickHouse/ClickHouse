@@ -251,7 +251,9 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
         node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
     )
     wait_for_delete_s3_objects(
-        cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD + FILES_OVERHEAD_PER_COLUMN, timeout=45
+        cluster,
+        FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD + FILES_OVERHEAD_PER_COLUMN,
+        timeout=45,
     )
 
     check_no_objects_after_drop(cluster)
