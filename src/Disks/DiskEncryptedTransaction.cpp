@@ -38,37 +38,19 @@ FileEncryption::Header readHeader(ReadBufferFromFileBase & read_buffer)
     }
 }
 
-String getCurrentKey(const String & path, const DiskEncryptedSettings & settings)
+}
+
+String DiskEncryptedSettings::findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const
 {
-    auto it = settings.keys.find(settings.current_key_id);
-    if (it == settings.keys.end())
+    auto it = all_keys.find(key_fingerprint);
+    if (it == all_keys.end())
+    {
         throw Exception(
             ErrorCodes::DATA_ENCRYPTION_ERROR,
-            "Not found a key with the current ID {} required to cipher file {}",
-            settings.current_key_id,
-            quoteString(path));
-
+            "Not found an encryption key required to decipher file {}",
+            quoteString(path_for_logs));
+    }
     return it->second;
-}
-
-String getKey(const String & path, const FileEncryption::Header & header, const DiskEncryptedSettings & settings)
-{
-    auto it = settings.keys.find(header.key_id);
-    if (it == settings.keys.end())
-        throw Exception(
-            ErrorCodes::DATA_ENCRYPTION_ERROR,
-            "Not found a key with ID {} required to decipher file {}",
-            header.key_id,
-            quoteString(path));
-
-    String key = it->second;
-    if (FileEncryption::calculateKeyHash(key) != header.key_hash)
-        throw Exception(
-            ErrorCodes::DATA_ENCRYPTION_ERROR, "Wrong key with ID {}, could not decipher file {}", header.key_id, quoteString(path));
-
-    return key;
-}
-
 }
 
 void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
@@ -98,16 +80,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( //
             /// Append mode: we continue to use the same header.
             auto read_buffer = delegate_disk->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
-            key = getKey(path, header, current_settings);
+            key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
         }
     }
     if (!old_file_size)
     {
         /// Rewrite mode: we generate a new header.
-        key = getCurrentKey(path, current_settings);
         header.algorithm = current_settings.current_algorithm;
-        header.key_id = current_settings.current_key_id;
-        header.key_hash = FileEncryption::calculateKeyHash(key);
+        key = current_settings.current_key;
+        header.key_fingerprint = current_settings.current_key_fingerprint;
         header.init_vector = FileEncryption::InitVector::random();
     }
     auto buffer = delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings, autocommit);

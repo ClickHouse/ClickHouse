@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
-
+#include <Storages/Cache/SchemaCache.h>
+#include <Common/FileRenamer.h>
 
 #include <atomic>
 #include <shared_mutex>
-
 
 namespace DB
 {
@@ -24,6 +23,7 @@ public:
         const ConstraintsDescription & constraints;
         const String & comment;
         std::string path_to_archive = "auto";
+        const std::string rename_after_processing;
     };
 
     /// From file descriptor
@@ -48,7 +48,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr context,
+        bool async_insert) override;
 
     void truncate(
         const ASTPtr & /*query*/,
@@ -63,8 +67,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings
-    getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
@@ -121,8 +124,8 @@ private:
     std::vector<std::string> paths;
     std::vector<std::string> paths_to_archive;
 
-    bool is_db_table = true; /// Table is stored in real database, not user's file
-    bool use_table_fd = false; /// Use table_fd instead of path
+    bool is_db_table = true;        /// Table is stored in real database, not user's file
+    bool use_table_fd = false;      /// Use table_fd instead of path
 
     mutable std::shared_timed_mutex rwlock;
 
@@ -140,6 +143,11 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
+
+    // Counts the number of readers
+    std::atomic<int32_t> readers_counter = 0;
+    FileRenamer file_renamer;
+    bool was_renamed = false;
 };
 
 }

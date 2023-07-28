@@ -219,6 +219,12 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
 
+    def too_many_slow(msg):
+        match = re.search(r"(|.* )(\d+) slower.*", msg)
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
+        threshold = 5
+        return int(match.group(2).strip()) > threshold if match else False
+
     # Try to fetch status from the report.
     status = ""
     message = ""
@@ -236,7 +242,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message.lower():
+        if "errors" in message.lower() or too_many_slow(message.lower()):
             status = "failure"
         # TODO: Remove until here
     except Exception:
