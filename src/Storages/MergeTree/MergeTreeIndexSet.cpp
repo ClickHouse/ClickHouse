@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -277,9 +276,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
         filter_actions_dag->removeUnusedActions();
-        LOG_DEBUG(&Poco::Logger::get("MergeTreeIndexConditionSet"), "Filter actions DAG:\n{}", filter_actions_dag->dumpDAG());
         actions = std::make_shared<ExpressionActions>(filter_actions_dag);
-        LOG_DEBUG(&Poco::Logger::get("MergeTreeIndexConditionSet"), "Dump actions:\n{}", actions->dumpActions());
     }
     else
     {
@@ -293,9 +290,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         traverseAST(expression_ast);
 
         auto syntax_analyzer_result = TreeRewriter(context).analyze(expression_ast, index_sample_block.getNamesAndTypesList());
-        LOG_DEBUG(&Poco::Logger::get("MergeTreeIndexConditionSet"), "expression AST:\n{}", expression_ast->dumpTree());
         actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
-        LOG_DEBUG(&Poco::Logger::get("MergeTreeIndexConditionSet"), "Dump actions:\n{}", actions->dumpActions());
     }
 }
 
@@ -356,8 +351,6 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const
 {
-    // LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "Traversing node:\n{}", node.dumpDAG());
-
     auto result_node_it = node_to_result_node.find(&node);
     if (result_node_it != node_to_result_node.end())
         return *result_node_it->second;
