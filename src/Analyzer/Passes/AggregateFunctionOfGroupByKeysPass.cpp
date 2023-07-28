@@ -87,17 +87,16 @@ private :
 };
 
 /// Try to eliminate min/max/any/anyLast which will not decent into subqueries.
-class EliminateFunctionVisitor : public InDepthQueryTreeVisitor<EliminateFunctionVisitor>
+class EliminateFunctionVisitor : public InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<EliminateFunctionVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    EliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_) : group_by_keys(group_by_keys_) { }
+    explicit EliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_, ContextPtr context) : Base(context), group_by_keys(group_by_keys_) { }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
-
         /// Check if function is min/max/any/anyLast
         auto * function_node = node->as<FunctionNode>();
         if (!function_node
@@ -129,19 +128,20 @@ private:
 };
 
 /// Collect QueryNode and its group by keys.
-class CollectQueryAndGroupByKeysVisitor : public InDepthQueryTreeVisitor<CollectQueryAndGroupByKeysVisitor>
+class CollectQueryAndGroupByKeysVisitor : public InDepthQueryTreeVisitorWithContext<CollectQueryAndGroupByKeysVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<CollectQueryAndGroupByKeysVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<CollectQueryAndGroupByKeysVisitor>;
     using Base::Base;
 
     using Data = std::unordered_map<QueryTreeNodePtr, QueryTreeNodes>;
     Data data;
 
-    CollectQueryAndGroupByKeysVisitor() = default;
-
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_aggregators_of_group_by_keys)
+            return;
+
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -174,15 +174,12 @@ public:
 
 void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    if (!context->getSettingsRef().optimize_aggregators_of_group_by_keys)
-        return;
-
-    CollectQueryAndGroupByKeysVisitor collector;
+    CollectQueryAndGroupByKeysVisitor collector(context);
     collector.visit(query_tree_node);
 
     for (auto & [query_node, group_by_keys] : collector.data)
     {
-        EliminateFunctionVisitor eliminator(group_by_keys);
+        EliminateFunctionVisitor eliminator(group_by_keys, query_node->as<QueryNode>()->getContext());
         auto mutable_query_node = query_node;
         eliminator.visit(mutable_query_node);
     }
