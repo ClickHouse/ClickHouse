@@ -3,9 +3,6 @@
 #include <IO/Archives/IArchiveReader.h>
 
 #include <iostream>
-#include <archive.h>
-#include <archive_entry.h>
-
 
 namespace DB
 {

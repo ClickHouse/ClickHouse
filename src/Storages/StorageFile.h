@@ -22,8 +22,8 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
-        std::string path_to_archive = "auto";
         const std::string rename_after_processing;
+        std::string path_to_archive = "auto";
     };
 
     /// From file descriptor

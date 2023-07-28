@@ -2,9 +2,6 @@
 
 #include <IO/Archives/IArchiveReader.h>
 
-#include <archive.h>
-#include <archive_entry.h>
-
 
 namespace DB
 {

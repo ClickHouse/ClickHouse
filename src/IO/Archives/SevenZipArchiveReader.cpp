@@ -1,6 +1,8 @@
-#include "SevenZipArchiveReader.h"
+#include <IO/Archives/SevenZipArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
+
+#include <IO/Archives/ArchiveUtils.h>
 
 
 namespace DB
@@ -14,7 +16,7 @@ namespace ErrorCodes
 class SevenZipArchiveReader::Handle
 {
 public:
-    Handle(const String & path_to_archive_) : path_to_archive(path_to_archive_)
+    explicit Handle(const String & path_to_archive_) : path_to_archive(path_to_archive_)
     {
         archive = archive_read_new();
         archive_read_support_filter_all(archive);
@@ -127,9 +129,8 @@ SevenZipArchiveReader::SevenZipArchiveReader(
 {
 }
 
-SevenZipArchiveReader::~SevenZipArchiveReader()
-{
-}
+SevenZipArchiveReader::~SevenZipArchiveReader() = default;
+
 bool SevenZipArchiveReader::fileExists(const String & filename)
 {
     Handle handle(path_to_archive);
