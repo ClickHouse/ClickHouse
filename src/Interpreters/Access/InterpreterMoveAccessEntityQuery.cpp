@@ -28,12 +28,9 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)
-        ids = access_control.find(query.type, query.row_policy_names->toStrings());
+        ids = access_control.getIDs(query.type, query.row_policy_names->toStrings());
     else
-        ids = access_control.find(query.type, query.names);
-
-    if (ids.empty())
-        return {};
+        ids = access_control.getIDs(query.type, query.names);
 
     /// Validate that all entities are from the same storage.
     const auto source_storage = access_control.findStorage(ids.front());

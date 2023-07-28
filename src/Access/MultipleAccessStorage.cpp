@@ -230,8 +230,8 @@ StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, co
 
 void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
 {
-    auto source_storage = findStorageByName(source_storage_name);
-    auto destination_storage = findStorageByName(destination_storage_name);
+    auto source_storage = getStorageByName(source_storage_name);
+    auto destination_storage = getStorageByName(destination_storage_name);
 
     auto to_move = source_storage->read(ids);
     source_storage->remove(ids);
