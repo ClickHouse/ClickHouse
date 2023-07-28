@@ -26,9 +26,12 @@ void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const Conte
 {
     String path = checkAndGetLiteralArgument<String>(arg, "source");
     size_t pos = path.find(" :: ");
-    if (pos == String::npos) {
+    if (pos == String::npos)
+    {
         filename = path;
-    } else {
+    }
+    else
+    {
         path_to_archive = path.substr(0, pos);
         filename = path.substr(pos + 4, path.size() - pos - 3);
     }

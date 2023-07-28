@@ -6,6 +6,9 @@
 
 namespace DB
 {
+
+#if USE_LIBARCHIVE
+
 namespace ErrorCodes
 {
     extern const int CANNOT_UNPACK_ARCHIVE;
@@ -122,9 +125,8 @@ TarArchiveReader::TarArchiveReader(const String & path_to_archive_) : path_to_ar
 {
 }
 
-TarArchiveReader::TarArchiveReader(
-    const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_)
-    : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_), archive_size(archive_size_)
+TarArchiveReader::TarArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_)
+    : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_)
 {
 }
 
@@ -151,7 +153,7 @@ TarArchiveReader::FileInfo TarArchiveReader::getFileInfo(const String & filename
 
 std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::firstFile()
 {
-    return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for tar archives");
 }
 
 std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile(const String & filename)
@@ -162,20 +164,22 @@ std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile(const String 
     return std::make_unique<ReadBufferFromTarArchive>(path_to_archive, filename);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile([[maybe_unused]] std::unique_ptr<FileEnumerator> enumerator)
+std::unique_ptr<ReadBufferFromFileBase> TarArchiveReader::readFile(std::unique_ptr<FileEnumerator> /*enumerator*/)
 {
-    return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for tar archives");
 }
 
-std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::nextFile([[maybe_unused]] std::unique_ptr<ReadBuffer> read_buffer)
+std::unique_ptr<TarArchiveReader::FileEnumerator> TarArchiveReader::nextFile(std::unique_ptr<ReadBuffer> /*read_buffer*/)
 {
-    return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for tar archives");
 }
 
 
-void TarArchiveReader::setPassword([[maybe_unused]] const String & password_)
+void TarArchiveReader::setPassword(const String & /*password_*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to .tar archive");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to tar archive");
 }
+
+#endif
 
 }

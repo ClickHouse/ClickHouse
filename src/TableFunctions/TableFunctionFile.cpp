@@ -80,7 +80,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     };
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
-    
+
     return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
