@@ -75,6 +75,7 @@
 #include <random>
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -208,7 +209,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
-addStatusInfoToQueryElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
+addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
 {
     const auto time_now = std::chrono::system_clock::now();
     UInt64 elapsed_microseconds = info.elapsed_microseconds;
@@ -346,6 +347,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    QueryCache::Usage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -363,7 +365,7 @@ void logQueryFinish(
         QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
         elem.type = QueryLogElementType::QUERY_FINISH;
 
-        addStatusInfoToQueryElement(elem, info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
         {
@@ -397,6 +399,8 @@ void logQueryFinish(
                 rows_per_second,
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
+
+        elem.query_cache_usage = query_cache_usage;
 
         if (log_queries && elem.type >= log_queries_min_type
             && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
@@ -498,12 +502,14 @@ void logQueryException(
     if (process_list_elem)
     {
         QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events, false);
-        addStatusInfoToQueryElement(elem, info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
     }
     else
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
+
+    elem.query_cache_usage = QueryCache::Usage::None;
 
     if (settings.calculate_text_stack_trace && log_error)
         setExceptionStackTrace(elem);
@@ -655,7 +661,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// the value passed by the client
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
 
     if (!internal)
     {
@@ -667,8 +673,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         // On the other hand, if it's initialized then take it as the start of the query
         if (client_info.initial_query_start_time == 0)
         {
-            client_info.initial_query_start_time = timeInSeconds(query_start_time);
-            client_info.initial_query_start_time_microseconds = timeInMicroseconds(query_start_time);
+            context->setInitialQueryStartTime(query_start_time);
         }
         else
         {
@@ -702,10 +707,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
+        else if (settings.dialect == Dialect::prql && !internal)
+        {
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
@@ -971,7 +980,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         QueryCachePtr query_cache = context->getQueryCache();
         const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
-        bool write_into_query_cache = false;
+        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
         if (!async_insert)
         {
@@ -988,6 +997,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
+                        query_cache_usage = QueryCache::Usage::Read;
                         return true;
                     }
                 }
@@ -1091,7 +1101,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                              settings.query_cache_max_size_in_bytes,
                                              settings.query_cache_max_entries));
                             res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                            write_into_query_cache = true;
+                            query_cache_usage = QueryCache::Usage::Write;
                         }
                     }
 
@@ -1143,19 +1153,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    write_into_query_cache,
+                                    query_cache_usage,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (write_into_query_cache)
+                if (query_cache_usage == QueryCache::Usage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
 
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, internal);
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);

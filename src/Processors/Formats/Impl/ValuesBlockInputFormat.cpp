@@ -9,6 +9,7 @@
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -474,6 +475,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 context,
                 &found_in_cache,
                 delimiter);
+
+            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+                     column_idx, structure->dumpTemplate());
+
             templates[column_idx].emplace(structure);
             if (found_in_cache)
                 ++attempts_to_deduce_template_cached[column_idx];
