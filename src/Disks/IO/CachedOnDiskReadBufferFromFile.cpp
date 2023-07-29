@@ -108,7 +108,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
