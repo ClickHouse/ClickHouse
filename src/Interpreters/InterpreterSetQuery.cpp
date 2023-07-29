@@ -65,6 +65,9 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
+        if (explain_query->settings_ast)
+            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext();
+
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))

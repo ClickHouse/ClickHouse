@@ -112,7 +112,7 @@ void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
         .file_segment_size = current_object.bytes_size,
         .read_from_cache_attempted = false,
     };
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)

@@ -258,7 +258,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
-    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter ,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
