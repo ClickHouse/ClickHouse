@@ -129,7 +129,7 @@ position с конца строки.
 
 Атомарно удаляет таблицу перед созданием новой, если такая была.
 
-## * Приведение типов для IN (subquery).
+## + Приведение типов для IN (subquery).
 
 `SELECT 1 IN (SELECT -1 UNION ALL SELECT 1)`
 
@@ -205,12 +205,12 @@ https://clickhouse.com/docs/en/operations/table_engines/external_data/
 
 ## Возможность задавать параметры соединений для табличных функций, движков таблиц и для реплик из отдельных разделов конфигурации.
 
-## Настройка rollup_use_nulls.
+## + Настройка rollup_use_nulls.
+
+Upd: it is named "group_by_use_nulls".
 
 ## + Настройка cast_keep_nullable.
 
-## Функция bitEquals для сравнения произвольных типов данных побитово.
+## Функция bitEquals для сравнения произвольных типов данных побитово
 
 ## Функция serialize для implementation specific non portable non backwards compatible сериализации любого типа данных в набор байт.
-
-## Функция bitEquals и оператор <=>.
