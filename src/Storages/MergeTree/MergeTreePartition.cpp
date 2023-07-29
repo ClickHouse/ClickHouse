@@ -1,20 +1,20 @@
-#include <Columns/ColumnTuple.h>
-#include <Core/Block.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Interpreters/Context.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/HashingWriteBuffer.h>
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreePartition.h>
-#include <base/hex.h>
-#include "Common/logger_useful.h"
-#include <Common/FieldVisitorHash.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitors.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
+#include <base/hex.h>
+#include <Core/Block.h>
+
 
 namespace DB
 {
@@ -38,52 +38,51 @@ namespace
     {
     private:
         SipHash & hash;
-
     public:
-        explicit LegacyFieldVisitorHash(SipHash & hash_) : hash(hash_) { }
+        explicit LegacyFieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
-        void operator()(const Null &) const
+        void operator() (const Null &) const
         {
             UInt8 type = Field::Types::Null;
             hash.update(type);
         }
-        void operator()(const UInt64 & x) const
+        void operator() (const UInt64 & x) const
         {
             UInt8 type = Field::Types::UInt64;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const UInt128 & x) const
+        void operator() (const UInt128 & x) const
         {
             UInt8 type = Field::Types::UInt128;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const UInt256 & x) const
+        void operator() (const UInt256 & x) const
         {
             UInt8 type = Field::Types::UInt256;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const Int64 & x) const
+        void operator() (const Int64 & x) const
         {
             UInt8 type = Field::Types::Int64;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const Int128 & x) const
+        void operator() (const Int128 & x) const
         {
             UInt8 type = Field::Types::Int128;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const Int256 & x) const
+        void operator() (const Int256 & x) const
         {
             UInt8 type = Field::Types::Int256;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const UUID & x) const
+        void operator() (const UUID & x) const
         {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
             auto tmp_x = x.toUnderType();
@@ -95,27 +94,30 @@ namespace
             operator()(x.toUnderType());
 #endif
         }
-        void operator()(const IPv4 & x) const
+        void operator() (const IPv4 & x) const
         {
             UInt8 type = Field::Types::IPv4;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const IPv6 & x) const { return operator()(String(reinterpret_cast<const char *>(&x), 16)); }
-        void operator()(const Float64 & x) const
+        void operator() (const IPv6 & x) const
+        {
+            return operator()(String(reinterpret_cast<const char *>(&x), 16));
+        }
+        void operator() (const Float64 & x) const
         {
             UInt8 type = Field::Types::Float64;
             hash.update(type);
             hash.update(x);
         }
-        void operator()(const String & x) const
+        void operator() (const String & x) const
         {
             UInt8 type = Field::Types::String;
             hash.update(type);
             hash.update(x.size());
             hash.update(x.data(), x.size());
         }
-        void operator()(const Array & x) const
+        void operator() (const Array & x) const
         {
             UInt8 type = Field::Types::Array;
             hash.update(type);
@@ -124,7 +126,7 @@ namespace
             for (const auto & elem : x)
                 applyVisitor(*this, elem);
         }
-        void operator()(const Tuple & x) const
+        void operator() (const Tuple & x) const
         {
             UInt8 type = Field::Types::Tuple;
             hash.update(type);
@@ -133,7 +135,7 @@ namespace
             for (const auto & elem : x)
                 applyVisitor(*this, elem);
         }
-        void operator()(const Map & x) const
+        void operator() (const Map & x) const
         {
             UInt8 type = Field::Types::Map;
             hash.update(type);
@@ -142,43 +144,43 @@ namespace
             for (const auto & elem : x)
                 applyVisitor(*this, elem);
         }
-        void operator()(const Object & x) const
+        void operator() (const Object & x) const
         {
             UInt8 type = Field::Types::Object;
             hash.update(type);
             hash.update(x.size());
 
-            for (const auto & [key, value] : x)
+            for (const auto & [key, value]: x)
             {
                 hash.update(key);
                 applyVisitor(*this, value);
             }
         }
-        void operator()(const DecimalField<Decimal32> & x) const
+        void operator() (const DecimalField<Decimal32> & x) const
         {
             UInt8 type = Field::Types::Decimal32;
             hash.update(type);
             hash.update(x.getValue().value);
         }
-        void operator()(const DecimalField<Decimal64> & x) const
+        void operator() (const DecimalField<Decimal64> & x) const
         {
             UInt8 type = Field::Types::Decimal64;
             hash.update(type);
             hash.update(x.getValue().value);
         }
-        void operator()(const DecimalField<Decimal128> & x) const
+        void operator() (const DecimalField<Decimal128> & x) const
         {
             UInt8 type = Field::Types::Decimal128;
             hash.update(type);
             hash.update(x.getValue().value);
         }
-        void operator()(const DecimalField<Decimal256> & x) const
+        void operator() (const DecimalField<Decimal256> & x) const
         {
             UInt8 type = Field::Types::Decimal256;
             hash.update(type);
             hash.update(x.getValue().value);
         }
-        void operator()(const AggregateFunctionStateData & x) const
+        void operator() (const AggregateFunctionStateData & x) const
         {
             UInt8 type = Field::Types::AggregateFunctionState;
             hash.update(type);
@@ -187,7 +189,7 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
-        void operator()(const CustomType & x) const
+        void operator() (const CustomType & x) const
         {
             UInt8 type = Field::Types::CustomType;
             hash.update(type);
@@ -196,7 +198,7 @@ namespace
             hash.update(result.size());
             hash.update(result.data(), result.size());
         }
-        void operator()(const bool & x) const
+        void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;
             hash.update(type);
@@ -289,12 +291,7 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
         return res;
     }
 
-    enum KeyType
-    {
-        DATE,
-        UNSIGNED,
-        SIGNED
-    };
+    enum KeyType { DATE, UNSIGNED, SIGNED };
 
     std::vector<KeyType> key_types;
     key_types.reserve(num_keys);
@@ -324,7 +321,8 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     {
         switch (key_types[i])
         {
-            case DATE: {
+            case DATE:
+            {
                 UInt32 date_yyyymmdd;
                 readText(date_yyyymmdd, buf);
                 constexpr UInt32 min_yyyymmdd = 10000000;
@@ -337,13 +335,15 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
                 res.emplace_back(date);
                 break;
             }
-            case UNSIGNED: {
+            case UNSIGNED:
+            {
                 UInt64 value;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;
             }
-            case SIGNED: {
+            case SIGNED:
+            {
                 Int64 value;
                 readText(value, buf);
                 res.emplace_back(value);
@@ -359,8 +359,8 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
 
     String expected_partition_id = MergeTreePartition{res}.getID(partition_key_sample);
     if (expected_partition_id != partition_id)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Partition ID was parsed incorrectly: expected {}, got {}", expected_partition_id, partition_id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition ID was parsed incorrectly: expected {}, got {}",
+                        expected_partition_id, partition_id);
 
     return res;
 }
@@ -388,17 +388,17 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         // }
         if (value.empty())
         {
-            LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "jianfeih debug: find the root cause, value is empty");
+            // LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "jianfeih debug: find the root cause, value is empty");
             writeCString("tuple()", out);
-            LOG_INFO(
-                &Poco::Logger::get("DNSCacheUpdater"),
-                "jianfeih debug: type is nil: {}, colum is nil: {}, storage has partition key: {}, column size: {}, "
-                "column names: {} ",
-                type.get() == nullptr,
-                column == nullptr,
-                metadata_snapshot->hasPartitionKey(),
-                metadata_snapshot->columns.size(),
-                all_column_names.toString());
+            // LOG_INFO(
+            //     &Poco::Logger::get("DNSCacheUpdater"),
+            //     "jianfeih debug: type is nil: {}, colum is nil: {}, storage has partition key: {}, column size: {}, "
+            //     "column names: {} ",
+            //     type.get() == nullptr,
+            //     column == nullptr,
+            //     metadata_snapshot->hasPartitionKey(),
+            //     metadata_snapshot->columns.size(),
+            //     all_column_names.toString());
             return;
         }
         else
@@ -445,8 +445,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataM
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
 }
 
-std::unique_ptr<WriteBufferFromFileBase>
-MergeTreePartition::store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     const auto & context = storage.getContext();
@@ -454,11 +453,7 @@ MergeTreePartition::store(const MergeTreeData & storage, IDataPartStorage & data
     return store(partition_key_sample, data_part_storage, checksums, context->getWriteSettings());
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
-    const Block & partition_key_sample,
-    IDataPartStorage & data_part_storage,
-    MergeTreeDataPartChecksums & checksums,
-    const WriteSettings & settings) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
     if (!partition_key_sample)
         return nullptr;
@@ -504,8 +499,7 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
-NamesAndTypesList
-MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
+NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
     adjusted_partition_key.expression->execute(block);
@@ -532,7 +526,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
 }
 
 
-void MergeTreePartition::appendFiles(const MergeTreeData & storage, Strings & files)
+void MergeTreePartition::appendFiles(const MergeTreeData & storage, Strings& files)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!metadata_snapshot->hasPartitionKey())
