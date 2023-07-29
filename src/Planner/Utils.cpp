@@ -355,24 +355,38 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    size_t subquery_index = 0;
 
     for (auto & table_expression : table_expressions)
     {
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
-        if (!table_node && !table_function_node)
-            continue;
+        auto * subquery_node = table_expression->as<QueryNode>();
+        auto * union_node = table_expression->as<UnionNode>();
 
-        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-            storage_snapshot->metadata->getColumns());
+        StoragePtr storage_dummy;
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            storage_dummy
+                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns());
+        }
+        else if (subquery_node || union_node)
+        {
+            const auto & projection_columns
+                = subquery_node ? subquery_node->getProjectionColumns() : union_node->computeProjectionColumns();
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(projection_columns));
+            ++subquery_index;
+        }
+
         auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
         if (result_replacement_map)

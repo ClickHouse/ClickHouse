@@ -138,6 +138,78 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
     }
 }
 
+/** Storages can rely that filters that for storage will be available for analysis before
+  * getQueryProcessingStage method will be called.
+  *
+  * StorageDistributed skip unused shards optimization relies on this.
+  *
+  * To collect filters that will be applied to specific table in case we have JOINs requires
+  * to run query plan optimization pipeline.
+  *
+  * Algorithm:
+  * 1. Replace all table expressions in query tree with dummy tables.
+  * 2. Build query plan.
+  * 3. Optimize query plan.
+  * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
+  */
+void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    bool all_table_expressions_are_dummy = true;
+
+    for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        auto * table_node = table_expression->as<TableNode>();
+        if (table_node && typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
+            continue;
+
+        all_table_expressions_are_dummy = false;
+        break;
+    }
+
+    if (all_table_expressions_are_dummy)
+        return;
+
+    ResultReplacementMap replacement_map;
+    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, planner_context->getQueryContext(), &replacement_map);
+
+    std::unordered_map<const IStorage *, TableExpressionData *> dummy_storage_to_table_expression_data;
+
+    for (auto & [from_table_expression, dummy_table_expression] : replacement_map)
+    {
+        auto * dummy_storage = dummy_table_expression->as<TableNode &>().getStorage().get();
+        auto * table_expression_data = &planner_context->getTableExpressionDataOrThrow(from_table_expression);
+        dummy_storage_to_table_expression_data.emplace(dummy_storage, table_expression_data);
+    }
+
+    const auto & query_context = planner_context->getQueryContext();
+
+    Planner planner(updated_query_tree, {});
+    planner.buildQueryPlanIfNeeded();
+
+    auto & result_query_plan = planner.getQueryPlan();
+
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
+    result_query_plan.optimize(optimization_settings);
+
+    std::vector<QueryPlan::Node *> nodes_to_process;
+    nodes_to_process.push_back(result_query_plan.getRootNode());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node_to_process = nodes_to_process.back();
+        nodes_to_process.pop_back();
+        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
+
+        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
+        if (!read_from_dummy)
+            continue;
+
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes, {}, query_context);
+        auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
+        table_expression_data->setFilterActions(std::move(filter_actions));
+    }
+}
+
 /// Extend lifetime of query context, storages, and table locks
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
@@ -1225,6 +1297,9 @@ void Planner::buildPlanForQueryNode()
     checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
+
+    if (!select_query_options.only_analyze)
+        collectFiltersForAnalysis(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
 
