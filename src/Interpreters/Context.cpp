@@ -21,6 +21,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
+#include <Server/ServerType.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -356,6 +357,9 @@ struct ContextSharedPart : boost::noncopyable
     std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
 
     Context::ConfigReloadCallback config_reload_callback;
+
+    Context::StartStopServersCallback start_servers_callback;
+    Context::StartStopServersCallback stop_servers_callback;
 
     bool is_server_completely_started = false;
 
@@ -2899,16 +2903,6 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 }
 
 #if USE_ROCKSDB
-MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
-{
-    auto cache = tryGetMergeTreeMetadataCache();
-    if (!cache)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
-    return cache;
-}
-
 MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
 {
     return shared->merge_tree_metadata_cache;
@@ -3205,6 +3199,12 @@ void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
     shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
 }
 #endif
+
+/// Call after unexpected crash happen.
+void Context::handleCrash() const
+{
+    shared->system_logs->handleCrash();
+}
 
 bool Context::hasTraceCollector() const
 {
@@ -3686,6 +3686,36 @@ void Context::reloadConfig() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't reload config because config_reload_callback is not set.");
 
     shared->config_reload_callback();
+}
+
+void Context::setStartServersCallback(StartStopServersCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->start_servers_callback = std::move(callback);
+}
+
+void Context::setStopServersCallback(StartStopServersCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->stop_servers_callback = std::move(callback);
+}
+
+void Context::startServers(const ServerType & server_type) const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->start_servers_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't start servers because start_servers_callback is not set.");
+
+    shared->start_servers_callback(server_type);
+}
+
+void Context::stopServers(const ServerType & server_type) const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->stop_servers_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stop servers because stop_servers_callback is not set.");
+
+    shared->stop_servers_callback(server_type);
 }
 
 
