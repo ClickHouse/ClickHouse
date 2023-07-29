@@ -34,7 +34,7 @@ try
     elem.tid = tid;
     elem.csn = csn;
     elem.fillCommonFields(nullptr);
-    system_log->add(elem);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {
