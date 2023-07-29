@@ -234,17 +234,32 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
     auto destination_storage = getStorageByName(destination_storage_name);
 
     auto to_move = source_storage->read(ids);
-    source_storage->remove(ids);
+    bool need_rollback = false;
 
     try
     {
+        source_storage->remove(ids);
+        need_rollback = true;
         destination_storage->insert(to_move, ids);
     }
     catch (Exception & e)
     {
-        e.addMessage("while moving access entities");
+        String message;
 
-        source_storage->insert(to_move, ids);
+        bool need_comma = false;
+        for (const auto & entity : to_move)
+        {
+            if (std::exchange(need_comma, true))
+                message += ", ";
+
+            message += entity->formatTypeWithName();
+        }
+
+        e.addMessage("while moving {} from {} to {}", message, source_storage_name, destination_storage_name);
+
+        if (need_rollback)
+            source_storage->insert(to_move, ids);
+
         throw;
     }
 }
