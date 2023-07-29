@@ -120,9 +120,8 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
     const auto & columns = getMetadataForQuery()->getColumns();
     for (const auto & column_name : column_names)
     {
-        std::string substituted_column_name = column_name;
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
         if (column && !object_column)
         {
             res.insert({column->type->createColumn(), column->type, column_name});
@@ -141,7 +140,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
         else
         {
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in table {}", backQuote(substituted_column_name), storage.getStorageID().getNameForLogs());
+                "Column {} not found in table {}", backQuote(column_name), storage.getStorageID().getNameForLogs());
         }
     }
     return res;
