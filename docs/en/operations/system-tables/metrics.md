@@ -11,7 +11,7 @@ Columns:
 - `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
 - `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
 
-The list of supported metrics you can find in the [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) source file of ClickHouse.
+You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
 **Example**
 

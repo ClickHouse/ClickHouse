@@ -513,12 +513,12 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
         }
     }
 
-    thread_log.add(elem);
+    thread_log.add(std::move(elem));
 }
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q, true);
+    String res = serializeAST(*q);
     if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
@@ -573,7 +573,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
             element.stack_trace = getExceptionStackTraceString(vinfo.exception);
     }
 
-    views_log->add(element);
+    views_log->add(std::move(element));
 }
 
 void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)
