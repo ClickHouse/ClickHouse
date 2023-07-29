@@ -73,12 +73,5 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(output_bytes);
 }
 
-ProcessorsProfileLog::ProcessorsProfileLog(ContextPtr context_, const String & database_name_,
-        const String & table_name_, const String & storage_def_,
-        size_t flush_interval_milliseconds_)
-  : SystemLog<ProcessorProfileLogElement>(context_, database_name_, table_name_,
-        storage_def_, flush_interval_milliseconds_)
-{
-}
 
 }
