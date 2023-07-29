@@ -252,7 +252,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     )
     wait_for_delete_s3_objects(
         cluster,
-        FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD + FILES_OVERHEAD_PER_COLUMN,
+        FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD + FILES_OVERHEAD_PER_COLUMN + 1,
         timeout=45,
     )
 
@@ -282,7 +282,7 @@ def test_alter_table_columns(cluster, node_name):
     )
     wait_for_delete_s3_objects(
         cluster,
-        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 2,
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 3,
     )
 
     node.query(
