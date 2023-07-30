@@ -24,9 +24,11 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
+static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
+
+void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const String & s = get<const String &>(field);
+    const String & s = field.get<const String &>();
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -34,22 +36,22 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 }
 
 
-void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
-    String & s = get<String &>(field);
+    String & s = field.get<String &>();
     s.resize(n);
     istr.readStrict(s.data(), n);
 }
 
 
-void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     ostr.write(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n);
 }
 
 
-void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnFixedString::Chars & data = assert_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();
@@ -85,13 +87,22 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
     size_t initial_size = data.size();
-    size_t max_bytes = limit * n;
-    data.resize(initial_size + max_bytes);
+    size_t max_bytes;
+    size_t new_data_size;
+
+    if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    if (unlikely(max_bytes > MAX_STRINGS_SIZE))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
+    if (unlikely(__builtin_add_overflow(initial_size, max_bytes, &new_data_size)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+
+    data.resize(new_data_size);
     size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
 
     if (read_bytes % n != 0)
-        throw Exception("Cannot read all data of type FixedString. Bytes read:" + toString(read_bytes) + ". String size:" + toString(n) + ".",
-            ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "
+            "Bytes read:{}. String size:{}.", read_bytes, toString(n));
 
     data.resize(initial_size + read_bytes);
 }

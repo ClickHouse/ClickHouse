@@ -67,7 +67,7 @@ bool lessOp(A a, B b)
 
     static_assert(is_integer<A> || std::is_floating_point_v<A>);
     static_assert(is_integer<B> || std::is_floating_point_v<B>);
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 template <typename A, typename B>
@@ -151,9 +151,9 @@ bool notEqualsOp(A a, B b)
     return !equalsOp(a, b);
 }
 
-
 /// Converts numeric to an equal numeric of other type.
-template <typename From, typename To>
+/// When `strict` is `true` check that result exactly same as input, otherwise just check overflow
+template <typename From, typename To, bool strict = true>
 inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
 {
     /// If the type is actually the same it's not necessary to do any checks.
@@ -168,7 +168,7 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
         if (isNaN(value))
         {
-            result = value;
+            result = static_cast<To>(value);
             return true;
         }
 
@@ -192,7 +192,9 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
     }
 
     result = static_cast<To>(value);
-    return equalsOp(value, result);
+    if constexpr (strict)
+        return equalsOp(value, result);
+    return true;
 }
 
 }

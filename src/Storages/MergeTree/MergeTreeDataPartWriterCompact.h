@@ -1,5 +1,7 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+
 
 namespace DB
 {
@@ -9,7 +11,7 @@ class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterCompact(
-        const MergeTreeData::DataPartPtr & data_part,
+        const MergeTreeMutableDataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -20,11 +22,13 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) override;
+    void finish(bool sync) override;
 
 private:
     /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
+    void finishDataSerialization(bool sync);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
@@ -81,9 +85,16 @@ private:
     /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;
 
-    /// marks -> marks_file
+    /// If marks are uncompressed, the data is written to 'marks_file_hashing' for hash calculation and then to the 'marks_file'.
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
-    HashingWriteBuffer marks;
+    std::unique_ptr<HashingWriteBuffer> marks_file_hashing;
+
+    /// If marks are compressed, the data is written to 'marks_source_hashing' for hash calculation,
+    /// then to 'marks_compressor' for compression,
+    /// then to 'marks_file_hashing' for calculation of hash of compressed data,
+    /// then finally to 'marks_file'.
+    std::unique_ptr<CompressedWriteBuffer> marks_compressor;
+    std::unique_ptr<HashingWriteBuffer> marks_source_hashing;
 };
 
 }

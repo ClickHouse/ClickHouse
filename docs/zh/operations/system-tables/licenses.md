@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/licenses
+---
 # system.licenses {#system-tables_system.licenses}
 
 包含位于 ClickHouse 源的 [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) 目录中的第三方库的许可证.
@@ -35,5 +38,3 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 └────────────────────┴──────────────┴─────────────────────────────────────┘
 
 ```
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/licenses) <!--hide-->

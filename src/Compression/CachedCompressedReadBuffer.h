@@ -17,7 +17,7 @@ namespace DB
   * Disadvantages:
   * - in case you need to read a lot of data in a row, but some of them only a part is cached, you have to do seek-and.
   */
-class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadBuffer
+class CachedCompressedReadBuffer final : public CompressedReadBufferBase, public ReadBuffer
 {
 private:
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator;
@@ -36,7 +36,7 @@ private:
 
     bool nextImpl() override;
 
-    void prefetch() override;
+    void prefetch(Priority priority) override;
 
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;
@@ -51,7 +51,7 @@ public:
 
     /// Seek is lazy. It doesn't move the position anywhere, just remember them and perform actual
     /// seek inside nextImpl.
-    void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
+    void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {
@@ -61,14 +61,14 @@ public:
 
     void setReadUntilPosition(size_t position) override
     {
-        if (file_in)
-            file_in->setReadUntilPosition(position);
+        initInput();
+        file_in->setReadUntilPosition(position);
     }
 
     void setReadUntilEnd() override
     {
-        if (file_in)
-            file_in->setReadUntilEnd();
+        initInput();
+        file_in->setReadUntilEnd();
     }
 };
 

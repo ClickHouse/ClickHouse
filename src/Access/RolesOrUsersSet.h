@@ -5,6 +5,7 @@
 #include <boost/container/flat_set.hpp>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -22,17 +23,17 @@ struct RolesOrUsersSet
     RolesOrUsersSet();
     RolesOrUsersSet(const RolesOrUsersSet & src);
     RolesOrUsersSet & operator =(const RolesOrUsersSet & src);
-    RolesOrUsersSet(RolesOrUsersSet && src);
-    RolesOrUsersSet & operator =(RolesOrUsersSet && src);
+    RolesOrUsersSet(RolesOrUsersSet && src) noexcept;
+    RolesOrUsersSet & operator =(RolesOrUsersSet && src) noexcept;
 
     struct AllTag {};
-    RolesOrUsersSet(AllTag);
+    RolesOrUsersSet(AllTag); /// NOLINT
 
-    RolesOrUsersSet(const UUID & id);
-    RolesOrUsersSet(const std::vector<UUID> & ids_);
+    RolesOrUsersSet(const UUID & id); /// NOLINT
+    RolesOrUsersSet(const std::vector<UUID> & ids_); /// NOLINT
 
     /// The constructor from AST requires the AccessControl if `ast.id_mode == false`.
-    RolesOrUsersSet(const ASTRolesOrUsersSet & ast);
+    RolesOrUsersSet(const ASTRolesOrUsersSet & ast); /// NOLINT
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::optional<UUID> & current_user_id);
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control);
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const std::optional<UUID> & current_user_id);
@@ -61,6 +62,9 @@ struct RolesOrUsersSet
 
     friend bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs);
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
+
+    std::vector<UUID> findDependencies() const;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
 
     bool all = false;
     boost::container::flat_set<UUID> ids;

@@ -1,4 +1,7 @@
 #include <Common/FrequencyHolder.h>
+
+#if USE_NLP
+
 #include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
@@ -112,9 +115,11 @@ struct NameDetectProgrammingLanguage
 
 using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<FunctionDetectProgrammingLanguageImpl, NameDetectProgrammingLanguage>;
 
-void registerFunctionDetectProgrammingLanguage(FunctionFactory & factory)
+REGISTER_FUNCTION(DetectProgrammingLanguage)
 {
     factory.registerFunction<FunctionDetectProgrammingLanguage>();
 }
 
 }
+
+#endif

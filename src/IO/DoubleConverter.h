@@ -5,6 +5,7 @@
 #pragma clang diagnostic ignored "-Wdouble-promotion"
 #endif
 
+#include <base/defines.h>
 #include <double-conversion/double-conversion.h>
 #include <boost/noncopyable.hpp>
 
@@ -29,9 +30,6 @@ template <> struct DoubleToStringConverterFlags<true>
 template <bool emit_decimal_point>
 class DoubleConverter : private boost::noncopyable
 {
-    DoubleConverter(const DoubleConverter &) = delete;
-    DoubleConverter & operator=(const DoubleConverter &) = delete;
-
     DoubleConverter() = default;
 
 public:

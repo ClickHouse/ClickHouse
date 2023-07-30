@@ -19,11 +19,12 @@ public:
     bool isParametric() const override { return true; }
 
     /// Some types could be still unknown.
-    DataTypeFunction(const DataTypes & argument_types_ = DataTypes(), const DataTypePtr & return_type_ = nullptr)
+    explicit DataTypeFunction(const DataTypes & argument_types_ = DataTypes(), const DataTypePtr & return_type_ = nullptr)
             : argument_types(argument_types_), return_type(return_type_) {}
 
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Function"; }
+    String getSQLCompatibleName() const override { return "TEXT"; }
     TypeIndex getTypeId() const override { return TypeIndex::Function; }
 
     const DataTypes & getArgumentTypes() const

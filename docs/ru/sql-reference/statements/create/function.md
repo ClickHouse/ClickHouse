@@ -1,6 +1,7 @@
 ---
-toc_priority: 38
-toc_title: FUNCTION
+slug: /ru/sql-reference/statements/create/function
+sidebar_position: 38
+sidebar_label: FUNCTION
 ---
 
 # CREATE FUNCTION {#create-function}

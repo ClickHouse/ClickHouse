@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Интерфейсы"
-toc_priority: 14
-toc_title: "Введение"
+slug: /ru/interfaces/
+sidebar_label: "Интерфейсы"
+sidebar_position: 14
 ---
 
 # Интерфейсы {#interfaces}
@@ -24,4 +24,3 @@ ClickHouse предоставляет три сетевых интерфейса
 -   [Клиентские библиотеки](third-party/client-libraries.md);
 -   [Библиотеки для интеграции](third-party/integrations.md);
 -   [Визуальные интерфейсы](third-party/gui.md).
-

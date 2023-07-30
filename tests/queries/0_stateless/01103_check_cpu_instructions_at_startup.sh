@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64
 # Tag no-fasttest: avoid dependency on qemu -- invonvenient when running locally
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -19,7 +19,9 @@ fi
 
 function run_with_cpu()
 {
-    qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
+    qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | \
+      grep -v -F "warning: TCG doesn't support requested feature" | \
+      grep -v -F 'Unknown host IFA type' ||:
 }
 
 run_with_cpu qemu64

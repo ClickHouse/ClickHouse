@@ -19,9 +19,9 @@
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/MC/SubtargetFeature.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/DynamicLibrary.h>
 #include <llvm/Support/Host.h>
-#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
@@ -244,28 +244,6 @@ private:
     }
 };
 
-// class AssemblyPrinter
-// {
-// public:
-
-//     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
-//     : target_machine(target_machine_)
-//     {
-//     }
-
-//     void print(llvm::Module & module)
-//     {
-//         llvm::legacy::PassManager pass_manager;
-//         target_machine.Options.MCOptions.AsmVerbose = true;
-//         if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
-//             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
-
-//         pass_manager.run(module);
-//     }
-// private:
-//     llvm::TargetMachine & target_machine;
-// };
-
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
   */
@@ -374,7 +352,7 @@ CHJIT::~CHJIT() = default;
 
 CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
 {
-    std::lock_guard<std::mutex> lock(jit_lock);
+    std::lock_guard lock(jit_lock);
 
     auto module = createModuleForCompilation();
     compile_function(*module);
@@ -448,7 +426,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 
 void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
 {
-    std::lock_guard<std::mutex> lock(jit_lock);
+    std::lock_guard lock(jit_lock);
 
     auto module_it = module_identifier_to_memory_manager.find(module.identifier);
     if (module_it == module_identifier_to_memory_manager.end())
@@ -460,7 +438,7 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
 
 void CHJIT::registerExternalSymbol(const std::string & symbol_name, void * address)
 {
-    std::lock_guard<std::mutex> lock(jit_lock);
+    std::lock_guard lock(jit_lock);
     symbol_resolver->registerSymbol(symbol_name, address);
 }
 

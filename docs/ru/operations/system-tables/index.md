@@ -1,6 +1,7 @@
 ---
-toc_priority: 52
-toc_title: "Системные таблицы"
+slug: /ru/operations/system-tables/
+sidebar_position: 52
+sidebar_label: "Системные таблицы"
 ---
 
 # Системные таблицы {#system-tables}
@@ -44,6 +45,10 @@ toc_title: "Системные таблицы"
         <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </query_log>
 </clickhouse>
 ```
@@ -69,4 +74,3 @@ toc_title: "Системные таблицы"
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
-

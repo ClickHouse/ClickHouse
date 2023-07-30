@@ -80,7 +80,6 @@ timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
-
 wait
 
 echo "Finishing alters"
@@ -112,5 +111,9 @@ for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i'"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i'"
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART')"
+
+    $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_alter_add_drop_$i"
+    $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_alter_add_drop_$i"
+
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_add_drop_$i"
 done

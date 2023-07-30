@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS lineitem;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
+SET cross_to_inner_join_rewrite = 1;
+
 CREATE TABLE part
 (
     p_partkey       Int32,  -- PK
@@ -178,7 +180,7 @@ order by
     n_name,
     s_name,
     p_partkey
-limit 100; -- { serverError 47 }
+limit 100; -- { serverError 1, 47 }
 
 select 3;
 select
@@ -596,7 +598,7 @@ where
             lineitem
         where
             l_partkey = p_partkey
-    ); -- { serverError 47 }
+    ); -- { serverError 1, 47 }
 
 select 18;
 select
@@ -707,7 +709,7 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'CANADA'
 order by
-    s_name; -- { serverError 47 }
+    s_name; -- { serverError 1, 47 }
 
 select 21, 'fail: exists, not exists'; -- TODO
 -- select

@@ -81,16 +81,12 @@ set (CAPNPC_SRCS
 add_library(_capnpc ${CAPNPC_SRCS})
 target_link_libraries(_capnpc PUBLIC _capnp)
 
-# The library has substandard code
-if (COMPILER_GCC)
-    set (SUPPRESS_WARNINGS -w)
-elseif (COMPILER_CLANG)
-    set (SUPPRESS_WARNINGS -w)
+if (COMPILER_CLANG)
     set (CAPNP_PRIVATE_CXX_FLAGS -fno-char8_t)
 endif ()
 
-target_compile_options(_kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
-target_compile_options(_capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
-target_compile_options(_capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(_kj PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(_capnp PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(_capnpc PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
 
 add_library(ch_contrib::capnp ALIAS _capnpc)

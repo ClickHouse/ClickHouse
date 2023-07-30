@@ -73,7 +73,7 @@ struct ProjectionDescription
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
-        const ASTPtr & partition_columns,
+        ASTPtr partition_columns,
         const Names & minmax_columns,
         const ASTs & primary_key_asts,
         ContextPtr query_context);
@@ -106,7 +106,7 @@ struct ProjectionDescription
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
-struct ProjectionsDescription
+struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
 {
     ProjectionsDescription() = default;
     ProjectionsDescription(ProjectionsDescription && other) = default;
@@ -137,6 +137,8 @@ struct ProjectionsDescription
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
+
+    std::vector<String> getAllRegisteredNames() const override;
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.

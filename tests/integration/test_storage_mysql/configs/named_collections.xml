@@ -30,5 +30,15 @@
             <table>test_table</table>
             <connection_pool_size>0</connection_pool_size>
         </mysql4>
+        <mysql_with_settings>
+            <user>root</user>
+            <password>clickhouse</password>
+            <host>mysql57</host>
+            <port>3306</port>
+            <database>clickhouse</database>
+            <connection_pool_size>1</connection_pool_size>
+            <read_write_timeout>20123001</read_write_timeout>
+            <connect_timeout>20123002</connect_timeout>
+        </mysql_with_settings>
     </named_collections>
 </clickhouse>

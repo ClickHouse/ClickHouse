@@ -1,4 +1,5 @@
 #include <IO/CascadeWriteBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -35,9 +36,9 @@ void CascadeWriteBuffer::nextImpl()
         curr_buffer->position() = position();
         curr_buffer->next();
     }
-    catch (const Exception & e)
+    catch (const MemoryWriteBuffer::CurrentBufferExhausted &)
     {
-        if (curr_buffer_num < num_sources && e.code() == ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED)
+        if (curr_buffer_num < num_sources)
         {
             /// TODO: protocol should require set(position(), 0) before Exception
 
@@ -46,17 +47,17 @@ void CascadeWriteBuffer::nextImpl()
             curr_buffer = setNextBuffer();
         }
         else
-            throw;
+            throw Exception(ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED, "MemoryWriteBuffer limit is exhausted");
     }
 
     set(curr_buffer->position(), curr_buffer->buffer().end() - curr_buffer->position());
-//     std::cerr << "CascadeWriteBuffer a count=" << count() << " bytes=" << bytes << " offset=" << offset()
-//     << " bytes+size=" << bytes + buffer().size() << "\n";
 }
 
 
 void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 {
+    finalize();
+
     /// Sync position with underlying buffer before invalidating
     curr_buffer->position() = position();
 
@@ -68,6 +69,19 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
     lazy_sources.clear();
 }
 
+void CascadeWriteBuffer::finalizeImpl()
+{
+    if (curr_buffer)
+        curr_buffer->position() = position();
+
+    for (auto & buf : prepared_sources)
+    {
+        if (buf)
+        {
+            buf->finalize();
+        }
+    }
+}
 
 WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 {
@@ -80,11 +94,11 @@ WriteBuffer * CascadeWriteBuffer::setNextBuffer()
         }
     }
     else if (curr_buffer_num >= num_sources)
-        throw Exception("There are no WriteBuffers to write result", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "There are no WriteBuffers to write result");
 
     WriteBuffer * res = prepared_sources[curr_buffer_num].get();
     if (!res)
-        throw Exception("Required WriteBuffer is not created", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
+        throw Exception(ErrorCodes::CANNOT_CREATE_IO_BUFFER, "Required WriteBuffer is not created");
 
     /// Check that returned buffer isn't empty
     if (!res->hasPendingData())

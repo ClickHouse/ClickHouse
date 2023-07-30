@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/distributed_ddl_queue
+---
 # system.distributed_ddl_queue {#system_tables-distributed_ddl_queue}
 
 包含有关在集群上执行的[分布式ddl查询(集群环境)](../../sql-reference/distributed-ddl.md)的信息.
@@ -60,5 +63,3 @@ exception_code:    ZOK
 
 2 rows in set. Elapsed: 0.025 sec.
 ```
-
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/distributed_ddl_queuedistributed_ddl_queue.md) <!--hide-->

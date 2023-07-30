@@ -36,7 +36,7 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)
@@ -73,24 +73,24 @@ String ISerialization::SubstreamPath::toString() const
 }
 
 void ISerialization::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    path.push_back(Substream::Regular);
-    path.back().data = data;
-    callback(path);
-    path.pop_back();
+    settings.path.push_back(Substream::Regular);
+    settings.path.back().data = data;
+    callback(settings.path);
+    settings.path.pop_back();
 }
 
-void ISerialization::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void ISerialization::enumerateStreams(
+    const StreamCallback & callback,
+    const DataTypePtr & type,
+    const ColumnPtr & column) const
 {
-    enumerateStreams(path, callback, {getPtr(), nullptr, nullptr, nullptr});
-}
-
-void ISerialization::enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const
-{
-    enumerateStreams(path, callback, {getPtr(), type, nullptr, nullptr});
+    EnumerateStreamsSettings settings;
+    auto data = SubstreamData(getPtr()).withType(type).withColumn(column);
+    enumerateStreams(settings, callback, data);
 }
 
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
@@ -167,8 +167,10 @@ String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             ///  but by separate Array columns with names in a form of a.b,
             ///  and name is encoded as a whole.
-            stream_name += (escape_tuple_delimiter && it->escape_tuple_delimiter ?
-                escapeForFileName(".") : ".") + escapeForFileName(it->tuple_element_name);
+            if (escape_tuple_delimiter && it->escape_tuple_delimiter)
+                stream_name += escapeForFileName("." + it->tuple_element_name);
+            else
+                stream_name += "." + it->tuple_element_name;
         }
     }
 
@@ -182,7 +184,7 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path);
 }
 
-static size_t isOffsetsOfNested(const ISerialization::SubstreamPath & path)
+bool isOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
@@ -222,8 +224,10 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (cache && !path.empty())
-        cache->emplace(getSubcolumnNameForStream(path), column);
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
@@ -232,10 +236,7 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path));
-    if (it == cache->end())
-        return nullptr;
-
-    return it->second;
+    return it == cache->end() ? nullptr : it->second;
 }
 
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
@@ -286,10 +287,13 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
-    assert(prefix_len < path.size());
+    assert(prefix_len <= path.size());
+    if (prefix_len == 0)
+        return {};
 
-    SubstreamData res = path[prefix_len].data;
-    for (ssize_t i = static_cast<ssize_t>(prefix_len) - 1; i >= 0; --i)
+    ssize_t last_elem = prefix_len - 1;
+    auto res = path[last_elem].data;
+    for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
         const auto & creator = path[i].creator;
         if (creator)

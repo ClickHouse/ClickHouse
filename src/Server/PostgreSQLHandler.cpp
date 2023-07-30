@@ -11,7 +11,7 @@
 #include <base/scope_guard.h>
 #include <random>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -57,6 +57,8 @@ void PostgreSQLHandler::run()
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
+
+    session->setClientConnectionId(connection_id);
 
     try
     {
@@ -105,7 +107,7 @@ void PostgreSQLHandler::run()
                             "0A000",
                             "Command is not supported"),
                         true);
-                    LOG_ERROR(log, Poco::format("Command is not supported. Command code %d", static_cast<Int32>(message_type)));
+                    LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
             }
         }
@@ -222,7 +224,7 @@ void PostgreSQLHandler::cancelRequest()
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
-    String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
+    String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
     auto query_context = session->makeQueryContext();
@@ -275,9 +277,12 @@ void PostgreSQLHandler::processQuery()
 
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
-        auto parse_res = splitMultipartQuery(query->query, queries, settings.max_query_size, settings.max_parser_depth);
+        auto parse_res = splitMultipartQuery(query->query, queries,
+            settings.max_query_size,
+            settings.max_parser_depth,
+            settings.allow_settings_after_format_in_insert);
         if (!parse_res.second)
-            throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -287,7 +292,7 @@ void PostgreSQLHandler::processQuery()
         {
             secret_key = dis(gen);
             auto query_context = session->makeQueryContext();
-            query_context->setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
+            query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
             ReadBufferFromString read_buf(spl_query);
@@ -312,6 +317,9 @@ void PostgreSQLHandler::processQuery()
 bool PostgreSQLHandler::isEmptyQuery(const String & query)
 {
     if (query.empty())
+        return true;
+    /// golang driver pgx sends ";"
+    if (query == ";")
         return true;
 
     Poco::RegularExpression regex(R"(\A\s*\z)");

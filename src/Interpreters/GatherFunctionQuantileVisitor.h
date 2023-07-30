@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -25,6 +24,8 @@ public:
     std::unordered_map<String, FuseQuantileAggregatesData> fuse_quantile;
 
     void visit(ASTFunction & function, ASTPtr & ast);
+
+    static String toFusedNameOrSelf(const String & func_name);
 
     static String getFusedName(const String & func_name);
 

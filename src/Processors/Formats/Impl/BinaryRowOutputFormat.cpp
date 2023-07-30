@@ -10,8 +10,8 @@
 namespace DB
 {
 
-BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const RowOutputFormatParams & params_)
-    : IRowOutputFormat(header, out_, params_), with_names(with_names_), with_types(with_types_)
+BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header, out_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
 }
 
@@ -44,7 +44,7 @@ void BinaryRowOutputFormat::writePrefix()
 
 void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    serialization.serializeBinary(column, row_num, out);
+    serialization.serializeBinary(column, row_num, out, format_settings);
 }
 
 
@@ -55,10 +55,9 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
-            const FormatSettings &)
+            const FormatSettings & format_settings)
         {
-            return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, params);
+            return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, format_settings);
         });
         factory.markOutputFormatSupportsParallelFormatting(format_name);
     };

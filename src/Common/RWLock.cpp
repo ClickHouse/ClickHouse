@@ -97,7 +97,7 @@ private:
   * Note: "SM" in the commentaries below stands for STATE MODIFICATION
   */
 RWLockImpl::LockHolder
-RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms)
+RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms, bool throw_in_fast_path)
 {
     const auto lock_deadline_tp =
         (lock_timeout_ms == std::chrono::milliseconds(0))
@@ -130,15 +130,19 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
         if (owner_query_it != owner_queries.end())
         {
             if (wrlock_owner != writers_queue.end())
-                throw Exception(
-                        "RWLockImpl::getLock(): RWLock is already locked in exclusive mode",
-                        ErrorCodes::LOGICAL_ERROR);
+            {
+                if (throw_in_fast_path)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): RWLock is already locked in exclusive mode");
+                return nullptr;
+            }
 
             /// Lock upgrading is not supported
             if (type == Write)
-                throw Exception(
-                        "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked",
-                        ErrorCodes::LOGICAL_ERROR);
+            {
+                if (throw_in_fast_path)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked");
+                return nullptr;
+            }
 
             /// N.B. Type is Read here, query_id is not empty and it_query is a valid iterator
             ++owner_query_it->second;                                  /// SM1: nothrow
@@ -189,9 +193,10 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 /// Rollback(SM1): nothrow
                 if (it_group->requests == 0)
                 {
-                    (type == Read ? readers_queue : writers_queue).erase(it_group);
+                    /// When WRITE lock fails, we need to notify next read that is waiting,
+                    /// to avoid handing request, hence next=true.
+                    dropOwnerGroupAndPassOwnership(it_group, /* next= */ true);
                 }
-
                 return nullptr;
             }
         }
@@ -211,7 +216,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
             /// We only need to roll back the changes to these objects: owner_queries and the readers/writers queue
             if (it_group->requests == 0)
-                dropOwnerGroupAndPassOwnership(it_group);  /// Rollback(SM1): nothrow
+                dropOwnerGroupAndPassOwnership(it_group, /* next= */ false);  /// Rollback(SM1): nothrow
 
             throw;
         }
@@ -259,11 +264,11 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
 
     /// If we are the last remaining referrer, remove this QNode and notify the next one
     if (--group_it->requests == 0)               /// SM: nothrow
-        dropOwnerGroupAndPassOwnership(group_it);
+        dropOwnerGroupAndPassOwnership(group_it, /* next= */ false);
 }
 
 
-void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept
+void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it, bool next) noexcept
 {
     rdlock_owner = readers_queue.end();
     wrlock_owner = writers_queue.end();
@@ -287,7 +292,14 @@ void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_
         /// Prepare next phase
         if (!readers_queue.empty())
         {
-            rdlock_owner = readers_queue.begin();
+            if (next && readers_queue.size() > 1)
+            {
+                rdlock_owner = std::next(readers_queue.begin());
+            }
+            else
+            {
+                rdlock_owner = readers_queue.begin();
+            }
         }
         else
         {

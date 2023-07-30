@@ -1,12 +1,16 @@
-
 #include <Columns/Collator.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
 #include <IO/Operators.h>
-
+#include <base/EnumReflection.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 ASTPtr ASTTTLElement::clone() const
 {
@@ -29,18 +33,26 @@ ASTPtr ASTTTLElement::clone() const
 void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ttl()->formatImpl(settings, state, frame);
-    if (mode == TTLMode::MOVE && destination_type == DataDestinationType::DISK)
+    if (mode == TTLMode::MOVE)
     {
-        settings.ostr << " TO DISK " << quoteString(destination_name);
-    }
-    else if (mode == TTLMode::MOVE && destination_type == DataDestinationType::VOLUME)
-    {
-        settings.ostr << " TO VOLUME " << quoteString(destination_name);
+        if (destination_type == DataDestinationType::DISK)
+            settings.ostr << " TO DISK ";
+        else if (destination_type == DataDestinationType::VOLUME)
+            settings.ostr << " TO VOLUME ";
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unsupported destination type {} for TTL MOVE",
+                    magic_enum::enum_name(destination_type));
+
+        if (if_exists)
+            settings.ostr << "IF EXISTS ";
+
+        settings.ostr << quoteString(destination_name);
     }
     else if (mode == TTLMode::GROUP_BY)
     {
         settings.ostr << " GROUP BY ";
-        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
+        for (const auto * it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
             if (it != group_by_key.begin())
                 settings.ostr << ", ";
@@ -50,7 +62,7 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
         if (!group_by_assignments.empty())
         {
             settings.ostr << " SET ";
-            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (const auto * it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
             {
                 if (it != group_by_assignments.begin())
                     settings.ostr << ", ";
@@ -81,7 +93,7 @@ void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
     {
         if (pos == -1)
         {
-            pos = children.size();
+            pos = static_cast<int>(children.size());
             children.emplace_back(ast);
         }
         else

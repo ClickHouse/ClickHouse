@@ -1,5 +1,6 @@
 ---
-toc_priority: 107
+slug: /zh/sql-reference/aggregate-functions/reference/avgweighted
+sidebar_position: 107
 ---
 
 # avgWeighted {#avgweighted}

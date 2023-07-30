@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/asynchronous_metrics.md

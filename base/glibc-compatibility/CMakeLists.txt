@@ -37,7 +37,7 @@ if (GLIBC_COMPATIBILITY)
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
-    if (NOT USE_STATIC_LIBRARIES AND NOT USE_STATIC_LIBRARIES)
+    if (ENABLE_OPENSSL_DYNAMIC)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
@@ -51,6 +51,6 @@ if (GLIBC_COMPATIBILITY)
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
-elseif (YANDEX_OFFICIAL_BUILD)
+elseif (CLICKHOUSE_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()

@@ -101,7 +101,7 @@
 #endif
 
 /*
- * The pcg_extras namespace contains some support code that is likley to
+ * The pcg_extras namespace contains some support code that is likely to
  * be useful for a variety of RNGs, including:
  *      - 128-bit int support for platforms where it isn't available natively
  *      - bit twiddling operations
@@ -112,6 +112,8 @@
  */
 
 #include "pcg_extras.hpp"
+
+// NOLINTBEGIN(*)
 
 namespace DB
 {
@@ -928,7 +930,7 @@ struct rxs_m_xs_mixin {
         constexpr bitcount_t shift = bits - xtypebits;
         constexpr bitcount_t mask = (1 << opbits) - 1;
         bitcount_t rshift =
-            opbits ? bitcount_t(internal >> (bits - opbits)) & mask : 0; //-V547
+            opbits ? bitcount_t(internal >> (bits - opbits)) & mask : 0;
         internal ^= internal >> (opbits + rshift);
         internal *= mcg_multiplier<itype>::multiplier();
         xtype result = internal >> shift;
@@ -950,7 +952,7 @@ struct rxs_m_xs_mixin {
 
         internal *= mcg_unmultiplier<itype>::unmultiplier();
 
-        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0; //-V547
+        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0;
         internal = unxorshift(internal, bits, opbits + rshift);
 
         return internal;
@@ -975,7 +977,7 @@ struct rxs_m_mixin {
                                  :                    2;
         constexpr bitcount_t shift = bits - xtypebits;
         constexpr bitcount_t mask = (1 << opbits) - 1;
-        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0; //-V547
+        bitcount_t rshift = opbits ? (internal >> (bits - opbits)) & mask : 0;
         internal ^= internal >> (opbits + rshift);
         internal *= mcg_multiplier<itype>::multiplier();
         xtype result = internal >> shift;
@@ -1366,7 +1368,7 @@ void extended<table_pow2,advance_pow2,baseclass,extvalclass,kdd>::selfinit()
     //      - any strange correlations would only be apparent if we
     //        were to backstep the generator so that the base generator
     //        was generating the same values again
-    result_type xdiff = baseclass::operator()() - baseclass::operator()(); //-V501
+    result_type xdiff = baseclass::operator()() - baseclass::operator()();
     for (size_t i = 0; i < table_size; ++i) {
         data_[i] = baseclass::operator()() ^ xdiff;
     }
@@ -1776,5 +1778,7 @@ typedef pcg_engines::ext_oneseq_xsh_rs_64_32<14,32,true>    pcg32_k16384_fast;
 #ifdef _MSC_VER
     #pragma warning(default:4146)
 #endif
+
+// NOLINTEND(*)
 
 #endif // PCG_RAND_HPP_INCLUDED

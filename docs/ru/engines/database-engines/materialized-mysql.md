@@ -1,6 +1,7 @@
 ---
-toc_priority: 29
-toc_title: "[experimental] MaterializedMySQL"
+slug: /ru/engines/database-engines/materialized-mysql
+sidebar_position: 29
+sidebar_label: "[experimental] MaterializedMySQL"
 ---
 
 # [экспериментальный] MaterializedMySQL {#materialized-mysql}
@@ -48,9 +49,9 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 - `default_authentication_plugin = mysql_native_password` — `MaterializedMySQL` может авторизоваться только с помощью этого метода.
 - `gtid_mode = on` — ведение журнала на основе GTID является обязательным для обеспечения правильной репликации.
 
-!!! attention "Внимание"
+    :::note "Внимание"
     При включении `gtid_mode` вы также должны указать `enforce_gtid_consistency = on`.
-
+    :::
 ## Виртуальные столбцы {#virtual-columns}
 
 При работе с движком баз данных `MaterializedMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.
@@ -193,5 +194,3 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/engines/database-engines/materialized-mysql/) <!--hide-->

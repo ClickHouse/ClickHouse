@@ -1,29 +1,31 @@
 #!/usr/bin/expect -f
-# Tags: no-parallel
-# Tag no-parallel: Uses non unique history file
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+set history_file $env(CLICKHOUSE_TMP)/$basename.history
 
 log_user 0
 set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
-    eof { exp_continue }
+    -i $any_spawn_id eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    -i $any_spawn_id timeout { exit 1 }
 }
-set basedir [file dirname $argv0]
 
-exec bash -c "echo select 1 > $argv0.txt"
-exec bash -c "echo select 1 >> $argv0.txt"
-exec bash -c "echo select 1 >> $argv0.txt"
+exec bash -c "echo select 1 > $history_file.txt"
+exec bash -c "echo select 1 >> $history_file.txt"
+exec bash -c "echo select 1 >> $history_file.txt"
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$argv0.txt"
-expect "The history file ($argv0.txt) is in old format. 3 lines, 1 unique lines."
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$history_file.txt"
+expect "The history file ($history_file.txt) is in old format. 3 lines, 1 unique lines."
 expect ":) "
 send -- "\4"
 expect eof
 
-spawn bash -c "wc -l $argv0.txt"
+spawn bash -c "wc -l $history_file.txt"
 # The following lines are expected:
 #
 #     ### YYYY-MM-DD HH:MM:SS.SSS
@@ -32,4 +34,4 @@ spawn bash -c "wc -l $argv0.txt"
 expect "2"
 expect eof
 
-exec bash -c "rm $argv0.txt"
+exec bash -c "rm $history_file.txt"

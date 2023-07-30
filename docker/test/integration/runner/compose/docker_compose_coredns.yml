@@ -1,0 +1,9 @@
+version: "2.3"
+
+services:
+  coredns:
+    image: coredns/coredns:latest
+    restart: always
+    volumes:
+      - ${COREDNS_CONFIG_DIR}/example.com:/example.com
+      - ${COREDNS_CONFIG_DIR}/Corefile:/Corefile

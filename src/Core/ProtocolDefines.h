@@ -8,7 +8,6 @@
 #define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
 #define DBMS_MIN_REVISION_WITH_VERSION_PATCH 54401
 #define DBMS_MIN_REVISION_WITH_SERVER_LOGS 54406
-#define DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA 54415
 /// Minimum revision with exactly the same set of aggregation methods and rules to select them.
 /// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
 /// (keys will be placed in different buckets and result will not be fully aggregated).
@@ -31,10 +30,11 @@
 
 #define DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION 1
 
-#define DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION 1
+#define DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION 2
 #define DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS 54453
 
-/// Minimum revision supporting interserver secret.
+#define DBMS_MERGE_TREE_PART_INFO_VERSION 1
+
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 
 #define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
@@ -53,6 +53,27 @@
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-#define DBMS_TCP_PROTOCOL_VERSION 54455
+#define DBMS_TCP_PROTOCOL_VERSION 54464
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT 54456
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED 54457
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM 54458
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY 54458
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS 54459
+
+/// The server will send query elapsed run time in the Progress packet.
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS 54460
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES 54461
+
+#define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 54462
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS 54463
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES 54464

@@ -16,7 +16,7 @@ using MYSQL_ROW = char**;
 struct st_mysql_field;
 using MYSQL_FIELD = st_mysql_field;
 
-enum struct enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
+enum struct enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY, /// NOLINT
                         MYSQL_TYPE_SHORT, MYSQL_TYPE_LONG,
                         MYSQL_TYPE_FLOAT, MYSQL_TYPE_DOUBLE,
                         MYSQL_TYPE_NULL, MYSQL_TYPE_TIMESTAMP,

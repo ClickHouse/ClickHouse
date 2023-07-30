@@ -74,7 +74,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = DB::get<Map &>(res);
+    auto & map = res.get<Map &>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -88,17 +88,17 @@ bool ColumnMap::isDefaultAt(size_t n) const
 
 StringRef ColumnMap::getDataAt(size_t) const
 {
-    throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
 
 void ColumnMap::insertData(const char *, size_t)
 {
-    throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = DB::get<const Map &>(x);
+    const auto & map = x.get<const Map &>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -207,14 +207,16 @@ bool ColumnMap::hasEqualValues() const
     return hasEqualValuesImpl<ColumnMap>();
 }
 
-void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                            size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    nested->getPermutation(reverse, limit, nan_direction_hint, res);
+    nested->getPermutation(direction, stability, limit, nan_direction_hint, res);
 }
 
-void ColumnMap::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    nested->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
+    nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
 void ColumnMap::gather(ColumnGathererStream & gatherer)
@@ -225,6 +227,11 @@ void ColumnMap::gather(ColumnGathererStream & gatherer)
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+void ColumnMap::ensureOwnership()
+{
+    nested->ensureOwnership();
 }
 
 size_t ColumnMap::byteSize() const
@@ -266,9 +273,15 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(ColumnCallback callback)
+void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
+}
+
+void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*nested);
+    nested->forEachSubcolumnRecursively(callback);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const
@@ -283,6 +296,11 @@ double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
     return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
 }
 
+UInt64 ColumnMap::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnMap>();
+}
+
 void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
@@ -294,9 +312,9 @@ ColumnPtr ColumnMap::compress() const
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
-    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
+    return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed)]
     {
-        return ColumnMap::create(compressed->decompress());
+        return ColumnMap::create(my_compressed->decompress());
     });
 }
 

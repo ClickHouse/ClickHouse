@@ -1,0 +1,16 @@
+<clickhouse>
+    <crash_log replace="replace">
+        <flush_interval_milliseconds>1000000</flush_interval_milliseconds>
+        <max_size_rows>1</max_size_rows>
+        <reserved_size_rows>1</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>1</buffer_size_rows_flush_threshold>
+        <flush_on_crash>true</flush_on_crash>
+    </crash_log>
+    <query_log replace="replace">
+        <flush_interval_milliseconds>1000000</flush_interval_milliseconds>
+        <max_size_rows>100</max_size_rows>
+        <reserved_size_rows>100</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>100</buffer_size_rows_flush_threshold>
+        <flush_on_crash>true</flush_on_crash>
+    </query_log>
+</clickhouse>

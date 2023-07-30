@@ -8,10 +8,10 @@
 
 namespace CurrentStatusInfo
 {
-    #define M(NAME, DOCUMENTATION, ENUM) extern const Status NAME = __COUNTER__;
+    #define M(NAME, DOCUMENTATION, ENUM) extern const Status NAME = Status(__COUNTER__);
         APPLY_FOR_STATUS(M)
     #undef M
-    constexpr Status END = __COUNTER__;
+    constexpr Status END = Status(__COUNTER__);
 
     std::mutex locks[END] {};
     std::unordered_map<String, Int8> values[END] {};

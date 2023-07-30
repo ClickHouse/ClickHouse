@@ -5,7 +5,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
-#include <base/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
@@ -22,6 +21,9 @@ struct StorageInfo
 
     StorageInfo(StoragePtr storage_, const PostgreSQLTableStructure::Attributes & attributes_)
         : storage(storage_), attributes(attributes_) {}
+
+    StorageInfo(StoragePtr storage_, PostgreSQLTableStructure::Attributes && attributes_)
+        : storage(storage_), attributes(std::move(attributes_)) {}
 };
 using StorageInfos = std::unordered_map<String, StorageInfo>;
 
@@ -69,11 +71,10 @@ public:
             const String & start_lsn,
             size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
-            bool allow_automatic_update_,
             StorageInfos storages_,
             const String & name_for_logger);
 
-    bool consume(std::vector<std::pair<Int32, String>> & skipped_tables);
+    bool consume();
 
     /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
     /// process if it was skipped due to schema changes.
@@ -86,10 +87,9 @@ public:
     void setSetting(const SettingChange & setting);
 
 private:
-    /// Read approximarely up to max_block_size changes from WAL.
-    bool readFromReplicationSlot();
-
     void syncTables();
+
+    void updateLsn();
 
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
@@ -119,17 +119,21 @@ private:
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
-    /// lsn - log sequnce nuumber, like wal offset (64 bit).
+    static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
+
+    /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
-        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half);
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 
     Poco::Logger * log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
+
+    bool committed = false;
 
     std::shared_ptr<postgres::Connection> connection;
 
@@ -141,8 +145,6 @@ private:
     size_t max_block_size;
 
     bool schema_as_a_part_of_table_name;
-
-    bool allow_automatic_update;
 
     String table_to_insert;
 

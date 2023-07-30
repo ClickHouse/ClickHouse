@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <cstddef>
 #include <cassert>
 #include <algorithm>
@@ -9,6 +9,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <base/strong_typedef.h>
+#include <base/getPageSize.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -79,9 +80,6 @@ extern const char empty_pod_array[empty_pod_array_size];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnull-dereference"
-
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
@@ -105,18 +103,24 @@ protected:
     char * c_end_of_storage = null;    /// Does not include pad_right.
 
     /// The amount of memory occupied by the num_elements of the elements.
-    static size_t byte_size(size_t num_elements)
+    static size_t byte_size(size_t num_elements) /// NOLINT
     {
         size_t amount;
         if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
-            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         return amount;
     }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
+    static size_t minimum_memory_for_elements(size_t num_elements)
+    {
+        size_t amount;
+        if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
+        return amount;
+    }
 
-    void alloc_for_num_elements(size_t num_elements)
+    void alloc_for_num_elements(size_t num_elements) /// NOLINT
     {
         alloc(minimum_memory_for_elements(num_elements));
     }
@@ -196,7 +200,7 @@ protected:
     /// The operation is slow and performed only for debug builds.
     void protectImpl(int prot)
     {
-        static constexpr size_t PROTECT_PAGE_SIZE = 4096;
+        static size_t PROTECT_PAGE_SIZE = ::getPageSize();
 
         char * left_rounded_up = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_start) - pad_left + PROTECT_PAGE_SIZE - 1) / PROTECT_PAGE_SIZE * PROTECT_PAGE_SIZE);
         char * right_rounded_down = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_end_of_storage) + pad_right) / PROTECT_PAGE_SIZE * PROTECT_PAGE_SIZE);
@@ -219,14 +223,12 @@ public:
     size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
 
     /// This method is safe to use only for information about memory usage.
-    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; }
+    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; } /// NOLINT
 
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
-#if defined(__clang__)
     ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
-#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -234,7 +236,7 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params)
+    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         if (n > capacity())
             realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
@@ -248,24 +250,24 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void resize_exact(size_t n, TAllocatorParams &&... allocator_params)
+    void resize_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
-    void resize_assume_reserved(const size_t n)
+    void resize_assume_reserved(const size_t n) /// NOLINT
     {
         c_end = c_start + byte_size(n);
     }
 
-    const char * raw_data() const
+    const char * raw_data() const /// NOLINT
     {
         return c_start;
     }
 
     template <typename ... TAllocatorParams>
-    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
+    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         size_t required_capacity = size() + ELEMENT_SIZE;
         if (unlikely(required_capacity > capacity()))
@@ -316,11 +318,11 @@ class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_r
 protected:
     using Base = PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>;
 
-    T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
-    T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
+    T * t_start()                      { return reinterpret_cast<T *>(this->c_start); } /// NOLINT
+    T * t_end()                        { return reinterpret_cast<T *>(this->c_end); } /// NOLINT
 
-    const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); }
-    const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); }
+    const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); } /// NOLINT
+    const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); } /// NOLINT
 
 public:
     using value_type = T;
@@ -334,7 +336,7 @@ public:
 
     PODArray() = default;
 
-    PODArray(size_t n)
+    explicit PODArray(size_t n)
     {
         this->alloc_for_num_elements(n);
         this->c_end += this->byte_size(n);
@@ -362,12 +364,12 @@ public:
         }
     }
 
-    PODArray(PODArray && other)
+    PODArray(PODArray && other) noexcept
     {
         this->swap(other);
     }
 
-    PODArray & operator=(PODArray && other)
+    PODArray & operator=(PODArray && other) noexcept
     {
         this->swap(other);
         return *this;
@@ -403,7 +405,7 @@ public:
     const_iterator cend() const   { return t_end(); }
 
     /// Same as resize, but zeroes new elements.
-    void resize_fill(size_t n)
+    void resize_fill(size_t n) /// NOLINT
     {
         size_t old_size = this->size();
         if (n > old_size)
@@ -414,7 +416,7 @@ public:
         this->c_end = this->c_start + this->byte_size(n);
     }
 
-    void resize_fill(size_t n, const T & value)
+    void resize_fill(size_t n, const T & value) /// NOLINT
     {
         size_t old_size = this->size();
         if (n > old_size)
@@ -426,31 +428,31 @@ public:
     }
 
     template <typename U, typename ... TAllocatorParams>
-    void push_back(U && x, TAllocatorParams &&... allocator_params)
+    void push_back(U && x, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     /** This method doesn't allow to pass parameters for Allocator,
       *  and it couldn't be used if Allocator requires custom parameters.
       */
     template <typename... Args>
-    void emplace_back(Args &&... args)
+    void emplace_back(Args &&... args) /// NOLINT
     {
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
-    void pop_back()
+    void pop_back() /// NOLINT
     {
-        this->c_end -= this->byte_size(1);
+        this->c_end -= sizeof(T);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
@@ -497,7 +499,7 @@ public:
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        static_assert(pad_right_ >= 15);
+        static_assert(pad_right_ >= PADDING_FOR_SIMD - 1);
         static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
@@ -553,7 +555,7 @@ public:
     }
 
     template <typename It1, typename It2>
-    void insert_assume_reserved(It1 from_begin, It2 from_end)
+    void insert_assume_reserved(It1 from_begin, It2 from_end) /// NOLINT
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
         this->assertNotIntersects(from_begin, from_end);
@@ -702,10 +704,9 @@ public:
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         if (bytes_to_copy)
-        {
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-            this->c_end = this->c_start + bytes_to_copy;
-        }
+
+        this->c_end = this->c_start + bytes_to_copy;
     }
 
     // ISO C++ has strict ambiguity rules, thus we cannot apply TAllocatorParams here.
@@ -770,18 +771,27 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, P
 {
     lhs.swap(rhs);
 }
-#pragma GCC diagnostic pop
 
 /// Prevent implicit template instantiation of PODArray for common numeric types
 
-extern template class PODArray<UInt8, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<UInt16, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<UInt32, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<UInt64, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 
-extern template class PODArray<Int8, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<Int16, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<Int32, 4096, Allocator<false>, 15, 16>;
-extern template class PODArray<Int64, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+
+extern template class PODArray<UInt8, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, 0, 0>;
+
+extern template class PODArray<Int8, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int16, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int32, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int64, 4096, Allocator<false>, 0, 0>;
 
 }

@@ -78,9 +78,9 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
-        case ExternalResultDescription::ValueType::vtEnum8:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtEnum16:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtFixedString:[[fallthrough]];
+        case ExternalResultDescription::ValueType::vtEnum8:
+        case ExternalResultDescription::ValueType::vtEnum16:
+        case ExternalResultDescription::ValueType::vtFixedString:
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
@@ -100,7 +100,7 @@ void insertPostgreSQLValue(
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
-            assert_cast<ColumnUInt32 &>(column).insertValue(time);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
         }
         case ExternalResultDescription::ValueType::vtDateTime64:
@@ -108,8 +108,6 @@ void insertPostgreSQLValue(
             ReadBufferFromString in(value);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
-            if (time < 0)
-                time = 0;
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -134,7 +132,7 @@ void insertPostgreSQLValue(
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
                 if ((parsed.first == pqxx::array_parser::juncture::row_start) && (++dimension > expected_dimensions))
-                    throw Exception("Got more dimensions than expected", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
 
                 else if (parsed.first == pqxx::array_parser::juncture::string_value)
                     dimensions[dimension].emplace_back(parse_value(parsed.second));
@@ -204,6 +202,8 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<double>(field); };
+    else if (which.isUUID())
+        parser = [](std::string & field) -> Field { return parse<UUID>(field); };
     else if (which.isString() || which.isFixedString())
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())

@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
 
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
@@ -17,26 +18,26 @@
 namespace DB
 {
 
-void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const AggregateFunctionStateData & state = get<const AggregateFunctionStateData &>(field);
+    const AggregateFunctionStateData & state = field.get<const AggregateFunctionStateData &>();
     writeBinary(state.data, ostr);
 }
 
-void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = get<AggregateFunctionStateData &>(field);
+    AggregateFunctionStateData & s = field.get<AggregateFunctionStateData &>();
     readBinary(s.data, istr);
     s.name = type_name;
 }
 
-void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 

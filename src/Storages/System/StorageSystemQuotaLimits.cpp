@@ -66,8 +66,11 @@ NamesAndTypesList StorageSystemQuotaLimits::getNamesAndTypes()
 
 void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_QUOTAS);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_QUOTAS);
+
     std::vector<UUID> ids = access_control.findAll<Quota>();
 
     size_t column_index = 0;
@@ -87,7 +90,7 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
     auto add_row = [&](const String & quota_name, const Quota::Limits & limits)
     {
         column_quota_name.insertData(quota_name.data(), quota_name.length());
-        column_duration.push_back(limits.duration.count());
+        column_duration.push_back(static_cast<UInt32>(limits.duration.count()));
         column_is_randomized_interval.push_back(limits.randomize_interval);
 
         for (auto quota_type : collections::range(QuotaType::MAX))

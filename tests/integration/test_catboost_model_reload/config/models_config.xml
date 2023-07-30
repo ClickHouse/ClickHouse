@@ -1,3 +1,0 @@
-<clickhouse>
-    <models_config>/etc/clickhouse-server/model/model_config.xml</models_config>
-</clickhouse>

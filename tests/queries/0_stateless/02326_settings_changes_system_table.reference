@@ -1,0 +1,3 @@
+version	String					
+changes	Array(Tuple(name String, previous_value String, new_value String, reason String))					
+22.5	[('memory_overcommit_ratio_denominator','0','1073741824','Enable memory overcommit feature by default'),('memory_overcommit_ratio_denominator_for_user','0','1073741824','Enable memory overcommit feature by default')]

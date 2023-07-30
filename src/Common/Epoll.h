@@ -3,13 +3,12 @@
 
 #include <sys/epoll.h>
 #include <vector>
+#include <functional>
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
 
 namespace DB
 {
-
-using AsyncCallback = std::function<void(int, Poco::Timespan, const std::string &)>;
 
 class Epoll
 {
@@ -19,12 +18,14 @@ public:
     Epoll(const Epoll &) = delete;
     Epoll & operator=(const Epoll &) = delete;
 
-    Epoll & operator=(Epoll && other);
-    Epoll(Epoll && other);
+    Epoll & operator=(Epoll && other) noexcept;
+    Epoll(Epoll && other) noexcept;
 
     /// Add new file descriptor to epoll. If ptr set to nullptr, epoll_event.data.fd = fd,
     /// otherwise epoll_event.data.ptr = ptr.
-    void add(int fd, void * ptr = nullptr);
+    /// Default events are for reading from fd and for errors.
+    void add(int fd, void * ptr = nullptr, uint32_t events = EPOLLIN | EPOLLERR);
+    void add(int fd, uint32_t events) { add(fd, nullptr, events); }
 
     /// Remove file descriptor to epoll.
     void remove(int fd);

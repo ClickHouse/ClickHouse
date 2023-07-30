@@ -20,7 +20,7 @@ public:
     String getID(char) const override { return "RowPolicyName"; }
     ASTPtr clone() const override { return std::make_shared<ASTRowPolicyName>(*this); }
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTRowPolicyName>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyName>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);
 };
@@ -42,8 +42,11 @@ public:
     String getID(char) const override { return "RowPolicyNames"; }
     ASTPtr clone() const override { return std::make_shared<ASTRowPolicyNames>(*this); }
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);
+
+private:
+    String tableOrAsterisk(const String & table_name) const;
 };
 }

@@ -76,7 +76,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
         if (data.exception)
         {
             stage = Stage::Exception;
-            onException();
+            onException(data.exception);
             output.pushData(std::move(data));
             return Status::PortFull;
         }
@@ -138,8 +138,8 @@ void ExceptionKeepingTransform::work()
         {
             stage = Stage::Exception;
             ready_output = true;
-            data.exception = std::move(exception);
-            onException();
+            data.exception = exception;
+            onException(data.exception);
         }
     }
     else if (stage == Stage::Consume || stage == Stage::Generate)
@@ -152,8 +152,8 @@ void ExceptionKeepingTransform::work()
             {
                 stage = Stage::Exception;
                 ready_output = true;
-                data.exception = std::move(exception);
-                onException();
+                data.exception = exception;
+                onException(data.exception);
             }
             else
                 stage = Stage::Generate;
@@ -166,8 +166,8 @@ void ExceptionKeepingTransform::work()
             {
                 stage = Stage::Exception;
                 ready_output = true;
-                data.exception = std::move(exception);
-                onException();
+                data.exception = exception;
+                onException(data.exception);
             }
             else
             {
@@ -188,8 +188,8 @@ void ExceptionKeepingTransform::work()
         {
             stage = Stage::Exception;
             ready_output = true;
-            data.exception = std::move(exception);
-            onException();
+            data.exception = exception;
+            onException(data.exception);
         }
     }
 }

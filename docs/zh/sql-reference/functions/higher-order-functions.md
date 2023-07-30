@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/higher-order-functions
+---
 # 高阶函数 {#gao-jie-han-shu}
 
 ## `->` 运算符, lambda(params, expr) 函数 {#yun-suan-fu-lambdaparams-expr-han-shu}
@@ -134,5 +137,3 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
     ┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
     │ [4,3,2,1,nan,nan,NULL,NULL]                          │
     └──────────────────────────────────────────────────────┘
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

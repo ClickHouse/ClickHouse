@@ -1,0 +1,12 @@
+1	10	a
+Tuple(a UInt8, s String)
+1	10	a	0
+2	sss	b	300
+3	20	c	0
+Tuple(a String, b UInt16, s String)
+1	10	a	0	
+2	sss	b	300	
+3	20	c	0	
+4	30		400	
+5	0	qqq	0	foo
+Tuple(a String, b UInt16, s String, t String)

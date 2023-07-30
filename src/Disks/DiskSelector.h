@@ -18,27 +18,36 @@ using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class DiskSelector
 {
 public:
-    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
-    DiskSelector(const DiskSelector & from) : disks(from.disks) { }
+    static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
+
+    DiskSelector() = default;
+    DiskSelector(const DiskSelector & from) = default;
+
+    using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix)>;
+    void initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator = {});
 
     DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context
-    ) const;
+        ContextPtr context) const;
 
     /// Get disk by name
     DiskPtr get(const String & name) const;
 
+    DiskPtr tryGet(const String & name) const;
+
     /// Get all disks with names
-    const DisksMap & getDisksMap() const { return disks; }
-    void addToDiskMap(const String & name, DiskPtr disk)
-    {
-        disks.emplace(name, disk);
-    }
+    const DisksMap & getDisksMap() const;
+
+    void addToDiskMap(const String & name, DiskPtr disk);
+
+    void shutdown();
 
 private:
     DisksMap disks;
+    bool is_initialized = false;
+
+    void assertInitialized() const;
 };
 
 }

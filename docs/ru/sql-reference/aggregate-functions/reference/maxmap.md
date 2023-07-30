@@ -1,5 +1,6 @@
 ---
-toc_priority: 143
+slug: /ru/sql-reference/aggregate-functions/reference/maxmap
+sidebar_position: 143
 ---
 
 # maxMap {#agg_functions-maxmap}

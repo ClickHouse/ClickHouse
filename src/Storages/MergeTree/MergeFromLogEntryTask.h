@@ -3,28 +3,32 @@
 #include <memory>
 #include <utility>
 
+#include <pcg_random.hpp>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
 
 
 namespace DB
 {
 
-class MergeFromLogEntryTask : public shared_ptr_helper<MergeFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
+class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
 public:
-    template <class Callback>
-    MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_, Callback && task_result_callback_)
-        : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MergeFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
+    MergeFromLogEntryTask(
+        ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
+        StorageReplicatedMergeTree & storage_,
+        IExecutableTask::TaskResultCallback & task_result_callback_);
 
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() const override { return priority; }
 
 protected:
     /// Both return false if we can't execute merge.
-    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
+    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
@@ -37,13 +41,15 @@ private:
 
     MergeTreeData::DataPartsVector parts;
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
+    std::optional<ZeroCopyLock> zero_copy_lock;
 
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
 
-    UInt64 priority{0};
+    Priority priority;
 
     MergeTaskPtr merge_task;
+    pcg64 rng;
 };
 
 

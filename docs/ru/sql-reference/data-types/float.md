@@ -1,6 +1,7 @@
 ---
-toc_priority: 41
-toc_title: Float32, Float64
+slug: /ru/sql-reference/data-types/float
+sidebar_position: 41
+sidebar_label: Float32, Float64
 ---
 
 # Float32, Float64 {#float32-float64}
@@ -88,4 +89,3 @@ SELECT 0 / 0
 ```
 
 Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY ](../../sql-reference/statements/select/order-by.md).
-

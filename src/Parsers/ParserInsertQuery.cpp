@@ -41,6 +41,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
@@ -130,15 +131,26 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    Pos before_values = pos;
+    /// Read SETTINGS if they are defined
+    if (s_settings.ignore(pos, expected))
+    {
+        /// Settings are written like SET query, so parse them with ParserSetQuery
+        ParserSetQuery parser_settings(true);
+        if (!parser_settings.parse(pos, settings_ast, expected))
+            return false;
+    }
+
     String format_str;
+    Pos before_values = pos;
 
     /// VALUES or FORMAT or SELECT or WITH or WATCH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
-        /// If VALUES is defined in query, everything except setting will be parsed as data
-        data = pos->begin;
+        /// If VALUES is defined in query, everything except setting will be parsed as data,
+        /// and if values followed by semicolon, the data should be null.
+        if (!s_semicolon.checkWithoutMoving(pos, expected))
+            data = pos->begin;
         format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))
@@ -177,9 +189,19 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    /// Read SETTINGS if they are defined
-    if (s_settings.ignore(pos, expected))
+    /// Read SETTINGS after FORMAT.
+    ///
+    /// Note, that part of SETTINGS can be interpreted as values,
+    /// hence it is done only under option.
+    ///
+    /// Refs: https://github.com/ClickHouse/ClickHouse/issues/35100
+    if (allow_settings_after_format_in_insert && s_settings.ignore(pos, expected))
     {
+        if (settings_ast)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "You have SETTINGS before and after FORMAT, this is not allowed. "
+                            "Consider switching to SETTINGS before FORMAT and disable allow_settings_after_format_in_insert.");
+
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, settings_ast, expected))
@@ -206,14 +228,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// If format name is followed by ';' (end of query symbol) there is no data to insert.
         if (data < end && *data == ';')
-            throw Exception("You have excessive ';' symbol before data for INSERT.\n"
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "You have excessive ';' symbol before data for INSERT.\n"
                                     "Example:\n\n"
                                     "INSERT INTO t (x, y) FORMAT TabSeparated\n"
                                     ";\tHello\n"
                                     "2\tWorld\n"
                                     "\n"
                                     "Note that there is no ';' just after format name, "
-                                    "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
+                                    "you need to put at least one whitespace symbol before the data.");
 
         while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
             ++data;
@@ -234,14 +256,21 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (infile)
     {
         query->infile = infile;
+        query->compression = compression;
+
+        query->children.push_back(infile);
         if (compression)
-            query->compression = compression;
+            query->children.push_back(compression);
     }
 
     if (table_function)
     {
         query->table_function = table_function;
         query->partition_by = partition_by_expr;
+
+        query->children.push_back(table_function);
+        if (partition_by_expr)
+            query->children.push_back(partition_by_expr);
     }
     else
     {

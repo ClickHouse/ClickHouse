@@ -5,14 +5,13 @@
 namespace DB
 {
 
+class WriteBufferFromPointer;
+
 /// Output format which is used in PullingPipelineExecutor.
 class PullingOutputFormat : public IOutputFormat
 {
 public:
-    explicit PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_)
-        : IOutputFormat(header, out)
-        , has_data_flag(consume_data_flag_)
-    {}
+    PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_);
 
     String getName() const override { return "PullingOutputFormat"; }
 
@@ -41,7 +40,7 @@ private:
     ProfileInfo info;
 
     /// Is not used.
-    static WriteBuffer out;
+    static WriteBufferFromPointer out;
 };
 
 }

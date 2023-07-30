@@ -13,9 +13,7 @@ max-statements=200
 ignore-long-lines = (# )?<?https?://\S+>?$
 
 [MESSAGES CONTROL]
-disable = bad-continuation,
-          missing-docstring,
-          bad-whitespace,
+disable = missing-docstring,
           too-few-public-methods,
           invalid-name,
           too-many-arguments,

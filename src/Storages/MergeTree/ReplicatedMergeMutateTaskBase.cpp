@@ -2,6 +2,7 @@
 
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
-StorageID ReplicatedMergeMutateTaskBase::getStorageID()
+StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -29,8 +30,12 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     std::exception_ptr saved_exception;
 
+    bool retryable_error = false;
     try
     {
         /// We don't have any backoff for failed entries
@@ -45,17 +50,20 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, e.message());
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                retryable_error = true;
                 storage.cleanup_thread.wakeup();
             }
             else
@@ -79,14 +87,14 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         saved_exception = std::current_exception();
     }
 
-
-    if (saved_exception)
+    if (!retryable_error && saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
 
         auto & log_entry = selected_entry->log_entry;
 
         log_entry->exception = saved_exception;
+        log_entry->last_exception_time = time(nullptr);
 
         if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
         {
@@ -111,8 +119,10 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 }
             }
         }
-
     }
+
+    if (saved_exception)
+        std::rethrow_exception(saved_exception);
 
     return false;
 }
@@ -120,9 +130,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
-    MemoryTrackerThreadSwitcherPtr switcher;
+    std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_mutate_entry);
+        switcher.emplace((*merge_mutate_entry)->thread_group);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -140,9 +150,9 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
     };
 
 
-    auto execute_fetch = [&] () -> bool
+    auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
     {
-        if (storage.executeFetch(entry))
+        if (storage.executeFetch(entry, need_to_check_missing_part))
             return remove_processed_entry();
 
         return false;
@@ -160,12 +170,13 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
                     return remove_processed_entry();
             }
 
-            bool res = false;
-            std::tie(res, part_log_writer) = prepare();
+            auto prepare_result = prepare();
 
-            /// Avoid resheduling, execute fetch here, in the same thread.
-            if (!res)
-                return execute_fetch();
+            part_log_writer = prepare_result.part_log_writer;
+
+            /// Avoid rescheduling, execute fetch here, in the same thread.
+            if (!prepare_result.prepared_successfully)
+                return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
@@ -183,7 +194,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentException());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
@@ -194,12 +205,12 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             try
             {
                 if (!finalize(part_log_writer))
-                    return execute_fetch();
+                    return execute_fetch(/* need_to_check_missing = */true);
             }
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentException());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 

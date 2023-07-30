@@ -2,9 +2,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <base/extended_types.h>
+#include <base/itoa.h>
 
 
 namespace DB
@@ -43,8 +44,8 @@ public:
         WhichDataType which_first(arguments[0]->getTypeId());
 
         if (!which_first.isInt() && !which_first.isUInt() && !which_first.isDecimal())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
@@ -53,7 +54,7 @@ public:
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)
-            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
 
         auto result_column = ColumnUInt8::create();
 
@@ -69,13 +70,12 @@ public:
                 return true;
             }
 
-            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
         if (!callOnBasicType<void, true, false, true, false>(dec_type_idx, call))
-            throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Wrong call for {} with {}", getName(), src_column.type->getName());
 
         return result_column;
     }
@@ -84,7 +84,7 @@ private:
     template <typename T, typename ColVecType>
     static void execute(const ColVecType & col, ColumnUInt8 & result_column, size_t rows_count)
     {
-        using NativeT = NativeType<T>;
+        using NativeT = make_unsigned_t<NativeType<T>>;
 
         const auto & src_data = col.getData();
         auto & dst_data = result_column.getData();
@@ -93,56 +93,28 @@ private:
         for (size_t i = 0; i < rows_count; ++i)
         {
             if constexpr (is_decimal<T>)
-                dst_data[i] = digits<NativeT>(src_data[i].value);
-            else
-                dst_data[i] = digits<NativeT>(src_data[i]);
-        }
-    }
-
-    template <typename T>
-    static UInt32 digits(T value)
-    {
-        static_assert(!is_decimal<T>);
-        using DivT = std::conditional_t<is_signed_v<T>, Int32, UInt32>;
-
-        UInt32 res = 0;
-        T tmp;
-
-        if constexpr (sizeof(T) > sizeof(Int32))
-        {
-            static constexpr const DivT e9 = 1000000000;
-
-            tmp = value / e9;
-            while (tmp != 0)
             {
-                value = tmp;
-                tmp /= e9;
-                res += 9;
+                auto value = src_data[i].value;
+                if (unlikely(value < 0))
+                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                else
+                    dst_data[i] = digits10<NativeT>(value);
+            }
+            else
+            {
+                auto value = src_data[i];
+                if (unlikely(value < 0))
+                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                else
+                    dst_data[i] = digits10<NativeT>(value);
             }
         }
-
-        static constexpr const DivT e3 = 1000;
-
-        tmp = value / e3;
-        while (tmp != 0)
-        {
-            value = tmp;
-            tmp /= e3;
-            res += 3;
-        }
-
-        while (value != 0)
-        {
-            value /= 10;
-            ++res;
-        }
-        return res;
     }
 };
 
 }
 
-void registerFunctionCountDigits(FunctionFactory & factory)
+REGISTER_FUNCTION(CountDigits)
 {
     factory.registerFunction<FunctionCountDigits>();
 }

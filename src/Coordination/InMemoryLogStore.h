@@ -4,6 +4,7 @@
 #include <map>
 #include <mutex>
 #include <Core/Types.h>
+#include <base/defines.h>
 #include <libnuraft/log_store.hxx>
 
 namespace DB
@@ -39,7 +40,7 @@ public:
     bool flush() override { return true; }
 
 private:
-    std::map<uint64_t, nuraft::ptr<nuraft::log_entry>> logs;
+    std::map<uint64_t, nuraft::ptr<nuraft::log_entry>> logs TSA_GUARDED_BY(logs_lock);
     mutable std::mutex logs_lock;
     std::atomic<uint64_t> start_idx;
 };

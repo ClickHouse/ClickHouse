@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 #include <IO/PeekableReadBuffer.h>
@@ -11,8 +11,7 @@ namespace DB
 {
 
 /// A stream for input data in Hive Text format.
-/// Parallel parsing is disabled currently.
-class HiveTextRowInputFormat : public CSVRowInputFormat
+class HiveTextRowInputFormat final : public CSVRowInputFormat
 {
 public:
     HiveTextRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_);
@@ -21,19 +20,18 @@ public:
 
 private:
     HiveTextRowInputFormat(
-        const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
+        const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
 };
 
-class HiveTextFormatReader : public CSVFormatReader
+class HiveTextFormatReader final : public CSVFormatReader
 {
 public:
-    HiveTextFormatReader(std::unique_ptr<PeekableReadBuffer> buf_, const FormatSettings & format_settings_);
+    HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_);
 
     std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
 
 private:
-    std::unique_ptr<PeekableReadBuffer> buf;
     std::vector<String> input_field_names;
 };
 

@@ -17,15 +17,13 @@ INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-01 12:00:00'
 INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-02 12:00:00'), 1 FROM numbers(10);
 INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-03 12:00:00'), 1 FROM numbers(10);
 
-set optimize_respect_aliases = 1;
+set optimize_respect_aliases = 1, optimize_monotonous_functions_in_order_by = 1;
 SELECT 'test-partition-prune';
 
 SELECT COUNT() = 10 FROM test_table WHERE day = '2020-01-01' SETTINGS max_rows_to_read = 10;
 SELECT t = '2020-01-03' FROM (SELECT day AS t FROM test_table WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
 SELECT COUNT() = 10 FROM test_table WHERE day = '2020-01-01' UNION ALL SELECT 1 FROM numbers(1) SETTINGS max_rows_to_read = 11;
 SELECT  COUNT() = 0 FROM (SELECT  toDate('2019-01-01') AS  day, day AS t   FROM test_table PREWHERE t = '2020-01-03'  WHERE t  = '2020-01-03' GROUP BY t );
-
-
 
 SELECT 'test-join';
 SELECT day = '2020-01-03'
@@ -123,7 +121,8 @@ create table pl (dt DateTime, i int, projection p (select sum(i) group by toStar
 
 insert into pl values ('2020-10-24', 1);
 
-select sum(i) from pd group by dt_m settings allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+set max_rows_to_read = 2;
+select sum(i) from pd group by dt_m settings optimize_use_projections = 1, force_optimize_projection = 1;
 
 drop table pd;
 drop table pl;

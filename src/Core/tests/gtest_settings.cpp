@@ -53,6 +53,29 @@ GTEST_TEST(SettingMySQLDataTypesSupport, WithDECIMAL)
     ASSERT_EQ(Field("decimal"), setting);
 }
 
+GTEST_TEST(SettingMySQLDataTypesSupport, WithDATE)
+{
+    SettingMySQLDataTypesSupport setting;
+    setting = String("date2Date32");
+    ASSERT_EQ(4, setting.value.getValue());
+
+    ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DATE2DATE32));
+    ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DECIMAL));
+    ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DATETIME64));
+
+    ASSERT_EQ("date2Date32", setting.toString());
+    ASSERT_EQ(Field("date2Date32"), setting);
+
+    setting = String("date2String");
+    ASSERT_EQ(8, setting.value.getValue());
+
+    ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DATE2STRING));
+    ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DATE2DATE32));
+
+    ASSERT_EQ("date2String", setting.toString());
+    ASSERT_EQ(Field("date2String"), setting);
+}
+
 GTEST_TEST(SettingMySQLDataTypesSupport, With1)
 {
     // Setting can be initialized with int value corresponding to DECIMAL
@@ -98,8 +121,8 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetString)
     ASSERT_EQ(Field("decimal,datetime64"), setting);
 
     // comma with spaces
-    setting = " datetime64 ,    decimal ";
-    ASSERT_FALSE(setting.changed); // false since value is the same as previous one.
+    setting = " datetime64 ,    decimal "; /// bad punctuation is ok here
+    ASSERT_TRUE(setting.changed);
     ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DECIMAL));
     ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DATETIME64));
     ASSERT_EQ("decimal,datetime64", setting.toString());
@@ -113,7 +136,7 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetString)
     ASSERT_EQ(Field("decimal"), setting);
 
     setting = String(",decimal,decimal,decimal,decimal,decimal,decimal,decimal,decimal,decimal,");
-    ASSERT_FALSE(setting.changed); //since previous value was DECIMAL
+    ASSERT_TRUE(setting.changed); //since previous value was DECIMAL
     ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DECIMAL));
     ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DATETIME64));
     ASSERT_EQ("decimal", setting.toString());
@@ -140,7 +163,6 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetInvalidString)
     ASSERT_EQ(0, setting.value.getValue());
 
     EXPECT_NO_THROW(setting = String(", "));
-    ASSERT_FALSE(setting.changed);
+    ASSERT_TRUE(setting.changed);
     ASSERT_EQ(0, setting.value.getValue());
 }
-

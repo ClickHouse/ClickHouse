@@ -1,6 +1,7 @@
 ---
-toc_priority: 41
-toc_title: ORDER BY
+slug: /ru/sql-reference/statements/alter/order-by
+sidebar_position: 41
+sidebar_label: ORDER BY
 ---
 
 # Манипуляции с ключевыми выражениями таблиц {#manipuliatsii-s-kliuchevymi-vyrazheniiami-tablits}
@@ -18,4 +19,3 @@ MODIFY ORDER BY new_expression
 Операция затрагивает только метаданные. Чтобы сохранить свойство упорядоченности кусков данных по ключу
 сортировки, разрешено добавлять в ключ только новые столбцы (т.е. столбцы, добавляемые командой `ADD COLUMN`
 в том же запросе `ALTER`), у которых нет выражения по умолчанию.
-

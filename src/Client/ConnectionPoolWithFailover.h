@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PoolWithFailoverBase.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <Client/ConnectionPool.h>
 
 #include <chrono>
@@ -47,13 +48,14 @@ public:
               const Settings * settings,
               bool force_connected) override; /// From IConnectionPool
 
-    Int64 getPriority() const override; /// From IConnectionPool
+    Priority getPriority() const override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
     std::vector<Entry> getMany(const ConnectionTimeouts & timeouts,
-                               const Settings * settings, PoolMode pool_mode);
+                               const Settings * settings, PoolMode pool_mode,
+                               AsyncCallback async_callback = {});
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
@@ -68,7 +70,8 @@ public:
             const ConnectionTimeouts & timeouts,
             const Settings * settings,
             PoolMode pool_mode,
-            const QualifiedTableName & table_to_check);
+            const QualifiedTableName & table_to_check,
+            AsyncCallback async_callback = {});
 
     struct NestedPoolStatus
     {
@@ -105,14 +108,12 @@ private:
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings * settings,
-            const QualifiedTableName * table_to_check = nullptr);
+            const QualifiedTableName * table_to_check = nullptr,
+            AsyncCallback async_callback = {});
 
     GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
-private:
-    std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
-    size_t last_used = 0; /// Last used for round_robin policy.
-    LoadBalancing default_load_balancing;
+    GetPriorityForLoadBalancing get_priority_load_balancing;
 };
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;

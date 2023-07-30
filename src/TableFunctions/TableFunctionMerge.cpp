@@ -1,9 +1,12 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
@@ -35,22 +38,39 @@ namespace
     }
 }
 
+std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+{
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
+    std::vector<size_t> result;
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "REGEXP")
+            result.push_back(i);
+    }
+
+    return result;
+}
 
 void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function 'merge' requires exactly 2 arguments"
-            " - name of source database and regexp for table names.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function 'merge' requires exactly 2 arguments - name "
+                        "of source database and regexp for table names.");
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.size() != 2)
-        throw Exception("Table function 'merge' requires exactly 2 arguments"
-            " - name of source database and regexp for table names.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function 'merge' requires exactly 2 arguments - name "
+                        "of source database and regexp for table names.");
 
     auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
 
@@ -58,10 +78,10 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     if (!is_regexp)
         args[0] = database_ast;
-    source_database_name_or_regexp = database_ast->as<ASTLiteral &>().value.safeGet<String>();
+    source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
 
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
-    source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
 }
 
 
@@ -116,7 +136,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 
 StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto res = StorageMerge::create(
+    auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
         String{},

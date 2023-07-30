@@ -1,10 +1,12 @@
 #pragma once
 
-#include <stddef.h>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <atomic>
+#include <cassert>
 #include <base/types.h>
+#include <base/strong_typedef.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.
@@ -21,7 +23,7 @@
 namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
-    using Metric = size_t;
+    using Metric = StrongTypedef<size_t, struct MetricTag>;
     using Value = DB::Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
@@ -72,8 +74,11 @@ namespace CurrentMetrics
         }
 
     public:
-        Increment(Metric metric, Value amount_ = 1)
-            : Increment(&values[metric], amount_) {}
+        explicit Increment(Metric metric, Value amount_ = 1)
+            : Increment(&values[metric], amount_)
+        {
+            assert(metric < CurrentMetrics::end());
+        }
 
         ~Increment()
         {
@@ -81,12 +86,12 @@ namespace CurrentMetrics
                 what->fetch_sub(amount, std::memory_order_relaxed);
         }
 
-        Increment(Increment && old)
+        Increment(Increment && old) noexcept
         {
             *this = std::move(old);
         }
 
-        Increment & operator= (Increment && old)
+        Increment & operator=(Increment && old) noexcept
         {
             what = old.what;
             amount = old.amount;

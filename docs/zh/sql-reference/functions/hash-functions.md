@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/hash-functions
+---
 # Hash函数 {#hashhan-shu}
 
 Hash函数可以用于将元素不可逆的伪随机打乱。
@@ -110,5 +113,3 @@ URL的层级与URLHierarchy中的层级相同。 此函数被用于Yandex.Metric
 计算字符串的xxHash。
 接受一个String类型的参数。返回UInt64或UInt32。
 有关更多信息，请参见链接：[xxHash](http://cyan4973.github.io/xxHash/)
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/hash_functions/) <!--hide-->

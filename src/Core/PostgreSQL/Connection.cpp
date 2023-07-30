@@ -1,7 +1,7 @@
 #include "Connection.h"
 
 #if USE_LIBPQXX
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace postgres
@@ -30,7 +30,7 @@ void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)>
             LOG_DEBUG(log, "Cannot execute query due to connection failure, attempt: {}/{}. (Message: {})",
                       try_no, num_tries, e.what());
 
-            if (try_no == num_tries)
+            if (try_no + 1 == num_tries)
                 throw;
         }
     }
@@ -73,6 +73,7 @@ void Connection::connect()
     if (!connection || !connection->is_open())
         updateConnection();
 }
+
 }
 
 #endif

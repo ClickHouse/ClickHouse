@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -8,9 +7,6 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </disk_s3>
-            <disk_memory>
-                <type>memory</type>
-            </disk_memory>
             <disk_local>
                 <type>local</type>
                 <path>/disk/</path>
@@ -18,9 +14,24 @@
             <disk_s3_encrypted>
                 <type>encrypted</type>
                 <disk>disk_s3</disk>
-                <path>encrypted/</path>
                 <key>1234567812345678</key>
+                <path>encrypted/</path>
             </disk_s3_encrypted>
+            <disk_s3_encrypted_default_path>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <key>1234567812345678</key>
+            </disk_s3_encrypted_default_path>
+            <s3_cache>
+                <disk>disk_s3</disk>
+                <path>s3_cache/</path>
+                <max_size>1Gi</max_size>
+            </s3_cache>
+            <encrypted_s3_cache>
+                <type>encrypted</type>
+                <disk>s3_cache</disk>
+                <key>1234567812345678</key>
+            </encrypted_s3_cache>
             <disk_local_encrypted>
                 <type>encrypted</type>
                 <disk>disk_local</disk>
@@ -78,6 +89,21 @@
                     </external>
                 </volumes>
             </s3_policy>
+            <s3_encrypted_default_path>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_encrypted_default_path</disk>
+                    </main>
+                </volumes>
+            </s3_encrypted_default_path>_
+            <s3_encrypted_cache_policy>
+                <volumes>
+                    <main>
+                        <disk>encrypted_s3_cache</disk>
+                    </main>
+                </volumes>
+            </s3_encrypted_cache_policy>
          </policies>
     </storage_configuration>
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

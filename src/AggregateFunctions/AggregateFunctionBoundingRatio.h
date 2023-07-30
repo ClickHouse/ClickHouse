@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 /** Tracks the leftmost and rightmost (x, y) data points.
   */
-struct AggregateFunctionBoundingRatioData //-V730
+struct AggregateFunctionBoundingRatioData
 {
     struct Point
     {
@@ -67,29 +67,38 @@ struct AggregateFunctionBoundingRatioData //-V730
         }
     }
 
-    void serialize(WriteBuffer & buf) const
-    {
-        writeBinary(empty, buf);
-
-        if (!empty)
-        {
-            writePODBinary(left, buf);
-            writePODBinary(right, buf);
-        }
-    }
-
-    void deserialize(ReadBuffer & buf)
-    {
-        readBinary(empty, buf);
-
-        if (!empty)
-        {
-            readPODBinary(left, buf);
-            readPODBinary(right, buf);
-        }
-    }
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
+template <std::endian endian>
+inline void transformEndianness(AggregateFunctionBoundingRatioData::Point & p)
+{
+    transformEndianness<endian>(p.x);
+    transformEndianness<endian>(p.y);
+}
+
+void AggregateFunctionBoundingRatioData::serialize(WriteBuffer & buf) const
+{
+    writeBinaryLittleEndian(empty, buf);
+
+    if (!empty)
+    {
+        writeBinaryLittleEndian(left, buf);
+        writeBinaryLittleEndian(right, buf);
+    }
+}
+
+void AggregateFunctionBoundingRatioData::deserialize(ReadBuffer & buf)
+{
+    readBinaryLittleEndian(empty, buf);
+
+    if (!empty)
+    {
+        readBinaryLittleEndian(left, buf);
+        readBinaryLittleEndian(right, buf);
+    }
+}
 
 class AggregateFunctionBoundingRatio final : public IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>
 {
@@ -97,7 +106,7 @@ private:
     /** Calculates the slope of a line between leftmost and rightmost data points.
       * (y2 - y1) / (x2 - x1)
       */
-    Float64 NO_SANITIZE_UNDEFINED getBoundingRatio(const AggregateFunctionBoundingRatioData & data) const
+    static Float64 NO_SANITIZE_UNDEFINED getBoundingRatio(const AggregateFunctionBoundingRatioData & data)
     {
         if (data.empty)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -111,20 +120,16 @@ public:
         return "boundingRatio";
     }
 
-    AggregateFunctionBoundingRatio(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {})
+    explicit AggregateFunctionBoundingRatio(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {}, std::make_shared<DataTypeFloat64>())
     {
-        const auto x_arg = arguments.at(0).get();
-        const auto y_arg = arguments.at(1).get();
+        const auto * x_arg = arguments.at(0).get();
+        const auto * y_arg = arguments.at(1).get();
 
         if (!x_arg->isValueRepresentedByNumber() || !y_arg->isValueRepresentedByNumber())
-            throw Exception("Illegal types of arguments of aggregate function " + getName() + ", must have number representation.",
-                ErrorCodes::BAD_ARGUMENTS);
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeFloat64>();
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Illegal types of arguments of aggregate function {}, must have number representation.",
+                            getName());
     }
 
     bool allocatesMemoryInArena() const override { return false; }

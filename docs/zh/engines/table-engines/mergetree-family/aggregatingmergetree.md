@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/aggregatingmergetree
+---
 # AggregatingMergeTree {#aggregatingmergetree}
 
 该引擎继承自 [MergeTree](mergetree.md)，并改变了数据片段的合并逻辑。 ClickHouse 会将一个数据片段内所有具有相同主键（准确的说是 [排序键](../../../engines/table-engines/mergetree-family/mergetree.md)）的行替换成一行，这一行会存储一系列聚合函数的状态。
@@ -37,7 +40,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>已弃用的建表方法</summary>
 
-!!! attention "注意"
+    :::info "注意"
     不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ``` sql
@@ -94,5 +97,3 @@ FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

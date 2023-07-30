@@ -24,7 +24,6 @@ set(SRCS
     "${LIBXML2_SOURCE_DIR}/xinclude.c"
     "${LIBXML2_SOURCE_DIR}/nanohttp.c"
     "${LIBXML2_SOURCE_DIR}/nanoftp.c"
-    "${LIBXML2_SOURCE_DIR}/DOCBparser.c"
     "${LIBXML2_SOURCE_DIR}/catalog.c"
     "${LIBXML2_SOURCE_DIR}/globals.c"
     "${LIBXML2_SOURCE_DIR}/threads.c"
@@ -36,7 +35,6 @@ set(SRCS
     "${LIBXML2_SOURCE_DIR}/xmlschemastypes.c"
     "${LIBXML2_SOURCE_DIR}/xmlunicode.c"
     "${LIBXML2_SOURCE_DIR}/triostr.c"
-    #"${LIBXML2_SOURCE_DIR}/trio.c"
     "${LIBXML2_SOURCE_DIR}/xmlreader.c"
     "${LIBXML2_SOURCE_DIR}/relaxng.c"
     "${LIBXML2_SOURCE_DIR}/dict.c"
@@ -53,9 +51,6 @@ set(SRCS
 add_library(_libxml2 ${SRCS})
 
 target_link_libraries(_libxml2 PRIVATE ch_contrib::zlib)
-if(M_LIBRARY)
-    target_link_libraries(_libxml2 PRIVATE ${M_LIBRARY})
-endif()
 
 target_include_directories(_libxml2 BEFORE PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include")
 target_include_directories(_libxml2 BEFORE PUBLIC "${LIBXML2_SOURCE_DIR}/include")

@@ -1,13 +1,7 @@
 {
-    "docker/packager/deb": {
-        "name": "clickhouse/deb-builder",
-        "dependent": []
-    },
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
-            "docker/test/split_build_smoke_test",
-            "docker/test/pvs",
             "docker/test/codebrowser"
         ]
     },
@@ -31,13 +25,10 @@
         "name": "clickhouse/performance-comparison",
         "dependent": []
     },
-    "docker/test/pvs": {
-        "name": "clickhouse/pvs-test",
-        "dependent": []
-    },
     "docker/test/util": {
         "name": "clickhouse/test-util",
         "dependent": [
+            "docker/packager/binary",
             "docker/test/base",
             "docker/test/fasttest"
         ]
@@ -52,7 +43,8 @@
     "docker/test/stateful": {
         "name": "clickhouse/stateful-test",
         "dependent": [
-            "docker/test/stress"
+            "docker/test/stress",
+            "docker/test/upgrade"
         ]
     },
     "docker/test/unit": {
@@ -63,8 +55,8 @@
         "name": "clickhouse/stress-test",
         "dependent": []
     },
-    "docker/test/split_build_smoke_test": {
-        "name": "clickhouse/split-build-smoke-test",
+    "docker/test/upgrade": {
+        "name": "clickhouse/upgrade-check",
         "dependent": []
     },
     "docker/test/codebrowser": {
@@ -72,11 +64,8 @@
         "dependent": []
     },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
-        "dependent": []
-    },
-    "docker/test/testflows/runner": {
-        "name": "clickhouse/testflows-runner",
         "dependent": []
     },
     "docker/test/fasttest": {
@@ -124,19 +113,23 @@
         "dependent": []
     },
     "docker/test/integration/kerberos_kdc": {
+        "only_amd64": true,
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
     },
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
-            "docker/test/stateless",
-            "docker/test/integration/base",
             "docker/test/fuzzer",
-            "docker/test/keeper-jepsen"
+            "docker/test/integration/base",
+            "docker/test/keeper-jepsen",
+            "docker/test/server-jepsen",
+            "docker/test/sqllogic",
+            "docker/test/stateless"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
+        "only_amd64": true,
         "name": "clickhouse/kerberized-hadoop",
         "dependent": []
     },
@@ -148,19 +141,25 @@
         "name": "clickhouse/keeper-jepsen-test",
         "dependent": []
     },
+    "docker/test/server-jepsen": {
+        "name": "clickhouse/server-jepsen-test",
+        "dependent": []
+    },
+    "docker/test/install/deb": {
+        "name": "clickhouse/install-deb-test",
+        "dependent": []
+    },
+    "docker/test/install/rpm": {
+        "name": "clickhouse/install-rpm-test",
+        "dependent": []
+    },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
-            "docker/docs/check",
-            "docker/docs/release"
         ]
     },
-    "docker/docs/check": {
-        "name": "clickhouse/docs-check",
-        "dependent": []
-    },
-    "docker/docs/release": {
-        "name": "clickhouse/docs-release",
+    "docker/test/sqllogic": {
+        "name": "clickhouse/sqllogic-test",
         "dependent": []
     }
 }

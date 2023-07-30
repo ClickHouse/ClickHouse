@@ -1,11 +1,10 @@
 #pragma once
 
 #include <algorithm>
-#include <cstring>
 #include <memory>
 #include <iostream>
 #include <cassert>
-#include <string.h>
+#include <cstring>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -33,7 +32,6 @@ class WriteBuffer : public BufferBase
 public:
     using BufferBase::set;
     using BufferBase::position;
-    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
@@ -43,7 +41,8 @@ public:
     {
         if (!offset())
             return;
-        bytes += offset();
+
+        auto bytes_in_buffer = offset();
 
         try
         {
@@ -55,16 +54,16 @@ public:
               * so that later (for example, when the stack was expanded) there was no second attempt to write data.
               */
             pos = working_buffer.begin();
+            bytes += bytes_in_buffer;
             throw;
         }
 
+        bytes += bytes_in_buffer;
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the derived classes to place the finalize() call in the destructor,
-      * so that the last data is written (if finalize() wasn't called explicitly)
-      */
-    virtual ~WriteBuffer() = default;
+    /// Calling finalize() in the destructor of derived classes is a bad practice.
+    virtual ~WriteBuffer();
 
     inline void nextIfAtEnd()
     {
@@ -93,7 +92,6 @@ public:
         }
     }
 
-
     inline void write(char x)
     {
         if (finalized)
@@ -104,10 +102,14 @@ public:
         ++pos;
     }
 
-    virtual void sync()
-    {
-        next();
-    }
+    /// This method may be called before finalize() to tell there would not be any more data written.
+    /// Used does not have to call it, implementation should check it itself if needed.
+    ///
+    /// The idea is similar to prefetch. In case if all data is written, we can flush the buffer
+    /// and start sending data asynchronously. It may improve writing performance in case you have
+    /// multiple files to finalize. Mainly, for blob storage, finalization has high latency,
+    /// and calling preFinalize in a loop may parallelize it.
+    virtual void preFinalize() { next(); }
 
     /// Write the last data.
     void finalize()
@@ -115,7 +117,6 @@ public:
         if (finalized)
             return;
 
-        /// finalize() is often called from destructors.
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
@@ -130,7 +131,16 @@ public:
         }
     }
 
+    /// Wait for data to be reliably written. Mainly, call fsync for fd.
+    /// May be called after finalize() if needed.
+    virtual void sync()
+    {
+        next();
+    }
+
 protected:
+    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+
     virtual void finalizeImpl()
     {
         next();
@@ -142,11 +152,31 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); }
+    virtual void nextImpl()
+    {
+        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
+    }
 };
 
 
 using WriteBufferPtr = std::shared_ptr<WriteBuffer>;
 
+
+class WriteBufferFromPointer : public WriteBuffer
+{
+public:
+    WriteBufferFromPointer(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
+
+private:
+    virtual void finalizeImpl() override
+    {
+        /// no op
+    }
+
+    virtual void sync() override
+    {
+        /// no on
+    }
+};
 
 }

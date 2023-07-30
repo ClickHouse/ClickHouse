@@ -6,7 +6,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -125,7 +124,7 @@ class FindResultImpl : public FindResultImplBase, public FindResultImplOffsetBas
 
 public:
     FindResultImpl()
-        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0)
+        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0) // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)  intentionally allow uninitialized value here
     {}
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
@@ -140,13 +139,13 @@ public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
-template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
 class HashMethodBase
 {
 public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
-    static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
+    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, consecutive_keys_optimization>;
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
@@ -154,6 +153,19 @@ public:
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return emplaceImpl(key_holder, data);
     }
@@ -161,6 +173,16 @@ public:
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&data.getNullKeyData(), data.hasNullKeyData(), 0);
+                else
+                    return FindResult(data.hasNullKeyData(), 0);
+            }
+        }
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
@@ -172,10 +194,25 @@ public:
         return data.hash(keyHolderGetKey(key_holder));
     }
 
+    ALWAYS_INLINE bool isNullAt(size_t row) const
+    {
+        if constexpr (nullable)
+        {
+            return null_map->getBool(row);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
 protected:
     Cache cache;
+    const IColumn * null_map = nullptr;
+    bool has_null_data = false;
 
-    HashMethodBase()
+    /// column argument only for nullable column
+    explicit HashMethodBase(const IColumn * column = nullptr)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -187,6 +224,11 @@ protected:
             }
             else
                 cache.value = Value();
+        }
+        if constexpr (nullable)
+        {
+
+            null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
         }
     }
 
@@ -212,9 +254,9 @@ protected:
         if constexpr (has_mapped)
             cached = &it->getMapped();
 
-        if (inserted)
+        if constexpr (has_mapped)
         {
-            if constexpr (has_mapped)
+            if (inserted)
             {
                 new (&it->getMapped()) Mapped();
             }
@@ -293,7 +335,6 @@ protected:
     }
 };
 
-
 template <typename T>
 struct MappedCache : public PaddedPODArray<T> {};
 
@@ -312,14 +353,14 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    BaseStateKeysFixed(const ColumnRawPtrs & key_columns)
+    explicit BaseStateKeysFixed(const ColumnRawPtrs & key_columns)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
 
         for (const auto & col : key_columns)
         {
-            if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(col))
+            if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col))
             {
                 actual_columns.push_back(&nullable_col->getNestedColumn());
                 null_maps.push_back(&nullable_col->getNullMapColumn());
@@ -373,14 +414,13 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
+    explicit BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
 
     const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 
     KeysNullMap<Key> createBitmap(size_t) const
     {
-        throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
-                        " is forbidden", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
     }
 
 private:

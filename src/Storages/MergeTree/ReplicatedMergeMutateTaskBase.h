@@ -1,9 +1,9 @@
 #pragma once
 
-#include <base/logger_useful.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+
 
 namespace DB
 {
@@ -16,33 +16,48 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
-    template <class Callback>
     ReplicatedMergeMutateTaskBase(
         Poco::Logger * log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
-        Callback && task_result_callback_)
-        : selected_entry(selected_entry_)
+        IExecutableTask::TaskResultCallback & task_result_callback_)
+        : storage(storage_)
+        , selected_entry(selected_entry_)
         , entry(*selected_entry->log_entry)
         , log(log_)
-        , storage(storage_)
         /// This is needed to ask an asssignee to assign a new merge/mutate operation
         /// It takes bool argument and true means that current task is successfully executed.
-        , task_result_callback(task_result_callback_) {}
+        , task_result_callback(task_result_callback_)
+    {
+    }
 
     ~ReplicatedMergeMutateTaskBase() override = default;
     void onCompleted() override;
-    StorageID getStorageID() override;
+    StorageID getStorageID() const override;
+    String getQueryId() const override { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
     bool executeStep() override;
 
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
 
-    virtual std::pair<bool, PartLogWriter> prepare() = 0;
+    struct PrepareResult
+    {
+        bool prepared_successfully;
+        bool need_to_check_missing_part_in_fetch;
+        PartLogWriter part_log_writer;
+    };
+
+    virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
+
+    StorageReplicatedMergeTree & storage;
+
+    /// A callback to reschedule merge_selecting_task after destroying merge_mutate_entry
+    /// The order is important, because merge_selecting_task may rely on the number of entries in MergeList
+    scope_guard finish_callback;
 
     /// This is important not to execute the same mutation in parallel
     /// selected_entry is a RAII class, so the time of living must be the same as for the whole task
@@ -50,10 +65,11 @@ protected:
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     Poco::Logger * log;
-    StorageReplicatedMergeTree & storage;
+    /// ProfileEvents for current part will be stored here
+    ProfileEvents::Counters profile_counters;
+    ContextMutablePtr task_context;
 
 private:
-
     enum class CheckExistingPartResult
     {
         PART_EXISTS,
@@ -61,7 +77,7 @@ private:
     };
 
     CheckExistingPartResult checkExistingPart();
-    bool executeImpl() ;
+    bool executeImpl();
 
     enum class State
     {

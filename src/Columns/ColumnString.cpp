@@ -31,14 +31,12 @@ ColumnString::ColumnString(const ColumnString & src)
     offsets(src.offsets.begin(), src.offsets.end()),
     chars(src.chars.begin(), src.chars.end())
 {
-    if (!offsets.empty())
-    {
-        Offset last_offset = offsets.back();
-
-        /// This will also prevent possible overflow in offset.
-        if (chars.size() != last_offset)
-            throw Exception("String offsets has data inconsistent with chars array", ErrorCodes::LOGICAL_ERROR);
-    }
+    Offset last_offset = offsets.empty() ? 0 : offsets.back();
+    /// This will also prevent possible overflow in offset.
+    if (last_offset != chars.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
+            last_offset, chars.size());
 }
 
 
@@ -90,8 +88,8 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
     auto s = offsets.size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -118,11 +116,13 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
     if (start + length > src_concrete.offsets.size())
-        throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
+
+    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
+    offsets.reserve(offsets.size() + length);
 
     size_t old_chars_size = chars.size();
     chars.resize(old_chars_size + nested_length);
@@ -155,6 +155,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
+
     return res;
 }
 
@@ -163,25 +164,25 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     auto & offsets_data = getOffsets();
     auto & chars_data = getChars();
     if (mask.size() < offsets_data.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
     /// We cannot change only offsets, because each string should end with terminating zero byte.
     /// So, we will insert one zero byte when mask value is zero.
 
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = offsets_data.size() - 1;
     /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
     offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset, 0);
+    chars_data.resize_fill(last_offset);
     while (index >= 0)
     {
         offsets_data[index] = last_offset;
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
             size_t len = offsets_data[from] - offsets_data[from - 1];
 
@@ -202,7 +203,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 
@@ -303,98 +304,134 @@ bool ColumnString::hasEqualValues() const
     return hasEqualValuesImpl<ColumnString>();
 }
 
-template <bool positive>
-struct ColumnString::Cmp
+struct ColumnString::ComparatorBase
 {
     const ColumnString & parent;
-    explicit Cmp(const ColumnString & parent_) : parent(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const
+
+    explicit ComparatorBase(const ColumnString & parent_)
+        : parent(parent_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
             parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+        return res;
     }
 };
 
-template <typename Comparator>
-void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const
-{
-    size_t s = offsets.size();
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
-
-    if (limit >= s)
-        limit = 0;
-
-    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
-
-    if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-    else
-        std::sort(res.begin(), res.end(), less);
-}
-
-void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
-{
-    if (reverse)
-        getPermutationImpl(limit, res, Cmp<false>(*this));
-    else
-        getPermutationImpl(limit, res, Cmp<true>(*this));
-}
-
-void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<false>(*this));
-    else
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<true>(*this));
-}
-
-template <bool positive>
-struct ColumnString::CmpWithCollation
+struct ColumnString::ComparatorCollationBase
 {
     const ColumnString & parent;
-    const Collator & collator;
+    const Collator * collator;
 
-    CmpWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
-
-    int operator()(size_t lhs, size_t rhs) const
+    explicit ComparatorCollationBase(const ColumnString & parent_, const Collator * collator_)
+        : parent(parent_), collator(collator_)
     {
-        int res = collator.compare(
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = collator->compare(
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
 
-        return positive ? res : -res;
+        return res;
     }
 };
 
-void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const
+void ColumnString::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
-    if (reverse)
-        getPermutationImpl(limit, res, CmpWithCollation<false>(*this, collator));
-    else
-        getPermutationImpl(limit, res, CmpWithCollation<true>(*this, collator));
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnString::updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation<false>(*this, collator));
-    else
-        updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation<true>(*this, collator));
+    auto comparator_equal = ComparatorEqual(*this);
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+}
+
+void ColumnString::getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res) const
+{
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorCollationAscendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorCollationAscendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorCollationDescendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorCollationDescendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
+}
+
+void ColumnString::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
+{
+    auto comparator_equal = ComparatorCollationEqual(*this, &collator);
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationAscendingUnstable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationAscendingStable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationDescendingUnstable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationDescendingStable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = ColumnString::create();
 
@@ -458,13 +495,13 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    Cmp<true> cmp_op(*this);
+    ComparatorBase cmp_op(*this);
 
     for (size_t i = 1; i < col_size; ++i)
     {
-        if (cmp_op(i, min_idx) < 0)
+        if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;
-        else if (cmp_op(max_idx, i) < 0)
+        else if (cmp_op.compare(max_idx, i) < 0)
             max_idx = i;
     }
 
@@ -494,8 +531,8 @@ ColumnPtr ColumnString::compress() const
     const size_t offsets_compressed_size = offsets_compressed->size();
     return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
         [
-            chars_compressed = std::move(chars_compressed),
-            offsets_compressed = std::move(offsets_compressed),
+            my_chars_compressed = std::move(chars_compressed),
+            my_offsets_compressed = std::move(offsets_compressed),
             source_chars_size,
             source_offsets_elements
         ]
@@ -506,10 +543,10 @@ ColumnPtr ColumnString::compress() const
             res->getOffsets().resize(source_offsets_elements);
 
             ColumnCompressed::decompressBuffer(
-                chars_compressed->data(), res->getChars().data(), chars_compressed->size(), source_chars_size);
+                my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
 
             ColumnCompressed::decompressBuffer(
-                offsets_compressed->data(), res->getOffsets().data(), offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
+                my_offsets_compressed->data(), res->getOffsets().data(), my_offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
 
             return res;
         });
@@ -533,8 +570,11 @@ void ColumnString::protect()
 
 void ColumnString::validate() const
 {
-    if (!offsets.empty() && offsets.back() != chars.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnString validation failed: size mismatch (internal logical error) {} != {}", offsets.back(), chars.size());
+    Offset last_offset = offsets.empty() ? 0 : offsets.back();
+    if (last_offset != chars.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
+                        last_offset, chars.size());
 }
 
 }

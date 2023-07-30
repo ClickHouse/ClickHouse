@@ -11,7 +11,7 @@ private:
     DB::ReadBufferPtr input;
 
 public:
-    LanguageRegionsNamesFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
+    explicit LanguageRegionsNamesFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
 
     bool readNext(RegionNameEntry & entry) override;
 };

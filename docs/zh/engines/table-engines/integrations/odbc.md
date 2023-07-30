@@ -1,6 +1,7 @@
 ---
-toc_priority: 35
-toc_title: ODBC
+slug: /zh/engines/table-engines/integrations/odbc
+sidebar_position: 35
+sidebar_label: ODBC
 ---
 
 # ODBC {#table-engine-odbc}
@@ -127,5 +128,3 @@ SELECT * FROM odbc_t
 
 -   [ODBC 外部字典](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBC 表函数](../../../sql-reference/table-functions/odbc.md)
-
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/odbc/) <!--hide-->

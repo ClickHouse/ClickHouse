@@ -1,6 +1,7 @@
 ---
-toc_priority: 38
-toc_title: SHOW
+slug: /zh/sql-reference/statements/show
+sidebar_position: 38
+sidebar_label: SHOW
 ---
 
 # SHOW 查询 {#show-queries}
@@ -165,5 +166,3 @@ SHOW CREATE QUOTA [name | CURRENT]
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name
 ```
-
-[原始文档](https://clickhouse.com/docs/en/query_language/show/) <!--hide-->

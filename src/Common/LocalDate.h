@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <string>
 #include <exception>
 #include <Common/DateLUT.h>
@@ -20,13 +20,12 @@
 class LocalDate
 {
 private:
-    unsigned short m_year;
+    unsigned short m_year; /// NOLINT
     unsigned char m_month;
     unsigned char m_day;
 
-    void init(time_t time)
+    void init(time_t time, const DateLUTImpl & date_lut)
     {
-        const auto & date_lut = DateLUT::instance();
         const auto & values = date_lut.getValues(time);
 
         m_year = values.year;
@@ -56,28 +55,28 @@ private:
     }
 
 public:
-    explicit LocalDate(time_t time)
+    explicit LocalDate(time_t time, const DateLUTImpl & time_zone = DateLUT::instance())
     {
-        init(time);
+        init(time, time_zone);
     }
 
-    LocalDate(DayNum day_num)
+    LocalDate(DayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance()) /// NOLINT
     {
-        const auto & values = DateLUT::instance().getValues(day_num);
+        const auto & values = time_zone.getValues(day_num);
         m_year  = values.year;
         m_month = values.month;
         m_day   = values.day_of_month;
     }
 
-    explicit LocalDate(ExtendedDayNum day_num)
+    explicit LocalDate(ExtendedDayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance())
     {
-        const auto & values = DateLUT::instance().getValues(day_num);
+        const auto & values = time_zone.getValues(day_num);
         m_year  = values.year;
         m_month = values.month;
         m_day   = values.day_of_month;
     }
 
-    LocalDate(unsigned short year_, unsigned char month_, unsigned char day_)
+    LocalDate(unsigned short year_, unsigned char month_, unsigned char day_) /// NOLINT
         : m_year(year_), m_month(month_), m_day(day_)
     {
     }
@@ -99,28 +98,26 @@ public:
     LocalDate(const LocalDate &) noexcept = default;
     LocalDate & operator= (const LocalDate &) noexcept = default;
 
-    DayNum getDayNum() const
+    DayNum getDayNum(const DateLUTImpl & lut = DateLUT::instance()) const
     {
-        const auto & lut = DateLUT::instance();
         return DayNum(lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 
-    ExtendedDayNum  getExtenedDayNum() const
+    ExtendedDayNum getExtenedDayNum(const DateLUTImpl & lut = DateLUT::instance()) const
     {
-        const auto & lut = DateLUT::instance();
         return ExtendedDayNum (lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 
-    operator DayNum() const
+    operator DayNum() const /// NOLINT
     {
         return getDayNum();
     }
 
-    unsigned short year() const { return m_year; }
+    unsigned short year() const { return m_year; } /// NOLINT
     unsigned char month() const { return m_month; }
     unsigned char day() const { return m_day; }
 
-    void year(unsigned short x) { m_year = x; }
+    void year(unsigned short x) { m_year = x; } /// NOLINT
     void month(unsigned char x) { m_month = x; }
     void day(unsigned char x) { m_day = x; }
 

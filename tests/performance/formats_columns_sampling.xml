@@ -1,0 +1,32 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>TabSeparatedWithNames</value>
+                <value>CustomSeparatedWithNames</value>
+                <value>CSVWithNames</value>
+                <value>JSONEachRow</value>
+                <value>JSONCompactEachRowWithNames</value>
+                <value>TSKV</value>
+                <value>Avro</value>
+                <value>ORC</value>
+                <value>Parquet</value>
+                <value>Arrow</value>
+                <value>Native</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
+
+    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
+
+    <query>SELECT WatchID FROM table_{format} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+</test>

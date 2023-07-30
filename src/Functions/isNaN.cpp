@@ -13,8 +13,7 @@ struct IsNaNImpl
     template <typename T>
     static bool execute(const T t)
     {
-        /// Suppression for PVS-Studio.
-        return t != t;  //-V501
+        return t != t;
     }
 };
 
@@ -22,7 +21,7 @@ using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
 }
 
-void registerFunctionIsNaN(FunctionFactory & factory)
+REGISTER_FUNCTION(IsNaN)
 {
     factory.registerFunction<FunctionIsNaN>();
 }

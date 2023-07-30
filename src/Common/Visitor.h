@@ -3,6 +3,7 @@
 #include <base/demangle.h>
 #include <base/TypeList.h>
 #include <Common/Exception.h>
+#include <typeinfo>
 
 /* Generic utils which are intended for visitor pattern implementation.
  * The original purpose is to provide possibility to get concrete template specialisation for type in list.
@@ -117,8 +118,8 @@ protected:
     template <typename T>
     void visitImpl(Type &)
     {
-        throw Exception("visitImpl(" + demangle(typeid(T).name()) + " &)" + " is not implemented for class"
-                        + demangle(typeid(Derived).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "visitImpl({} &) is not implemented for class{}",
+                        demangle(typeid(T).name()), demangle(typeid(Derived).name()));
     }
 
     ~VisitorImplHelper() = default;
@@ -136,8 +137,8 @@ protected:
     template <typename T>
     void visitImpl(Type &)
     {
-        throw Exception("visitImpl(" + demangle(typeid(T).name()) + " &)" + " is not implemented for class"
-                        + demangle(typeid(Derived).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "visitImpl({} &) is not implemented for class{}",
+                        demangle(typeid(T).name()), demangle(typeid(Derived).name()));
     }
 
     ~VisitorImplHelper() = default;

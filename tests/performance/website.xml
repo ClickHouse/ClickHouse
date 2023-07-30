@@ -1,10 +1,4 @@
 <test>
-
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>

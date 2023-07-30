@@ -1,10 +1,11 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 #if USE_CAPNP
 
 #include <Core/Block.h>
-#include <Formats/CapnProtoUtils.h>
+#include <Formats/CapnProtoSchema.h>
+#include <Formats/CapnProtoSerializer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -20,7 +21,7 @@ class ReadBuffer;
   * The schema in this case cannot be compiled in, so it uses a runtime schema parser.
   * See https://capnproto.org/cxx.html
   */
-class CapnProtoRowInputFormat : public IRowInputFormat
+class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
     CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);
@@ -33,10 +34,8 @@ private:
     kj::Array<capnp::word> readMessage();
 
     std::shared_ptr<CapnProtoSchemaParser> parser;
-    capnp::StructSchema root;
-    const FormatSettings format_settings;
-    DataTypes column_types;
-    Names column_names;
+    capnp::StructSchema schema;
+    std::unique_ptr<CapnProtoSerializer> serializer;
 };
 
 class CapnProtoSchemaReader : public IExternalSchemaReader

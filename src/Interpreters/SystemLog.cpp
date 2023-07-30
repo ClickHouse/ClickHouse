@@ -1,35 +1,41 @@
+#include <IO/WriteHelpers.h>
+#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
-#include <Common/setThreadName.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <IO/WriteHelpers.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/scope_guard.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -39,12 +45,62 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+    class StorageWithComment : public IAST
+    {
+    public:
+        ASTPtr storage;
+        ASTPtr comment;
+
+        String getID(char) const override { return "Storage with comment definition"; }
+
+        ASTPtr clone() const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
+        }
+
+        void formatImpl(const FormatSettings &, FormatState &, FormatStateStacked) const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
+        }
+    };
+
+    class ParserStorageWithComment : public IParserBase
+    {
+    protected:
+        const char * getName() const override { return "storage definition with comment"; }
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+            ASTPtr storage;
+
+            if (!storage_p.parse(pos, storage, expected))
+                return false;
+
+            ParserKeyword s_comment("COMMENT");
+            ParserStringLiteral string_literal_parser;
+            ASTPtr comment;
+
+            if (s_comment.ignore(pos, expected))
+                string_literal_parser.parse(pos, comment, expected);
+
+            auto storage_with_comment = std::make_shared<StorageWithComment>();
+            storage_with_comment->storage = std::move(storage);
+            storage_with_comment->comment = std::move(comment);
+
+            node = storage_with_comment;
+            return true;
+        }
+    };
 }
 
 namespace
 {
 
-constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -64,57 +120,128 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         return {};
     }
+    LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+              "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
-    String database = config.getString(config_prefix + ".database", default_database_name);
-    String table = config.getString(config_prefix + ".table", default_table_name);
+    SystemLogSettings log_settings;
+    log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
+    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 
-    if (database != default_database_name)
+    if (log_settings.queue_settings.database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
-        LOG_ERROR(&Poco::Logger::get("SystemLog"), "Custom database name for a system table specified in config."
-            " Table `{}` will be created in `system` database instead of `{}`", table, database);
-        database = default_database_name;
+        LOG_ERROR(
+            &Poco::Logger::get("SystemLog"),
+            "Custom database name for a system table specified in config."
+            " Table `{}` will be created in `system` database instead of `{}`",
+            log_settings.queue_settings.table,
+            log_settings.queue_settings.database);
+
+        log_settings.queue_settings.database = default_database_name;
     }
 
-    String engine;
     if (config.has(config_prefix + ".engine"))
     {
         if (config.has(config_prefix + ".partition_by"))
-            throw Exception("If 'engine' is specified for system table, "
-                "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, PARTITION BY parameters should "
+                            "be specified directly inside 'engine' and 'partition_by' setting doesn't make sense");
         if (config.has(config_prefix + ".ttl"))
-            throw Exception("If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
-                            ErrorCodes::BAD_ARGUMENTS);
-        engine = config.getString(config_prefix + ".engine");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, TTL parameters should "
+                            "be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
+        if (config.has(config_prefix + ".order_by"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, ORDER BY parameters should "
+                            "be specified directly inside 'engine' and 'order_by' setting doesn't make sense");
+        if (config.has(config_prefix + ".storage_policy"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, SETTINGS storage_policy = '...' should "
+                            "be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
+        if (config.has(config_prefix + ".settings"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, SETTINGS parameters should "
+                            "be specified directly inside 'engine' and 'settings' setting doesn't make sense");
+
+        log_settings.engine = config.getString(config_prefix + ".engine");
     }
     else
     {
+        /// ENGINE expr is necessary.
+        log_settings.engine = "ENGINE = MergeTree";
+
+        /// PARTITION expr is not necessary.
         String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
-        engine = "ENGINE = MergeTree";
         if (!partition_by.empty())
-            engine += " PARTITION BY (" + partition_by + ")";
+            log_settings.engine += " PARTITION BY (" + partition_by + ")";
+
+        /// TTL expr is not necessary.
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
-            engine += " TTL " + ttl;
-        engine += " ORDER BY (event_date, event_time)";
+            log_settings.engine += " TTL " + ttl;
+
+        /// ORDER BY expr is necessary.
+        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        log_settings.engine += " ORDER BY (" + order_by + ")";
+
+        /// SETTINGS expr is not necessary.
+        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
+        ///
+        /// STORAGE POLICY expr is retained for backward compatible.
+        String storage_policy = config.getString(config_prefix + ".storage_policy", "");
+        String settings = config.getString(config_prefix + ".settings", "");
+        if (!storage_policy.empty() || !settings.empty())
+        {
+            log_settings.engine += " SETTINGS";
+            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
+            if (!storage_policy.empty())
+                log_settings.engine += " storage_policy = " + quoteString(storage_policy);
+            if (!settings.empty())
+                log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
+        }
     }
-    // Validate engine definition grammatically to prevent some configuration errors
-    ParserStorage storage_parser;
-    parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
+
+    /// Validate engine definition syntax to prevent some configuration errors.
+    ParserStorageWithComment storage_parser;
+    parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
-    size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
-                                                          DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+    log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
+                                                                               TSystemLog::getDefaultFlushIntervalMilliseconds());
 
-    return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
+    log_settings.queue_settings.max_size_rows = config.getUInt64(config_prefix + ".max_size_rows",
+                                                                 TSystemLog::getDefaultMaxSize());
+
+    if (log_settings.queue_settings.max_size_rows < 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{0}.max_size_rows {1} should be 1 at least",
+                        config_prefix,
+                        log_settings.queue_settings.max_size_rows);
+
+    log_settings.queue_settings.reserved_size_rows = config.getUInt64(config_prefix + ".reserved_size_rows",
+                                                                      TSystemLog::getDefaultReservedSize());
+
+    if (log_settings.queue_settings.max_size_rows < log_settings.queue_settings.reserved_size_rows)
+    {
+         throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                         "{0}.max_size_rows {1} should be greater or equal to {0}.reserved_size_rows {2}",
+                         config_prefix,
+                         log_settings.queue_settings.max_size_rows,
+                         log_settings.queue_settings.reserved_size_rows);
+    }
+
+    log_settings.queue_settings.buffer_size_rows_flush_threshold = config.getUInt64(config_prefix + ".buffer_size_rows_flush_threshold",
+                                                                                    log_settings.queue_settings.max_size_rows / 2);
+
+    log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
+                                                                       TSystemLog::shouldNotifyFlushOnCrash());
+
+    log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
+
+    return std::make_shared<TSystemLog>(context, log_settings);
 }
 
 
-/// returns CREATE TABLE query, but with removed:
-/// - UUID
-/// - SETTINGS (for MergeTree)
+/// returns CREATE TABLE query, but with removed UUID
 /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
 ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 {
@@ -123,19 +250,12 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
-    /// Existing table has default settings (i.e. `index_granularity = 8192`), reset them.
-    if (ASTStorage * storage = old_create_query_ast.storage)
-    {
-        storage->reset(storage->settings);
-    }
     return old_ast;
 }
 
 }
 
-///
-/// SystemLogs
-///
+
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
@@ -145,6 +265,9 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
+    filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
+    filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
+        global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
@@ -154,6 +277,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log");
     zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
     session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
+    transactions_info_log = createSystemLog<TransactionsInfoLog>(
+        global_context, "system", "transactions_info_log", config, "transactions_info_log");
+    processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
+    asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -178,7 +305,20 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (zookeeper_log)
         logs.emplace_back(zookeeper_log.get());
     if (session_log)
+    {
         logs.emplace_back(session_log.get());
+        global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
+    }
+    if (transactions_info_log)
+        logs.emplace_back(transactions_info_log.get());
+    if (processors_profile_log)
+        logs.emplace_back(processors_profile_log.get());
+    if (filesystem_cache_log)
+        logs.emplace_back(filesystem_cache_log.get());
+    if (filesystem_read_prefetches_log)
+        logs.emplace_back(filesystem_read_prefetches_log.get());
+    if (asynchronous_insert_log)
+        logs.emplace_back(asynchronous_insert_log.get());
 
     try
     {
@@ -217,24 +357,25 @@ void SystemLogs::shutdown()
         log->shutdown();
 }
 
-///
-/// SystemLog
-///
+void SystemLogs::handleCrash()
+{
+    for (auto & log : logs)
+        log->handleCrash();
+}
+
 template <typename LogElement>
 SystemLog<LogElement>::SystemLog(
     ContextPtr context_,
-    const String & database_name_,
-    const String & table_name_,
-    const String & storage_def_,
-    size_t flush_interval_milliseconds_)
-    : WithContext(context_)
-    , table_id(database_name_, table_name_)
-    , storage_def(storage_def_)
+    const SystemLogSettings & settings_,
+    std::shared_ptr<SystemLogQueue<LogElement>> queue_)
+    : Base(settings_.queue_settings, queue_)
+    , WithContext(context_)
+    , log(&Poco::Logger::get("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
+    , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
+    , storage_def(settings_.engine)
     , create_query(serializeAST(*getCreateTableQuery()))
-    , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
-    assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
 template <typename LogElement>
@@ -246,6 +387,26 @@ void SystemLog<LogElement>::shutdown()
     if (table)
         table->flushAndShutdown();
 }
+
+template <typename LogElement>
+void SystemLog<LogElement>::stopFlushThread()
+{
+    {
+        std::lock_guard lock(thread_mutex);
+
+        if (!saving_thread || !saving_thread->joinable())
+            return;
+
+        if (is_shutdown)
+            return;
+
+        is_shutdown = true;
+        queue->shutdown();
+    }
+
+    saving_thread->join();
+}
+
 
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
@@ -264,27 +425,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             // Should we prepare table even if there are no new messages.
             bool should_prepare_tables_anyway = false;
 
-            {
-                std::unique_lock lock(mutex);
-                flush_event.wait_for(lock,
-                    std::chrono::milliseconds(flush_interval_milliseconds),
-                    [&] ()
-                    {
-                        return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
-                    }
-                );
-
-                queue_front_index += queue.size();
-                to_flush_end = queue_front_index;
-                // Swap with existing array from previous flush, to save memory
-                // allocations.
-                to_flush.resize(0);
-                queue.swap(to_flush);
-
-                should_prepare_tables_anyway = is_force_prepare_tables;
-
-                exit_this_thread = is_shutdown;
-            }
+            to_flush_end = queue->pop(to_flush, should_prepare_tables_anyway, exit_this_thread);
 
             if (to_flush.empty())
             {
@@ -293,9 +434,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
 
-                    std::lock_guard lock(mutex);
-                    is_force_prepare_tables = false;
-                    flush_event.notify_all();
+                    queue->confirm(to_flush_end);
                 }
             }
             else
@@ -350,6 +489,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -365,12 +506,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    {
-        std::lock_guard lock(mutex);
-        flushed_up_to = to_flush_end;
-        is_force_prepare_tables = false;
-        flush_event.notify_all();
-    }
+    queue->confirm(to_flush_end);
 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
@@ -400,30 +536,34 @@ void SystemLog<LogElement>::prepareTable()
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
-
-            ASTRenameQuery::Table from;
-            from.database = table_id.database_name;
-            from.table = table_id.table_name;
-
-            ASTRenameQuery::Table to;
-            to.database = table_id.database_name;
-            to.table = table_id.table_name + "_" + toString(suffix);
-
-            ASTRenameQuery::Element elem;
-            elem.from = from;
-            elem.to = to;
-
-            rename->elements.emplace_back(elem);
+            ASTRenameQuery::Element elem
+            {
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name)
+                },
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                }
+            };
 
             LOG_DEBUG(
                 log,
                 "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
                 description,
-                backQuoteIfNeed(to.table),
+                backQuoteIfNeed(elem.to.getTable()),
                 old_create_query,
                 create_query);
 
+            rename->elements.emplace_back(std::move(elem));
+
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
@@ -455,7 +595,6 @@ void SystemLog<LogElement>::prepareTable()
     is_prepared = true;
 }
 
-
 template <typename LogElement>
 ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
@@ -464,17 +603,45 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setDatabase(table_id.database_name);
     create->setTable(table_id.table_name);
 
-    auto ordinary_columns = LogElement::getNamesAndTypes();
-    auto alias_columns = LogElement::getNamesAndAliases();
     auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+
+    if (const char * custom_column_list = LogElement::getCustomColumnList())
+    {
+        ParserColumnDeclarationList parser;
+        const Settings & settings = getContext()->getSettingsRef();
+
+        ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
+        new_columns_list->set(new_columns_list->columns, columns_list_raw);
+    }
+    else
+    {
+        auto ordinary_columns = LogElement::getNamesAndTypes();
+        auto alias_columns = LogElement::getNamesAndAliases();
+
+        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+    }
+
     create->set(create->columns_list, new_columns_list);
 
-    ParserStorage storage_parser;
-    ASTPtr storage_ast = parseQuery(
+    ParserStorageWithComment storage_parser;
+
+    ASTPtr storage_with_comment_ast = parseQuery(
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    create->set(create->storage, storage_ast);
+
+    StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    create->set(create->storage, storage_with_comment.storage);
+    create->set(create->comment, storage_with_comment.comment);
+
+    /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
+    /// and recreate tables on settings changes.
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
+    if (endsWith(engine.name, "MergeTree"))
+    {
+        auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+        storage_settings->loadFromQuery(*create->storage, getContext());
+    }
 
     return create;
 }

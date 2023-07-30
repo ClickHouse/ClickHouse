@@ -1,4 +1,7 @@
 #include <Common/FrequencyHolder.h>
+
+#if USE_NLP
+
 #include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
@@ -24,7 +27,7 @@ struct FunctionDetectTonalityImpl
         UInt64 count_words = 0;
 
         String word;
-        /// Select all Russian words from the string
+        /// Select all words from the string
         for (size_t ind = 0; ind < str_len; ++ind)
         {
             /// Split words by whitespaces and punctuation signs
@@ -36,7 +39,7 @@ struct FunctionDetectTonalityImpl
                 word.push_back(str[ind]);
                 ++ind;
             }
-            /// Try to find a russian word in the tonality dictionary
+            /// Try to find a word in the tonality dictionary
             const auto * it = emotional_dict.find(word);
             if (it != emotional_dict.end())
             {
@@ -52,9 +55,9 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return weight / count_words / 6;
+            return static_cast<Float32>(weight / count_words / 6);
         else
-            return weight / count_words / 12;
+            return static_cast<Float32>(weight / count_words / 12);
     }
 
     static void vector(
@@ -81,9 +84,11 @@ struct NameDetectTonality
 
 using FunctionDetectTonality = FunctionTextClassificationFloat<FunctionDetectTonalityImpl, NameDetectTonality>;
 
-void registerFunctionDetectTonality(FunctionFactory & factory)
+REGISTER_FUNCTION(DetectTonality)
 {
     factory.registerFunction<FunctionDetectTonality>();
 }
 
 }
+
+#endif

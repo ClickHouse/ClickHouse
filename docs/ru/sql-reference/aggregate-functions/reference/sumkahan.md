@@ -1,5 +1,6 @@
 ---
-toc_priority: 145
+slug: /ru/sql-reference/aggregate-functions/reference/sumkahan
+sidebar_position: 145
 ---
 
 # sumKahan {#agg_function-sumKahan}

@@ -10,7 +10,7 @@ namespace DB
 class OptimizeIfWithConstantConditionVisitor
 {
 public:
-    OptimizeIfWithConstantConditionVisitor(Aliases & aliases_)
+    explicit OptimizeIfWithConstantConditionVisitor(Aliases & aliases_)
         : aliases(aliases_)
     {}
 

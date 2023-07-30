@@ -1,0 +1,44 @@
+<clickhouse>
+    <!-- HTTP API with TLS (HTTPS).
+         You have to configure certificate to enable this interface.
+         See the openSSL section below.
+    -->
+    <https_port>8443</https_port>
+
+    <!-- Native interface with TLS.
+         You have to configure certificate to enable this interface.
+         See the openSSL section below.
+    -->
+    <!-- <tcp_port_secure>9440</tcp_port_secure> -->
+
+    <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+    <openSSL replace="replace">
+        <server> <!-- Used for https server AND secure tcp port -->
+            <cacheSessions>false</cacheSessions>
+            <certificateFile>/etc/clickhouse-server/config.d/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server-key.pem</privateKeyFile>
+            <dhParamsFile>/etc/clickhouse-server/config.d/dhparam4096.pem</dhParamsFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>            
+            <!-- <loadDefaultCAFile>true</loadDefaultCAFile> -->
+            <preferServerCiphers>true</preferServerCiphers>            
+            <requireTLSv1>false</requireTLSv1>
+            <requireTLSv1_1>false</requireTLSv1_1>
+            <requireTLSv1_2>false</requireTLSv1_2>
+            <requireTLSv1_3>true</requireTLSv1_3>
+            <verificationMode>relaxed</verificationMode>
+        </server>
+        <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
+            <cacheSessions>false</cacheSessions>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <preferServerCiphers>true</preferServerCiphers>
+            <requireTLSv1>false</requireTLSv1>
+            <requireTLSv1_1>false</requireTLSv1_1>
+            <requireTLSv1_2>false</requireTLSv1_2>
+            <requireTLSv1_3>true</requireTLSv1_3>
+            <verificationMode>relaxed</verificationMode>
+        </client>
+    </openSSL>
+</clickhouse>
+  

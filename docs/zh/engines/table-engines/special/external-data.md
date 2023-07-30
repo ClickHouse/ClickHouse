@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/external-data
+---
 # 用于查询处理的外部数据 {#external-data-for-query-processing}
 
 ClickHouse 允许向服务器发送处理查询所需的数据以及 SELECT 查询。这些数据放在一个临时表中（请参阅 «临时表» 一节），可以在查询中使用（例如，在 IN 操作符中）。
@@ -57,5 +60,3 @@ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count(
 ```
 
 对于分布式查询，将临时表发送到所有远程服务器。
-
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/external_data/) <!--hide-->

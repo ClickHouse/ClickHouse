@@ -1,7 +1,7 @@
 ---
+slug: /ru/faq/integration/file-export
 title: Как экспортировать данные из ClickHouse в файл?
-toc_hidden: true
-toc_priority: 10
+sidebar_position: 10
 ---
 
 # Как экспортировать данные из ClickHouse в файл? {#how-to-export-to-file-rus}

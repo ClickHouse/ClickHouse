@@ -16,11 +16,15 @@ namespace DB
 }
 
 /// Double quote the string.
-String doubleQuoteString(const StringRef & x);
+String doubleQuoteString(StringRef x);
 
 /// Quote the identifier with backquotes.
-String backQuote(const StringRef & x);
+String backQuote(StringRef x);
 
 /// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(const StringRef & x);
+String backQuoteIfNeed(StringRef x);
+
+/// Quote the identifier with backquotes, for use in MySQL queries.
+String backQuoteMySQL(StringRef x);
+
 }

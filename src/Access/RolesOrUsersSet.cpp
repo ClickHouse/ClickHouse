@@ -7,8 +7,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <boost/range/algorithm/sort.hpp>
+#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -22,8 +23,8 @@ namespace ErrorCodes
 RolesOrUsersSet::RolesOrUsersSet() = default;
 RolesOrUsersSet::RolesOrUsersSet(const RolesOrUsersSet & src) = default;
 RolesOrUsersSet & RolesOrUsersSet::operator =(const RolesOrUsersSet & src) = default;
-RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) = default;
-RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) = default;
+RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) noexcept = default;
+RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) noexcept = default;
 
 
 RolesOrUsersSet::RolesOrUsersSet(AllTag)
@@ -132,7 +133,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
             ast->names.emplace_back(::DB::toString(id));
-        boost::range::sort(ast->names);
+        ::sort(ast->names.begin(), ast->names.end());
     }
 
     if (!except_ids.empty())
@@ -140,7 +141,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
             ast->except_names.emplace_back(::DB::toString(except_id));
-        boost::range::sort(ast->except_names);
+        ::sort(ast->except_names.begin(), ast->except_names.end());
     }
 
     return ast;
@@ -161,7 +162,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
             if (name)
                 ast->names.emplace_back(std::move(*name));
         }
-        boost::range::sort(ast->names);
+        ::sort(ast->names.begin(), ast->names.end());
     }
 
     if (!except_ids.empty())
@@ -173,7 +174,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
             if (except_name)
                 ast->except_names.emplace_back(std::move(*except_name));
         }
-        boost::range::sort(ast->except_names);
+        ::sort(ast->except_names.begin(), ast->except_names.end());
     }
 
     return ast;
@@ -227,25 +228,25 @@ void RolesOrUsersSet::add(const std::vector<UUID> & ids_)
 
 bool RolesOrUsersSet::match(const UUID & id) const
 {
-    return (all || ids.count(id)) && !except_ids.count(id);
+    return (all || ids.contains(id)) && !except_ids.contains(id);
 }
 
 
 bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
-    if (!all && !ids.count(user_id))
+    if (!all && !ids.contains(user_id))
     {
         bool found_enabled_role = std::any_of(
-            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.count(enabled_role); });
+            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.contains(enabled_role); });
         if (!found_enabled_role)
             return false;
     }
 
-    if (except_ids.count(user_id))
+    if (except_ids.contains(user_id))
         return false;
 
     bool in_except_list = std::any_of(
-        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.count(enabled_role); });
+        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
     return !in_except_list;
 }
 
@@ -253,7 +254,7 @@ bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_s
 std::vector<UUID> RolesOrUsersSet::getMatchingIDs() const
 {
     if (all)
-        throw Exception("getAllMatchingIDs() can't get ALL ids without access_control", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getAllMatchingIDs() can't get ALL ids without access_control");
     std::vector<UUID> res;
     boost::range::set_difference(ids, except_ids, std::back_inserter(res));
     return res;
@@ -284,6 +285,56 @@ std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControl & access_c
 bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs)
 {
     return (lhs.all == rhs.all) && (lhs.ids == rhs.ids) && (lhs.except_ids == rhs.except_ids);
+}
+
+std::vector<UUID> RolesOrUsersSet::findDependencies() const
+{
+    std::vector<UUID> res;
+    boost::range::copy(ids, std::back_inserter(res));
+    boost::range::copy(except_ids, std::back_inserter(res));
+    return res;
+}
+
+void RolesOrUsersSet::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+{
+    std::vector<UUID> new_ids;
+
+    for (auto it = ids.begin(); it != ids.end();)
+    {
+        auto id = *it;
+        auto it_new_id = old_to_new_ids.find(id);
+        if (it_new_id != old_to_new_ids.end())
+        {
+            auto new_id = it_new_id->second;
+            new_ids.push_back(new_id);
+            it = ids.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    boost::range::copy(new_ids, std::inserter(ids, ids.end()));
+    new_ids.clear();
+
+    for (auto it = except_ids.begin(); it != except_ids.end();)
+    {
+        auto id = *it;
+        auto it_new_id = old_to_new_ids.find(id);
+        if (it_new_id != old_to_new_ids.end())
+        {
+            auto new_id = it_new_id->second;
+            new_ids.push_back(new_id);
+            it = except_ids.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    boost::range::copy(new_ids, std::inserter(except_ids, except_ids.end()));
 }
 
 }

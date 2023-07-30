@@ -1,0 +1,17 @@
+(Expression)
+ExpressionTransform
+  (Join)
+  JoiningTransform 2 → 1
+    (Expression)
+    ExpressionTransform
+      (Limit)
+      Limit
+        (ReadFromStorage)
+        Numbers 0 → 1
+    (Expression)
+    FillingRightJoinSide
+      ExpressionTransform
+        (Limit)
+        Limit
+          (ReadFromStorage)
+          Numbers 0 → 1

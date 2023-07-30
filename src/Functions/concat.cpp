@@ -1,6 +1,5 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -52,23 +51,21 @@ public:
     {
         if (arguments.size() < 2)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments.size() > FormatImpl::argument_threshold)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
+                getName(),
+                arguments.size());
 
         for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
-                throw Exception{"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function "
-                                    + getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}",
+                    arg->getName(),
+                    arg_idx + 1,
+                    getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -125,7 +122,7 @@ private:
         std::vector<const ColumnString::Chars *> data(num_arguments);
         std::vector<const ColumnString::Offsets *> offsets(num_arguments);
         std::vector<size_t> fixed_string_sizes(num_arguments);
-        std::vector<String> constant_strings(num_arguments);
+        std::vector<std::optional<String>> constant_strings(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
@@ -148,8 +145,8 @@ private:
                 constant_strings[i] = const_col->getValue<String>();
             }
             else
-                throw Exception(
-                    "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    column->getName(), getName());
         }
 
         String pattern;
@@ -207,6 +204,10 @@ public:
         {
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         }
+        else if (isMap(arguments.at(0).type))
+        {
+            return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
+        }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
@@ -215,10 +216,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
+                getName(), arguments.size());
 
         /// We always return Strings from concat, even if arguments were fixed strings.
         return std::make_shared<DataTypeString>();
@@ -230,9 +230,9 @@ private:
 
 }
 
-void registerFunctionsConcat(FunctionFactory & factory)
+REGISTER_FUNCTION(Concat)
 {
-    factory.registerFunction<ConcatOverloadResolver>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

@@ -49,7 +49,7 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
             for (const auto & id : roles_from_query.getMatchingIDs())
             {
                 if (!user->granted_roles.isGranted(id))
-                    throw Exception("Role should be granted to set current", ErrorCodes::SET_NON_GRANTED_ROLE);
+                    throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role should be granted to set current");
                 new_current_roles.emplace_back(id);
             }
         }
@@ -84,7 +84,7 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Roles
         for (const auto & id : roles_from_query.getMatchingIDs())
         {
             if (!user.granted_roles.isGranted(id))
-                throw Exception("Role should be granted to set default", ErrorCodes::SET_NON_GRANTED_ROLE);
+                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role should be granted to set default");
         }
     }
     user.default_roles = roles_from_query;

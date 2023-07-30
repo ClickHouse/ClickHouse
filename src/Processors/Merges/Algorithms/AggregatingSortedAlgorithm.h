@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Columns/ColumnAggregateFunction.h>
+#include <Common/AlignedBuffer.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 
@@ -16,15 +18,58 @@ class AggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChun
 {
 public:
     AggregatingSortedAlgorithm(
-        const Block & header, size_t num_inputs,
-        SortDescription description_, size_t max_block_size);
+        const Block & header,
+        size_t num_inputs,
+        SortDescription description_,
+        size_t max_block_size_rows_,
+        size_t max_block_size_bytes_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    struct SimpleAggregateDescription;
-    struct AggregateDescription;
+    /// Stores information for aggregation of SimpleAggregateFunction columns
+    struct SimpleAggregateDescription
+    {
+        /// An aggregate function 'anyLast', 'sum'...
+        AggregateFunctionPtr function;
+        IAggregateFunction::AddFunc add_function = nullptr;
+
+        size_t column_number = 0;
+        IColumn * column = nullptr;
+
+        /// For LowCardinality, convert is converted to nested type. nested_type is nullptr if no conversion needed.
+        const DataTypePtr nested_type; /// Nested type for LowCardinality, if it is.
+        const DataTypePtr real_type; /// Type in header.
+
+        AlignedBuffer state;
+        bool created = false;
+
+        SimpleAggregateDescription(
+            AggregateFunctionPtr function_, const size_t column_number_,
+            DataTypePtr nested_type_, DataTypePtr real_type_);
+
+        void createState();
+
+        void destroyState();
+
+        /// Explicitly destroy aggregation state if the stream is terminated
+        ~SimpleAggregateDescription();
+
+        SimpleAggregateDescription() = default;
+        SimpleAggregateDescription(SimpleAggregateDescription &&) = default;
+        SimpleAggregateDescription(const SimpleAggregateDescription &) = delete;
+    };
+
+    /// Stores information for aggregation of AggregateFunction columns
+    struct AggregateDescription
+    {
+        ColumnAggregateFunction * column = nullptr;
+        const size_t column_number = 0; /// Position in header.
+
+        AggregateDescription() = default;
+        explicit AggregateDescription(size_t col_number) : column_number(col_number) {}
+    };
 
     /// This structure define columns into one of three types:
     /// * columns which are not aggregate functions and not needed to be aggregated
@@ -54,7 +99,11 @@ private:
         using MergedData::insertRow;
 
     public:
-        AggregatingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_);
+        AggregatingMergedData(
+            MutableColumns columns_,
+            UInt64 max_block_size_rows_,
+            UInt64 max_block_size_bytes_,
+            ColumnsDefinition & def_);
 
         /// Group is a group of rows with the same sorting key. It represents single row in result.
         /// Algorithm is: start group, add several rows, finish group.

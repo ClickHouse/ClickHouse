@@ -29,7 +29,7 @@ bool Credentials::isReady() const
 
 void Credentials::throwNotReady()
 {
-    throw Exception("Credentials are not ready", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Credentials are not ready");
 }
 
 AlwaysAllowCredentials::AlwaysAllowCredentials()
@@ -46,6 +46,20 @@ AlwaysAllowCredentials::AlwaysAllowCredentials(const String & user_name_)
 void AlwaysAllowCredentials::setUserName(const String & user_name_)
 {
     user_name = user_name_;
+}
+
+SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, const String & common_name_)
+    : Credentials(user_name_)
+    , common_name(common_name_)
+{
+    is_ready = true;
+}
+
+const String & SSLCertificateCredentials::getCommonName() const
+{
+    if (!isReady())
+        throwNotReady();
+    return common_name;
 }
 
 BasicCredentials::BasicCredentials()
