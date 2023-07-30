@@ -6,6 +6,8 @@
 #   mkdir time_trace
 #   utils/prepare-time-trace/prepare-time-trace.sh build time_trace
 
+# See also https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
+
 <<///
 CREATE TABLE build_time_trace
 (
