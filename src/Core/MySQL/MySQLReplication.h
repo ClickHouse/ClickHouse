@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLGtid.h>
+#include <Core/MySQL/MySQLCharset.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -324,9 +325,24 @@ namespace MySQLReplication
         UInt32 column_count;
         std::vector<UInt8> column_type;
         std::vector<UInt16> column_meta;
+        /// Character set of string columns
+        std::vector<UInt32> column_charset;
+        /// Character set of string columns,
+        /// optimized to minimize space when many
+        /// columns have the same charset
+        UInt32 default_charset = 255; /// utf8mb4_0900_ai_ci
+        std::unordered_map<UInt32, UInt32> default_charset_pairs;
+        /// Points to flavor_charset object
+        MySQLCharsetPtr charset_ptr;
         Bitmap null_bitmap;
 
-        TableMapEvent(EventHeader && header_, const TableMapEventHeader & map_event_header) : EventBase(std::move(header_)), column_count(0)
+        TableMapEvent(
+            EventHeader && header_,
+            const TableMapEventHeader & map_event_header,
+            const MySQLCharsetPtr & charset_ptr_)
+            : EventBase(std::move(header_))
+            , column_count(0)
+            , charset_ptr(charset_ptr_)
         {
             table_id = map_event_header.table_id;
             flags = map_event_header.flags;
@@ -336,10 +352,52 @@ namespace MySQLReplication
             table = map_event_header.table;
         }
         void dump(WriteBuffer & out) const override;
+        UInt32 getColumnCharsetId(UInt32 column_index);
+        /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
+        /// https://github.com/mysql/mysql-server/blob/8.0/libbinlogevents/include/rows_event.h#L50
+        /// DEFAULT_CHARSET and COLUMN_CHARSET don't appear together, and
+        /// ENUM_AND_SET_DEFAULT_CHARSET and ENUM_AND_SET_COLUMN_CHARSET don't appear together.
+        enum OptionalMetaType : char
+        {
+            /// UNSIGNED flag of numeric columns
+            SIGNEDNESS = 1,
+            /// Character set of string columns, optimized to
+            /// minimize space when many columns have the
+            /// same charset
+            DEFAULT_CHARSET,
+            /// Character set of string columns, optimized to
+            /// minimize space when columns have many
+            /// different charsets
+            COLUMN_CHARSET,
+            COLUMN_NAME,
+            /// String value of SET columns
+            SET_STR_VALUE,
+            /// String value of ENUM columns
+            ENUM_STR_VALUE,
+            /// Real type of geometry columns
+            GEOMETRY_TYPE,
+            /// Primary key without prefix
+            SIMPLE_PRIMARY_KEY,
+            /// Primary key with prefix
+            PRIMARY_KEY_WITH_PREFIX,
+            /// Character set of enum and set
+            /// columns, optimized to minimize
+            /// space when many columns have the
+            /// same charset
+            ENUM_AND_SET_DEFAULT_CHARSET,
+            /// Character set of enum and set
+            /// columns, optimized to minimize
+            /// space when many columns have the
+            /// same charset
+            ENUM_AND_SET_COLUMN_CHARSET,
+            /// Flag to indicate column visibility attribute
+            COLUMN_VISIBILITY
+        };
 
     protected:
         void parseImpl(ReadBuffer & payload) override;
         void parseMeta(String meta);
+        void parseOptionalMetaField(ReadBuffer & payload);
     };
 
     enum RowsEventFlags
@@ -486,6 +544,7 @@ namespace MySQLReplication
         std::unordered_set<String> replicate_tables;
         std::map<UInt64, std::shared_ptr<TableMapEvent> > table_maps;
         size_t checksum_signature_length = 4;
+        MySQLCharsetPtr flavor_charset = std::make_shared<MySQLCharset>();
 
         bool doReplicate(UInt64 table_id);
         bool doReplicate(const String & db, const String & table_name);

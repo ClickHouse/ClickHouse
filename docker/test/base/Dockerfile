@@ -11,6 +11,7 @@ RUN apt-get update \
         pv \
         ripgrep \
         zstd \
+        locales \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)
@@ -27,6 +28,9 @@ RUN echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_supp
 ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
+
+RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
+ENV LC_ALL en_US.UTF-8
 
 ENV TZ=Europe/Moscow
 RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone

@@ -24,6 +24,14 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
+    enum class Usage
+    {
+        Unknown,  /// we don't know what what happened
+        None,     /// query result neither written nor read into/from query cache
+        Write,    /// query result written into query cache
+        Read,     /// query result read from query cache
+    };
+
     /// Represents a query result in the cache.
     struct Key
     {
@@ -60,7 +68,7 @@ public:
 
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
         /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which will look ugly in
-        /// the SYSTEM.QUERY_CACHE.
+        /// SYSTEM.QUERY_CACHE.
         const String query_string;
 
         /// Ctor to construct a Key for writing into query cache.
@@ -178,6 +186,9 @@ public:
 
     void reset();
 
+    size_t weight() const;
+    size_t count() const;
+
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
 
@@ -185,7 +196,7 @@ public:
     std::vector<QueryCache::Cache::KeyMapped> dump() const;
 
 private:
-    Cache cache;
+    Cache cache; /// has its own locking --> not protected by mutex
 
     mutable std::mutex mutex;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);

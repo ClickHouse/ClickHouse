@@ -1,7 +1,6 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/SymbolIndex.h>
-#include <base/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -62,9 +61,11 @@ Otherwise you will get only exported symbols from program headers.
 #endif
 
 #define __msan_unpoison_string(X) // NOLINT
+#define __msan_unpoison(X, Y) // NOLINT
 #if defined(ch_has_feature)
 #    if ch_has_feature(memory_sanitizer)
 #        undef __msan_unpoison_string
+#        undef __msan_unpoison
 #        include <sanitizer/msan_interface.h>
 #    endif
 #endif
@@ -87,58 +88,24 @@ namespace
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
 
 
-void updateResources(ElfW(Addr) base_address, std::string_view object_name, std::string_view name, const void * address, SymbolIndex::Resources & resources)
-{
-    const char * char_address = static_cast<const char *>(address);
-
-    if (name.starts_with("_binary_") || name.starts_with("binary_"))
-    {
-        if (name.ends_with("_start"))
-        {
-            name = name.substr((name[0] == '_') + strlen("binary_"));
-            name = name.substr(0, name.size() - strlen("_start"));
-
-            auto & resource = resources[name];
-            if (!resource.base_address || resource.base_address == base_address)
-            {
-                resource.base_address = base_address;
-                resource.start = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
-                resource.object_name = object_name;
-            }
-        }
-        if (name.ends_with("_end"))
-        {
-            name = name.substr((name[0] == '_') + strlen("binary_"));
-            name = name.substr(0, name.size() - strlen("_end"));
-
-            auto & resource = resources[name];
-            if (!resource.base_address || resource.base_address == base_address)
-            {
-                resource.base_address = base_address;
-                resource.end = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
-                resource.object_name = object_name;
-            }
-        }
-    }
-}
-
-
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
 /// It does not extract all the symbols (but only public - exported and used for dynamic linking),
 /// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(
     dl_phdr_info * info,
-    std::vector<SymbolIndex::Symbol> & symbols,
-    SymbolIndex::Resources & resources)
+    std::vector<SymbolIndex::Symbol> & symbols)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
      */
+    __msan_unpoison(&info->dlpi_phnum, sizeof(info->dlpi_phnum));
+    __msan_unpoison(&info->dlpi_phdr, sizeof(info->dlpi_phdr));
     for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
         /* Further processing is only needed if the dynamic section is reached
          */
+        __msan_unpoison(&info->dlpi_phdr[header_index], sizeof(info->dlpi_phdr[header_index]));
         if (info->dlpi_phdr[header_index].p_type != PT_DYNAMIC)
             continue;
 
@@ -146,6 +113,7 @@ void collectSymbolsFromProgramHeaders(
          * It's address is the shared lib's address + the virtual address
          */
         const ElfW(Dyn) * dyn_begin = reinterpret_cast<const ElfW(Dyn) *>(info->dlpi_addr + info->dlpi_phdr[header_index].p_vaddr);
+        __msan_unpoison(&dyn_begin, sizeof(dyn_begin));
 
         /// For unknown reason, addresses are sometimes relative sometimes absolute.
         auto correct_address = [](ElfW(Addr) base, ElfW(Addr) ptr)
@@ -159,44 +127,53 @@ void collectSymbolsFromProgramHeaders(
          */
 
         size_t sym_cnt = 0;
-        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
-            ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
-
-            // TODO: this branch leads to invalid address of the hash table. Need further investigation.
-            // if (it->d_tag == DT_HASH)
-            // {
-            //     const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(base_address);
-            //     sym_cnt = hash[1];
-            //     break;
-            // }
-            if (it->d_tag == DT_GNU_HASH)
+            const auto * it = dyn_begin;
+            while (true)
             {
-                /// This code based on Musl-libc.
+                __msan_unpoison(it, sizeof(*it));
+                if (it->d_tag != DT_NULL)
+                    break;
 
-                const uint32_t * buckets = nullptr;
-                const uint32_t * hashval = nullptr;
+                ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
 
-                const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(base_address);
-
-                buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
-
-                for (ElfW(Word) i = 0; i < hash[0]; ++i)
-                    if (buckets[i] > sym_cnt)
-                        sym_cnt = buckets[i];
-
-                if (sym_cnt)
+                if (it->d_tag == DT_GNU_HASH)
                 {
-                    sym_cnt -= hash[1];
-                    hashval = buckets + hash[0] + sym_cnt;
-                    do
+                    /// This code based on Musl-libc.
+
+                    const uint32_t * buckets = nullptr;
+                    const uint32_t * hashval = nullptr;
+
+                    const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(base_address);
+
+                    __msan_unpoison(&hash[0], sizeof(*hash));
+                    __msan_unpoison(&hash[1], sizeof(*hash));
+                    __msan_unpoison(&hash[2], sizeof(*hash));
+
+                    buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
+
+                    __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
+
+                    for (ElfW(Word) i = 0; i < hash[0]; ++i)
+                        if (buckets[i] > sym_cnt)
+                            sym_cnt = buckets[i];
+
+                    if (sym_cnt)
                     {
-                        ++sym_cnt;
+                        sym_cnt -= hash[1];
+                        hashval = buckets + hash[0] + sym_cnt;
+                        __msan_unpoison(&hashval, sizeof(hashval));
+                        do
+                        {
+                            ++sym_cnt;
+                        }
+                        while (!(*hashval++ & 1));
                     }
-                    while (!(*hashval++ & 1));
+
+                    break;
                 }
 
-                break;
+                ++it;
             }
         }
 
@@ -227,6 +204,8 @@ void collectSymbolsFromProgramHeaders(
                 /* Get the pointer to the first entry of the symbol table */
                 const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(base_address);
 
+                __msan_unpoison(elf_sym, sym_cnt * sizeof(*elf_sym));
+
                 /* Iterate over the symbol table */
                 for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
                 {
@@ -234,6 +213,7 @@ void collectSymbolsFromProgramHeaders(
                      * This is located at the address of st_name relative to the beginning of the string table.
                      */
                     const char * sym_name = &strtab[elf_sym[sym_index].st_name];
+                    __msan_unpoison_string(sym_name);
 
                     if (!sym_name)
                         continue;
@@ -248,9 +228,6 @@ void collectSymbolsFromProgramHeaders(
                     /// We are not interested in empty symbols.
                     if (elf_sym[sym_index].st_size)
                         symbols.push_back(symbol);
-
-                    /// But resources can be represented by a pair of empty symbols (indicating their boundaries).
-                    updateResources(base_address, info->dlpi_name, symbol.name, symbol.address_begin, resources);
                 }
 
                 break;
@@ -263,13 +240,18 @@ void collectSymbolsFromProgramHeaders(
 #if !defined USE_MUSL
 String getBuildIDFromProgramHeaders(dl_phdr_info * info)
 {
+    __msan_unpoison(&info->dlpi_phnum, sizeof(info->dlpi_phnum));
+    __msan_unpoison(&info->dlpi_phdr, sizeof(info->dlpi_phdr));
     for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
         const ElfPhdr & phdr = info->dlpi_phdr[header_index];
+        __msan_unpoison(&phdr, sizeof(phdr));
         if (phdr.p_type != PT_NOTE)
             continue;
 
-        return Elf::getBuildID(reinterpret_cast<const char *>(info->dlpi_addr + phdr.p_vaddr), phdr.p_memsz);
+        std::string_view view(reinterpret_cast<const char *>(info->dlpi_addr + phdr.p_vaddr), phdr.p_memsz);
+        __msan_unpoison(view.data(), view.size());
+        return Elf::getBuildID(view.data(), view.size());
     }
     return {};
 }
@@ -281,8 +263,7 @@ void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
-    std::vector<SymbolIndex::Symbol> & symbols,
-    SymbolIndex::Resources & resources)
+    std::vector<SymbolIndex::Symbol> & symbols)
 {
     /// Iterate symbol table.
     const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
@@ -312,8 +293,6 @@ void collectSymbolsFromELFSymbolTable(
 
         if (symbol_table_entry->st_size)
             symbols.push_back(symbol);
-
-        updateResources(info->dlpi_addr, info->dlpi_name, symbol.name, symbol.address_begin, resources);
     }
 }
 
@@ -323,8 +302,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     unsigned section_header_type,
     const char * string_table_name,
-    std::vector<SymbolIndex::Symbol> & symbols,
-    SymbolIndex::Resources & resources)
+    std::vector<SymbolIndex::Symbol> & symbols)
 {
     std::optional<Elf::Section> symbol_table;
     std::optional<Elf::Section> string_table;
@@ -342,7 +320,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols, resources);
+    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
     return true;
 }
 
@@ -351,7 +329,6 @@ void collectSymbolsFromELF(
     dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
-    SymbolIndex::Resources & resources,
     String & build_id)
 {
     String object_name;
@@ -363,6 +340,7 @@ void collectSymbolsFromELF(
     build_id = our_build_id;
 #else
     /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison(info, sizeof(*info));
     __msan_unpoison_string(info->dlpi_name);
 
     object_name = info->dlpi_name;
@@ -462,11 +440,11 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols, resources);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols, resources);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
 #endif
 }
 
@@ -479,8 +457,8 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, data.symbols, data.resources);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.resources, data.build_id);
+    collectSymbolsFromProgramHeaders(info, data.symbols);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
 
     /* Continue iterations */
     return 0;
