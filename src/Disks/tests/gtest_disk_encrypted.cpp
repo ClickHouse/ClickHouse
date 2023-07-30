@@ -40,7 +40,7 @@ protected:
         settings->keys[0] = key;
         settings->current_key_id = 0;
         settings->disk_path = path;
-        encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
+        encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings), true);
     }
 
     String getFileNames()

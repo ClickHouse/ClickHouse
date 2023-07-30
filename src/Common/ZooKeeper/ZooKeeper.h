@@ -523,6 +523,10 @@ public:
 
     void setServerCompletelyStarted();
 
+    String getConnectedZooKeeperHost() const { return connected_zk_host; }
+    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
+    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
+
 private:
     void init(ZooKeeperArgs args_);
 
@@ -585,6 +589,10 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
+
+    String connected_zk_host;
+    UInt16 connected_zk_port;
+    size_t connected_zk_index;
 
     std::mutex mutex;
 

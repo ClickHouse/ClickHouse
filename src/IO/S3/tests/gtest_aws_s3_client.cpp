@@ -92,6 +92,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
         client,
         uri.bucket,
         uri.key,
+        DBMS_DEFAULT_BUFFER_SIZE,
         request_settings
     );
 

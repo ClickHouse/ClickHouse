@@ -193,8 +193,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, object_columns);
+
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
+    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
     extractMergingAndGatheringColumns(
         global_ctx->storage_columns,
@@ -209,6 +210,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -540,8 +545,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             global_ctx->future_part->parts[part_num],
             column_names,
             ctx->read_with_direct_io,
-            true,
-            false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
             global_ctx->input_rows_filtered);
 
         pipes.emplace_back(std::move(pipe));
@@ -892,8 +897,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             part,
             global_ctx->merging_column_names,
             ctx->read_with_direct_io,
-            true,
-            false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
             global_ctx->input_rows_filtered);
 
         if (global_ctx->metadata_snapshot->hasSortingKey())

@@ -3185,16 +3185,6 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
-
-Возможные значения:
--   0 — использование типов данных для работы с географическими структурами не поддерживается.
--   1 — использование типов данных для работы с географическими структурами поддерживается.
-
-Значение по умолчанию: `0`.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.

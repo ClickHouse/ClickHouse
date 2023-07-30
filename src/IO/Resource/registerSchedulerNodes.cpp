@@ -8,6 +8,7 @@ namespace DB
 {
 
 void registerPriorityPolicy(SchedulerNodeFactory &);
+void registerFairPolicy(SchedulerNodeFactory &);
 void registerSemaphoreConstraint(SchedulerNodeFactory &);
 void registerFifoQueue(SchedulerNodeFactory &);
 
@@ -17,6 +18,7 @@ void registerSchedulerNodes()
 
     // ISchedulerNode
     registerPriorityPolicy(factory);
+    registerFairPolicy(factory);
 
     // ISchedulerConstraint
     registerSemaphoreConstraint(factory);

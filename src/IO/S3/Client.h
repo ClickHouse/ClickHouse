@@ -40,6 +40,11 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+namespace MockS3
+{
+    struct Client;
+}
+
 namespace DB::S3
 {
 
@@ -133,6 +138,9 @@ public:
 
     /// Returns the initial endpoint.
     const String & getInitialEndpoint() const { return initial_endpoint; }
+    const String & getRegion() const { return explicit_region; }
+
+    Aws::Auth::AWSCredentials getCredentials() const;
 
     /// Decorator for RetryStrategy needed for this client to work correctly.
     /// We want to manually handle permanent moves (status code 301) because:
@@ -187,6 +195,9 @@ public:
     Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
+    using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
+    ComposeObjectOutcome ComposeObject(const ComposeObjectRequest & request) const;
+
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
 
@@ -195,9 +206,11 @@ public:
 
     bool supportsMultiPartCopy() const;
 private:
+    friend struct ::MockS3::Client;
+
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
-           const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
+           const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const Aws::Client::ClientConfiguration& client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
            bool use_virtual_addressing);
@@ -237,6 +250,7 @@ private:
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
     String initial_endpoint;
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
 
     std::string explicit_region;
     mutable bool detect_region = true;
@@ -272,7 +286,8 @@ public:
         const String & server_side_encryption_customer_key_base64,
         ServerSideEncryptionKMSConfig sse_kms_config,
         HTTPHeaderEntries headers,
-        CredentialsConfiguration credentials_configuration);
+        CredentialsConfiguration credentials_configuration,
+        const String & session_token = "");
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

@@ -724,7 +724,7 @@ void StorageRabbitMQ::read(
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
+        : static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms.totalMilliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
@@ -1053,7 +1053,7 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
+        : static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms.totalMilliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {

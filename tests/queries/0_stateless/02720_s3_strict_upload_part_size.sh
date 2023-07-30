@@ -19,7 +19,7 @@ $CLICKHOUSE_LOCAL -q "SELECT randomPrintableASCII(1023) FROM numbers(20*1024) FO
 
 $CLICKHOUSE_CLIENT --send_logs_level=trace --server_logs_file="$log" -q "INSERT INTO FUNCTION s3(s3_conn, filename='$CLICKHOUSE_TEST_UNIQUE_NAME', format='LineAsString', structure='line String') FORMAT LineAsString" --s3_strict_upload_part_size=6000001 < "$in"
 grep -F '<Fatal>' "$log" || :
-grep -o 'WriteBufferFromS3: Writing part.*Size: .*' "$log" | grep -o 'Size: .*'
+grep -o 'WriteBufferFromS3: writePart.*, part size: .*' "$log" | grep -o 'part size: .*'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM s3(s3_conn, filename='$CLICKHOUSE_TEST_UNIQUE_NAME', format='LineAsString', structure='line String') FORMAT LineAsString" > "$out"
 
 diff -q "$in" "$out"

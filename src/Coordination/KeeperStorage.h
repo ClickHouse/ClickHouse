@@ -110,7 +110,7 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time;
+        int64_t time{0};
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
         std::optional<Digest> digest;

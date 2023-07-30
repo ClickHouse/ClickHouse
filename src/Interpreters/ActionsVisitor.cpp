@@ -1216,11 +1216,22 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());
+                /// Use getUniqueName() to allow multiple use of query parameter in the query:
+                ///
+                ///     CREATE VIEW view AS
+                ///     SELECT *
+                ///     FROM system.one
+                ///     WHERE dummy = {k1:Int}+1 OR dummy = {k1:Int}+2
+                ///                    ^^                    ^^
+                ///
+                /// NOTE: query in the VIEW will not be modified this is needed
+                /// only during analysis for CREATE VIEW to avoid duplicated
+                /// column names.
+                ColumnWithTypeAndName column(data_type, data.getUniqueName("__" + query_parameter->getColumnName()));
                 data.addColumn(column);
 
                 argument_types.push_back(data_type);
-                argument_names.push_back(query_parameter->name);
+                argument_names.push_back(column.name);
             }
             else
             {

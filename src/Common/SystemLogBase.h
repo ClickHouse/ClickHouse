@@ -92,7 +92,7 @@ public:
 
     String getName() const override { return LogElement::name(); }
 
-    static const char * getDefaultOrderBy() { return "(event_date, event_time)"; }
+    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
 
 protected:
     Poco::Logger * log;

@@ -323,11 +323,11 @@ Alias: `REPEAT`
 **Arguments**
 
 - `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
-- `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
+- `n` — The number of times to repeat the string. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-The single string containing string `s` repeated `n` times. If `n` \< 1, the function returns empty string.
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.
 
 Type: `String`.
 
@@ -343,6 +343,44 @@ Result:
 ┌─repeat('abc', 10)──────────────┐
 │ abcabcabcabcabcabcabcabcabcabc │
 └────────────────────────────────┘
+```
+
+## space
+
+Concatenates a space (` `) as many times with itself as specified.
+
+**Syntax**
+
+``` sql
+space(n)
+```
+
+Alias: `SPACE`.
+
+**Arguments**
+
+- `n` — The number of times to repeat the space. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT space(3);
+```
+
+Result:
+
+``` text
+┌─space(3) ────┐
+│              │
+└──────────────┘
 ```
 
 ## reverse

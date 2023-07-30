@@ -32,7 +32,7 @@
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->
-                <s3_retry_attempts>1</s3_retry_attempts>
+                <retry_attempts>1</retry_attempts>
                 <s3_max_single_read_retries>1</s3_max_single_read_retries>
                 <connect_timeout_ms>20000</connect_timeout_ms>
             </s3_no_retries>

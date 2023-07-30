@@ -448,9 +448,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             Object object;
             const auto & map = src.get<const Map &>();
-            for (size_t i = 0; i < map.size(); ++i)
+            for (const auto & element : map)
             {
-                const auto & map_entry = map[i].get<Tuple>();
+                const auto & map_entry = element.get<Tuple>();
                 const auto & key = map_entry[0];
                 const auto & value = map_entry[1];
 

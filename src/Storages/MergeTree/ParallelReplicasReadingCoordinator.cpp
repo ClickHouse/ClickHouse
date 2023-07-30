@@ -21,6 +21,30 @@
 #include <Storages/MergeTree/IntersectionsIndexes.h>
 #include <fmt/format.h>
 
+namespace DB
+{
+struct Part
+{
+    mutable RangesInDataPartDescription description;
+    // FIXME: This is needed to put this struct in set
+    // and modify through iterator
+    mutable std::set<size_t> replicas;
+
+    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
+};
+}
+
+template <>
+struct fmt::formatter<DB::Part>
+{
+    static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const DB::Part & part, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
+    }
+};
 
 namespace DB
 {
@@ -58,17 +82,6 @@ public:
     virtual ~ImplInterface() = default;
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
-};
-
-
-struct Part
-{
-    mutable RangesInDataPartDescription description;
-    // FIXME: This is needed to put this struct in set
-    // and modify through iterator
-    mutable std::set<size_t> replicas;
-
-    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 
 using Parts = std::set<Part>;
@@ -207,14 +220,7 @@ void DefaultCoordinator::finalizeReadingState()
         delayed_parts.pop_front();
     }
 
-    String description;
-    for (const auto & part : all_parts_to_read)
-    {
-        description += part.description.describe();
-        description += fmt::format("Replicas: ({}) --- ", fmt::join(part.replicas, ","));
-    }
-
-    LOG_DEBUG(log, "Reading state is fully initialized: {}", description);
+    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
 }
 
 

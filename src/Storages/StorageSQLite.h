@@ -42,6 +42,10 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    static ColumnsDescription getTableStructureFromData(
+        const SQLitePtr & sqlite_db_,
+        const String & table);
+
 private:
     String remote_table_name;
     String database_path;

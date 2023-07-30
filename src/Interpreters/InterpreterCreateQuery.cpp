@@ -227,7 +227,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
-    if (create.storage->engine->name == "Replicated" && !internal && !create.attach)
+    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
     {
         /// Fill in default parameters
         if (create.storage->engine->arguments->children.size() == 1)
@@ -844,21 +844,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                                     "due to expected negative impact on performance. "
                                     "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
                                     current_type_ptr->getName());
-            }
-        }
-    }
-
-    if (!create.attach && !settings.allow_experimental_geo_types)
-    {
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            const auto & type = name_and_type_pair.type->getName();
-            if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' which type is '{}' "
-                                "because experimental geo types are not allowed. "
-                                "Set setting allow_experimental_geo_types = 1 in order to allow it",
-                                name_and_type_pair.name, type);
             }
         }
     }

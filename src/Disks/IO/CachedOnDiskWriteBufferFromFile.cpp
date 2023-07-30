@@ -211,10 +211,16 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 {
     size_t size = offset();
 
+    /// Write data to cache.
+    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
+    current_download_offset += size;
+
     try
     {
         SwapHelper swap(*this, *impl);
         /// Write data to the underlying buffer.
+        /// Actually here WriteBufferFromFileDecorator::nextImpl has to be called, but it is pivate method.
+        /// In particular WriteBufferFromFileDecorator introduces logic with swaps in order to achieve delegation.
         impl->next();
     }
     catch (...)
@@ -225,10 +231,6 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         throw;
     }
-
-    /// Write data to cache.
-    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
-    current_download_offset += size;
 }
 
 void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool throw_on_error)
@@ -292,8 +294,7 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 {
     try
     {
-        SwapHelper swap(*this, *impl);
-        impl->finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
     }
     catch (...)
     {

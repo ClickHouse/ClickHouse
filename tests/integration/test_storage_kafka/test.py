@@ -285,11 +285,11 @@ def avro_confluent_message(schema_registry_client, value):
 # Tests
 
 
-def test_kafka_prohibited_column_types(kafka_cluster):
+def test_kafka_column_types(kafka_cluster):
     def assert_returned_exception(e):
         assert e.value.returncode == 36
         assert (
-            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL/ALIAS expressions for columns."
+            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns."
             in str(e.value)
         )
 
@@ -314,17 +314,39 @@ def test_kafka_prohibited_column_types(kafka_cluster):
     assert_returned_exception(exception)
 
     # check ALIAS
-    with pytest.raises(QueryRuntimeException) as exception:
-        instance.query(
-            """
+    instance.query(
+        """
                 CREATE TABLE test.kafka (a Int, b String Alias toString(a))
                 ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                SETTINGS kafka_commit_on_select = 1;
                 """
-        )
-    assert_returned_exception(exception)
+    )
+    messages = []
+    for i in range(5):
+        messages.append(json.dumps({"a": i}))
+    kafka_produce(kafka_cluster, "new", messages)
+    result = ""
+    expected = TSV(
+        """
+0\t0
+1\t1
+2\t2
+3\t3
+4\t4
+                              """
+    )
+    retries = 50
+    while retries > 0:
+        result += instance.query("SELECT a, b FROM test.kafka", ignore_error=True)
+        if TSV(result) == expected:
+            break
+        retries -= 1
+
+    assert TSV(result) == expected
+
+    instance.query("DROP TABLE test.kafka SYNC")
 
     # check MATERIALIZED
-    # check ALIAS
     with pytest.raises(QueryRuntimeException) as exception:
         instance.query(
             """
