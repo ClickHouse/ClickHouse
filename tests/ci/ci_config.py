@@ -19,16 +19,6 @@ CI_CONFIG = {
             "with_coverage": False,
             "comment": "",
         },
-        "coverity": {
-            "compiler": "clang-16",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "coverity",
-            "tidy": "disable",
-            "with_coverage": False,
-            "official": False,
-            "comment": "A special build for coverity",
-        },
         "package_aarch64": {
             "compiler": "clang-16-aarch64",
             "build_type": "",
@@ -187,7 +177,6 @@ CI_CONFIG = {
     "builds_report_config": {
         "ClickHouse build check": [
             "package_release",
-            "coverity",
             "package_aarch64",
             "package_asan",
             "package_ubsan",
