@@ -49,8 +49,6 @@ public:
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
 
-    virtual bool isIntegratedWithFilesystemCache() const { return false; }
-
     /// Returns true if seek() actually works, false if seek() will always throw (or make subsequent
     /// nextImpl() calls throw).
     ///

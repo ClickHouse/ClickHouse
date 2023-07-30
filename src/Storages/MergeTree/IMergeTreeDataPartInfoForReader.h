@@ -52,7 +52,7 @@ public:
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
 
-    virtual AlterConversions getAlterConversions() const = 0;
+    virtual AlterConversionsPtr getAlterConversions() const = 0;
 
     virtual size_t getMarksCount() const = 0;
 

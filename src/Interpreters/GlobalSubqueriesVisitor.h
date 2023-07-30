@@ -205,10 +205,19 @@ public:
     }
 
 private:
+    static bool shouldBeExecutedGlobally(const Data & data)
+    {
+        const Settings & settings = data.getContext()->getSettingsRef();
+        /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
+        return settings.prefer_global_in_and_join || enable_parallel_processing_of_joins;
+    }
+
+
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
+        if ((shouldBeExecutedGlobally(data)
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
@@ -238,8 +247,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
-                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || shouldBeExecutedGlobally(data)))
         {
             data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;

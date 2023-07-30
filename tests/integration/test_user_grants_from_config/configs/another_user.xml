@@ -1,0 +1,18 @@
+<clickhouse>
+    <users>
+        <another>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SHOW ON *.*</query>
+                <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+                <query>GRANT SELECT ON system.*</query>
+                <query>REVOKE CREATE ON system.*</query>
+            </grants>
+        </another>
+    </users>
+</clickhouse>

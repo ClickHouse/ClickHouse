@@ -5,6 +5,7 @@
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/Priority.h>
 #include <IO/ResourceLink.h>
 
 namespace DB
@@ -84,8 +85,8 @@ struct ReadSettings
     size_t mmap_threshold = 0;
     MMappedFileCache * mmap_cache = nullptr;
 
-    /// For 'pread_threadpool'/'io_uring' method. Lower is more priority.
-    size_t priority = 0;
+    /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
+    Priority priority;
 
     bool load_marks_asynchronously = true;
 

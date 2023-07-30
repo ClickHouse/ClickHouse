@@ -24,7 +24,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool valid() const { return !removal_candidate.load(); }
 
-    Priority::Iterator getQueueIterator() { return file_segment->getQueueIterator(); }
+    Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
     std::atomic<bool> removal_candidate{false};

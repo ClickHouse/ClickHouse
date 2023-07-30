@@ -7,7 +7,7 @@
 namespace DB
 {
 /* Implements storage in the MongoDB database.
- * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
+ * Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
  * Read only.
  */
 

@@ -447,9 +447,9 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     auto const & storage_id = storage->getStorageID();
 
     ASTPtr additional_filter_ast;
-    for (size_t i = 0; i < additional_filters.size(); ++i)
+    for (const auto & additional_filter : additional_filters)
     {
-        const auto & tuple = additional_filters[i].safeGet<const Tuple &>();
+        const auto & tuple = additional_filter.safeGet<const Tuple &>();
         auto const & table = tuple.at(0).safeGet<String>();
         auto const & filter = tuple.at(1).safeGet<String>();
 

@@ -121,7 +121,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });

@@ -46,6 +46,16 @@ public:
         retryLoop(f, []() {});
     }
 
+    /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retrialable error is encountered
+    ///
+    /// the callable f() can provide feedback in terms of errors in two ways:
+    /// 1. throw KeeperException exception:
+    ///     in such case, retries are done only on hardware keeper errors
+    ///     because non-hardware error codes are semantically not really errors, just a response
+    /// 2. set an error code in the ZooKeeperRetriesControl object (setUserError/setKeeperError)
+    ///     The idea is that if the caller has some semantics on top of non-hardware keeper errors,
+    ///     then it can provide feedback to retries controller via user errors
+    ///
     void retryLoop(auto && f, auto && iteration_cleanup)
     {
         while (canTry())

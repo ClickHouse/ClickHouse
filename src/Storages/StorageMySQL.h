@@ -75,6 +75,12 @@ public:
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
         ContextPtr context_, bool require_table = true);
 
+    static ColumnsDescription getTableStructureFromData(
+        mysqlxx::PoolWithFailover & pool_,
+        const String & database,
+        const String & table,
+        const ContextPtr & context_);
+
 private:
     friend class StorageMySQLSink;
 

@@ -339,11 +339,11 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
             nodes.emplace(delta.path, UncommittedNode{.node = nullptr});
     }
 
-    auto & [node, acls, last_applied_zxid] = nodes.at(delta.path);
-
     std::visit(
-        [&, &node = node, &acls = acls, &last_applied_zxid = last_applied_zxid]<typename DeltaType>(const DeltaType & operation)
+        [&]<typename DeltaType>(const DeltaType & operation)
         {
+            auto & [node, acls, last_applied_zxid] = nodes.at(delta.path);
+
             if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
             {
                 assert(!node);

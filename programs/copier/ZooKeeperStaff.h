@@ -175,7 +175,7 @@ public:
         Coordination::Stat stat{};
         String _some_data;
         auto watch_callback =
-                [stale = stale] (const Coordination::WatchResponse & rsp)
+                [my_stale = stale] (const Coordination::WatchResponse & rsp)
                 {
                     auto logger = &Poco::Logger::get("ClusterCopier");
                     if (rsp.error == Coordination::Error::ZOK)
@@ -184,11 +184,11 @@ public:
                         {
                             case Coordination::CREATED:
                                 LOG_DEBUG(logger, "CleanStateClock change: CREATED, at {}", rsp.path);
-                                stale->store(true);
+                                my_stale->store(true);
                                 break;
                             case Coordination::CHANGED:
                                 LOG_DEBUG(logger, "CleanStateClock change: CHANGED, at {}", rsp.path);
-                                stale->store(true);
+                                my_stale->store(true);
                         }
                     }
                 };

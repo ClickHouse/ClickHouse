@@ -243,6 +243,7 @@ class BuildResult:
     sanitizer: str
     status: str
     elapsed_seconds: int
+    comment: str
 
 
 BuildResults = List[BuildResult]
@@ -452,6 +453,7 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Build log</th>
 <th>Build time</th>
 <th class="artifacts">Artifacts</th>
+<th>Comment</th>
 </tr>
 {rows}
 </table>
@@ -518,6 +520,8 @@ def create_build_html_report(
             if links:
                 links = links[: -len(link_separator)]
             row += f"<td>{links}</td>"
+
+        row += f"<td>{build_result.comment}</td>"
 
         row += "</tr>"
         rows += row

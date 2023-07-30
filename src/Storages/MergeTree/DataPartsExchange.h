@@ -70,6 +70,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
+        const String & zookeeper_name,
         const String & replica_path,
         const String & host,
         int port,

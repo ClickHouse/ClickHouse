@@ -63,12 +63,13 @@ const char * analyzeImpl(
     bool is_first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
+    bool is_prefix = true;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
     bool has_case_insensitive_flag = false;
 
-    /// Substring with a position.
-    using Substring = std::pair<std::string, size_t>;
+    /// Substring with is_prefix.
+    using Substring = std::pair<std::string, bool>;
     using Substrings = std::vector<Substring>;
 
     Substrings trivial_substrings(1);
@@ -98,6 +99,9 @@ const char * analyzeImpl(
 
     auto finish_non_trivial_char = [&](bool create_new_substr = true)
     {
+        is_trivial = false;
+        if (create_new_substr)
+            is_prefix = false;
         if (depth != 0)
             return;
 
@@ -106,6 +110,7 @@ const char * analyzeImpl(
             if (alter.suffix)
             {
                 alter.literal += last_substring->first;
+                alter.suffix = false;
             }
         }
 
@@ -126,16 +131,24 @@ const char * analyzeImpl(
             if (alter.prefix)
             {
                 alter.literal = last_substring->first + alter.literal;
+                alter.prefix = is_prefix;
             }
         }
 
         if (group_required_string.prefix)
+        {
             last_substring->first += group_required_string.literal;
+            last_substring->second = is_prefix;
+        }
         else
         {
             finish_non_trivial_char();
             last_substring->first = group_required_string.literal;
+            last_substring->second = false;
         }
+
+        is_prefix = is_prefix && group_required_string.prefix && group_required_string.suffix;
+
         /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
         if (!last_substring->first.empty() && !group_required_string.suffix)
         {
@@ -185,7 +198,6 @@ const char * analyzeImpl(
                         goto ordinary;
                     default:
                         /// all other escape sequences are not supported
-                        is_trivial = false;
                         finish_non_trivial_char();
                         break;
                 }
@@ -196,6 +208,7 @@ const char * analyzeImpl(
 
             case '|':
                 is_trivial = false;
+                is_prefix = false;
                 ++pos;
                 if (depth == 0)
                 {
@@ -205,6 +218,7 @@ const char * analyzeImpl(
                 break;
 
             case '(':
+                /// bracket does not break is_prefix. for example abc(d) has a prefix 'abcd'
                 is_trivial = false;
                 if (!in_square_braces)
                 {
@@ -258,7 +272,6 @@ const char * analyzeImpl(
             case '[':
                 in_square_braces = true;
                 ++depth;
-                is_trivial = false;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -270,7 +283,6 @@ const char * analyzeImpl(
                 --depth;
                 if (depth == 0)
                     in_square_braces = false;
-                is_trivial = false;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -284,7 +296,6 @@ const char * analyzeImpl(
                 break;
 
             case '^': case '$': case '.': case '+':
-                is_trivial = false;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -296,7 +307,6 @@ const char * analyzeImpl(
             case '?':
                 [[fallthrough]];
             case '*':
-                is_trivial = false;
                 if (depth == 0 && !last_substring->first.empty() && !in_square_braces)
                 {
                     last_substring->first.resize(last_substring->first.size() - 1);
@@ -318,8 +328,9 @@ const char * analyzeImpl(
             default:
                 if (depth == 0 && !in_curly_braces && !in_square_braces)
                 {
+                    /// record the first position of last string.
                     if (last_substring->first.empty())
-                        last_substring->second = pos - begin;
+                        last_substring->second = is_prefix;
                     last_substring->first.push_back(*pos);
                 }
                 ++pos;
@@ -328,10 +339,9 @@ const char * analyzeImpl(
     }
 finish:
 
-    finish_non_trivial_char(false);
-
     if (!is_trivial)
     {
+        finish_non_trivial_char(false);
         /// we calculate required substring even though has_alternative_on_depth_0.
         /// we will clear the required substring after putting it to alternatives.
         if (!has_case_insensitive_flag)
@@ -357,7 +367,7 @@ finish:
             if (max_length >= MIN_LENGTH_FOR_STRSTR || (!is_first_call && max_length > 0))
             {
                 required_substring.literal = candidate_it->first;
-                required_substring.prefix = candidate_it->second == 0;
+                required_substring.prefix = candidate_it->second;
                 required_substring.suffix = candidate_it + 1 == trivial_substrings.end();
             }
         }
@@ -365,7 +375,8 @@ finish:
     else if (!trivial_substrings.empty())
     {
         required_substring.literal = trivial_substrings.front().first;
-        required_substring.prefix = trivial_substrings.front().second == 0;
+        /// trivial string means the whole regex is a simple string literal, so the prefix and suffix should be true.
+        required_substring.prefix = true;
         required_substring.suffix = true;
     }
 

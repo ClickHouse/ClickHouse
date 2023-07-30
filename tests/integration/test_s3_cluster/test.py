@@ -67,20 +67,20 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "s0_0_0",
-            main_configs=["configs/cluster.xml"],
+            main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
             macros={"replica": "node1", "shard": "shard1"},
             with_minio=True,
             with_zookeeper=True,
         )
         cluster.add_instance(
             "s0_0_1",
-            main_configs=["configs/cluster.xml"],
+            main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
             macros={"replica": "replica2", "shard": "shard1"},
             with_zookeeper=True,
         )
         cluster.add_instance(
             "s0_1_0",
-            main_configs=["configs/cluster.xml"],
+            main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
             macros={"replica": "replica1", "shard": "shard2"},
             with_zookeeper=True,
         )
@@ -406,3 +406,21 @@ def test_cluster_with_header(started_cluster):
         )
         == "SomeValue\n"
     )
+
+
+def test_cluster_with_named_collection(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    pure_s3 = node.query("""SELECT * from s3(test_s3) ORDER BY (c1, c2, c3)""")
+
+    s3_cluster = node.query(
+        """SELECT * from s3Cluster(cluster_simple, test_s3) ORDER BY (c1, c2, c3)"""
+    )
+
+    assert TSV(pure_s3) == TSV(s3_cluster)
+
+    s3_cluster = node.query(
+        """SELECT * from s3Cluster(cluster_simple, test_s3, structure='auto') ORDER BY (c1, c2, c3)"""
+    )
+
+    assert TSV(pure_s3) == TSV(s3_cluster)

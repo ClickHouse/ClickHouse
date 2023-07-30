@@ -43,6 +43,8 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+
 
 namespace DB
 {
@@ -51,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -60,6 +63,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
+    ContextPtr context_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : IStorage(table_id_)
@@ -70,12 +74,36 @@ StoragePostgreSQL::StoragePostgreSQL(
     , log(&Poco::Logger::get("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = getTableStructureFromData(pool, remote_table_name, remote_table_schema, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
+ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
+    const postgres::PoolWithFailoverPtr & pool_,
+    const String & table,
+    const String & schema,
+    const ContextPtr & context_)
+{
+    const bool use_nulls = context_->getSettingsRef().external_table_functions_use_nulls;
+    auto connection_holder = pool_->get();
+    auto columns_info = fetchPostgreSQLTableStructure(
+            connection_holder->get(), table, schema, use_nulls).physical_columns;
+
+    if (!columns_info)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
+
+    return ColumnsDescription{columns_info->columns};
+}
 
 Pipe StoragePostgreSQL::read(
     const Names & column_names_,
@@ -504,10 +532,12 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
+            args.getContext(),
             configuration.schema,
             configuration.on_conflict);
     },
     {
+        .supports_schema_inference = true,
         .source_access_type = AccessType::POSTGRES,
     });
 }

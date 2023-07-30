@@ -260,19 +260,37 @@ void CacheMetadata::doCleanup()
         erase(it);
         LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
+        const fs::path key_directory = getPathInLocalCache(cleanup_key);
+        const fs::path key_prefix_directory = key_directory.parent_path();
+
         try
         {
-            const fs::path key_directory = getPathInLocalCache(cleanup_key);
             if (fs::exists(key_directory))
                 fs::remove_all(key_directory);
-
-            const fs::path key_prefix_directory = key_directory.parent_path();
-            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove_all(key_prefix_directory);
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+            continue;
+        }
+
+        try
+        {
+            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+                fs::remove_all(key_prefix_directory);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Key prefix directory can become non-empty just now, it is expected.
+            if (e.code() == std::errc::directory_not_empty)
+                continue;
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
             chassert(false);
         }
     }
