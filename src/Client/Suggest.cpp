@@ -124,6 +124,9 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
 
+                /// Client can successfully connect to the server and
+                /// get ErrorCodes::USER_SESSION_LIMIT_EXCEEDED for suggestion connection.
+
                 /// We should not use std::cerr here, because this method works concurrently with the main thread.
                 /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
 

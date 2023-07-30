@@ -9,6 +9,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/SettingSource.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -201,6 +202,8 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+class SessionTracker;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -539,8 +542,6 @@ public:
 
     String getUserName() const;
 
-    void setQuotaKey(String quota_key_);
-
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     boost::container::flat_set<UUID> getCurrentRoles() const;
@@ -735,11 +736,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
-    void checkSettingsConstraints(const SettingChange & change) const;
-    void checkSettingsConstraints(const SettingsChanges & changes) const;
-    void checkSettingsConstraints(SettingsChanges & changes) const;
-    void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -860,6 +861,8 @@ public:
     const ProcessList & getProcessList() const;
 
     OvercommitTracker * getGlobalOvercommitTracker() const;
+
+    SessionTracker & getSessionTracker();
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;

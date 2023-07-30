@@ -39,7 +39,7 @@ SET profile = 'web'
         <max_threads>8</max_threads>
     </default>
 
-    <!-- Settings for quries from the user interface -->
+    <!-- Settings for queries from the user interface -->
     <web>
         <max_rows_to_read>1000000000</max_rows_to_read>
         <max_bytes_to_read>100000000000</max_bytes_to_read>
@@ -67,6 +67,7 @@ SET profile = 'web'
         <max_ast_depth>50</max_ast_depth>
         <max_ast_elements>100</max_ast_elements>
 
+        <max_sessions_for_user>4</max_sessions_for_user>
         <readonly>1</readonly>
     </web>
 </profiles>
