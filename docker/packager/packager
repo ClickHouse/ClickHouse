@@ -253,11 +253,6 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for performance tests.
-    if package_type == "coverity":
-        result.append("COMBINED_OUTPUT=coverity")
-        result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
-
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
     if build_type:
@@ -356,7 +351,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary", "coverity"],
+        choices=["deb", "binary"],
         required=True,
     )
     parser.add_argument(
