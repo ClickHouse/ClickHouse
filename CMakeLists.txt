@@ -165,8 +165,14 @@ elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
 
-# Make sure the final executable has symbols exported
-set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+if (OS_LINUX)
+    # We should not export dynamic symbols, because:
+    # - The main clickhouse binary does not use dlopen,
+    #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
+    # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
+    #   should not expose their symbols to ODBC drivers and libraries.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+endif ()
 
 if (OS_DARWIN)
     # The `-all_load` flag forces loading of all symbols from all libraries,
