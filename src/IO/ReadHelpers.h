@@ -526,8 +526,8 @@ void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 
 
 /// Look at readFloatText.h
-template <typename T> void readFloatText(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
+template <bool precise_float_parsing = false, typename T> void readFloatText(T & x, ReadBuffer & in);
+template <bool precise_float_parsing = false, typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
 
 
 /// simple: all until '\n' or '\t'
