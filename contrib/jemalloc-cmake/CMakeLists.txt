@@ -34,9 +34,9 @@ if (OS_LINUX)
     # avoid spurious latencies and additional work associated with
     # MADV_DONTNEED. See
     # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,tcache_max:524288")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,tcache_max:262144")
 else()
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,tcache_max:524288")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,tcache_max:262144")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
 # to purge cache
