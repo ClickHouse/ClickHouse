@@ -115,7 +115,10 @@
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <base/find_symbols.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -1580,8 +1583,21 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
+            auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+            StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+
+            ASTCreateQuery create;
+            create.select = query->as<ASTSelectWithUnionQuery>();
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+            auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+                                                     create,
+                                                     ColumnsDescription(sample_block.getNamesAndTypesList()),
+                                                     /* comment */ "",
+                                                     /* is_parameterized_view */ true);
+            res->startup();
             function->prefer_subquery_to_function_formatting = true;
-            return table;
+            return res;
         }
     }
     auto hash = table_expression->getTreeHash();
