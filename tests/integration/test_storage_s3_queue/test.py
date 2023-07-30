@@ -797,7 +797,17 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         files_to_generate, prefix, started_cluster, bucket, row_num=1
     )
 
-    time.sleep((files_to_generate // poll_size) * 2)
+    def get_count(node, table_name):
+        return int(run_query(node, f"SELECT count() FROM {table_name}"))
+
+    for _ in range(100):
+        if (
+            get_count(instance, "test.s3_queue_persistent")
+            + get_count(instance_2, "test.s3_queue_persistent")
+        ) == files_to_generate:
+            break
+        time.sleep(1)
+
     get_query = f"SELECT * FROM test.s3_queue_persistent"
     res1 = [
         list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
@@ -810,9 +820,15 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     assert len(res1) > 0
     assert len(res2) > 0
 
-    # Checking that all files were processed only once
     assert len(res1) + len(res2) == files_to_generate
     assert {tuple(v) for v in res1 + res2} == set([tuple(i) for i in total_values])
+
+    # Checking that all files were processed only once
+    time.sleep(10)
+    assert (
+        get_count(instance, "test.s3_queue_persistent")
+        + get_count(instance_2, "test.s3_queue_persistent")
+    ) == files_to_generate
 
 
 def test_max_set_size(started_cluster):
