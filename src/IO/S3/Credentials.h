@@ -130,6 +130,11 @@ struct CredentialsConfiguration
     bool use_insecure_imds_request = false;
     uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
     bool no_sign_request = false;
+
+    // STS Assume Role related
+    std::string role_arn;
+    std::string session_name;
+    std::string external_id;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain

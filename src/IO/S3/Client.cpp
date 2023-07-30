@@ -13,6 +13,9 @@
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
 
+#include <aws/sts/STSClient.h>
+#include <aws/identity-management/auth/STSAssumeRoleCredentialsProvider.h>
+
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
@@ -759,10 +762,24 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
-    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
             credentials_configuration);
+
+    if (!credentials_configuration.role_arn.empty())
+    {
+        // why set to empty? because client_configuration's endpointOverride is pointed to a s3 endpoint, whereas we
+        // expect are going to visit a sts endpoint.
+        client_configuration.endpointOverride = "";
+        const auto x = std::make_shared<Aws::STS::STSClient>(credentials_provider, client_configuration);
+        credentials_provider = std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
+            credentials_configuration.role_arn,
+            credentials_configuration.session_name,
+            credentials_configuration.external_id,
+            Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS,
+            x);
+    }
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(
