@@ -203,6 +203,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             sendPartFromMemory(part, out, send_projections);
         else
             sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
+
+        data.addLastSentPart(part->info);
     }
     catch (const NetException &)
     {
@@ -325,6 +327,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         auto file_in = desc.input_buffer_getter();
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
+        hashing_out.finalize();
 
         if (blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
@@ -352,8 +355,14 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
     /// It is important to include Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
-    auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    MergeTreeData::DataPartPtr part;
+
+    /// Ephemeral zero-copy lock may be lost for PreActive parts
+    bool zero_copy_enabled = data.getSettings()->allow_remote_fs_zero_copy_replication;
+    if (zero_copy_enabled)
+        part = data.getPartIfExists(name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    else
+        part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
@@ -365,7 +374,7 @@ Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
     , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Fetcher)"))
 {}
 
-MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
@@ -601,7 +610,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
                 return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
-            return downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync);
+            return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));
         }
         catch (const Exception & e)
         {
@@ -667,11 +676,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             data.getRelativeDataPath(),
             part_name);
 
-        return downloadPartToMemory(
+        return std::make_pair(downloadPartToMemory(
             data_part_storage, part_name,
             MergeTreePartInfo::fromPartName(part_name, data.format_version),
             part_uuid, metadata_snapshot, context, *in,
-            projections, false, throttler);
+            projections, false, throttler), std::move(temporary_directory_lock));
     }
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
@@ -679,10 +688,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         return part_storage.writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
     };
 
-    return downloadPartToDisk(
+    return std::make_pair(downloadPartToDisk(
         part_name, replica_path, to_detached, tmp_prefix,
         disk, false, *in, output_buffer_getter,
-        projections, throttler, sync);
+        projections, throttler, sync),std::move(temporary_directory_lock));
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -779,6 +788,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
         HashingWriteBuffer hashing_out(*written_files.back());
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
+        hashing_out.finalize();
 
         if (blocker.isCancelled())
         {

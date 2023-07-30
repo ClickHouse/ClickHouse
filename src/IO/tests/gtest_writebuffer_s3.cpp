@@ -527,6 +527,7 @@ public:
 
         return std::make_unique<WriteBufferFromS3>(
                     client,
+                    client,
                     bucket,
                     file_name,
                     DBMS_DEFAULT_BUFFER_SIZE,
@@ -609,9 +610,16 @@ protected:
         test_with_pool = GetParam();
         client = MockS3::Client::CreateClient(bucket);
         if (test_with_pool)
+        {
+            /// Do not block the main thread awaiting the others task.
+            /// This test use the only one thread at all
+            getSettings().s3_max_inflight_parts_for_one_file = 0;
             async_policy = std::make_unique<MockS3::SimpleAsyncTasks>();
+        }
         else
+        {
             async_policy = std::make_unique<MockS3::BaseSyncPolicy>();
+        }
     }
 };
 
@@ -1109,6 +1117,34 @@ TEST_P(SyncAsync, IncreaseLimited) {
 
         auto actual_parts_sizes = MockS3::BucketMemStore::GetPartSizes(getCompletedPartUploads().back().second);
         ASSERT_THAT(actual_parts_sizes, testing::ElementsAre(10, 20, 40, 45, 45, 45, 15));
+    }
+}
+
+TEST_P(SyncAsync, StrictUploadPartSize) {
+    getSettings().s3_check_objects_after_upload = false;
+
+    {
+        getSettings().s3_max_single_part_upload_size = 10;
+        getSettings().s3_strict_upload_part_size = 11;
+
+        {
+            auto counters = MockS3::EventCounts{.multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};
+            runSimpleScenario(counters, 66);
+
+            auto actual_parts_sizes = MockS3::BucketMemStore::GetPartSizes(getCompletedPartUploads().back().second);
+            ASSERT_THAT(actual_parts_sizes, testing::ElementsAre(11, 11, 11, 11, 11, 11));
+
+            // parts: 11 22 33 44 55 66
+            // size:  11 11 11 11 11 11
+        }
+
+        {
+            auto counters = MockS3::EventCounts{.multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 7};
+            runSimpleScenario(counters, 67);
+
+            auto actual_parts_sizes = MockS3::BucketMemStore::GetPartSizes(getCompletedPartUploads().back().second);
+            ASSERT_THAT(actual_parts_sizes, testing::ElementsAre(11, 11, 11, 11, 11, 11, 1));
+        }
     }
 }
 

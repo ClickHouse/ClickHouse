@@ -18,9 +18,13 @@ struct DiskEncryptedSettings
 {
     DiskPtr wrapped_disk;
     String disk_path;
-    std::unordered_map<UInt64, String> keys;
-    UInt64 current_key_id;
+    String current_key;
+    UInt128 current_key_fingerprint;
     FileEncryption::Algorithm current_algorithm;
+    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
+
+    /// Returns an encryption key found by its fingerprint.
+    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 

@@ -39,6 +39,8 @@ public:
     static constexpr auto family_name = "Decimal";
 
     const char * getFamilyName() const override { return family_name; }
+    String getSQLCompatibleName() const override;
+
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
     bool canBePromoted() const override { return true; }

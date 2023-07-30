@@ -108,6 +108,7 @@ Result:
 
 - [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
 - [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
+- [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 
 ## Related content

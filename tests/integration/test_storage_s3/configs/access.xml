@@ -1,0 +1,19 @@
+<clickhouse>
+    <users>
+        <admin>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT admin_role</query>
+            </grants>
+        </admin>
+    </users>
+    <roles>
+        <admin_role>
+            <grants>
+                <query>GRANT USE NAMED COLLECTION ON * WITH GRANT OPTION</query>
+            </grants>
+        </admin_role>
+    </roles>
+</clickhouse>
