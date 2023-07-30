@@ -258,7 +258,10 @@ void FileSegment::resetDownloader()
 
 void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 {
-    // LOG_TEST(log, "Resetting downloader from {}", downloader_id);
+    if (downloader_id.empty())
+        return;
+
+    LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
 }
 
