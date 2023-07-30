@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 
 namespace Coordination
@@ -86,15 +87,22 @@ public:
             const String & path,
             SyncCallback callback) override;
 
+    void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) final;
+
     void multi(
             const Requests & requests,
             MultiCallback callback) override;
 
     void finalize(const String & reason) override;
 
-    DB::KeeperApiVersion getApiVersion() const override
+    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
     {
-        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
+        return false;
     }
 
     struct Node

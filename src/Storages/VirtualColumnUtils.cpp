@@ -20,9 +20,19 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/ActionsVisitor.h>
 
 
@@ -54,14 +64,31 @@ bool isValidFunction(const ASTPtr & expression, const std::function<bool(const A
 bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTs & result)
 {
     const auto * function = expression->as<ASTFunction>();
-    if (function && (function->name == "and" || function->name == "indexHint"))
+
+    if (function)
     {
-        bool ret = true;
-        for (const auto & child : function->arguments->children)
-            ret &= extractFunctions(child, is_constant, result);
-        return ret;
+        if (function->name == "and" || function->name == "indexHint")
+        {
+            bool ret = true;
+            for (const auto & child : function->arguments->children)
+                ret &= extractFunctions(child, is_constant, result);
+            return ret;
+        }
+        else if (function->name == "or")
+        {
+            bool ret = true;
+            ASTs or_args;
+            for (const auto & child : function->arguments->children)
+                ret &= extractFunctions(child, is_constant, or_args);
+            /// We can keep condition only if it still OR condition (i.e. we
+            /// have dependent conditions for columns at both sides)
+            if (or_args.size() == 2)
+                result.push_back(makeASTForLogicalOr(std::move(or_args)));
+            return ret;
+        }
     }
-    else if (isValidFunction(expression, is_constant))
+
+    if (isValidFunction(expression, is_constant))
     {
         result.push_back(expression->clone());
         return true;
@@ -71,32 +98,13 @@ bool extractFunctions(const ASTPtr & expression, const std::function<bool(const 
 }
 
 /// Construct a conjunction from given functions
-ASTPtr buildWhereExpression(const ASTs & functions)
+ASTPtr buildWhereExpression(ASTs && functions)
 {
     if (functions.empty())
         return nullptr;
     if (functions.size() == 1)
         return functions[0];
-    return makeASTFunction("and", functions);
-}
-
-void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
-{
-    const auto * func = expression->as<ASTFunction>();
-    if (func && functionIsInOrGlobalInOperator(func->name))
-    {
-        const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
-        if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
-        {
-            analyzer.tryMakeSetForIndexFromSubquery(arg);
-        }
-    }
-    else
-    {
-        for (const auto & child : expression->children)
-            buildSets(child, analyzer);
-    }
+    return makeASTForLogicalAnd(std::move(functions));
 }
 
 }
@@ -181,7 +189,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (select.prewhere())
         unmodified &= extractFunctions(select.prewhere(), is_constant, functions);
 
-    expression_ast = buildWhereExpression(functions);
+    expression_ast = buildWhereExpression(std::move(functions));
     return unmodified;
 }
 
@@ -199,8 +207,35 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     /// Let's analyze and calculate the prepared expression.
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    buildSets(expression_ast, analyzer);
     ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
+
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        auto plan = set_from_subquery->build(context);
+                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+                        pipeline.complete(std::make_shared<EmptySink>(Block()));
+
+                        CompletedPipelineExecutor executor(pipeline);
+                        executor.execute();
+                    }
+                }
+            }
+        }
+    }
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);

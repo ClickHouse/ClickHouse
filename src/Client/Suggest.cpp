@@ -43,7 +43,7 @@ Suggest::Suggest()
         "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
         "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
         "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "CLEANUP"
+        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "CLEANUP",     "APPEND"
     });
 }
 
@@ -101,6 +101,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
+    /// FIXME: This query does not work with the new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
     query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
     return query;
 }
@@ -158,6 +159,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 fillWordsFromBlock(packet.block);
                 continue;
 
+            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::Totals:

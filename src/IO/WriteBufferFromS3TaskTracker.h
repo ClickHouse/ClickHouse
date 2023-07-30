@@ -6,6 +6,8 @@
 
 #include "WriteBufferFromS3.h"
 
+#include <Common/logger_useful.h>
+
 #include <list>
 
 namespace DB
@@ -25,7 +27,7 @@ class WriteBufferFromS3::TaskTracker
 public:
     using Callback = std::function<void()>;
 
-    TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_);
+    TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_);
     ~TaskTracker();
 
     static ThreadPoolCallbackRunner<void> syncRunner();
@@ -49,13 +51,15 @@ private:
     /// waitTilInflightShrink waits til the number of in-flight tasks beyond the limit `max_tasks_inflight`.
     void waitTilInflightShrink() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
+    void collectFinishedFutures(bool propagate_exceptions) TSA_REQUIRES(mutex);
+
     const bool is_async;
     ThreadPoolCallbackRunner<void> scheduler;
     const size_t max_tasks_inflight;
 
     using FutureList = std::list<std::future<void>>;
     FutureList futures;
-    Poco::Logger * log = &Poco::Logger::get("TaskTracker");
+    LogSeriesLimiterPtr limitedLog;
 
     std::mutex mutex;
     std::condition_variable has_finished TSA_GUARDED_BY(mutex);

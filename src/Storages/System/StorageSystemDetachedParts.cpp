@@ -194,7 +194,7 @@ private:
             futures.push_back(
                         scheduleFromThreadPool<void>(
                             std::move(worker),
-                            IOThreadPool::get(),
+                            getIOThreadPool().get(),
                             "DP_BytesOnDisk"));
         }
 

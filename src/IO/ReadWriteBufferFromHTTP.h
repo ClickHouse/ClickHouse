@@ -42,6 +42,9 @@ public:
 
     void updateSession(const Poco::URI & uri);
 
+    /// Thread safe.
+    SessionPtr createDetachedSession(const Poco::URI & uri);
+
     std::shared_ptr<UpdatableSession<TSessionFactory>> clone(const Poco::URI & uri);
 
 private:
@@ -110,13 +113,15 @@ namespace detail
 
         bool withPartialContent(const HTTPRange & range) const;
 
-        size_t getRangeBegin() const;
-
         size_t getOffset() const;
+
+        void prepareRequest(Poco::Net::HTTPRequest & request, Poco::URI uri_, std::optional<HTTPRange> range) const;
 
         std::istream * callImpl(UpdatableSessionPtr & current_session, Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_, bool for_object_info = false);
 
         size_t getFileSize() override;
+
+        bool supportsReadAt() override;
 
         bool checkIfActuallySeekable() override;
 
@@ -170,6 +175,8 @@ namespace detail
         void initialize();
 
         bool nextImpl() override;
+
+        size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) override;
 
         off_t getPosition() override;
 
@@ -237,53 +244,6 @@ public:
         std::optional<HTTPFileInfo> file_info_ = std::nullopt);
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public SeekableReadBufferFactory, public WithFileName
-{
-    using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
-
-public:
-    RangedReadWriteBufferFromHTTPFactory(
-        Poco::URI uri_,
-        std::string method_,
-        OutStreamCallback out_stream_callback_,
-        ConnectionTimeouts timeouts_,
-        const Poco::Net::HTTPBasicCredentials & credentials_,
-        UInt64 max_redirects_ = 0,
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ReadSettings settings_ = {},
-        HTTPHeaderEntries http_header_entries_ = {},
-        const RemoteHostFilter * remote_host_filter_ = nullptr,
-        bool delay_initialization_ = true,
-        bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false);
-
-    std::unique_ptr<SeekableReadBuffer> getReader() override;
-
-    size_t getFileSize() override;
-
-    bool checkIfActuallySeekable() override;
-
-    HTTPFileInfo getFileInfo();
-
-    String getFileName() const override;
-
-private:
-    Poco::URI uri;
-    std::string method;
-    OutStreamCallback out_stream_callback;
-    ConnectionTimeouts timeouts;
-    const Poco::Net::HTTPBasicCredentials & credentials;
-    UInt64 max_redirects;
-    size_t buffer_size;
-    ReadSettings settings;
-    HTTPHeaderEntries http_header_entries;
-    const RemoteHostFilter * remote_host_filter;
-    std::optional<HTTPFileInfo> file_info;
-    bool delay_initialization;
-    bool use_external_buffer;
-    bool skip_not_found_url;
-};
-
 class PooledSessionFactory
 {
 public:
@@ -292,7 +252,9 @@ public:
 
     using SessionType = PooledHTTPSessionPtr;
 
+    /// Thread safe.
     SessionType buildNewSession(const Poco::URI & uri);
+
 private:
     ConnectionTimeouts timeouts;
     size_t per_endpoint_pool_size;
@@ -314,6 +276,7 @@ public:
         const UInt64 max_redirects = 0,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT);
 };
+
 
 extern template class UpdatableSession<SessionFactory>;
 extern template class UpdatableSession<PooledSessionFactory>;
