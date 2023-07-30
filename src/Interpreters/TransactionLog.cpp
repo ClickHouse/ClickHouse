@@ -34,7 +34,7 @@ try
     elem.tid = tid;
     elem.csn = csn;
     elem.fillCommonFields(nullptr);
-    system_log->add(elem);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {
@@ -482,7 +482,7 @@ CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
         {
-            LOG_ERROR(log , "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
+            LOG_ERROR(log, "It's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
             abort();
         }
     }

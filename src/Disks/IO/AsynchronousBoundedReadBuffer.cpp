@@ -147,7 +147,7 @@ void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
     };
 
     if (prefetches_log)
-        prefetches_log->add(elem);
+        prefetches_log->add(std::move(elem));
 }
 
 

@@ -43,6 +43,7 @@ public:
     std::optional<ReadProgress> getReadProgress() final;
 
     void addTotalRowsApprox(size_t value) { read_progress.total_rows_approx += value; }
+    void addTotalBytes(size_t value) { read_progress.total_bytes += value; }
 };
 
 using SourcePtr = std::shared_ptr<ISource>;

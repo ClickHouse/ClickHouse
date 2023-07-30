@@ -162,7 +162,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             if (my_table_func_ptr)
                 try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
             else
-                try_results = my_shard.shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, my_main_table.getQualifiedName());
+                try_results = my_shard.shard_info.pool->getManyChecked(
+                    timeouts, &current_settings, PoolMode::GET_MANY,
+                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
         {
@@ -241,7 +243,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     remote_query_executor->setPoolMode(PoolMode::GET_MANY);
 
     if (!table_func_ptr)
-        remote_query_executor->setMainTable(main_table);
+        remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
     pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);

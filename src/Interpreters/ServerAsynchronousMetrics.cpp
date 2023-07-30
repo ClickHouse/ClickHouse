@@ -92,6 +92,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
+    if (auto query_cache = getContext()->getQueryCache())
+    {
+        new_values["QueryCacheBytes"] = { query_cache->weight(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
+    }
+
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
