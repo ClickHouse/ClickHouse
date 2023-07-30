@@ -23,7 +23,7 @@ public:
         , multi_if_function_ptr(std::move(multi_if_function_ptr_))
     {}
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_if_chain_to_multiif)
             return;

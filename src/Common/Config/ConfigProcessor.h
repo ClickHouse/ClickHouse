@@ -144,7 +144,9 @@ private:
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
-    void merge(XMLDocumentPtr config, XMLDocumentPtr with);
+    /// If config root node name is not 'clickhouse' and merging config's root node names doesn't match, bypasses merging and returns false.
+    /// For compatibility root node 'yandex' considered equal to 'clickhouse'.
+    bool merge(XMLDocumentPtr config, XMLDocumentPtr with);
 
     void doIncludesRecursive(
             XMLDocumentPtr config,
