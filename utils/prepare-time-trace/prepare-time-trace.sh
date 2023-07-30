@@ -6,6 +6,31 @@
 #   mkdir time_trace
 #   utils/prepare-time-trace/prepare-time-trace.sh build time_trace
 
+<<///
+CREATE TABLE build_time_trace
+(
+    -- extra columns here
+    file String,
+    library LowCardinality(String),
+    date Date DEFAULT toDate(time),
+    time DateTime64(6),
+
+    pid UInt32,
+    tid UInt32,
+    ph Enum8('B', 'E', 'X', 'i', 'I', 'C', 'b', 'n', 'e', 'S', 'T', 'p', 'F', 's', 't', 'f', 'P', 'N', 'O', 'D', 'M'),
+    ts UInt64,
+    dur UInt64,
+    cat LowCardinality(String),
+    name LowCardinality(String),
+    detail String,
+    count UInt64,
+    avgMs UInt64,
+    args_name LowCardinality(String),
+    is_total Bool DEFAULT name LIKE 'Total %'
+)
+ENGINE = MergeTree ORDER BY (date, file, name, args_name);
+///
+
 INPUT_DIR=$1
 OUTPUT_DIR=$2
 EXTRA_COLUMN_VALUES=$3
