@@ -154,19 +154,22 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   */
 void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
-    bool all_table_expressions_are_dummy = true;
+    bool collect_filters = false;
 
     for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         auto * table_node = table_expression->as<TableNode>();
-        if (table_node && typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
+        if (!table_node)
             continue;
 
-        all_table_expressions_are_dummy = false;
+        if (typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
+            continue;
+
+        collect_filters = true;
         break;
     }
 
-    if (all_table_expressions_are_dummy)
+    if (!collect_filters)
         return;
 
     ResultReplacementMap replacement_map;
