@@ -58,7 +58,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , builder(createHDFSBuilder(hdfs_uri_, config_))
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
-        , file_size(file_size_)
     {
         fs = createHDFSFS(builder.get());
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
@@ -68,10 +67,17 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
                 "Unable to open HDFS file: {}. Error: {}",
                 hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
 
-        auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
-        if (!file_info)
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
-        file_size = static_cast<size_t>(file_info->mSize);
+        if (file_size_.has_value())
+        {
+            file_size = file_size_.value();
+        }
+        else
+        {
+            auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
+            if (!file_info)
+                throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
+            file_size = static_cast<size_t>(file_info->mSize);
+        }
     }
 
     ~ReadBufferFromHDFSImpl() override
