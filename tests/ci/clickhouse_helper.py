@@ -132,6 +132,23 @@ class ClickHouseHelper:
         return result
 
 
+# Obtain the machine type from IMDS:
+def get_instance_type():
+    url = "http://169.254.169.254/latest/meta-data/instance-type"
+    for i in range(5):
+        try:
+            response = requests.get(url, timeout=1)
+            if response.status_code == 200:
+                return response.text
+        except Exception as e:
+            error = (
+                f"Received exception while sending data to {url} on {i} attempt: {e}"
+            )
+            logging.warning(error)
+            continue
+    return ""
+
+
 def prepare_tests_results_for_clickhouse(
     pr_info: PRInfo,
     test_results: TestResults,
@@ -168,6 +185,7 @@ def prepare_tests_results_for_clickhouse(
         head_ref=head_ref,
         head_repo=head_repo,
         task_url=pr_info.task_url,
+        instance_type=get_instance_type(),
     )
 
     # Always publish a total record for all checks. For checks with individual
