@@ -64,7 +64,7 @@ then
     ninja $NINJA_FLAGS clickhouse-keeper
 
     ls -la ./programs/
-    ldd ./programs/clickhouse-keeper
+    ldd ./programs/clickhouse-keeper ||:
 
     if [ -n "$MAKE_DEB" ]; then
       # No quotes because I want it to expand to nothing if empty.
