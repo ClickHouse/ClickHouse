@@ -45,6 +45,7 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
@@ -157,6 +158,7 @@ namespace CurrentMetrics
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
 }
+
 
 namespace DB
 {
@@ -276,6 +278,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache;         /// Cache of query results.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
+    SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
@@ -739,6 +742,9 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
+
+SessionTracker & Context::getSessionTracker() { return shared->session_tracker; }
+
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 MovesList & Context::getMovesList() { return shared->moves_list; }
@@ -1094,7 +1100,7 @@ void Context::setUser(const UUID & user_id_, bool set_current_profiles_, bool se
         std::optional<ContextAccessParams> params;
         {
             auto lock = getLock();
-            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info});
+            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info });
         }
         /// `temp_access` is used here only to extract information about the user, not to actually check access.
         /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
@@ -1154,13 +1160,6 @@ std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
     return user_id;
-}
-
-
-void Context::setQuotaKey(String quota_key_)
-{
-    auto lock = getLock();
-    client_info.quota_key = std::move(quota_key_);
 }
 
 
@@ -1303,7 +1302,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
 {
     auto lock = getLock();
     if (check_constraints)
-        checkSettingsConstraints(profiles_info.settings);
+        checkSettingsConstraints(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChanges(profiles_info.settings);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
 }
@@ -1857,29 +1856,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements, source);
 }
 
-void Context::checkSettingsConstraints(const SettingChange & change) const
+void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change, source);
 }
 
-void Context::checkSettingsConstraints(const SettingsChanges & changes) const
+void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes, source);
 }
 
-void Context::checkSettingsConstraints(SettingsChanges & changes) const
+void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes, source);
 }
 
-void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes, source);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const

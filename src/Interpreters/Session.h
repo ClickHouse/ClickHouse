@@ -4,6 +4,7 @@
 #include <Access/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SessionTracker.h>
 
 #include <chrono>
 #include <memory>
@@ -112,6 +113,8 @@ private:
 
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
+
+    SessionTracker::SessionTrackerHandle session_tracker_handle;
 
     Poco::Logger * log = nullptr;
 };
