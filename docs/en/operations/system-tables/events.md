@@ -11,6 +11,8 @@ Columns:
 - `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of events occurred.
 - `description` ([String](../../sql-reference/data-types/string.md)) — Event description.
 
+You can find all supported events in source file [src/Common/ProfileEvents.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ProfileEvents.cpp).
+
 **Example**
 
 ``` sql

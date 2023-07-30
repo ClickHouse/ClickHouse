@@ -116,6 +116,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
@@ -4896,6 +4897,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     lambda_expression_untyped->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            if (!parameters.empty())
+            {
+                throw Exception(
+                    ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_node.formatASTForErrorMessage());
+            }
+
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
@@ -5012,9 +5019,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
+    bool is_executable_udf = true;
 
     if (!function)
+    {
         function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        is_executable_udf = false;
+    }
 
     if (!function)
     {
@@ -5063,6 +5074,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         return result_projection_names;
+    }
+
+    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
+    if (!parameters.empty() && !is_executable_udf)
+    {
+        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
@@ -6434,7 +6451,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
-    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context);
+    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
 /// Resolve array join node in scope
