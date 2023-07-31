@@ -147,6 +147,7 @@ function clone_submodules
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
+            contrib/incbin
         )
 
         git submodule sync
