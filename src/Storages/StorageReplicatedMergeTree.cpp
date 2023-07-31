@@ -9447,9 +9447,18 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_n
 {
     fs::directory_iterator dir_end;
     for (const std::string & path : getDataPaths())
-        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
+    {
+        auto detached_path = fs::path(path) / "detached/";
+        if (!fs::exists(detached_path))
+        {
+            /// Empty detached folders could be lost, e.g. on newly inserted disk without restarting clickhouse process
+            fs::create_directory(detached_path);
+            continue;
+        }
+        for (fs::directory_iterator dir_it{detached_path}; dir_it != dir_end; ++dir_it)
             if (dir_it->path().filename().string() == part_name)
                 return true;
+    }
     return false;
 }
 
@@ -9460,7 +9469,14 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
     for (const std::string & path : getDataPaths())
     {
-        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
+        auto detached_path = fs::path(path) / "detached/";
+        if (!fs::exists(detached_path))
+        {
+            /// Empty detached folders could be lost, e.g. on newly inserted disk without restarting clickhouse process
+            fs::create_directory(detached_path);
+            continue;
+        }
+        for (fs::directory_iterator dir_it{detached_path}; dir_it != dir_end; ++dir_it)
         {
             const String file_name = dir_it->path().filename().string();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
