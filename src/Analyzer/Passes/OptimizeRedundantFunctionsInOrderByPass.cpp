@@ -28,7 +28,7 @@ public:
         return true;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_redundant_functions_in_order_by)
             return;

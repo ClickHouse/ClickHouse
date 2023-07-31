@@ -240,7 +240,7 @@ private:
 
             if (session != sessions.end() && session->second->close_cycle <= current_cycle)
             {
-                if (!session->second.unique())
+                if (session->second.use_count() != 1)
                 {
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}", key.second, key.first);
 
