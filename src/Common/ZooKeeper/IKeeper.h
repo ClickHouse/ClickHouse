@@ -136,6 +136,8 @@ using ResponseCallback = std::function<void(const Response &)>;
 struct Response
 {
     Error error = Error::ZOK;
+    int64_t zxid = 0;
+
     Response() = default;
     Response(const Response &) = default;
     Response & operator=(const Response &) = default;
