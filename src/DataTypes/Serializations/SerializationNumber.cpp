@@ -169,7 +169,7 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-        std::ranges::for_each(x | std::views::drop(initial_size), [](auto & i) { transformEndianness<std::endian::little>(i); });
+        std::ranges::for_each(x | std::views::drop(initial_size), [](auto & i) { transformEndianness<std::endian::big, std::endian::little>(i); });
 }
 
 template class SerializationNumber<UInt8>;
