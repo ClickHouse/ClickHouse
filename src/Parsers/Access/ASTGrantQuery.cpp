@@ -147,6 +147,8 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                             "ASTGrantQuery can contain either roles or access rights elements "
                             "to grant or revoke, not both of them");
     }
+    else if (current_grants)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
     else
         formatElementsWithoutOptions(access_rights_elements, settings);
 

@@ -8,7 +8,7 @@ import os
 
 from github import Github
 
-from commit_status_helper import post_commit_status
+from commit_status_helper import get_commit, post_commit_status
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -81,13 +81,14 @@ def main(args):
     )
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
     post_commit_status(
-        gh,
-        pr_info.sha,
-        check_name_with_group,
-        "" if is_ok else "Changed tests don't reproduce the bug",
+        commit,
         "success" if is_ok else "error",
         report_url,
+        "" if is_ok else "Changed tests don't reproduce the bug",
+        check_name_with_group,
+        pr_info,
     )
 
 

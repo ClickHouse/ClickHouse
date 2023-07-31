@@ -43,7 +43,6 @@ namespace
             {
                 if (!str.empty())
                     str += " ";
-                std::string_view word{pos->begin, pos->size()};
                 str += std::string_view(pos->begin, pos->size());
                 ++pos;
             }
@@ -184,6 +183,37 @@ namespace
         });
     }
 
+    bool parseCurrentGrants(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
+    {
+        if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        {
+            if (!parseElementsWithoutOptions(pos, expected, elements))
+                return false;
+
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                return false;
+        }
+        else
+        {
+            AccessRightsElement default_element(AccessType::ALL);
+
+            if (!ParserKeyword{"ON"}.ignore(pos, expected))
+                return false;
+
+            String database_name, table_name;
+            bool any_database = false, any_table = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                return false;
+
+            default_element.any_database = any_database;
+            default_element.database = database_name;
+            default_element.any_table = any_table;
+            default_element.table = table_name;
+            elements.push_back(std::move(default_element));
+        }
+
+        return true;
+    }
 
     void throwIfNotGrantable(AccessRightsElements & elements)
     {
@@ -284,14 +314,25 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
-        return false;
+
+    bool current_grants = false;
+    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    {
+        current_grants = true;
+        if (!parseCurrentGrants(pos, expected, elements))
+            return false;
+    }
+    else
+    {
+        if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
+            return false;
+    }
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
-    if (!parseToGrantees(pos, expected, is_revoke, grantees))
+    if (!parseToGrantees(pos, expected, is_revoke, grantees) && !allow_no_grantees)
         return false;
 
     if (cluster.empty())
@@ -353,6 +394,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->admin_option = admin_option;
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
+    query->current_grants = current_grants;
 
     return true;
 }

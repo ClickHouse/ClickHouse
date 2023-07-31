@@ -156,6 +156,13 @@ private:
     /// Original name -> name. Only renamed columns.
     std::unordered_map<String, String> renames;
 
+    /// Map column name to actual key name that can be an alias.
+    /// Example: SELECT r.id as rid from t JOIN r ON t.id = rid
+    /// Map: r.id -> rid
+    /// Required only for StorageJoin to map join keys back to original column names.
+    /// (workaround for ExpressionAnalyzer)
+    std::unordered_map<String, String> right_key_aliases;
+
     VolumePtr tmp_volume;
 
     std::shared_ptr<StorageJoin> right_storage_join;
@@ -210,14 +217,16 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
+    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
-        bool is_enbaled_by_default = val == JoinAlgorithm::DEFAULT
+        bool is_enabled_by_default = val == JoinAlgorithm::DEFAULT
                                   || val == JoinAlgorithm::HASH
                                   || val == JoinAlgorithm::DIRECT;
-        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enbaled_by_default)
+        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enabled_by_default)
             return true;
         return join_algorithm.isSet(val);
     }
@@ -225,8 +234,17 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }
-    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind()); }
+
+    bool forceNullableRight() const
+    {
+        return join_use_nulls && isLeftOrFull(kind());
+    }
+
+    bool forceNullableLeft() const
+    {
+        return join_use_nulls && isRightOrFull(kind());
+    }
+
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -333,6 +351,7 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+    String renamedRightColumnNameWithAlias(const String & name) const;
     void setRename(const String & from, const String & to);
 
     void resetKeys();

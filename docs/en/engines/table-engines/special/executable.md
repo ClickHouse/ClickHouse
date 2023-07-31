@@ -65,7 +65,7 @@ if __name__ == "__main__":
     main()
 ```
 
-The following `my_executable_table` is built from the output of `my_script.py`, which will generate 10 random strings everytime you run a `SELECT` from `my_executable_table`:
+The following `my_executable_table` is built from the output of `my_script.py`, which will generate 10 random strings every time you run a `SELECT` from `my_executable_table`:
 
 ```sql
 CREATE TABLE my_executable_table (
@@ -120,7 +120,7 @@ Some comments about the `sentiment` table:
 - The `TabSeparated` format means our Python script needs to generate rows of raw data that contain tab-separated values
 - The query selects two columns from `hackernews`. The Python script will need to parse out those column values from the incoming rows
 
-Here is the defintion of `sentiment.py`:
+Here is the definition of `sentiment.py`:
 
 ```python
 #!/usr/local/bin/python3.9

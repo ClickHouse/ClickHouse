@@ -43,6 +43,10 @@ namespace BackupCoordinationStage
 
     /// Coordination stage meaning that a host finished its work.
     constexpr const char * COMPLETED = "completed";
+
+    /// Coordination stage meaning that backup/restore has failed due to an error
+    /// Check '/error' for the error message
+    constexpr const char * ERROR = "error";
 }
 
 }

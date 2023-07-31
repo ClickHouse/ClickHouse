@@ -5,6 +5,7 @@
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Formats/MarkInCompressedFile.h>
 

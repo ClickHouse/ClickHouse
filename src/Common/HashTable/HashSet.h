@@ -41,6 +41,8 @@ public:
     using Base = HashTable<Key, TCell, Hash, Grower, Allocator>;
     using typename Base::LookupResult;
 
+    using Base::Base;
+
     void merge(const Self & rhs)
     {
         if (!this->hasZero() && rhs.hasZero())
