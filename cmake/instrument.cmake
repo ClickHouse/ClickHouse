@@ -1,5 +1,10 @@
 # https://llvm.org/docs/XRay.html
-option (ENABLE_XRAY "Enable LLVM XRay" ON)
+
+if (ARCH_AMD64)
+    option (ENABLE_XRAY "Enable LLVM XRay" ON)
+else ()
+    option (ENABLE_XRAY "Enable LLVM XRay" OFF)
+endif ()
 
 set (XRAY_FLAGS "-fxray-instrument -DUSE_XRAY")
 
