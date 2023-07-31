@@ -74,5 +74,12 @@
   
   "test_http_failover/test.py::test_url_destination_host_with_multiple_addrs",
   "test_http_failover/test.py::test_url_invalid_hostname",
-  "test_http_failover/test.py::test_url_ip_change"
+  "test_http_failover/test.py::test_url_ip_change",
+
+  "test_system_logs/test_system_logs.py::test_max_size_0",
+  "test_system_logs/test_system_logs.py::test_reserved_size_greater_max_size",
+  "test_system_flush_logs/test.py::test_log_buffer_size_rows_flush_threshold",
+  "test_system_flush_logs/test.py::test_log_max_size",
+  "test_crash_log/test.py::test_pkill_query_log",
+  "test_crash_log/test.py::test_pkill"
 ]
