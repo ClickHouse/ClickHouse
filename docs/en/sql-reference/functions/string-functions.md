@@ -706,7 +706,15 @@ endsWithUTF8(str, suffix)
 **Example**
 
 ``` sql
-SELECT endsWithUTF8('中国', '国');
+SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
+```
+
+Result:
+
+```result
+┌─endsWithUTF8('中国', '½')─┬─endsWith('中国', '½')─┐
+│                        0 │                    1 │
+└──────────────────────────┴──────────────────────┘
 ```
 
 ## startsWith
@@ -733,9 +741,16 @@ Returns whether string `str` starts with `prefix`, the difference between `start
 **Example**
 
 ``` sql
-SELECT startsWithUTF8('中国', '中');
+SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
 ```
 
+Result:
+
+```result
+┌─startsWithUTF8('中国', '⥩─┬─startsWith('中国', '⥩─┐
+│                          0 │                      1 │
+└────────────────────────────┴────────────────────────┘
+```
 
 ## trim
 
