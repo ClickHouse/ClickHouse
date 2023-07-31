@@ -1,3 +1,4 @@
+#include "IO/VarInt.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -23,33 +24,34 @@ namespace ErrorCodes
 
 void S3QueueHolder::S3QueueCollection::read(ReadBuffer & in)
 {
-    assertString("collection:\n", in);
-
     files = {};
-    while (!in.eof())
-    {
-        String file_name;
-        UInt64 timestamp;
-        UInt64 retries_count;
-        in >> file_name >> "\n";
-        in >> timestamp >> "\n";
-        in >> retries_count >> "\n";
 
-        TrackedCollectionItem item = {.file_path=file_name, .timestamp=timestamp, .retries_count=retries_count};
+    if (in.eof())
+        return;
+
+    size_t files_num;
+    in >> files_num >> "\n";
+    while (files_num--)
+    {
+        TrackedCollectionItem item;
+        in >> item.file_path >> "\n";
+        in >> item.timestamp >> "\n";
+        in >> item.retries_count >> "\n";
+        in >> item.last_exception >> "\n";
         files.push_back(item);
     }
 }
 
 void S3QueueHolder::S3QueueCollection::write(WriteBuffer & out) const
 {
-    out << "collection:\n";
+    out << files.size() << "\n";
     for (const auto & processed_file : files)
     {
         out << processed_file.file_path << "\n";
         out << processed_file.timestamp << "\n";
         out << processed_file.retries_count << "\n";
+        out << processed_file.last_exception << "\n";
     }
-    /// todo(kssenii): use a more flexible format?
 }
 
 String S3QueueHolder::S3QueueCollection::toString() const
@@ -79,16 +81,14 @@ void S3QueueHolder::S3QueueProcessedCollection::parse(const String & collection_
 {
     ReadBufferFromString buf(collection_str);
     read(buf);
-    // Remove old items
-    if (max_age > 0)
+    if (max_age > 0) // Remove old items
     {
         UInt64 timestamp = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         UInt64 max_seconds_diff = max_age;
-        auto new_end = std::remove_if(
-            files.begin(), files.end(),
-            [&timestamp, &max_seconds_diff](TrackedCollectionItem processed_file)
+        std::erase_if(
+            files,
+            [&timestamp, &max_seconds_diff](const TrackedCollectionItem & processed_file)
             { return (timestamp - processed_file.timestamp) > max_seconds_diff; });
-        files.erase(new_end, files.end());
     }
 }
 
@@ -100,12 +100,10 @@ void S3QueueHolder::S3QueueProcessedCollection::add(const String & file_name)
     TrackedCollectionItem processed_file = {.file_path=file_name, .timestamp=timestamp};
     files.push_back(processed_file);
 
-    // Check set size
-    if (files.size() > max_size)
+    while (files.size() > max_size)
     {
-        files.erase(files.begin(), files.begin() + (files.size() - max_size));
+        files.pop_front();
     }
-    /// todo(kssenii): use deque here
 }
 
 
@@ -120,7 +118,7 @@ void S3QueueHolder::S3QueueFailedCollection::parse(const String & collection_str
 }
 
 
-bool S3QueueHolder::S3QueueFailedCollection::add(const String & file_name)
+bool S3QueueHolder::S3QueueFailedCollection::add(const String & file_name, const String & exception_message)
 {
     auto failed_it
         = std::find_if(files.begin(), files.end(), [&file_name](const TrackedCollectionItem & s) { return s.file_path == file_name; });
@@ -133,7 +131,7 @@ bool S3QueueHolder::S3QueueFailedCollection::add(const String & file_name)
     }
     else
     {
-        TrackedCollectionItem failed_file = {.file_path=file_name, .retries_count=max_retries_count};
+        TrackedCollectionItem failed_file = { .file_path=file_name, .retries_count=max_retries_count, .last_exception = exception_message };
         files.push_back(failed_file);
     }
     return true;
@@ -163,6 +161,7 @@ S3QueueHolder::S3QueueHolder(
     , max_set_size(max_set_size_)
     , max_set_age_sec(max_set_age_sec_)
     , max_loading_retries(max_loading_retries_)
+    , zk_client(getContext()->getZooKeeper())
     , zookeeper_path(zookeeper_path_)
     , zookeeper_failed_path(fs::path(zookeeper_path_) / "failed")
     , zookeeper_processing_path(fs::path(zookeeper_path_) / "processing")
@@ -171,31 +170,20 @@ S3QueueHolder::S3QueueHolder(
     , mode(mode_)
     , log(&Poco::Logger::get("S3QueueHolder"))
 {
-    current_zookeeper = getContext()->getZooKeeper();
-    if (!current_zookeeper)
-        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Cannot get ZooKeeper");
 }
 
-
-zkutil::ZooKeeperPtr S3QueueHolder::getZooKeeper() const
-{
-    /// todo(kssenii): current_zookeeper is not updated at all apart from in constructor, remove the lock?
-    std::lock_guard lock(current_zookeeper_mutex);
-    return current_zookeeper;
-}
 
 void S3QueueHolder::setFileProcessed(const String & file_path)
 {
-    auto zookeeper = getZooKeeper();
     auto lock = acquireLock();
 
     if (mode == S3QueueMode::UNORDERED)
     {
-        String processed_files = zookeeper->get(zookeeper_processed_path);
+        String processed_files = zk_client->get(zookeeper_processed_path);
         auto processed = S3QueueProcessedCollection(max_set_size, max_set_age_sec);
         processed.parse(processed_files);
         processed.add(file_path);
-        zookeeper->set(zookeeper_processed_path, processed.toString());
+        zk_client->set(zookeeper_processed_path, processed.toString());
     }
     else if (mode == S3QueueMode::ORDERED)
     {
@@ -204,24 +192,22 @@ void S3QueueHolder::setFileProcessed(const String & file_path)
         // This check can be useful, when multiple table engines consume in ordered mode.
         if (max_file.compare(file_path) <= 0)
         {
-            zookeeper->set(zookeeper_processed_path, file_path);
+            zk_client->set(zookeeper_processed_path, file_path);
         }
     }
     removeProcessingFile(file_path);
 }
 
 
-bool S3QueueHolder::markFailedAndCheckRetry(const String & file_path)
+bool S3QueueHolder::setFileFailed(const String & file_path, const String & exception_message)
 {
-    auto zookeeper = getZooKeeper();
     auto lock = acquireLock();
 
-    String failed_files = zookeeper->get(zookeeper_failed_path);
     auto failed_collection = S3QueueFailedCollection(max_loading_retries);
-    failed_collection.parse(failed_files);
-    bool retry_later = failed_collection.add(file_path);
+    failed_collection.parse(zk_client->get(zookeeper_failed_path));
+    bool retry_later = failed_collection.add(file_path, exception_message);
 
-    zookeeper->set(zookeeper_failed_path, failed_collection.toString());
+    zk_client->set(zookeeper_failed_path, failed_collection.toString());
     removeProcessingFile(file_path);
 
     return retry_later;
@@ -229,8 +215,7 @@ bool S3QueueHolder::markFailedAndCheckRetry(const String & file_path)
 
 S3QueueHolder::S3FilesCollection S3QueueHolder::getFailedFiles()
 {
-    auto zookeeper = getZooKeeper();
-    String failed_files = zookeeper->get(zookeeper_failed_path);
+    String failed_files = zk_client->get(zookeeper_failed_path);
 
     auto failed_collection = S3QueueFailedCollection(max_loading_retries);
     failed_collection.parse(failed_files);
@@ -240,85 +225,79 @@ S3QueueHolder::S3FilesCollection S3QueueHolder::getFailedFiles()
 
 String S3QueueHolder::getMaxProcessedFile()
 {
-    auto zookeeper = getZooKeeper();
-    String processed = zookeeper->get(zookeeper_processed_path);
+    String processed = zk_client->get(zookeeper_processed_path);
     return processed;
 }
 
 S3QueueHolder::S3FilesCollection S3QueueHolder::getProcessingFiles()
 {
-    auto zookeeper = getZooKeeper();
-    String processing = zookeeper->get(zookeeper_processing_path);
-    return parseCollection(processing);
+    String processing_files;
+    if (!zk_client->tryGet(zookeeper_processing_path, processing_files))
+        return {};
+    return parseCollection(processing_files);
 }
 
 void S3QueueHolder::setFilesProcessing(Strings & file_paths)
 {
-    auto zookeeper = getZooKeeper();
     std::unordered_set<String> processing_files(file_paths.begin(), file_paths.end());
     processing_files.merge(getProcessingFiles());
+    String processing_files_str = toString(Strings(processing_files.begin(), processing_files.end()));
 
-    Strings processing_file_paths(processing_files.begin(), processing_files.end());
-    zookeeper->set(fs::path(zookeeper_processing_path), toString(processing_file_paths));
+    if (zk_client->exists(zookeeper_processing_path))
+        zk_client->set(fs::path(zookeeper_processing_path), processing_files_str);
+    else
+        zk_client->create(fs::path(zookeeper_processing_path), processing_files_str, zkutil::CreateMode::Ephemeral);
 }
 
 S3QueueHolder::S3FilesCollection S3QueueHolder::getUnorderedProcessedFiles()
 {
-    auto zookeeper = getZooKeeper();
-
-    String processed = zookeeper->get(zookeeper_processed_path);
+    String processed = zk_client->get(zookeeper_processed_path);
     auto collection = S3QueueProcessedCollection(max_set_size, max_set_age_sec);
     collection.parse(processed);
-
     return collection.getFileNames();
 }
 
-S3QueueHolder::S3FilesCollection S3QueueHolder::getExcludedFiles()
+S3QueueHolder::S3FilesCollection S3QueueHolder::getProcessedAndFailedFiles()
 {
-    auto zookeeper = getZooKeeper();
-
-    S3FilesCollection exclude_files = getFailedFiles();
+    S3FilesCollection processed_and_failed_files = getFailedFiles();
 
     if (mode == S3QueueMode::UNORDERED)
     {
-        S3FilesCollection processed_files = getUnorderedProcessedFiles();
-        exclude_files.merge(processed_files);
+        processed_and_failed_files.merge(getUnorderedProcessedFiles());
     }
     else
     {
         String processed = getMaxProcessedFile();
-        exclude_files.insert(processed);
+        processed_and_failed_files.insert(processed);
     }
 
     S3FilesCollection processing_files = getProcessingFiles();
-    exclude_files.merge(processing_files);
+    processed_and_failed_files.merge(processing_files);
 
-    return exclude_files;
+    return processed_and_failed_files;
 }
 
 void S3QueueHolder::removeProcessingFile(const String & file_path)
 {
-    auto zookeeper = getZooKeeper();
     String node_data;
-    String processing = zookeeper->get(zookeeper_processing_path);
+    String processing = zk_client->get(zookeeper_processing_path);
     S3FilesCollection processing_files = parseCollection(processing);
 
     processing_files.erase(file_path);
 
     Strings file_paths(processing_files.begin(), processing_files.end());
-    zookeeper->set(fs::path(zookeeper_processing_path), toString(file_paths));
+    zk_client->set(fs::path(zookeeper_processing_path), toString(file_paths));
 }
 
 std::shared_ptr<zkutil::EphemeralNodeHolder> S3QueueHolder::acquireLock()
 {
-    auto zookeeper = getZooKeeper();
     UInt32 retry_count = 200;
     UInt32 sleep_ms = 100;
 
     UInt32 retries = 0;
     while (true)
     {
-        Coordination::Error code = zookeeper->tryCreate(zookeeper_lock_path, "", zkutil::CreateMode::Ephemeral);
+        Coordination::Error code = zk_client->tryCreate(zookeeper_lock_path, "", zkutil::CreateMode::Ephemeral);
         if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
         {
             retries++;
@@ -334,14 +313,14 @@ std::shared_ptr<zkutil::EphemeralNodeHolder> S3QueueHolder::acquireLock()
         }
         else
         {
-            return zkutil::EphemeralNodeHolder::existing(zookeeper_lock_path, *zookeeper);
+            return zkutil::EphemeralNodeHolder::existing(zookeeper_lock_path, *zk_client);
         }
     }
 }
 
-S3QueueHolder::S3FilesCollection S3QueueHolder::parseCollection(String & files)
+S3QueueHolder::S3FilesCollection S3QueueHolder::parseCollection(const String & collection_str)
 {
-    ReadBufferFromString rb(files);
+    ReadBufferFromString rb(collection_str);
     Strings deserialized;
     try
     {
@@ -353,9 +332,7 @@ S3QueueHolder::S3FilesCollection S3QueueHolder::parseCollection(String & files)
         deserialized = {};
     }
 
-    std::unordered_set<String> processed(deserialized.begin(), deserialized.end());
-
-    return processed;
+    return std::unordered_set<String>(deserialized.begin(), deserialized.end());
 }
 
 }
