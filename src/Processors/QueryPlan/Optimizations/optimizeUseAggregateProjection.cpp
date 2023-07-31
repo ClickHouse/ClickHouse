@@ -92,18 +92,6 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     return info;
 }
 
-static bool hasNullableOrMissingColumn(const DAGIndex & index, const Names & names)
-{
-    for (const auto & query_name : names)
-    {
-        auto jt = index.find(query_name);
-        if (jt == index.end() || jt->second->result_type->isNullable())
-            return true;
-    }
-
-    return false;
-}
-
 struct AggregateFunctionMatch
 {
     const AggregateDescription * description = nullptr;
@@ -170,20 +158,14 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
             }
 
             /// This is a special case for the function count().
-            /// We can assume that 'count(expr) == count()' if expr is not nullable.
-            if (typeid_cast<const AggregateFunctionCount *>(candidate.function.get()))
+            /// We can assume that 'count(expr) == count()' if expr is not nullable,
+            /// which can be verified by simply casting to `AggregateFunctionCount *`.
+            if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get()))
             {
-                bool has_nullable_or_missing_arg = false;
-                has_nullable_or_missing_arg |= hasNullableOrMissingColumn(query_index, aggregate.argument_names);
-                has_nullable_or_missing_arg |= hasNullableOrMissingColumn(proj_index, candidate.argument_names);
-
-                if (!has_nullable_or_missing_arg)
-                {
-                    /// we can ignore arguments for count()
-                    found_match = true;
-                    res.push_back({&candidate, DataTypes()});
-                    break;
-                }
+                /// we can ignore arguments for count()
+                found_match = true;
+                res.push_back({&candidate, DataTypes()});
+                break;
             }
 
             /// Now, function names and types matched.
@@ -628,8 +610,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         //           candidates.minmax_projection->block.dumpStructure());
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            std::move(pipe),
+            context,
+            query_info.is_internal
+                ? Context::QualifiedProjectionName{}
+                : Context::QualifiedProjectionName
+                  {
+                      .storage_id = reading->getMergeTreeData().getStorageID(),
+                      .projection_name = candidates.minmax_projection->candidate.projection->name,
+                  });
         has_ordinary_parts = !candidates.minmax_projection->normal_parts.empty();
         if (has_ordinary_parts)
             reading->resetParts(std::move(candidates.minmax_projection->normal_parts));
@@ -661,7 +651,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         {
             auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
-            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            projection_reading = std::make_unique<ReadFromPreparedSource>(
+                std::move(pipe),
+                context,
+                query_info.is_internal
+                    ? Context::QualifiedProjectionName{}
+                    : Context::QualifiedProjectionName
+                      {
+                          .storage_id = reading->getMergeTreeData().getStorageID(),
+                          .projection_name = best_candidate->projection->name,
+                      });
         }
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;

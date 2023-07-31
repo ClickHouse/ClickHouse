@@ -55,6 +55,8 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
+    # Note, here --offline is not used, since on CI vendor archive is used, and
+    # passing --offline here will be inconvenient for local development.
     corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
 endfunction()
 
