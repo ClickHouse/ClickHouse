@@ -376,14 +376,30 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
         if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+            if (storage_snapshot->storage.supportsSubcolumns())
+                get_column_options.withSubcolumns();
+
             storage_dummy
-                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns());
+                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
         }
         else if (subquery_node || union_node)
         {
-            const auto & projection_columns
+            const auto & subquery_projection_columns
                 = subquery_node ? subquery_node->getProjectionColumns() : union_node->computeProjectionColumns();
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(projection_columns));
+
+            NameSet unique_column_names;
+            NamesAndTypes storage_dummy_columns;
+            storage_dummy_columns.reserve(subquery_projection_columns.size());
+
+            for (const auto & projection_column : subquery_projection_columns)
+            {
+                auto [_, inserted] = unique_column_names.insert(projection_column.name);
+                if (inserted)
+                    storage_dummy_columns.emplace_back(projection_column);
+            }
+
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(storage_dummy_columns));
             ++subquery_index;
         }
 
