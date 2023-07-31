@@ -122,7 +122,7 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
         return;
 
     const fs::directory_iterator end;
-    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
+    for (fs::directory_iterator it(path_for_ls, std::filesystem::directory_options::skip_permission_denied); it != end; ++it)
     {
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
