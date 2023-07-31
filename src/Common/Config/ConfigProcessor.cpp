@@ -254,6 +254,23 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
 
 #endif
 
+void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
+{
+    for (Node * node = config_root->firstChild(); node; node = node->nextSibling())
+    {
+        if (node->nodeType() == Node::ELEMENT_NODE)
+        {
+            Element & element = dynamic_cast<Element &>(*node);
+            if (element.hasAttribute("hidden") && element.getAttribute("hidden") == "true")
+            {
+                config_root->removeChild(node);
+            } else
+                hideRecursive(node);
+        }
+    }
+}
+
+
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
     const NodeListPtr with_nodes = with_root->childNodes();
@@ -792,10 +809,19 @@ void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
 
 #endif
 
+void ConfigProcessor::hideElements(LoadedConfig & loaded_config)
+{
+    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+    hideRecursive(config_root);
+    // loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
+}
+
 void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
     {
+        hideElements(loaded_config);
+
         if (preprocessed_path.empty())
         {
             fs::path preprocessed_configs_path("preprocessed_configs/");
