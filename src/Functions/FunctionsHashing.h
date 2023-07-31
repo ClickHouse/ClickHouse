@@ -1074,7 +1074,7 @@ private:
         {
             // IPv6 addresses are parsed into four 32-bit components in big-endian ordering on both platforms, so no change is necessary.
             // Reference: `parseIPv6orIPv4` in src/Common/formatIPv6.h.
-            if constexpr (std::endian::native == std::endian::big && std::is_same_v<T, IPv6>)
+            if constexpr (std::endian::native == std::endian::big && std::is_same_v<std::remove_reference_t<decltype(value)>, IPv6>)
                 return;
 
             transformEndianness<std::endian::little>(value);
