@@ -21,9 +21,8 @@ AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const
     assertBinary(name, argument_types);
 
     if (argument_types.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Aggregate function {} requires at least two arguments",
-                        name);
+        throw Exception("Aggregate function " + name + " requires at least two arguments",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     return std::make_shared<AggregateFunctionBoundingRatio>(argument_types);
 }

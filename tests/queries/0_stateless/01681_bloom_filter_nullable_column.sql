@@ -7,7 +7,7 @@ CREATE TABLE bloom_filter_nullable_index
         INDEX idx (str) TYPE bloom_filter GRANULARITY 1
     )
     ENGINE = MergeTree() 
-    ORDER BY order_key SETTINGS index_granularity = 6, index_granularity_bytes = '10Mi';
+    ORDER BY order_key SETTINGS index_granularity = 6;
 
 INSERT INTO bloom_filter_nullable_index VALUES (1, 'test');
 INSERT INTO bloom_filter_nullable_index VALUES (2, 'test2');

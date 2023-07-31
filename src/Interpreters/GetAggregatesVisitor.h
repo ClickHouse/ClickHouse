@@ -26,8 +26,8 @@ public:
         // Explicit empty initializers are needed to make designated initializers
         // work on GCC 10.
         std::unordered_set<String> uniq_names {};
-        ASTs aggregates;
-        ASTs window_functions;
+        std::vector<const ASTFunction *> aggregates {};
+        std::vector<const ASTFunction *> window_functions {};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -61,33 +61,33 @@ public:
     }
 
 private:
-    static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
+    static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
     {
         if (isAggregateFunction(node))
         {
             if (data.assert_no_aggregates)
-                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query",
-                                node.getColumnName(), String(data.assert_no_aggregates));
+                throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.assert_no_aggregates) + " in query",
+                                ErrorCodes::ILLEGAL_AGGREGATION);
 
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
-            data.aggregates.push_back(ast);
+            data.aggregates.push_back(&node);
         }
         else if (node.is_window_function)
         {
             if (data.assert_no_windows)
-                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
-                                node.getColumnName(), String(data.assert_no_windows));
+                throw Exception("Window function " + node.getColumnName()  + " is found " + String(data.assert_no_windows) + " in query",
+                                ErrorCodes::ILLEGAL_AGGREGATION);
 
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
-            data.window_functions.push_back(ast);
+            data.window_functions.push_back(&node);
         }
     }
 

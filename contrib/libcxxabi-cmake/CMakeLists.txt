@@ -1,4 +1,4 @@
-set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi")
+set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcxxabi")
 
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
@@ -9,7 +9,6 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_storage.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_guard.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_handlers.cpp"
-# "${LIBCXXABI_SOURCE_DIR}/src/cxa_noexception.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_thread_atexit.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_vector.cpp"
@@ -35,10 +34,12 @@ target_include_directories(cxxabi SYSTEM BEFORE
 )
 target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
-target_link_libraries(cxxabi PUBLIC unwind)
+target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
 
 # Enable capturing stack traces for all exceptions.
-target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+if (USE_UNWIND)
+    target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
 
 install(
     TARGETS cxxabi

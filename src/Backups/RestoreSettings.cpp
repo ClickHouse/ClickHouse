@@ -3,11 +3,9 @@
 #include <Backups/RestoreSettings.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Backups/SettingsFieldOptionalUUID.h>
 
 
 namespace DB
@@ -161,11 +159,9 @@ namespace
     M(RestoreAccessCreationMode, create_access) \
     M(Bool, allow_unresolved_access_dependencies) \
     M(RestoreUDFCreationMode, create_function) \
-    M(Bool, allow_s3_native_copy) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(OptionalUUID, restore_uuid)
-
+    M(String, coordination_zk_path)
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
 {
@@ -217,12 +213,7 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     query.settings = query_settings;
 
-    auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
-    if (base_backup_name)
-        query.setOrReplace(query.base_backup_name, base_backup_name);
-    else
-        query.reset(query.base_backup_name);
-
+    query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
     query.cluster_host_ids = !cluster_host_ids.empty() ? BackupSettings::Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 

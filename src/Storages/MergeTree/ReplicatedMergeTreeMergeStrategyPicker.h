@@ -17,7 +17,7 @@ struct ReplicatedMergeTreeLogEntryData;
 /// (so instead of doing exactly the same merge cluster-wise you can do merge once and fetch ready part)
 /// Fetches may be desirable for other operational reasons (backup replica without lot of CPU resources).
 ///
-/// That class allow to take a decisions about preferred strategy for a concrete merge.
+/// That class allow to take a decisions about preferred strategy for a concreate merge.
 ///
 /// Since that code is used in shouldExecuteLogEntry we need to be able to:
 /// 1) make decision fast

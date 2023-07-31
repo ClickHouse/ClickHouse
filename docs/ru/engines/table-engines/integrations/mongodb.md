@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/integrations/mongodb
 sidebar_position: 5
 sidebar_label: MongoDB
 ---
@@ -68,3 +67,5 @@ SELECT COUNT() FROM mongo_table;
 │       4 │
 └─────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/ru/engines/table-engines/integrations/mongodb/) <!--hide-->

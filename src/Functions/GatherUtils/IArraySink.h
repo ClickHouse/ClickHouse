@@ -20,13 +20,16 @@ struct IArraySink
 
     virtual void accept(ArraySinkVisitor &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
+        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+#pragma GCC visibility push(hidden)
 
 template <typename Derived>
 class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};
 
+#pragma GCC visibility pop
 }
 
 }

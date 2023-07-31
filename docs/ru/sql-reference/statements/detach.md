@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/detach
 sidebar_position: 43
 sidebar_label: DETACH
 ---

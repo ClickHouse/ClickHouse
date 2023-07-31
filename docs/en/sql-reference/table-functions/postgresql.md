@@ -1,6 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/postgresql
-sidebar_position: 160
+sidebar_position: 42
 sidebar_label: postgresql
 ---
 
@@ -16,18 +15,18 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 
 **Arguments**
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `schema` — Non-default table schema. Optional.
+-   `host:port` — PostgreSQL server address.
+-   `database` — Remote database name.
+-   `table` — Remote table name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
+-   `schema` — Non-default table schema. Optional.
 
 **Returned Value**
 
 A table object with the same columns as the original PostgreSQL table.
 
-:::note
+:::note    
 In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
@@ -43,7 +42,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL Array types converts into ClickHouse arrays.
 
-:::note
+:::note    
 Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
 :::
 
@@ -129,10 +128,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
-- [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+-   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
+-   [Using PostgreSQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-## Related content
-
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
-- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->

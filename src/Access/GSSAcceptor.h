@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #include <Access/Credentials.h>
 #include <base/types.h>
@@ -9,7 +9,6 @@
 #if USE_KRB5
 #   include <gssapi/gssapi.h>
 #   include <gssapi/gssapi_ext.h>
-#   include <gssapi/gssapi_krb5.h>
 #   define MAYBE_NORETURN
 #else
 #   define MAYBE_NORETURN [[noreturn]]
@@ -29,7 +28,6 @@ public:
         String mechanism = "1.2.840.113554.1.2.2"; // OID: krb5
         String principal;
         String realm;
-        String keytab;
     };
 
     explicit GSSAcceptorContext(const Params & params_);

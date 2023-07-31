@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/third-party/gui
 sidebar_position: 28
 sidebar_label: Visual Interfaces
 ---
@@ -14,11 +13,11 @@ Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) pr
 
 Features:
 
-- Works with ClickHouse directly from the browser, without the need to install additional software.
-- Query editor with syntax highlighting.
-- Auto-completion of commands.
-- Tools for graphical analysis of query execution.
-- Colour scheme options.
+-   Works with ClickHouse directly from the browser, without the need to install additional software.
+-   Query editor with syntax highlighting.
+-   Auto-completion of commands.
+-   Tools for graphical analysis of query execution.
+-   Colour scheme options.
 
 [Tabix documentation](https://tabix.io/doc/).
 
@@ -28,21 +27,21 @@ Features:
 
 Features:
 
-- Query builder with syntax highlighting. View the response in a table or JSON view.
-- Export query results as CSV or JSON.
-- List of processes with descriptions. Write mode. Ability to stop (`KILL`) a process.
-- Database graph. Shows all tables and their columns with additional information.
-- A quick view of the column size.
-- Server configuration.
+-   Query builder with syntax highlighting. View the response in a table or JSON view.
+-   Export query results as CSV or JSON.
+-   List of processes with descriptions. Write mode. Ability to stop (`KILL`) a process.
+-   Database graph. Shows all tables and their columns with additional information.
+-   A quick view of the column size.
+-   Server configuration.
 
 The following features are planned for development:
 
-- Database management.
-- User management.
-- Real-time data analysis.
-- Cluster monitoring.
-- Cluster management.
-- Monitoring replicated and Kafka tables.
+-   Database management.
+-   User management.
+-   Real-time data analysis.
+-   Cluster monitoring.
+-   Cluster management.
+-   Monitoring replicated and Kafka tables.
 
 ### LightHouse {#lighthouse}
 
@@ -50,9 +49,9 @@ The following features are planned for development:
 
 Features:
 
-- Table list with filtering and metadata.
-- Table preview with filtering and sorting.
-- Read-only queries execution.
+-   Table list with filtering and metadata.
+-   Table preview with filtering and sorting.
+-   Read-only queries execution.
 
 ### Redash {#redash}
 
@@ -62,9 +61,9 @@ Supports for multiple data sources including ClickHouse, Redash can join results
 
 Features:
 
-- Powerful editor of queries.
-- Database explorer.
-- Visualization tools, that allow you to represent data in different forms.
+-   Powerful editor of queries.
+-   Database explorer.
+-   Visualization tools, that allow you to represent data in different forms.
 
 ### Grafana {#grafana}
 
@@ -92,10 +91,10 @@ Features:
 
 Features:
 
-- Query development with syntax highlight and autocompletion.
-- Table list with filters and metadata search.
-- Table data preview.
-- Full-text search.
+-   Query development with syntax highlight and autocompletion.
+-   Table list with filters and metadata search.
+-   Table data preview.
+-   Full-text search.
 
 By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set `session_id` to a random string (it uses the http connection under the hood). Then you can use any setting from the query window.
 
@@ -105,10 +104,10 @@ By default, DBeaver does not connect using a session (the CLI for example does).
 
 Features:
 
-- Autocompletion.
-- Syntax highlighting for the queries and data output.
-- Pager support for the data output.
-- Custom PostgreSQL-like commands.
+-   Autocompletion.
+-   Syntax highlighting for the queries and data output.
+-   Pager support for the data output.
+-   Custom PostgreSQL-like commands.
 
 ### clickhouse-flamegraph {#clickhouse-flamegraph}
 
@@ -132,15 +131,15 @@ Features:
 
 Features:
 
-- Support query history (pagination, clear all, etc.)
-- Support selected sql clauses query
-- Support terminating query
-- Support table management (metadata, delete, preview)
-- Support database management (delete, create)
-- Support custom query
-- Support multiple data sources management(connection test, monitoring)
-- Support monitor (processor, connection, query)
-- Support migrate data
+-   Support query history (pagination, clear all, etc.)
+-   Support selected sql clauses query
+-   Support terminating query
+-   Support table management (metadata, delete, preview)
+-   Support database management (delete, create)
+-   Support custom query
+-   Support multiple data sources management(connection test, monitoring)
+-   Support monitor (processor, connection, query)
+-   Support migrate data
 
 ### Bytebase {#bytebase}
 
@@ -148,13 +147,13 @@ Features:
 
 Features:
 
-- Schema review between developers and DBAs.
-- Database-as-Code, version control the schema in VCS such GitLab and trigger the deployment upon code commit.
-- Streamlined deployment with per-environment policy.
-- Full migration history.
-- Schema drift detection.
-- Backup and restore.
-- RBAC.
+-   Schema review between developers and DBAs.
+-   Database-as-Code, version control the schema in VCS such GitLab and trigger the deployment upon code commit.
+-   Streamlined deployment with per-environment policy.
+-   Full migration history.
+-   Schema drift detection.
+-   Backup and restore.
+-   RBAC.
 
 ### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
 
@@ -166,9 +165,9 @@ Features:
 
 Features:
 
-- An online SQL editor which can run your SQL code without any installing.
-- You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
-- The Metrics contains Cluster Analysis,Data Analysis,Query Analysis.
+-   An online SQL editor which can run your SQL code without any installing.
+-   You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
+-   The Metrics contains Cluster Analysis,Data Analysis,Query Analysis.
 
 ### ClickVisual {#clickvisual}
 
@@ -197,18 +196,6 @@ Features:
 
 The client is available for instant usage through github pages: https://metrico.github.io/clickhouse-mate/
 
-### Uptrace {#uptrace}
-
-[Uptrace](https://github.com/uptrace/uptrace) is an APM tool that provides distributed tracing and metrics powered by OpenTelemetry and ClickHouse.
-
-Features:
-
-- [OpenTelemetry tracing](https://uptrace.dev/opentelemetry/distributed-tracing.html), metrics, and logs.
-- Email/Slack/PagerDuty notifications using AlertManager.
-- SQL-like query language to aggregate spans.
-- Promql-like language to query metrics.
-- Pre-built metrics dashboards.
-- Multiple users/projects via YAML config.
 
 ## Commercial {#commercial}
 
@@ -218,12 +205,12 @@ Features:
 
 Features:
 
-- Very fast code completion.
-- ClickHouse syntax highlighting.
-- Support for features specific to ClickHouse, for example, nested columns, table engines.
-- Data Editor.
-- Refactorings.
-- Search and Navigation.
+-   Very fast code completion.
+-   ClickHouse syntax highlighting.
+-   Support for features specific to ClickHouse, for example, nested columns, table engines.
+-   Data Editor.
+-   Refactorings.
+-   Search and Navigation.
 
 ### Yandex DataLens {#yandex-datalens}
 
@@ -231,15 +218,15 @@ Features:
 
 Features:
 
-- Wide range of available visualizations, from simple bar charts to complex dashboards.
-- Dashboards could be made publicly available.
-- Support for multiple data sources including ClickHouse.
-- Storage for materialized data based on ClickHouse.
+-   Wide range of available visualizations, from simple bar charts to complex dashboards.
+-   Dashboards could be made publicly available.
+-   Support for multiple data sources including ClickHouse.
+-   Storage for materialized data based on ClickHouse.
 
 DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
 
-- [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
-- [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
+-   [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
+-   [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
 
 ### Holistics Software {#holistics-software}
 
@@ -247,11 +234,11 @@ DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing)
 
 Features:
 
-- Automated email, Slack and Google Sheet schedules of reports.
-- SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
-- Embedded analytics of reports and dashboards via iframe.
-- Data preparation and ETL capabilities.
-- SQL data modelling support for relational mapping of data.
+-   Automated email, Slack and Google Sheet schedules of reports.
+-   SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
+-   Embedded analytics of reports and dashboards via iframe.
+-   Data preparation and ETL capabilities.
+-   SQL data modelling support for relational mapping of data.
 
 ### Looker {#looker}
 
@@ -260,9 +247,9 @@ to integrate data with other applications.
 
 Features:
 
-- Easy and agile development using LookML, a language which supports curated
+-   Easy and agile development using LookML, a language which supports curated
     [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
-- Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
+-   Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
@@ -272,12 +259,12 @@ Features:
 
 Features:
 
-- Business users-friendly reports builder.
-- Powerful report parameters for SQL filtering and report-specific query customizations.
-- Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
-- It is possible to use all power of ClickHouse SQL dialect in dimensions/measures definitions.
-- [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
-- Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore); data models (cubes) / reports configuration is a human-readable XML and can be stored under version control system.
+-   Business users-friendly reports builder.
+-   Powerful report parameters for SQL filtering and report-specific query customizations.
+-   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
+-   It is possible to use all power of ClickHouse SQL dialect in dimensions/measures definitions.
+-   [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
+-   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore); data models (cubes) / reports configuration is a human-readable XML and can be stored under version control system.
 
 SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/individual usage.
 
@@ -306,3 +293,5 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
+
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

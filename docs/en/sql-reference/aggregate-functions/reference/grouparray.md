@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/grouparray
 sidebar_position: 110
 ---
 
@@ -44,5 +43,3 @@ Result:
 ```
 
 The groupArray function will remove ᴺᵁᴸᴸ value based on the above results.
-
-- Alias: `array_agg`.

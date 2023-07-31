@@ -69,11 +69,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be String or FixedString",
-                getName());
+            throw Exception(
+                "First argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!arguments[1].column || !isFloat(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
+            throw Exception("Second argument of function " + getName() + " must be constant float", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0].type;
     }
@@ -88,7 +88,7 @@ public:
 
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)
         {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of function {} must be from `0.0` to `1.0`", getName());
+            throw Exception("Second argument of function " + getName() + " must be from `0.0` to `1.0`", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
         if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
@@ -149,7 +149,7 @@ public:
 
             size_t total_size;
             if (common::mulOverflow(input_rows_count, n, total_size))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
             chars_to.resize(total_size);
 
@@ -170,8 +170,9 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 };

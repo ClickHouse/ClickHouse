@@ -1,9 +1,5 @@
 -- Tags: long, replica
 
--- in case of keeper fault injection on insert, set bigger number of retries because partitions
-set insert_keeper_max_retries=100;
-set insert_keeper_retry_max_backoff_ms=10;
-
 -- Testing basic functionality with compact parts
 set replication_alter_partitions_sync = 2;
 drop table if exists mt_compact;

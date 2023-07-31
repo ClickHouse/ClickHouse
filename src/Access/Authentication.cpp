@@ -1,5 +1,5 @@
 #include <Access/Authentication.h>
-#include <Access/AuthenticationData.h>
+#include <Access/Common/AuthenticationData.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
@@ -29,11 +29,6 @@ namespace
     bool checkPasswordDoubleSHA1(std::string_view password, const Digest & password_double_sha1)
     {
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
-    }
-
-    bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt)
-    {
-        return Util::checkPasswordBcrypt(password, password_bcrypt);
     }
 
     bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
@@ -86,7 +81,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
@@ -115,7 +109,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
-            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
@@ -153,9 +146,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
-            case AuthenticationType::BCRYPT_PASSWORD:
-                return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
-
             case AuthenticationType::MAX:
                 break;
         }
@@ -169,7 +159,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
@@ -187,7 +176,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "areCredentialsValid(): authentication type {} not supported", toString(auth_data.getType()));
+    throw Exception("areCredentialsValid(): authentication type " + toString(auth_data.getType()) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

@@ -38,45 +38,46 @@ ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev
 }
 
 void SerializationNullable::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
     const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
 
-    auto null_map_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false);
+    path.push_back(Substream::NullMap);
+    path.back().data =
+    {
+        std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false),
+        type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr,
+        column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr,
+        data.serialization_info,
+    };
 
-    settings.path.push_back(Substream::NullMap);
-    auto null_map_data = SubstreamData(null_map_serialization)
-        .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
-        .withColumn(column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+    callback(path);
 
-    settings.path.back().data = null_map_data;
-    callback(settings.path);
+    path.back() = Substream::NullableElements;
+    path.back().creator = std::make_shared<SubcolumnCreator>(path.back().data.column);
+    path.back().data = data;
 
-    settings.path.back() = Substream::NullableElements;
-    settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
-    settings.path.back().data = data;
+    SubstreamData next_data =
+    {
+        nested,
+        type_nullable ? type_nullable->getNestedType() : nullptr,
+        column_nullable ? column_nullable->getNestedColumnPtr() : nullptr,
+        data.serialization_info,
+    };
 
-    auto next_data = SubstreamData(nested)
-        .withType(type_nullable ? type_nullable->getNestedType() : nullptr)
-        .withColumn(column_nullable ? column_nullable->getNestedColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
-
-    nested->enumerateStreams(settings, callback, next_data);
-    settings.path.pop_back();
+    nested->enumerateStreams(path, callback, next_data);
+    path.pop_back();
 }
 
 void SerializationNullable::serializeBinaryBulkStatePrefix(
-        const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::NullableElements);
-    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-    nested->serializeBinaryBulkStatePrefix(column_nullable.getNestedColumn(), settings, state);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -150,7 +151,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 }
 
 
-void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     if (field.isNull())
     {
@@ -159,17 +160,17 @@ void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & o
     else
     {
         writeBinary(false, ostr);
-        nested->serializeBinary(field, ostr, settings);
+        nested->serializeBinary(field, ostr);
     }
 }
 
-void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     bool is_null = false;
     readBinary(is_null, istr);
     if (!is_null)
     {
-        nested->deserializeBinary(field, istr, settings);
+        nested->deserializeBinary(field, istr);
     }
     else
     {
@@ -177,14 +178,14 @@ void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, 
     }
 }
 
-void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     bool is_null = col.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
-        nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
+        nested->serializeBinary(col.getNestedColumn(), row_num, ostr);
 }
 
 /// Deserialize value into ColumnNullable.
@@ -219,9 +220,13 @@ static ReturnType safeDeserialize(
 /// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, typename std::enable_if_t<std::is_same_v<ReturnType, bool>, ReturnType>* = nullptr>
 static ReturnType safeDeserialize(
-        IColumn & column, const ISerialization &,
+        IColumn & column, const ISerialization & nested,
         CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
+    assert(!dynamic_cast<ColumnNullable *>(&column));
+    assert(!dynamic_cast<const SerializationNullable *>(&nested));
+    UNUSED(nested);
+
     bool insert_default = check_for_null();
     if (insert_default)
         column.insertDefault();
@@ -231,11 +236,11 @@ static ReturnType safeDeserialize(
 }
 
 
-void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     safeDeserialize(column, *nested,
         [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
-        [this, &istr, settings] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr, settings); });
+        [this, &istr] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr); });
 }
 
 
@@ -355,24 +360,20 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
         /// It can happen only if there is a string instead of a number
         /// or if someone uses tab or LF in TSV null_representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
-                                       "containing '\\t' or '\\n' may not work correctly for large input.");
+            throw DB::ParsingException("TSV custom null representation containing '\\t' or '\\n' may not work correctly "
+                                       "for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         WriteBufferFromOwnString parsed_value;
         if constexpr (escaped)
             nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
         else
             nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
-                                   " at position {}: got \"{}\", which was deserialized as \"{}\". "
-                                   "It seems that input data is ill-formatted.",
-                                   std::string(pos, buf.buffer().end()),
-                                   std::string(istr.position(), std::min(size_t(10), istr.available())),
-                                   istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
+        throw DB::ParsingException("Error while parsing \"" + std::string(pos, buf.buffer().end()) + std::string(istr.position(), std::min(size_t(10), istr.available())) + "\" as Nullable"
+                                       + " at position " + std::to_string(istr.count()) + ": got \"" + std::string(pos, buf.position() - pos)
+                                       + "\", which was deserialized as \""
+                                       + parsed_value.str() + "\". It seems that input data is ill-formatted.",
+                                   ErrorCodes::CANNOT_READ_ALL_DATA);
     };
 
     return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);
@@ -450,8 +451,6 @@ ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, Re
 
         /// We have some unread data in PeekableReadBuffer own memory.
         /// It can happen only if there is an unquoted string instead of a number.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
         throw DB::ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while parsing Nullable: got an unquoted string {} instead of a number",
@@ -527,7 +526,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
-    if (settings.csv.custom_delimiter.empty() && istr.available() > null_representation.size())
+    if (istr.available() > null_representation.size())
     {
         auto check_for_null = [&istr, &null_representation, &settings]()
         {
@@ -552,21 +551,8 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     {
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
-        if (checkString(null_representation, buf))
-        {
-            if (!settings.csv.custom_delimiter.empty())
-            {
-                if (checkString(settings.csv.custom_delimiter, buf))
-                {
-                    /// Rollback to the beginning of custom delimiter.
-                    buf.rollbackToCheckpoint();
-                    assertString(null_representation, buf);
-                    return true;
-                }
-            }
-            else if (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n')
-                return true;
-        }
+        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n'))
+            return true;
 
         buf.rollbackToCheckpoint();
         return false;
@@ -584,22 +570,18 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         /// It can happen only if there is an unquoted string instead of a number
         /// or if someone uses csv delimiter, LF or CR in CSV null representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if (null_representation.find(settings.csv.delimiter) != std::string::npos || null_representation.find('\r') != std::string::npos
             || null_representation.find('\n') != std::string::npos)
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
-                                       "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
+            throw DB::ParsingException("CSV custom null representation containing format_csv_delimiter, '\\r' or '\\n' may not work correctly "
+                                       "for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         WriteBufferFromOwnString parsed_value;
         nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
-                                   " at position {}: got \"{}\", which was deserialized as \"{}\". "
-                                   "It seems that input data is ill-formatted.",
-                                   std::string(pos, buf.buffer().end()),
-                                   std::string(istr.position(), std::min(size_t(10), istr.available())),
-                                   istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
+        throw DB::ParsingException("Error while parsing \"" + std::string(pos, buf.buffer().end()) + std::string(istr.position(), std::min(size_t(10), istr.available())) + "\" as Nullable"
+                                       + " at position " + std::to_string(istr.count()) + ": got \"" + std::string(pos, buf.position() - pos)
+                                       + "\", which was deserialized as \""
+                                       + parsed_value.str() + "\". It seems that input data is ill-formatted.",
+                                   ErrorCodes::CANNOT_READ_ALL_DATA);
     };
 
     return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);

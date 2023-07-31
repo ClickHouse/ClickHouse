@@ -35,8 +35,7 @@ public:
         const MergeTreeTransactionPtr & txn,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
-        ActionBlocker & merges_blocker_,
-        bool need_prefix_);
+        ActionBlocker & merges_blocker_);
 
     bool execute();
 
@@ -45,7 +44,9 @@ public:
         return promise.get_future();
     }
 
-    const HardlinkedFiles & getHardlinkedFiles() const;
+    const MergeTreeData::HardlinkedFiles & getHardlinkedFiles() const;
+
+    DataPartStorageBuilderPtr getBuilder() const;
 
 private:
 

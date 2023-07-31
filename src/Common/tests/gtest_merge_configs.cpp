@@ -43,8 +43,11 @@ clickhouse:
     text_log:
         database: system
         table: text_log
-        partition_by: {"@remove": "1"}
-        engine: "ENGINE MergeTree"
+        partition_by:
+            "@remove": "1"
+        engine:
+            - "@replace" : "1"
+            - "ENGINE MergeTree"
         flush_interval_milliseconds: 7500
         level: debug
 )YAML";
@@ -109,8 +112,11 @@ clickhouse:
     text_log :
         database: system
         table: text_log
-        partition_by: {"@remove": "1"}
-        engine: "ENGINE MergeTree"
+        partition_by:
+            "@remove": "1"
+        engine:
+            - "@replace" : "1"
+            - "ENGINE MergeTree"
         flush_interval_milliseconds: 7500
         level: debug
 )YAML";

@@ -47,7 +47,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
 
         /// Scipy implementation throws exception in this case too.
         if (count_equal == size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All numbers in both samples are identical");
+            throw Exception("All numbers in both samples are identical", ErrorCodes::BAD_ARGUMENTS);
 
         tie_numenator += std::pow(count_equal, 3) - count_equal;
         for (size_t iter = left; iter < right; ++iter)

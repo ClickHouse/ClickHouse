@@ -1,9 +1,0 @@
-1	2
-2
-CREATE TABLE default.t_limit_mutations\n(\n    `id` UInt64,\n    `v` UInt64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/t_limit_mutations\', \'1\')\nORDER BY id\nSETTINGS number_of_mutations_to_throw = 2, index_granularity = 8192
-1	2
-4
-CREATE TABLE default.t_limit_mutations\n(\n    `id` UInt64,\n    `v` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/t_limit_mutations\', \'1\')\nORDER BY id\nSETTINGS number_of_mutations_to_throw = 2, index_granularity = 8192
-1	6
-0
-CREATE TABLE default.t_limit_mutations\n(\n    `id` UInt64,\n    `v` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/t_limit_mutations\', \'1\')\nORDER BY id\nSETTINGS number_of_mutations_to_throw = 2, index_granularity = 8192

@@ -1,39 +1,37 @@
 ---
-slug: /en/sql-reference/functions/conditional-functions
-sidebar_position: 40
-sidebar_label: Conditional
+sidebar_position: 43
+sidebar_label: 'Conditional '
 ---
 
 # Conditional Functions
 
 ## if
 
-Performs conditional branching.
-
-If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`. If `cond` evaluates to zero or `NULL`, then the result of the `else` expression is returned.
-
-Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, the `then` expression is evaluated only on rows where `cond` is `true` and the `else` expression where `cond` is `false`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`.
-
-`then` and `else` must be of a similar type.
+Controls conditional branching. Unlike most systems, ClickHouse always evaluate both expressions `then` and `else`.
 
 **Syntax**
 
 ``` sql
 if(cond, then, else)
 ```
-Alias: `cond ? then : else` (ternary operator)
+
+If the condition `cond` evaluates to a non-zero value, returns the result of the expression `then`, and the result of the expression `else`, if present, is skipped. If the `cond` is zero or `NULL`, then the result of the `then` expression is skipped and the result of the `else` expression, if present, is returned.
+
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `if` function according to a short scheme. If this setting is enabled, `then` expression is evaluated only on rows where `cond` is true, `else` expression – where `cond` is false. For example, an exception about division by zero is not thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`, because `intDiv(42, number)` will be evaluated only for numbers that doesn't satisfy condition `number = 0`.
 
 **Arguments**
 
-- `cond` – The evaluated condition. UInt8, Nullable(UInt8) or NULL.
-- `then` – The expression returned if `condition` is true.
-- `else` – The expression returned if `condition` is `false` or NULL.
+-   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
+-   `then` – The expression to return if condition is met.
+-   `else` – The expression to return if condition is not met.
 
 **Returned values**
 
-The result of either the `then` and `else` expressions, depending on condition `cond`.
+The function executes `then` and `else` expressions and returns its result, depending on whether the condition `cond` ended up being zero or not.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT if(1, plus(2, 2), plus(2, 6));
@@ -47,34 +45,30 @@ Result:
 └────────────┘
 ```
 
-## multiIf
-
-Allows to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
-
-**Syntax**
+Query:
 
 ``` sql
-multiIf(cond_1, then_1, cond_2, then_2, ..., else)
+SELECT if(0, plus(2, 2), plus(2, 6));
 ```
 
-Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is `true`, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
-
-**Arguments**
-
-The function accepts `2N+1` parameters:
-- `cond_N` — The N-th evaluated condition which controls if `then_N` is returned.
-- `then_N` — The result of the function when `cond_N` is true.
-- `else` — The result of the function if none of conditions is true.
-
-**Returned values**
-
-The result of either any of the `then_N` or `else` expressions, depending on the conditions `cond_N`.
-
-**Example**
-
-Assuming this table:
+Result:
 
 ``` text
+┌─plus(2, 6)─┐
+│          8 │
+└────────────┘
+```
+
+-   `then` and `else` must have the lowest common type.
+
+**Example:**
+
+Take this `LEFT_RIGHT` table:
+
+``` sql
+SELECT *
+FROM LEFT_RIGHT
+
 ┌─left─┬─right─┐
 │ ᴺᵁᴸᴸ │     4 │
 │    1 │     3 │
@@ -83,6 +77,69 @@ Assuming this table:
 │    4 │  ᴺᵁᴸᴸ │
 └──────┴───────┘
 ```
+
+The following query compares `left` and `right` values:
+
+``` sql
+SELECT
+    left,
+    right,
+    if(left < right, 'left is smaller than right', 'right is greater or equal than left') AS is_smaller
+FROM LEFT_RIGHT
+WHERE isNotNull(left) AND isNotNull(right)
+
+┌─left─┬─right─┬─is_smaller──────────────────────────┐
+│    1 │     3 │ left is smaller than right          │
+│    2 │     2 │ right is greater or equal than left │
+│    3 │     1 │ right is greater or equal than left │
+└──────┴───────┴─────────────────────────────────────┘
+```
+
+Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
+
+## Ternary Operator
+
+It works same as `if` function.
+
+Syntax: `cond ? then : else`
+
+Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise returns `else`.
+
+-   `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
+
+-   `then` and `else` can be `NULL`
+
+**See also**
+
+-   [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite).
+
+## multiIf
+
+Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
+
+**Syntax**
+
+``` sql
+multiIf(cond_1, then_1, cond_2, then_2, ..., else)
+```
+
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `multiIf` function according to a short scheme. If this setting is enabled, `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
+
+**Arguments**
+
+-   `cond_N` — The condition for the function to return `then_N`.
+-   `then_N` — The result of the function when executed.
+-   `else` — The result of the function if none of the conditions is met.
+
+The function accepts `2N+1` parameters.
+
+**Returned values**
+
+The function returns one of the values `then_N` or `else`, depending on the conditions `cond_N`.
+
+**Example**
+
+Again using `LEFT_RIGHT` table.
 
 ``` sql
 SELECT
@@ -152,85 +209,3 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │ Both equal       │
 └──────┴───────┴──────────────────┘
 ```
-
-## greatest
-
-Returns the greatest across a list of values.  All of the list members must be of comparable types.
-
-Examples:
-
-```sql
-SELECT greatest(1, 2, toUInt8(3), 3.) result,  toTypeName(result) type;
-```
-```response
-┌─result─┬─type────┐
-│      3 │ Float64 │
-└────────┴─────────┘
-```
-
-:::note
-The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
-:::
-
-```sql
-SELECT greatest(['hello'], ['there'], ['world'])
-```
-```response
-┌─greatest(['hello'], ['there'], ['world'])─┐
-│ ['world']                                 │
-└───────────────────────────────────────────┘
-```
-
-```sql
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
-```
-```response
-┌─greatest(toDateTime32(plus(now(), toIntervalDay(1))), toDateTime64(now(), 3))─┐
-│                                                       2023-05-12 01:16:59.000 │
-└──---──────────────────────────────────────────────────────────────────────────┘
-```
-
-:::note
-The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
-:::
-
-## least
-
-Returns the least across a list of values.  All of the list members must be of comparable types.
-
-Examples:
-
-```sql
-SELECT least(1, 2, toUInt8(3), 3.) result,  toTypeName(result) type;
-```
-```response
-┌─result─┬─type────┐
-│      1 │ Float64 │
-└────────┴─────────┘
-```
-
-:::note
-The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
-:::
-
-```sql
-SELECT least(['hello'], ['there'], ['world'])
-```
-```response
-┌─least(['hello'], ['there'], ['world'])─┐
-│ ['hello']                              │
-└────────────────────────────────────────┘
-```
-
-```sql
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
-```
-```response
-┌─least(toDateTime32(plus(now(), toIntervalDay(1))), toDateTime64(now(), 3))─┐
-│                                                    2023-05-12 01:16:59.000 │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-:::note
-The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
-:::

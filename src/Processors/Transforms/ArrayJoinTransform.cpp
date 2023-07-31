@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 Block ArrayJoinTransform::transformHeader(Block header, const ArrayJoinActionPtr & array_join)
 {
     array_join->execute(header);
@@ -19,7 +24,7 @@ ArrayJoinTransform::ArrayJoinTransform(
 {
     /// TODO
 //    if (on_totals_)
-//        throw Exception(ErrorCodes::LOGICAL_ERROR, "ARRAY JOIN is not supported for totals");
+//        throw Exception("ARRAY JOIN is not supported for totals", ErrorCodes::LOGICAL_ERROR);
 }
 
 void ArrayJoinTransform::transform(Chunk & chunk)

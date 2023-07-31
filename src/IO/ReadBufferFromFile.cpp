@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <base/defines.h>
 #include <cerrno>
 
 
@@ -30,10 +29,8 @@ ReadBufferFromFile::ReadBufferFromFile(
     int flags,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_,
-    ThrottlerPtr throttler_)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_, throttler_)
-    , file_name(file_name_)
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_), file_name(file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -63,9 +60,8 @@ ReadBufferFromFile::ReadBufferFromFile(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_,
-    ThrottlerPtr throttler_)
-    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_, throttler_)
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     , file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
     fd_ = -1;
@@ -77,8 +73,7 @@ ReadBufferFromFile::~ReadBufferFromFile()
     if (fd < 0)
         return;
 
-    int err = ::close(fd);
-    chassert(!err || errno == EINTR);
+    ::close(fd);
 }
 
 
@@ -88,7 +83,7 @@ void ReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     fd = -1;
     metric_increment.destroy();

@@ -10,7 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
     #include <Interpreters/TextLog.h>
 #endif
 
@@ -34,24 +34,24 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
-static std::string renderFileNameTemplate(time_t now, const std::string & file_path)
+#ifdef WITH_TEXT_LOG
+void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
-    fs::path path{file_path};
-    std::tm buf;
-    localtime_r(&now, &buf);
-    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss << std::put_time(&buf, file_path.c_str());
-    return path.replace_filename(ss.str());
+    text_log = log;
+    text_log_max_priority = max_priority;
 }
-
-#ifndef WITHOUT_TEXT_LOG
-constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 #endif
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
+#ifdef WITH_TEXT_LOG
+    if (split)
+        if (auto log = text_log.lock())
+            split->addTextLog(log, text_log_max_priority);
+#endif
+
     auto current_logger = config.getString("logger", "");
-    if (config_logger.has_value() && *config_logger == current_logger)
+    if (config_logger == current_logger) //-V1051
         return;
 
     config_logger = current_logger;
@@ -68,12 +68,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// The maximum (the most verbose) of those will be used as default for Poco loggers
     int max_log_level = 0;
 
-    time_t now = std::time({});
-
-    const auto log_path_prop = config.getString("logger.log", "");
-    if (!log_path_prop.empty())
+    const auto log_path = config.getString("logger.log", "");
+    if (!log_path.empty())
     {
-        const auto log_path = renderFileNameTemplate(now, log_path_prop);
         createDirectory(log_path);
 
         std::string ext;
@@ -102,8 +99,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter;
 
@@ -112,10 +109,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log, "log");
     }
 
-    const auto errorlog_path_prop = config.getString("logger.errorlog", "");
-    if (!errorlog_path_prop.empty())
+    const auto errorlog_path = config.getString("logger.errorlog", "");
+    if (!errorlog_path.empty())
     {
-        const auto errorlog_path = renderFileNameTemplate(now, errorlog_path_prop);
         createDirectory(errorlog_path);
 
         // NOTE: we don't use notice & critical in the code, so in practice error log collects fatal & error & warning.
@@ -144,8 +140,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter;
 
@@ -188,8 +184,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter;
 
@@ -215,8 +211,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
@@ -266,16 +262,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
-#ifndef WITHOUT_TEXT_LOG
-    if (config.has("text_log"))
-    {
-        String text_log_level_str = config.getString("text_log.level", "trace");
-        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
-        size_t flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
-            DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        split->addTextLog(DB::TextLog::getLogQueue(flush_interval_milliseconds), text_log_level);
-    }
-#endif
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)

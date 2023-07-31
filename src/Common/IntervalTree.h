@@ -27,15 +27,39 @@ struct Interval
 };
 
 template <typename IntervalStorageType>
-auto operator<=>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+bool operator<(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
-    return std::tie(lhs.left, lhs.right) <=> std::tie(rhs.left, rhs.right);
+    return std::tie(lhs.left, lhs.right) < std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator<=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) <= std::tie(rhs.left, rhs.right);
 }
 
 template <typename IntervalStorageType>
 bool operator==(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
     return std::tie(lhs.left, lhs.right) == std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator!=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) != std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) > std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator>=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) >= std::tie(rhs.left, rhs.right);
 }
 
 struct IntervalTreeVoidValue

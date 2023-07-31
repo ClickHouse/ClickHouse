@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/general/dbms-naming
 title: "\u201CClickHouse\u201D 有什么含义?"
 toc_hidden: true
 sidebar_position: 10

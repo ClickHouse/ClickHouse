@@ -16,7 +16,7 @@ CREATE TABLE minmax_idx
 ) ENGINE = MergeTree()
 PARTITION BY i32
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
+SETTINGS index_granularity = 2;"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES

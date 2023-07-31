@@ -41,7 +41,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isNumber(*arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
+            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -74,7 +74,7 @@ public:
          */
 
         if (total_codepoints > (1 << 29))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
+            throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
         size_t max_byte_size = total_codepoints * 4 + input_rows_count;
         data_to.resize(max_byte_size);
@@ -116,15 +116,14 @@ public:
             {
                 UInt64 rand = rng(); /// that's the bottleneck
 
-                UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
-
+                UInt32 code_point1 = generate_code_point(rand);
                 size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, pos, 4);
                 chassert(bytes1 <= 4);
                 pos += bytes1;
 
                 if (i + 1 != codepoints)
                 {
-                    UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
+                    UInt32 code_point2 = generate_code_point(rand >> 32u);
                     size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, pos, 4);
                     chassert(bytes2 <= 4);
                     pos += bytes2;

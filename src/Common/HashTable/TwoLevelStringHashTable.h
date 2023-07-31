@@ -13,8 +13,8 @@ public:
     using Key = StringRef;
     using Impl = ImplTable;
 
-    static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
-    static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
+    static constexpr size_t NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
+    static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
 
     // TODO: currently hashing contains redundant computations when doing distributed or external aggregations
     size_t hash(const Key & x) const
@@ -113,19 +113,13 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    if constexpr (std::endian::native == std::endian::little)
-                        n[0] &= -1ULL >> s;
-                    else
-                        n[0] &= -1ULL << s;
+                    n[0] &= -1ULL >> s;
                 }
                 else
                 {
                     const char * lp = x.data + x.size - 8;
                     memcpy(&n[0], lp, 8);
-                    if constexpr (std::endian::native == std::endian::little)
-                        n[0] >>= s;
-                    else
-                        n[0] <<= s;
+                    n[0] >>= s;
                 }
                 auto res = hash(k8);
                 auto buck = getBucketFromHash(res);
@@ -137,10 +131,7 @@ public:
                 memcpy(&n[0], p, 8);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[1], lp, 8);
-                if constexpr (std::endian::native == std::endian::little)
-                    n[1] >>= s;
-                else
-                    n[1] <<= s;
+                n[1] >>= s;
                 auto res = hash(k16);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
@@ -151,10 +142,7 @@ public:
                 memcpy(&n[0], p, 16);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
-                if constexpr (std::endian::native == std::endian::little)
-                    n[2] >>= s;
-                else
-                    n[2] <<= s;
+                n[2] >>= s;
                 auto res = hash(k24);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
@@ -187,13 +175,13 @@ public:
 
     void write(DB::WriteBuffer & wb) const
     {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
             impls[i].write(wb);
     }
 
     void writeText(DB::WriteBuffer & wb) const
     {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
         {
             if (i != 0)
                 DB::writeChar(',', wb);
@@ -203,13 +191,13 @@ public:
 
     void read(DB::ReadBuffer & rb)
     {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
             impls[i].read(rb);
     }
 
     void readText(DB::ReadBuffer & rb)
     {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
         {
             if (i != 0)
                 DB::assertChar(',', rb);
@@ -220,7 +208,7 @@ public:
     size_t size() const
     {
         size_t res = 0;
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].size();
 
         return res;
@@ -228,7 +216,7 @@ public:
 
     bool empty() const
     {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
             if (!impls[i].empty())
                 return false;
 
@@ -238,7 +226,7 @@ public:
     size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].getBufferSizeInBytes();
 
         return res;

@@ -1,7 +1,7 @@
-position: 1
+position: 15
 label: 'SQL Reference'
 collapsible: true
 collapsed: true
 link:
-  type: generated-index
-  slug: /en/sql-reference
+  type: doc
+  id: en/sql-reference/index

@@ -154,7 +154,7 @@ def get_workflows_for_head(repo: Repository, head_sha: str) -> List[WorkflowRun]
     return list(
         PaginatedList(
             WorkflowRun,
-            repo._requester,  # pylint:disable=protected-access
+            repo._requester,  # type:ignore # pylint:disable=protected-access
             f"{repo.url}/actions/runs",
             {"head_sha": head_sha},
             list_item="workflow_runs",
@@ -225,7 +225,7 @@ def main():
     args = parse_args()
     logging.info("Going to process PR #%s in repo %s", args.pr, args.repo)
     token = args.token or get_best_robot_token()
-    gh = GitHub(token)
+    gh = GitHub(token, per_page=100)
     repo = gh.get_repo(args.repo)
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
@@ -246,12 +246,6 @@ def main():
 
     if args.check_running_workflows:
         workflows = get_workflows_for_head(repo, pr.head.sha)
-        logging.info(
-            "The PR #%s has following workflows:\n%s",
-            pr.number,
-            "\n".join(f"{wf.html_url}: status is {wf.status}" for wf in workflows),
-        )
-
         workflows_in_progress = [wf for wf in workflows if wf.status != "completed"]
         # At most one workflow in progress is fine. We check that there no
         # cases like, e.g. PullRequestCI and DocksCheck in progress at once

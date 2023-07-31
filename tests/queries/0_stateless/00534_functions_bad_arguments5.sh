@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-debug, no-fasttest, no-msan
+# Tags: no-tsan, no-debug
 # Tag no-tsan: Too long for TSan
 
 # shellcheck disable=SC2016

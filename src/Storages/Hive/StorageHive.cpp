@@ -7,7 +7,6 @@
 #include <fmt/core.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -21,7 +20,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -42,11 +40,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric StorageHiveThreads;
-    extern const Metric StorageHiveThreadsActive;
-}
 
 namespace DB
 {
@@ -233,7 +226,7 @@ public:
                         if (thread_pool_read)
                         {
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
-                                getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
+                                IObjectStorage::getThreadPoolReader(), read_settings, std::move(buf));
                         }
                         else
                         {
@@ -243,7 +236,7 @@ public:
 
                     raw_read_buf = get_raw_read_buf();
                     if (read_settings.remote_fs_prefetch)
-                        raw_read_buf->prefetch(DEFAULT_PREFETCH_PRIORITY);
+                        raw_read_buf->prefetch();
                 }
                 catch (Exception & e)
                 {
@@ -276,8 +269,8 @@ public:
                 else
                     read_buf = std::move(remote_read_buf);
 
-                auto input_format = FormatFactory::instance().getInput(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
+                auto input_format = FormatFactory::instance().getInputFormat(
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -458,9 +451,9 @@ void StorageHive::lazyInitialize()
             format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsopported hive format rc_file");
+            throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::SEQUENCE_FILE:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsopported hive format sequence_file");
+            throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::AVRO:
             format_name = "Avro";
             break;
@@ -563,7 +556,7 @@ static HiveFilePtr createHiveFile(
     }
     else
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IHiveFile not implemented for format {}", format_name);
+        throw Exception("IHiveFile not implemented for format " + format_name, ErrorCodes::NOT_IMPLEMENTED);
     }
     return hive_file;
 }
@@ -594,8 +587,9 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
 
     /// Check partition values
     if (partition.values.size() != partition_names.size())
-        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
-            "Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size());
+        throw Exception(
+            fmt::format("Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size()),
+            ErrorCodes::INVALID_PARTITION_VALUE);
 
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
@@ -608,19 +602,13 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     writeString("\n", wb);
 
     ReadBufferFromString buffer(wb.str());
-    auto format = FormatFactory::instance().getInput(
-        "CSV",
-        buffer,
-        partition_key_expr->getSampleBlock(),
-        getContext(),
-        getContext()->getSettingsRef().max_block_size,
-        std::nullopt,
-        /* max_parsing_threads */ 1);
+    auto format = FormatFactory::instance().getInputFormat(
+        "CSV", buffer, partition_key_expr->getSampleBlock(), getContext(), getContext()->getSettingsRef().max_block_size);
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
     if (!reader->pull(block) || !block.rows())
-        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Could not parse partition value: {}", wb.str());
+        throw Exception("Could not parse partition value: " + wb.str(), ErrorCodes::INVALID_PARTITION_VALUE);
 
     /// Get partition values
     FieldVector fields(partition_names.size());
@@ -739,7 +727,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
                             hive_file->getPath(),
                             hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
 
-                        skip_splits.insert(static_cast<int>(i));
+                        skip_splits.insert(i);
                     }
                 }
                 hive_file->setSkipSplits(skip_splits);
@@ -761,7 +749,7 @@ Pipe StorageHive::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     lazyInitialize();
 
@@ -785,6 +773,7 @@ Pipe StorageHive::read(
     sources_info->partition_name_types = partition_name_types;
 
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
+    bool support_subset_columns = supportsSubcolumns();
 
     auto settings = context_->getSettingsRef();
     auto case_insensitive_matching = [&]() -> bool
@@ -804,14 +793,15 @@ Pipe StorageHive::read(
             sample_block.insert(header_block.getByName(column));
             continue;
         }
-
-        auto subset_column = nested_columns_extractor.extractColumn(column);
-        if (subset_column)
+        else if (support_subset_columns)
         {
-            sample_block.insert(std::move(*subset_column));
-            continue;
+            auto subset_column = nested_columns_extractor.extractColumn(column);
+            if (subset_column)
+            {
+                sample_block.insert(std::move(*subset_column));
+                continue;
+            }
         }
-
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
@@ -839,7 +829,7 @@ Pipe StorageHive::read(
 }
 
 HiveFiles StorageHive::collectHiveFiles(
-    size_t max_threads,
+    unsigned max_threads,
     const SelectQueryInfo & query_info,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
@@ -857,7 +847,7 @@ HiveFiles StorageHive::collectHiveFiles(
     Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
-    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, max_threads};
+    ThreadPool pool{max_threads};
     if (!partitions.empty())
     {
         for (const auto & partition : partitions)
@@ -869,15 +859,11 @@ HiveFiles StorageHive::collectHiveFiles(
                         = collectHiveFilesFromPartition(partition, query_info, hive_table_metadata, fs, context_, prune_level);
                     if (!hive_files_in_partition.empty())
                     {
-                        std::lock_guard lock(hive_files_mutex);
+                        std::lock_guard<std::mutex> lock(hive_files_mutex);
                         hit_parttions_num += 1;
                         if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
                         {
-                            throw Exception(ErrorCodes::TOO_MANY_PARTITIONS,
-                                            "Too many partitions "
-                                            "to query for table {}.{} . Maximum number of partitions "
-                                            "to read is limited to {}",
-                                            hive_database, hive_table, hive_max_query_partitions);
+                            throw Exception(ErrorCodes::TOO_MANY_PARTITIONS, "Too many partitions to query for table {}.{} . Maximum number of partitions to read is limited to {}", hive_database, hive_table, hive_max_query_partitions);
                         }
                         hive_files.insert(std::end(hive_files), std::begin(hive_files_in_partition), std::end(hive_files_in_partition));
                     }
@@ -895,7 +881,7 @@ HiveFiles StorageHive::collectHiveFiles(
                     auto hive_file = getHiveFileIfNeeded(file_info, {}, query_info, hive_table_metadata, context_, prune_level);
                     if (hive_file)
                     {
-                        std::lock_guard lock(hive_files_mutex);
+                        std::lock_guard<std::mutex> lock(hive_files_mutex);
                         hive_files.push_back(hive_file);
                     }
                 });
@@ -905,9 +891,9 @@ HiveFiles StorageHive::collectHiveFiles(
     return hive_files;
 }
 
-SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
+    throw Exception("Method write is not implemented for StorageHive", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 NamesAndTypesList StorageHive::getVirtuals() const
@@ -951,13 +937,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    HiveFiles hive_files = collectHiveFiles(
-        settings.max_threads,
-        query_info,
-        hive_table_metadata,
-        fs,
-        context_,
-        prune_level);
+    HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, fs, context_, prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)
@@ -984,13 +964,13 @@ void registerStorageHive(StorageFactory & factory)
 
             ASTs & engine_args = args.engine_args;
             if (engine_args.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Storage Hive requires 3 arguments: "
-                                "hive metastore address, hive database and hive table");
+                throw Exception(
+                    "Storage Hive requires 3 arguments: hive metastore address, hive database and hive table",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             auto * partition_by = args.storage_def->partition_by;
             if (!partition_by)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage Hive requires partition by clause");
+                throw Exception("Storage Hive requires partition by clause", ErrorCodes::BAD_ARGUMENTS);
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());

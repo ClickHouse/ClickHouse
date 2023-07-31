@@ -92,14 +92,14 @@ private:
 
 public:
     explicit AggregateFunctionEntropy(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {}, createResultType())
+        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {})
         , num_args(argument_types_.size())
     {
     }
 
     String getName() const override { return "entropy"; }
 
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }

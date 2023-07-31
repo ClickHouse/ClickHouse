@@ -1,7 +1,7 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/SymbolIndex.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -9,6 +9,7 @@
 
 #include <link.h>
 
+//#include <iostream>
 #include <filesystem>
 
 #include <base/sort.h>
@@ -36,7 +37,7 @@ But because ClickHouse is linked with most of the symbols exported (-rdynamic fl
 It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
 It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
 it is split to separate binary and provided in clickhouse-common-static-dbg package.
-This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse.debug and is loaded automatically by tools like gdb, addr2line.
+This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
 When you build ClickHouse by yourself, debug info is not split and present in a single huge binary.
 
 What ClickHouse is using to provide good stack traces?
@@ -87,13 +88,48 @@ namespace
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
 
 
+void updateResources(ElfW(Addr) base_address, std::string_view object_name, std::string_view name, const void * address, SymbolIndex::Resources & resources)
+{
+    const char * char_address = static_cast<const char *>(address);
+
+    if (name.starts_with("_binary_") || name.starts_with("binary_"))
+    {
+        if (name.ends_with("_start"))
+        {
+            name = name.substr((name[0] == '_') + strlen("binary_"));
+            name = name.substr(0, name.size() - strlen("_start"));
+
+            resources.emplace(name, SymbolIndex::ResourcesBlob{
+                base_address,
+                object_name,
+                std::string_view{char_address, 0}, // NOLINT
+            });
+        }
+        else if (name.ends_with("_end"))
+        {
+            name = name.substr((name[0] == '_') + strlen("binary_"));
+            name = name.substr(0, name.size() - strlen("_end"));
+
+            auto it = resources.find(name);
+            if (it != resources.end() && it->second.base_address == base_address && it->second.data.empty())
+            {
+                const char * start = it->second.data.data();
+                assert(char_address >= start);
+                it->second.data = std::string_view{start, static_cast<size_t>(char_address - start)};
+            }
+        }
+    }
+}
+
+
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
 /// It does not extract all the symbols (but only public - exported and used for dynamic linking),
 /// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(
     dl_phdr_info * info,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
@@ -211,6 +247,9 @@ void collectSymbolsFromProgramHeaders(
                     /// We are not interested in empty symbols.
                     if (elf_sym[sym_index].st_size)
                         symbols.push_back(symbol);
+
+                    /// But resources can be represented by a pair of empty symbols (indicating their boundaries).
+                    updateResources(base_address, info->dlpi_name, symbol.name, symbol.address_begin, resources);
                 }
 
                 break;
@@ -241,7 +280,8 @@ void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     /// Iterate symbol table.
     const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
@@ -271,6 +311,8 @@ void collectSymbolsFromELFSymbolTable(
 
         if (symbol_table_entry->st_size)
             symbols.push_back(symbol);
+
+        updateResources(info->dlpi_addr, info->dlpi_name, symbol.name, symbol.address_begin, resources);
     }
 }
 
@@ -280,7 +322,8 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     unsigned section_header_type,
     const char * string_table_name,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     std::optional<Elf::Section> symbol_table;
     std::optional<Elf::Section> string_table;
@@ -298,7 +341,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols, resources);
     return true;
 }
 
@@ -307,6 +350,7 @@ void collectSymbolsFromELF(
     dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
+    SymbolIndex::Resources & resources,
     String & build_id)
 {
     String object_name;
@@ -347,22 +391,10 @@ void collectSymbolsFromELF(
     std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
     local_debug_info_path += ".debug";
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
-    debug_info_path += ".debug";
 
-    /// NOTE: This is a workaround for current package system.
-    ///
-    /// Since nfpm cannot copy file only if it exists,
-    /// and so in cmake empty .debug file is created instead,
-    /// but if we will try to load empty Elf file, then the CANNOT_PARSE_ELF
-    /// exception will be thrown from the Elf::Elf.
-    auto exists_not_empty = [](const std::filesystem::path & path)
-    {
-        return std::filesystem::exists(path) && !std::filesystem::is_empty(path);
-    };
-
-    if (exists_not_empty(local_debug_info_path))
+    if (std::filesystem::exists(local_debug_info_path))
         object_name = local_debug_info_path;
-    else if (exists_not_empty(debug_info_path))
+    else if (std::filesystem::exists(debug_info_path))
         object_name = debug_info_path;
     else if (build_id.size() >= 2)
     {
@@ -380,7 +412,7 @@ void collectSymbolsFromELF(
 
         std::filesystem::path build_id_debug_info_path(
             fmt::format("/usr/lib/debug/.build-id/{}/{}.debug", build_id_hex.substr(0, 2), build_id_hex.substr(2)));
-        if (exists_not_empty(build_id_debug_info_path))
+        if (std::filesystem::exists(build_id_debug_info_path))
             object_name = build_id_debug_info_path;
         else
             object_name = canonical_path;
@@ -417,11 +449,11 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols, resources);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols, resources);
 #endif
 }
 
@@ -434,8 +466,8 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
+    collectSymbolsFromProgramHeaders(info, data.symbols, data.resources);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.resources, data.build_id);
 
     /* Continue iterations */
     return 0;
@@ -464,7 +496,7 @@ const T * find(const void * address, const std::vector<T> & vec)
 }
 
 
-void SymbolIndex::load()
+void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
@@ -504,10 +536,22 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-const SymbolIndex & SymbolIndex::instance()
+MultiVersion<SymbolIndex> & SymbolIndex::instanceImpl()
 {
-    static SymbolIndex instance;
+    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
     return instance;
+}
+
+MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
+{
+    return instanceImpl().get();
+}
+
+void SymbolIndex::reload()
+{
+    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    /// Also drop stacktrace cache.
+    StackTrace::dropCache();
 }
 
 }

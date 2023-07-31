@@ -1,9 +1,6 @@
----
-slug: /en/operations/system-tables/roles
----
 # roles
 
-Contains information about configured [roles](../../guides/sre/user-management/index.md#role-management).
+Contains information about configured [roles](../../operations/access-rights.md#role-management).
 
 Columns:
 
@@ -13,4 +10,6 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
+-   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/roles) <!--hide-->

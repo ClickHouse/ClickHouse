@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/minmap
 sidebar_position: 142
 ---
 

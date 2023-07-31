@@ -915,12 +915,12 @@ from
     (select number, intDiv(number, 3) p, mod(number, 5) o
         from numbers(16)) t
 ;
-Expression ((Project names + Projection))
+Expression ((Projection + Before ORDER BY))
   Window (Window step for window \'\')
-    Window (Window step for window \'PARTITION BY p_0\')
-      Window (Window step for window \'PARTITION BY p_0 ORDER BY o_1 ASC\')
-        Sorting (Sorting for window \'PARTITION BY p_0 ORDER BY o_1 ASC\')
-          Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+    Window (Window step for window \'PARTITION BY p\')
+      Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
+        Sorting (Sorting for window \'PARTITION BY p ORDER BY o ASC\')
+          Expression ((Before window functions + (Projection + Before ORDER BY)))
             ReadFromStorage (SystemNumbers)
 explain select
     count(*) over (order by o, number),
@@ -929,13 +929,13 @@ from
     (select number, intDiv(number, 3) p, mod(number, 5) o
         from numbers(16)) t
 ;
-Expression ((Project names + Projection))
-  Window (Window step for window \'ORDER BY o_0 ASC, number_1 ASC\')
-    Sorting (Sorting for window \'ORDER BY o_0 ASC, number_1 ASC\')
-      Window (Window step for window \'ORDER BY number_1 ASC\')
-        Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))) [lifted up part])
-          Sorting (Sorting for window \'ORDER BY number_1 ASC\')
-            Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+Expression ((Projection + Before ORDER BY))
+  Window (Window step for window \'ORDER BY o ASC, number ASC\')
+    Sorting (Sorting for window \'ORDER BY o ASC, number ASC\')
+      Window (Window step for window \'ORDER BY number ASC\')
+        Expression ((Before window functions + (Projection + Before ORDER BY)) [lifted up part])
+          Sorting (Sorting for window \'ORDER BY number ASC\')
+            Expression ((Before window functions + (Projection + Before ORDER BY)))
               ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT

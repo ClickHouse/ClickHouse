@@ -34,11 +34,6 @@ SELECT arrayAvg(x) FROM test_aggregation;
 
 DROP TABLE test_aggregation;
 
-WITH ['2023-04-05 00:25:23', '2023-04-05 00:25:24']::Array(DateTime) AS dt SELECT arrayMax(dt), arrayMin(dt), arrayDifference(dt);
-WITH ['2023-04-05 00:25:23.123', '2023-04-05 00:25:24.124']::Array(DateTime64(3)) AS dt SELECT arrayMax(dt), arrayMin(dt), arrayDifference(dt);
-WITH ['2023-04-05', '2023-04-06']::Array(Date) AS d SELECT arrayMax(d), arrayMin(d), arrayDifference(d);
-WITH ['2023-04-05', '2023-04-06']::Array(Date32) AS d SELECT arrayMax(d), arrayMin(d), arrayDifference(d);
-
 SELECT 'Types of aggregation result array min';
 SELECT toTypeName(arrayMin([toInt8(0)])), toTypeName(arrayMin([toInt16(0)])), toTypeName(arrayMin([toInt32(0)])), toTypeName(arrayMin([toInt64(0)]));
 SELECT toTypeName(arrayMin([toUInt8(0)])), toTypeName(arrayMin([toUInt16(0)])), toTypeName(arrayMin([toUInt32(0)])), toTypeName(arrayMin([toUInt64(0)]));

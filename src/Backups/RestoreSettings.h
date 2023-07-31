@@ -107,9 +107,6 @@ struct RestoreSettings
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
-    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
-    bool allow_s3_native_copy = true;
-
     /// Internal, should not be specified by user.
     bool internal = false;
 
@@ -122,9 +119,8 @@ struct RestoreSettings
     std::vector<Strings> cluster_host_ids;
 
     /// Internal, should not be specified by user.
-    /// UUID of the restore. If it's not set it will be generated randomly.
-    /// This is used to generate coordination path and for concurrency check
-    std::optional<UUID> restore_uuid;
+    /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
+    String coordination_zk_path;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

@@ -10,12 +10,11 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <base/StringRef.h>
-#include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -31,7 +30,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 /** Aggregate functions that store one of passed values.
@@ -48,11 +46,10 @@ private:
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
-    T value = T{};
+    T value;
 
 public:
-    static constexpr bool result_is_nullable = false;
-    static constexpr bool should_skip_null_arguments = true;
+    static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
     bool has() const
@@ -203,7 +200,10 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
-        auto * value_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, value_offset_from_structure);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
 
         return value_ptr;
     }
@@ -222,7 +222,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = aggregate_data_ptr;
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         b.CreateStore(b.getInt1(true), has_value_ptr);
 
         auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -240,7 +240,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = aggregate_data_ptr;
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -265,10 +265,10 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
-        auto * has_value_src_ptr = aggregate_data_src_ptr;
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -298,7 +298,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_src_ptr = aggregate_data_src_ptr;
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -324,7 +324,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = aggregate_data_ptr;
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -371,12 +371,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
         auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
 
-        auto * has_value_src_ptr = aggregate_data_src_ptr;
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
@@ -483,32 +483,29 @@ struct Compatibility
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString
+struct SingleValueDataString //-V730
 {
 private:
     using Self = SingleValueDataString;
 
-    /// 0 size indicates that there is no value. Empty string must has terminating '\0' and, therefore, size of empty string is 1
-    UInt32 size = 0;
-    UInt32 capacity = 0;    /// power of two or zero
+    Int32 size = -1;    /// -1 indicates that there is no value.
+    Int32 capacity = 0;    /// power of two or zero
     char * large_data;
 
 public:
-    static constexpr UInt32 AUTOMATIC_STORAGE_SIZE = 64;
-    static constexpr UInt32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
-    static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
+    static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
+    static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
 
 private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
 public:
-    static constexpr bool result_is_nullable = false;
-    static constexpr bool should_skip_null_arguments = true;
+    static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
     bool has() const
     {
-        return size;
+        return size >= 0;
     }
 
 private:
@@ -542,27 +539,19 @@ public:
 
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
-        if (unlikely(MAX_STRING_SIZE < size))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
-
-        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-        Int32 size_to_write = size ? size : -1;
-        writeBinary(size_to_write, buf);
+        writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
+    void allocateLargeDataIfNeeded(Int64 size_to_reserve, Arena * arena)
     {
         if (capacity < size_to_reserve)
         {
-            if (unlikely(MAX_STRING_SIZE < size_to_reserve))
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}",
-                                size_to_reserve, MAX_STRING_SIZE);
-
-            size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
-            chassert(rounded_capacity <= MAX_STRING_SIZE + 1);  /// rounded_capacity <= 2^31
-            capacity = static_cast<UInt32>(rounded_capacity);
+            capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(size_to_reserve));
+            /// It might happen if the size was too big and the rounded value does not fit a size_t
+            if (unlikely(capacity < size_to_reserve))
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", size_to_reserve);
 
             /// Don't free large_data here.
             large_data = arena->alloc(capacity);
@@ -571,28 +560,31 @@ public:
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
     {
-        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-        Int32 rhs_size_signed;
-        readBinary(rhs_size_signed, buf);
+        Int32 rhs_size;
+        readBinary(rhs_size, buf);
 
-        if (rhs_size_signed < 0)
-        {
-            /// Don't free large_data here.
-            size = 0;
-            return;
-        }
-
-        UInt32 rhs_size = rhs_size_signed;
-        if (rhs_size <= MAX_SMALL_STRING_SIZE)
+        if (rhs_size < 0)
         {
             /// Don't free large_data here.
             size = rhs_size;
-            buf.readStrict(small_data, size);
+            return;
+        }
+
+        if (rhs_size <= MAX_SMALL_STRING_SIZE)
+        {
+            /// Don't free large_data here.
+
+            size = rhs_size;
+
+            if (size > 0)
+                buf.readStrict(small_data, size);
         }
         else
         {
             /// Reserve one byte more for null-character
-            allocateLargeDataIfNeeded(rhs_size + 1, arena);
+            Int64 rhs_size_to_reserve = rhs_size;
+            rhs_size_to_reserve += 1; /// Avoid overflow
+            allocateLargeDataIfNeeded(rhs_size_to_reserve, arena);
             size = rhs_size;
             buf.readStrict(large_data, size);
         }
@@ -627,11 +619,7 @@ public:
     /// Assuming to.has()
     void changeImpl(StringRef value, Arena * arena)
     {
-        if (unlikely(MAX_STRING_SIZE < value.size))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}",
-                            value.size, MAX_STRING_SIZE);
-
-        UInt32 value_size = static_cast<UInt32>(value.size);
+        Int32 value_size = value.size;
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
@@ -771,24 +759,19 @@ static_assert(
 
 
 /// For any other value types.
-template <bool RESULT_IS_NULLABLE = false>
 struct SingleValueDataGeneric
 {
 private:
     using Self = SingleValueDataGeneric;
 
     Field value;
-    bool has_value = false;
 
 public:
-    static constexpr bool result_is_nullable = RESULT_IS_NULLABLE;
-    static constexpr bool should_skip_null_arguments = !RESULT_IS_NULLABLE;
+    static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
     bool has() const
     {
-        if constexpr (result_is_nullable)
-            return has_value;
         return !value.isNull();
     }
 
@@ -805,7 +788,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf, {});
+            serialization.serializeBinary(value, buf);
         }
         else
             writeBinary(false, buf);
@@ -817,21 +800,17 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf, {});
+            serialization.deserializeBinary(value, buf);
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
     {
         column.get(row_num, value);
-        if constexpr (result_is_nullable)
-            has_value = true;
     }
 
     void change(const Self & to, Arena *)
     {
         value = to.value;
-        if constexpr (result_is_nullable)
-            has_value = true;
     }
 
     bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
@@ -847,7 +826,7 @@ public:
 
     bool changeFirstTime(const Self & to, Arena * arena)
     {
-        if (!has() && (result_is_nullable || to.has()))
+        if (!has() && to.has())
         {
             change(to, arena);
             return true;
@@ -882,61 +861,27 @@ public:
         }
         else
         {
-            if constexpr (result_is_nullable)
+            Field new_value;
+            column.get(row_num, new_value);
+            if (new_value < value)
             {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (!value.isNull() && (new_value.isNull() || new_value < value))
-                {
-                    value = new_value;
-                    return true;
-                }
-                else
-                    return false;
-            }
-            else
-            {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (new_value < value)
-                {
-                    value = new_value;
-                    return true;
-                }
-                else
-                    return false;
-            }
-        }
-    }
-
-    bool changeIfLess(const Self & to, Arena * arena)
-    {
-        if (!to.has())
-            return false;
-        if constexpr (result_is_nullable)
-        {
-            if (!has())
-            {
-                change(to, arena);
-                return true;
-            }
-            if (to.value.isNull() || (!value.isNull() && to.value < value))
-            {
-                value = to.value;
-                return true;
-            }
-            return false;
-        }
-        else
-        {
-            if (!has() || to.value < value)
-            {
-                change(to, arena);
+                value = new_value;
                 return true;
             }
             else
                 return false;
         }
+    }
+
+    bool changeIfLess(const Self & to, Arena * arena)
+    {
+        if (to.has() && (!has() || to.value < value))
+        {
+            change(to, arena);
+            return true;
+        }
+        else
+            return false;
     }
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -948,55 +893,27 @@ public:
         }
         else
         {
-            if constexpr (result_is_nullable)
+            Field new_value;
+            column.get(row_num, new_value);
+            if (new_value > value)
             {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (!value.isNull() && (new_value.isNull() || value < new_value))
-                {
-                    value = new_value;
-                    return true;
-                }
-                return false;
+                value = new_value;
+                return true;
             }
             else
-            {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (new_value > value)
-                {
-                    value = new_value;
-                    return true;
-                }
-                else
-                    return false;
-            }
+                return false;
         }
     }
 
     bool changeIfGreater(const Self & to, Arena * arena)
     {
-        if (!to.has())
-            return false;
-        if constexpr (result_is_nullable)
+        if (to.has() && (!has() || to.value > value))
         {
-            if (!value.isNull() && (to.value.isNull() || value < to.value))
-            {
-                value = to.value;
-                return true;
-            }
-            return false;
+            change(to, arena);
+            return true;
         }
         else
-        {
-            if (!has() || to.value > value)
-            {
-                change(to, arena);
-                return true;
-            }
-            else
-                return false;
-        }
+            return false;
     }
 
     bool isEqualTo(const IColumn & column, size_t row_num) const
@@ -1141,19 +1058,12 @@ struct AggregateFunctionAnyLastData : Data
 #endif
 };
 
-
-/** The aggregate function 'singleValueOrNull' is used to implement subquery operators,
-  * such as x = ALL (SELECT ...)
-  * It checks if there is only one unique non-NULL value in the data.
-  * If there is only one unique value - returns it.
-  * If there are zero or at least two distinct values - returns NULL.
-  */
 template <typename Data>
 struct AggregateFunctionSingleValueOrNullData : Data
 {
-    using Self = AggregateFunctionSingleValueOrNullData;
+    static constexpr bool is_nullable = true;
 
-    static constexpr bool result_is_nullable = true;
+    using Self = AggregateFunctionSingleValueOrNullData;
 
     bool first_value = true;
     bool is_null = false;
@@ -1176,7 +1086,7 @@ struct AggregateFunctionSingleValueOrNullData : Data
         if (!to.has())
             return;
 
-        if (first_value && !to.first_value)
+        if (first_value)
         {
             first_value = false;
             this->change(to, arena);
@@ -1305,25 +1215,26 @@ private:
 
 public:
     explicit AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {}, createResultType(type))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
         , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))
         {
             if (!type->isComparable())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of aggregate function {} "
-                                "because the values of that data type are not comparable", type->getName(), getName());
+                throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
+                    + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
     String getName() const override { return Data::name(); }
 
-    static DataTypePtr createResultType(const DataTypePtr & type_)
+    DataTypePtr getReturnType() const override
     {
-        if constexpr (Data::result_is_nullable)
-            return makeNullable(type_);
-        return type_;
+        auto result_type = this->argument_types.at(0);
+        if constexpr (Data::is_nullable)
+            return makeNullable(result_type);
+        return result_type;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -1440,17 +1351,6 @@ public:
         this->data(place).insertResultInto(to);
     }
 
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & original_function,
-        const DataTypes & /*arguments*/,
-        const Array & /*params*/,
-        const AggregateFunctionProperties & /*properties*/) const override
-    {
-        if (Data::result_is_nullable && !Data::should_skip_null_arguments)
-            return original_function;
-        return nullptr;
-    }
-
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
@@ -1469,15 +1369,15 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
     {
         if constexpr (Data::is_compilable)
         {
-            Data::compileChangeIfBetter(builder, aggregate_data_ptr, arguments[0].value);
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -1489,7 +1389,7 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -1501,7 +1401,7 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 

@@ -1,17 +1,10 @@
 #include <Access/SettingsProfilesInfo.h>
-#include <Access/AccessControl.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <base/removeDuplicates.h>
-#include <Common/Exception.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 bool operator==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs)
 {
@@ -60,28 +53,6 @@ SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const Se
     removeDuplicatesKeepLast(res->enabled_profiles);
 
     return res;
-}
-
-Strings SettingsProfilesInfo::getProfileNames() const
-{
-    Strings result;
-    result.reserve(profiles.size());
-    for (const auto & profile_id : profiles)
-    {
-        const auto p = names_of_profiles.find(profile_id);
-        if (p != names_of_profiles.end())
-            result.push_back(p->second);
-        else
-        {
-            if (const auto name = access_control.tryReadName(profile_id))
-                // We could've updated cache here, but it is a very rare case, so don't bother.
-                result.push_back(*name);
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to get profile name for {}", toString(profile_id));
-        }
-    }
-
-    return result;
 }
 
 }
