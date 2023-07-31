@@ -13,25 +13,36 @@ from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
 
 
-def check_query(clickhouse_node, query, result_set, retry_count=10, interval_seconds=3):
-    lastest_result = ""
+def check_query(
+    clickhouse_node,
+    query,
+    result_set,
+    retry_count=30,
+    interval_seconds=1,
+    on_failure=None,
+):
+    latest_result = ""
 
+    if "/* expect: " not in query:
+        query = "/* expect: " + result_set.rstrip("\n") + "*/ " + query
     for i in range(retry_count):
         try:
-            lastest_result = clickhouse_node.query(query)
-            if result_set == lastest_result:
+            latest_result = clickhouse_node.query(query)
+            if result_set == latest_result:
                 return
 
-            logging.debug(f"latest_result {lastest_result}")
+            logging.debug(f"latest_result {latest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")
             time.sleep(interval_seconds)
     else:
-        result_got = clickhouse_node.query(query)
+        latest_result = clickhouse_node.query(query)
+        if on_failure is not None and latest_result != result_set:
+            on_failure(latest_result, result_set)
         assert (
-            result_got == result_set
-        ), f"Got result {result_got}, while expected result {result_set}"
+            latest_result == result_set
+        ), f"Got result '{latest_result}', expected result '{result_set}'"
 
 
 def dml_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):

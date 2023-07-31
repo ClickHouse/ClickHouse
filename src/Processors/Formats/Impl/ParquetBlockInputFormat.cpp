@@ -59,7 +59,12 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, max_decoding_threads);
 }
 
-ParquetBlockInputFormat::~ParquetBlockInputFormat() = default;
+ParquetBlockInputFormat::~ParquetBlockInputFormat()
+{
+    is_stopped = true;
+    if (pool)
+        pool->wait();
+}
 
 void ParquetBlockInputFormat::initializeIfNeeded()
 {

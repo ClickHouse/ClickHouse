@@ -292,7 +292,7 @@ struct AggregationMethodStringNoCache
     {
     }
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false ,nullable>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false, nullable>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = nullable;
