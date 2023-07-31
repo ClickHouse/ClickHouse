@@ -463,7 +463,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 
         /// If there is only one key with non zero ID, curren_key_id should be defined.
         if (new_params->keys_storage[method].size() == 1 && !new_params->keys_storage[method].contains(0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. сurrent_key_id is required");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. current_key_id is required");
     }
 
     /// Try to find which key will be used for encryption. If there is no current_key and only one key without id
