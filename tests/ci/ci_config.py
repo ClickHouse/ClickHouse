@@ -346,7 +346,7 @@ CI_CONFIG = {
         "Compatibility check (aarch64)": {
             "required_build": "package_aarch64",
         },
-        "Unit tests (release-clang)": {
+        "Unit tests (release)": {
             "required_build": "binary_release",
         },
         "Unit tests (asan)": {
@@ -509,7 +509,7 @@ REQUIRED_CHECKS = [
     "Style Check",
     "Unit tests (asan)",
     "Unit tests (msan)",
-    "Unit tests (release-clang)",
+    "Unit tests (release)",
     "Unit tests (tsan)",
     "Unit tests (ubsan)",
 ]
