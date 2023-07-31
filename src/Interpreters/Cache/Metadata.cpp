@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -758,7 +759,7 @@ FileSegments LockedKey::sync()
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
         auto file_segment = it->second->file_segment;
-        if (file_segment->state() != FileSegment::State::DOWNLOADED)
+        if (file_segment->getDownloadedSize(false) == 0)
         {
             ++it;
             continue;

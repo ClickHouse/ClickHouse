@@ -46,4 +46,24 @@ $CLICKHOUSE_CLIENT --query "SYSTEM SYNC FILESYSTEM CACHE" 2>&1 | grep -q "$key" 
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
 
+key=$($CLICKHOUSE_CLIENT -nm --query """
+SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
+""")
+
+offset=$($CLICKHOUSE_CLIENT -nm --query """
+SELECT offset FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
+""")
+
+path=$($CLICKHOUSE_CLIENT -nm --query """
+SELECT cache_path FROM system.filesystem_cache WHERE key = '$key' AND file_segment_range_begin = $offset;
+""")
+
+echo -n 'fff' > $path
+
+cat $path
+
+$CLICKHOUSE_CLIENT --query "SYSTEM SYNC FILESYSTEM CACHE" 2>&1 | grep -q "$key" && echo 'ok' || echo 'fail'
+
+$CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
+
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC FILESYSTEM CACHE"
