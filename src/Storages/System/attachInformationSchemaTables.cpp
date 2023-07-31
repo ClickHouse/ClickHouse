@@ -40,15 +40,9 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
                                              database.getTableDataPath(ast_create), context, true).second;
 
-        database.createTable(context, ast_create.getTable(), view, ast);
-        if (database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA)
-        {
-            database.createTable(context, Poco::toUpper(ast_create.getTable()), view, ast);
-        }
-        else
-        {
-            database.createTable(context, Poco::toLower(ast_create.getTable()), view, ast);
-        }
+        database.createTable(context, Poco::toUpper(ast_create.getTable()), view, ast);
+        database.createTable(context, Poco::toLower(ast_create.getTable()), view, ast);
+
     }
     catch (...)
     {
