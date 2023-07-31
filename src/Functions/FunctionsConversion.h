@@ -1028,7 +1028,12 @@ template <bool precise_float_parsing, typename DataType>
 void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
-        readFloatText<precise_float_parsing>(x, rb);
+    {
+        if constexpr (precise_float_parsing)
+            readFloatTextPrecise(x, rb);
+        else
+            readFloatTextFast(x, rb);
+    }
     else
         parseType<DataType>(x, rb, time_zone);
 }
@@ -1093,7 +1098,12 @@ template <bool precise_float_parsing, typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
-        return tryReadFloatText<precise_float_parsing>(x, rb);
+    {
+        if constexpr (precise_float_parsing)
+            return tryReadFloatTextPrecise(x, rb);
+        else
+            return tryReadFloatTextFast(x, rb);
+    }
     else /*if constexpr (is_integer_v<typename DataType::FieldType>)*/
         return tryParseTypeImpl<DataType>(x, rb, time_zone);
 }
