@@ -2,7 +2,6 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/getMostSubtype.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>

@@ -353,6 +353,7 @@ public:
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
+    UInt64 getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
@@ -500,7 +501,7 @@ public:
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
-    mutable std::atomic<time_t> last_removal_attemp_time = 0;
+    mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
 protected:
 
