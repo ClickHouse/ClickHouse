@@ -1,0 +1,32 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <bak>
+                <type>local</type>
+                <path>/var/lib/backups/</path>
+            </bak>
+            <one>
+                <type>local</type>
+                <path>/var/lib/disks/one/</path>
+            </one>
+            <two>
+                <type>local</type>
+                <path>/var/lib/disks/two/</path>
+            </two>
+        </disks>
+        <policies>
+            <disks_in_order>
+                <volumes>
+                    <single>
+                        <disk>one</disk>
+                        <disk>two</disk>
+                    </single>
+                </volumes>
+            </disks_in_order>
+        </policies>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>bak</allowed_disk>
+        <allowed_path>/var/lib/backups/</allowed_path>
+    </backups>
+</clickhouse>
