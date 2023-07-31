@@ -69,13 +69,16 @@ fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 
 
-void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::const_iterator segments_end, size_t segments_size, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    std::cerr << "Holder: " << holder->toString() << "\n";
-    ASSERT_EQ(holder->size(), expected_ranges.size());
+    std::cerr << "File segments: ";
+    for (auto it = segments_begin; it != segments_end; ++it)
+        std::cerr << (*it)->range().toString() << ", ";
+
+    ASSERT_EQ(segments_size, expected_ranges.size());
 
     if (!expected_states.empty())
-        ASSERT_EQ(holder->size(), expected_states.size());
+        ASSERT_EQ(segments_size, expected_states.size());
 
     auto get_expected_state = [&](size_t i)
     {
@@ -86,12 +89,23 @@ void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const
     };
 
     size_t i = 0;
-    for (const auto & file_segment : *holder)
+    for (auto it = segments_begin; it != segments_end; ++it)
     {
+        const auto & file_segment = *it;
         ASSERT_EQ(file_segment->range(), expected_ranges[i]);
         ASSERT_EQ(file_segment->state(), get_expected_state(i));
         ++i;
     }
+}
+
+void assertEqual(const FileSegments & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    assertEqual(file_segments.begin(), file_segments.end(), file_segments.size(), expected_ranges, expected_states);
+}
+
+void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    assertEqual(file_segments->begin(), file_segments->end(), file_segments->size(), expected_ranges, expected_states);
 }
 
 FileSegment & get(const HolderPtr & holder, int i)
