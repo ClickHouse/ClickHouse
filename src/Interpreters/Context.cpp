@@ -2711,7 +2711,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->expired())
+    else if (shared->zookeeper->hasReachedDeadline())
+        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
+
+    if (shared->zookeeper->expired())
     {
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
