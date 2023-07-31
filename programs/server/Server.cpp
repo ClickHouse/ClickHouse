@@ -1691,17 +1691,26 @@ try
         global_context->initializeTraceCollector();
 
         /// Set up server-wide memory profiler (for total memory tracker).
-        UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
-        if (total_memory_profiler_step)
+        if (server_settings.total_memory_profiler_step)
         {
-            total_memory_tracker.setProfilerStep(total_memory_profiler_step);
+            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
         }
 
-        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
-        if (total_memory_tracker_sample_probability > 0.0)
+        if (server_settings.total_memory_tracker_sample_probability > 0.0)
         {
-            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
+            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
         }
+
+        if (server_settings.total_memory_profiler_sample_min_allocation_size)
+        {
+            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
+        }
+
+        if (server_settings.total_memory_profiler_sample_max_allocation_size)
+        {
+            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
+        }
+
     }
 #endif
 
