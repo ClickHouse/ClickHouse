@@ -4573,7 +4573,7 @@ Default: 0
 
 Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
 * If the value is `1`, then precise method is used. It is slower than fast method, but it always returns a number that is the closest machine representable number to the input.
-* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant bits.
+* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant digits.
 
 Possible values: `0`, `1`.
 
