@@ -87,6 +87,13 @@ public:
             const String & path,
             SyncCallback callback) override;
 
+    void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) final;
+
     void multi(
             const Requests & requests,
             MultiCallback callback) override;

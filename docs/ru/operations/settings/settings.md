@@ -1686,7 +1686,7 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## input_format_csv_detect_header {#input_format_csv_detect_header}
 
 Обнаружить заголовок с именами и типами в формате CSV.
- 
+
 Значение по умолчанию - `true`.
 
 ## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
@@ -1726,6 +1726,12 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 ```text
 "  string  "
 ```
+
+## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+Игнорировать дополнительные столбцы (если файл содержит больше столбцов чем ожидается) и рассматривать отсутствующие поля в CSV в качестве значений по умолчанию.
+
+Выключено по умолчанию.
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -4195,6 +4201,7 @@ SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 ### Шаблон
 Шаблон поддерживает следующие виды плейсхолдеров:
 
+- `%a` — Полное исходное имя файла (например "sample.csv").
 - `%f` — Исходное имя файла без расширения (например "sample").
 - `%e` — Оригинальное расширение файла с точкой (например ".csv").
 - `%t` — Текущее время (в микросекундах).

@@ -38,6 +38,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -371,18 +372,7 @@ BlockIO InterpreterSystemQuery::execute()
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                if (query.delete_key.empty())
-                {
-                    cache->removeAllReleasable();
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.delete_key);
-                    if (query.delete_offset.has_value())
-                        cache->removeFileSegment(key, query.delete_offset.value());
-                    else
-                        cache->removeKey(key);
-                }
+                cache->removeAllReleasable();
             }
             break;
         }
@@ -503,16 +493,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
-        case Type::RELOAD_SYMBOLS:
-        {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
-            break;
-#else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
-#endif
-        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -609,9 +589,25 @@ BlockIO InterpreterSystemQuery::execute()
             );
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
+        case Type::STOP_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->stopServers(query.server_type);
+            break;
+        case Type::START_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->startServers(query.server_type);
+            break;
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            auto * queue = getContext()->getAsynchronousInsertQueue();
+            if (!queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot flush asynchronous insert queue because it is not initialized");
+
+            queue->flushAll();
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
@@ -1090,11 +1086,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            break;
-        }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
@@ -1209,6 +1200,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;
         }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            break;
+        }
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
@@ -1224,8 +1220,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
+        case Type::STOP_LISTEN:
+        case Type::START_LISTEN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_LISTEN);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:

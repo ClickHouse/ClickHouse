@@ -15,7 +15,6 @@ from github import Github
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -71,7 +70,7 @@ def get_json_params_dict(
     }
 
 
-def get_env_for_runner(build_path, repo_path, result_path, work_path):
+def get_env_for_runner(check_name, build_path, repo_path, result_path, work_path):
     binary_path = os.path.join(build_path, "clickhouse")
     odbc_bridge_path = os.path.join(build_path, "clickhouse-odbc-bridge")
     library_bridge_path = os.path.join(build_path, "clickhouse-library-bridge")
@@ -87,6 +86,9 @@ def get_env_for_runner(build_path, repo_path, result_path, work_path):
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
     my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = os.path.join(work_path, "params.json")
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
+
+    if "analyzer" in check_name.lower():
+        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
 
     return my_env
 
@@ -225,7 +227,9 @@ def main():
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
-    my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
+    my_env = get_env_for_runner(
+        check_name, build_path, repo_path, result_path, work_path
+    )
 
     json_path = os.path.join(work_path, "params.json")
     with open(json_path, "w", encoding="utf-8") as json_params:
@@ -271,7 +275,6 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     s3_helper = S3Helper()
     report_url = upload_results(
