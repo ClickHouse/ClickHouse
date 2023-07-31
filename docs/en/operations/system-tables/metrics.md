@@ -10,6 +10,7 @@ Columns:
 - `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
 - `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
 - `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Alias for `metric`.
 
 You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
