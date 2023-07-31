@@ -75,7 +75,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
             if (!file_info)
+            {
+                hdfsCloseFile(fs.get(), fin);
                 throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
+            }
             file_size = static_cast<size_t>(file_info->mSize);
         }
     }
