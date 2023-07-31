@@ -42,6 +42,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
@@ -159,14 +160,16 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
     for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         auto * table_node = table_expression->as<TableNode>();
-        if (!table_node)
+        auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
             continue;
 
-        if (typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
-            continue;
-
-        collect_filters = true;
-        break;
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        if (typeid_cast<const StorageDistributed *>(storage.get()))
+        {
+            collect_filters = true;
+            break;
+        }
     }
 
     if (!collect_filters)
