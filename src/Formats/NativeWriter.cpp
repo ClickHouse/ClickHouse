@@ -132,7 +132,7 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
             serialization = column.type->getSerialization(*info);
