@@ -67,6 +67,12 @@ private:
     /// To randomly sample allocations and deallocations in trace_log.
     double sample_probability = 0;
 
+    /// Randomly sample allocations only larger or equal to this size
+    UInt64 min_allocation_size_bytes = 0;
+
+    /// Randomly sample allocations only smaller or equal to this size
+    UInt64 max_allocation_size_bytes = 0;
+
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
     std::atomic<MemoryTracker *> parent {};
@@ -88,6 +94,8 @@ private:
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    bool isSizeOkForSampling(UInt64 size) const;
+
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
     void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
@@ -95,6 +103,7 @@ private:
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+    static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
@@ -163,6 +172,16 @@ public:
     void setSampleProbability(double value)
     {
         sample_probability = value;
+    }
+
+    void setSampleMinAllocationSize(UInt64 value)
+    {
+        min_allocation_size_bytes = value;
+    }
+
+    void setSampleMaxAllocationSize(UInt64 value)
+    {
+        max_allocation_size_bytes = value;
     }
 
     void setProfilerStep(Int64 value)
