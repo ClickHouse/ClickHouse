@@ -39,6 +39,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             fd = STDOUT_FILENO;
         else if (filename == "stderr")
             fd = STDERR_FILENO;
+        else
+            StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -78,6 +80,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         global_context->getSettingsRef().rename_files_after_processing,
         path_to_archive,
     };
+
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
@@ -98,6 +101,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
             paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         else
             paths_to_archives = StorageFile::getPathsList(path_to_archive, context->getUserFilesPath(), context, total_bytes_to_read);
+
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, paths_to_archives);
     }
 

@@ -23,7 +23,7 @@ public:
         const ConstraintsDescription & constraints;
         const String & comment;
         const std::string rename_after_processing;
-        std::string path_to_archive = "auto";
+        std::string path_to_archive;
     };
 
     /// From file descriptor
@@ -92,6 +92,8 @@ public:
         const std::vector<String> & paths_to_archive = {"auto"});
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    static void parseFileSource(String source, String & filename, String & path_to_archive);
 
 protected:
     friend class StorageFileSource;
