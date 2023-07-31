@@ -22,6 +22,10 @@ query_id=$RANDOM
 
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1"
 
+$CLICKHOUSE_CLIENT -nm --query """
+SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY kek;
+""" 2>&1 | grep -q "Invalid key: kek" && echo "OK" || echo "FAIL"
+
 ${CLICKHOUSE_CLIENT} -q " system flush logs"
 
 key=$($CLICKHOUSE_CLIENT -nm --query """
