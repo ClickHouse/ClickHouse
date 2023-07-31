@@ -24,7 +24,6 @@
 
 #    include <Storages/NamedCollectionsHelpers.h>
 #    include <Storages/PartitionedSink.h>
-#    include <Storages/ReadFromStorageProgress.h>
 #    include <Storages/S3Queue/S3QueueSource.h>
 #    include <Storages/S3Queue/S3QueueTableMetadata.h>
 #    include <Storages/S3Queue/StorageS3Queue.h>
@@ -107,44 +106,43 @@ StorageS3Queue::StorageS3Queue(
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
 {
     if (!withGlobs())
-    {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue engine can read only from url with globs");
-    }
 
-    String setting_zookeeper_path = s3queue_settings->keeper_path;
-    LOG_INFO(log, "Settings zookeeper_path={}", setting_zookeeper_path);
+    std::string setting_zookeeper_path = s3queue_settings->keeper_path;
+    std::string zk_path_prefix;
     if (setting_zookeeper_path.empty())
     {
-        auto table_id = getStorageID();
-        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(table_id_.database_name);
         bool is_in_replicated_database = database->getEngineName() == "Replicated";
 
         auto default_path = getContext()->getSettingsRef().s3queue_default_zookeeper_path.value;
         if (!default_path.empty())
         {
-            zookeeper_path
-                = zkutil::extractZooKeeperPath(fs::path(default_path) / toString(table_id.uuid), /* check_starts_with_slash */ true, log);
+            zk_path_prefix = default_path;
         }
         else if (is_in_replicated_database)
         {
-            LOG_INFO(log, "S3Queue engine keeper_path not specified. Use replicated database zookeeper path");
-            String base_zookeeper_path = assert_cast<const DatabaseReplicated *>(database.get())->getZooKeeperPath();
-            zookeeper_path = zkutil::extractZooKeeperPath(
-                fs::path(base_zookeeper_path) / "s3queue" / toString(table_id.uuid), /* check_starts_with_slash */ true, log);
+            LOG_INFO(log, "S3Queue engine zookeeper path is not specified. "
+                     "Using replicated database zookeeper path");
+
+            zk_path_prefix = fs::path(assert_cast<const DatabaseReplicated *>(database.get())->getZooKeeperPath()) / "s3queue";
         }
         else
         {
-            throw Exception(
-                ErrorCodes::NO_ZOOKEEPER,
-                "S3Queue keeper_path engine setting not specified, s3queue_default_zookeeper_path_prefix not specified and table not in "
-                "replicated database.");
+            throw Exception(ErrorCodes::NO_ZOOKEEPER,
+                            "S3Queue keeper_path engine setting not specified, "
+                            "s3queue_default_zookeeper_path_prefix not specified");
         }
     }
     else
     {
-        zookeeper_path = zkutil::extractZooKeeperPath(s3queue_settings->keeper_path, /* check_starts_with_slash */ true, log);
+        zk_path_prefix = s3queue_settings->keeper_path.value;
     }
-    LOG_INFO(log, "Set zookeeper_path={}", zookeeper_path);
+
+    zookeeper_path = zkutil::extractZooKeeperPath(
+        fs::path(zk_path_prefix) / toString(table_id_.uuid), /* check_starts_with_slash */ true, log);
+
+    LOG_INFO(log, "Using zookeeper path: {}", zookeeper_path);
 
     FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(s3_configuration.url.uri);
@@ -550,8 +548,8 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
         {
             String metadata_str = S3QueueTableMetadata(s3_configuration, *s3queue_settings).toString();
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "collection:\n", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "collection:\n", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processing", "", zkutil::CreateMode::Ephemeral));
             ops.emplace_back(zkutil::makeCreateRequest(
                 zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(), zkutil::CreateMode::Persistent));
@@ -612,11 +610,8 @@ void StorageS3Queue::checkTableStructure(const String & zookeeper_prefix, const 
 
 
 std::shared_ptr<StorageS3QueueSource::IIterator>
-StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query, KeysWithInfo * read_keys)
+StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query)
 {
-    /// Iterate through disclosed globs and make a source for each file
-    std::lock_guard lock{sync_mutex};
-
     auto it = std::make_shared<StorageS3QueueSource::QueueGlobIterator>(
         *s3_configuration.client,
         s3_configuration.url,
@@ -624,24 +619,33 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query, KeysW
         virtual_block,
         local_context,
         s3queue_settings->s3queue_polling_size.value,
-        read_keys,
         s3_configuration.request_settings);
 
-    auto zookeeper_lock = queue_holder->acquireLock();
-    S3QueueHolder::S3FilesCollection exclude = queue_holder->getExcludedFiles();
+    auto lock = queue_holder->acquireLock();
+    S3QueueHolder::S3FilesCollection files_to_skip = queue_holder->getProcessedAndFailedFiles();
 
-    Strings processing_files;
+    Strings files_to_process;
     if (mode == S3QueueMode::UNORDERED)
     {
-        processing_files = it->filterProcessingFiles(mode, exclude);
+        files_to_process = it->filterProcessingFiles(mode, files_to_skip);
     }
     else
     {
         String max_processed_file = queue_holder->getMaxProcessedFile();
-        processing_files = it->filterProcessingFiles(mode, exclude, max_processed_file);
+        files_to_process = it->filterProcessingFiles(mode, files_to_skip, max_processed_file);
     }
-    queue_holder->setFilesProcessing(processing_files);
+
+    LOG_TEST(log, "Found files to process: {}", fmt::join(files_to_process, ", "));
+
+    queue_holder->setFilesProcessing(files_to_process);
     return it;
+}
+
+void StorageS3Queue::drop()
+{
+    auto zk_client = getZooKeeper();
+    if (zk_client->exists(zookeeper_path))
+        zk_client->removeRecursive(zookeeper_path);
 }
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)

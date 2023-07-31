@@ -109,9 +109,9 @@ private:
     std::atomic<bool> shutdown_called{false};
     Poco::Logger * log;
 
-
     void startup() override;
     void shutdown() override;
+    void drop() override;
 
     struct TaskContext
     {
@@ -126,7 +126,6 @@ private:
 
     zkutil::ZooKeeperPtr current_zookeeper;
     mutable std::mutex current_zookeeper_mutex;
-    mutable std::mutex sync_mutex;
 
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
@@ -140,7 +139,7 @@ private:
     using KeysWithInfo = StorageS3QueueSource::KeysWithInfo;
 
     std::shared_ptr<StorageS3QueueSource::IIterator>
-    createFileIterator(ContextPtr local_context, ASTPtr query, KeysWithInfo * read_keys = nullptr);
+    createFileIterator(ContextPtr local_context, ASTPtr query);
 
     void streamToViews();
     Configuration updateConfigurationAndGetCopy(ContextPtr local_context);

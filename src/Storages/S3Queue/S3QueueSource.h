@@ -46,18 +46,15 @@ public:
             const Block & virtual_header,
             ContextPtr context,
             UInt64 & max_poll_size_,
-            KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {});
 
         KeyWithInfo next() override;
-        size_t getTotalSize() const override;
 
         Strings
         filterProcessingFiles(const S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file = "");
 
     private:
         UInt64 max_poll_size;
-        const String bucket;
         KeysWithInfo keys_buf;
         KeysWithInfo processing_keys;
         mutable std::mutex mutex;
@@ -115,10 +112,6 @@ private:
     Poco::Logger * log = &Poco::Logger::get("StorageS3QueueSource");
 
     std::future<ReaderHolder> reader_future;
-
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
 
     mutable std::mutex mutex;
 

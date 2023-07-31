@@ -21,7 +21,6 @@
 
 #    include <Storages/NamedCollectionsHelpers.h>
 #    include <Storages/PartitionedSink.h>
-#    include <Storages/ReadFromStorageProgress.h>
 #    include <Storages/S3Queue/S3QueueSource.h>
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageS3Settings.h>
@@ -74,21 +73,17 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     const Block & virtual_header,
     ContextPtr context,
     UInt64 & max_poll_size_,
-    StorageS3QueueSource::KeysWithInfo * read_keys_,
     const S3Settings::RequestSettings & request_settings_)
     : max_poll_size(max_poll_size_)
-    , bucket(globbed_uri_.bucket)
     , glob_iterator(std::make_unique<StorageS3QueueSource::DisclosedGlobIterator>(
-          client_, globbed_uri_, query, virtual_header, context, read_keys_, request_settings_))
+          client_, globbed_uri_, query, virtual_header, context, nullptr, request_settings_))
 {
     /// todo(kssenii): remove this loop, it should not be here
     while (true)
     {
         KeyWithInfo val = glob_iterator->next();
         if (val.key.empty())
-        {
             break;
-        }
         keys_buf.push_back(val);
     }
 }
@@ -98,16 +93,17 @@ Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
 {
     for (const KeyWithInfo & val : keys_buf)
     {
-        auto full_path = bucket + '/' + val.key;
+        auto full_path = val.key;
         if (exclude_keys.find(full_path) != exclude_keys.end())
         {
-            LOG_TRACE(log, "Found in exclude keys {}", val.key);
+            LOG_TEST(log, "File {} will be skipped, because it was found in exclude files list "
+                     "(either already processed or failed to be processed)", val.key);
             continue;
         }
+
         if ((engine_mode == S3QueueMode::ORDERED) && (full_path.compare(max_file) <= 0))
-        {
             continue;
-        }
+
         if ((processing_keys.size() < max_poll_size) || (engine_mode == S3QueueMode::ORDERED))
         {
             processing_keys.push_back(val);
@@ -124,6 +120,7 @@ Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
             processing_keys.begin(),
             processing_keys.end(),
             [](const KeyWithInfo & lhs, const KeyWithInfo & rhs) { return lhs.key.compare(rhs.key) < 0; });
+
         if (processing_keys.size() > max_poll_size)
         {
             processing_keys.erase(processing_keys.begin() + max_poll_size, processing_keys.end());
@@ -132,11 +129,9 @@ Strings StorageS3QueueSource::QueueGlobIterator::filterProcessingFiles(
 
     Strings keys;
     for (const auto & key_info : processing_keys)
-    {
-        keys.push_back(bucket + '/' + key_info.key);
-    }
-    processing_keys.push_back(KeyWithInfo());
+        keys.push_back(key_info.key);
 
+    processing_keys.push_back(KeyWithInfo());
     processing_iterator = processing_keys.begin();
     return keys;
 }
@@ -152,12 +147,6 @@ StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::QueueGlobIterator::next(
 
     return KeyWithInfo();
 }
-
-size_t StorageS3QueueSource::QueueGlobIterator::getTotalSize() const
-{
-    return glob_iterator->getTotalSize();
-}
-
 
 Block StorageS3QueueSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
 {
@@ -232,6 +221,7 @@ String StorageS3QueueSource::getName() const
 
 Chunk StorageS3QueueSource::generate()
 {
+    auto file_progress = getContext()->getFileProgressCallback();
     while (true)
     {
         if (isCancelled() || !reader)
@@ -243,22 +233,12 @@ Chunk StorageS3QueueSource::generate()
 
         Chunk chunk;
         bool success_in_pulling = false;
-        String file_path;
         try
         {
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
-
-                file_path = reader.getPath();
-                size_t total_size = file_iterator->getTotalSize();
-                if (num_rows && total_size)
-                {
-                    size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
-                    if (!chunk_size)
-                        chunk_size = chunk.bytes();
-                    updateRowsProgressApprox(*this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-                }
+                auto file_path = reader.getPath();
 
                 for (const auto & virtual_column : requested_virtual_columns)
                 {
@@ -279,14 +259,13 @@ Chunk StorageS3QueueSource::generate()
         catch (const Exception & e)
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
-            const auto & failed_file_path = reader.getPath();
-            queue_holder->markFailedAndCheckRetry(failed_file_path);
+            queue_holder->setFileFailed(reader.getFile(), e.message());
             success_in_pulling = false;
         }
         if (success_in_pulling)
         {
-            applyActionAfterProcessing(file_path);
-            queue_holder->setFileProcessed(file_path);
+            applyActionAfterProcessing(reader.getFile());
+            queue_holder->setFileProcessed(reader.getFile());
             return chunk;
         }
 
@@ -296,6 +275,7 @@ Chunk StorageS3QueueSource::generate()
 
         if (!reader)
             break;
+
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
         internal_source->create_reader_pool.wait();
@@ -320,12 +300,10 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
 
 void StorageS3QueueSource::deleteProcessedObject(const String & file_path)
 {
-    LOG_WARNING(log, "Delete processed file {} from bucket {}", file_path, bucket);
-    S3::DeleteObjectRequest request;
-    /// todo(kssenii): looks incorrect
-    String delete_key = file_path.substr(bucket.length() + 1);
+    LOG_INFO(log, "Delete processed file {} from bucket {}", file_path, bucket);
 
-    request.WithKey(delete_key).WithBucket(bucket);
+    S3::DeleteObjectRequest request;
+    request.WithKey(file_path).WithBucket(bucket);
     auto outcome = client->DeleteObject(request);
     if (!outcome.IsSuccess())
     {

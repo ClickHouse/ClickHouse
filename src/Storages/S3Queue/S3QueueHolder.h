@@ -17,10 +17,11 @@ public:
         String file_path;
         UInt64 timestamp = 0;
         UInt64 retries_count = 0;
+        String last_exception;
     };
 
     using S3FilesCollection = std::unordered_set<String>;
-    using TrackedFiles = std::vector<TrackedCollectionItem>;
+    using TrackedFiles = std::deque<TrackedCollectionItem>;
 
     S3QueueHolder(
         const String & zookeeper_path_,
@@ -31,9 +32,9 @@ public:
         UInt64 & max_loading_retries_);
 
     void setFileProcessed(const String & file_path);
-    bool markFailedAndCheckRetry(const String & file_path);
+    bool setFileFailed(const String & file_path, const String & exception_message);
     void setFilesProcessing(Strings & file_paths);
-    S3FilesCollection getExcludedFiles();
+    S3FilesCollection getProcessedAndFailedFiles();
     String getMaxProcessedFile();
 
     std::shared_ptr<zkutil::EphemeralNodeHolder> acquireLock();
@@ -73,7 +74,7 @@ public:
         S3QueueFailedCollection(const UInt64 & max_retries_count_);
 
         void parse(const String & collection_str) override;
-        bool add(const String & file_name);
+        bool add(const String & file_name, const String & exception_message);
 
         S3FilesCollection getFileNames();
 
@@ -87,7 +88,7 @@ private:
     const UInt64 max_set_age_sec;
     const UInt64 max_loading_retries;
 
-    zkutil::ZooKeeperPtr current_zookeeper;
+    zkutil::ZooKeeperPtr zk_client;
     mutable std::mutex current_zookeeper_mutex;
     mutable std::mutex mutex;
     const String zookeeper_path;
@@ -99,14 +100,12 @@ private:
     const UUID table_uuid;
     Poco::Logger * log;
 
-    zkutil::ZooKeeperPtr getZooKeeper() const;
-
     S3FilesCollection getFailedFiles();
     S3FilesCollection getProcessingFiles();
     S3FilesCollection getUnorderedProcessedFiles();
     void removeProcessingFile(const String & file_path);
 
-    S3FilesCollection parseCollection(String & files);
+    S3FilesCollection parseCollection(const String & collection_str);
 };
 
 
