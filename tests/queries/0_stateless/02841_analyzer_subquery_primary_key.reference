@@ -1,0 +1,37 @@
+Expression ((Project names + Projection))
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.analyzer_subquery_pk)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          pk1
+          pk2
+        Condition: and((pk1 in (-Inf, 10]), (pk2 in 1-element set))
+        Parts: 1/1
+        Granules: 1/3
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.analyzer_subquery_pk)
+      Indexes:
+        PrimaryKey
+          Keys: 
+            pk1
+          Condition: (pk1 in (-Inf, 10])
+          Parts: 1/1
+          Granules: 1/3
+  CreatingSet (Create set for subquery)
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+      ReadFromStorage (SystemOne)
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.analyzer_subquery_pk)
+      Indexes:
+        PrimaryKey
+          Keys: 
+            pk1
+            pk2
+          Condition: and((pk1 in (-Inf, 10]), (pk2 in 1-element set))
+          Parts: 1/1
+          Granules: 1/3
