@@ -262,7 +262,8 @@ CREATE TABLE system.events
 (
     `event` String,
     `value` UInt64,
-    `description` String
+    `description` String,
+    `name` String
 )
 ENGINE = SystemEvents
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -383,7 +384,8 @@ CREATE TABLE system.metrics
 (
     `metric` String,
     `value` Int64,
-    `description` String
+    `description` String,
+    `name` String
 )
 ENGINE = SystemMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'

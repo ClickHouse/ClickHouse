@@ -22,7 +22,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().count_distinct_optimization)
             return;
