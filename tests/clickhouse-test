@@ -954,6 +954,16 @@ class TestCase:
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
+        elif (
+            tags
+            and ("no-s3-storage-with-slow-build" in tags)
+            and args.s3_storage
+            and (
+                BuildFlags.THREAD in args.build_flags
+                or BuildFlags.DEBUG in args.build_flags
+            )
+        ):
+            return FailureReason.S3_STORAGE
 
         elif tags:
             for build_flag in args.build_flags:
